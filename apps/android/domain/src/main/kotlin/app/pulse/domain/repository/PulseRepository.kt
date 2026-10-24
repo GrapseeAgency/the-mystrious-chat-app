@@ -651,8 +651,9 @@ interface PulseRepository {
     /** GET /api/conversations/{id}/scheduled?userId= - THIS viewer's pending delayed sends. */
     suspend fun scheduledMessages(conversationId: String): Result<List<ScheduledItem>>
 
-    /** POST /api/conversations/{id}/scheduled { content, scheduledAt } - 30s..30d horizon server-side. */
+    /** Versioned scheduled create with durable retry identity; caller acknowledges after accepting the item. */
     suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem>
+    suspend fun acknowledgeScheduledCreation(item: ScheduledItem): Result<Unit> = Result.success(Unit)
 
     /** DELETE /api/scheduled/{id} { requesterId } - owner-only cancel. */
     suspend fun cancelScheduled(scheduledId: String): Result<Unit>

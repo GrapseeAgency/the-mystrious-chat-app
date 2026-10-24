@@ -4665,10 +4665,14 @@ private fun MirrorOwnedScheduleComposerSheet(
         scope.launch {
             try {
                 if (epoch == null || repository.attachmentSessionKey() != epoch) return@launch
-                repository.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
+                val item = repository.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repository.attachmentSessionKey() != epoch) return@launch
-                onConsumedDraft(); onDismiss()
+                onConsumedDraft()
+                repository.acknowledgeScheduledCreation(item).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() != epoch) return@launch
+                onDismiss()
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
                 if (repository.attachmentSessionKey() == epoch) error = failure.message ?: "Could not schedule. Your draft is kept."
             } finally { if (repository.attachmentSessionKey() == epoch) busy = false }

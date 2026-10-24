@@ -24,6 +24,6 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!content || content.length > MESSAGE_MAX) return NextResponse.json({ error: `Message must be 1-${MESSAGE_MAX} characters.` }, { status: 400 })
   if (!when) return NextResponse.json({ error: 'scheduledAt must be a valid ISO date string.' }, { status: 400 })
   try {
-    return NextResponse.json(await createScheduled(db, owner, id, content, when), { status: 201, headers: scheduledHeaders })
+    return NextResponse.json(await createScheduled(db, owner, id, content, when, body.clientId), { status: 201, headers: scheduledHeaders })
   } catch (error) { return scheduledErrorResponse(error) }
 }

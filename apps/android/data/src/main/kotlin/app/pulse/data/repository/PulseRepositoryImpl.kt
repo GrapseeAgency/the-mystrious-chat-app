@@ -2243,8 +2243,38 @@ class PulseRepositoryImpl constructor(
     override suspend fun scheduledMessages(conversationId: String): Result<List<ScheduledItem>> =
         ownedAccountRequest(denyScheduledRead = true) { api.scheduledMessages(conversationId, it) }.map { page -> page.items.map { it.toDomainScheduled() } }
 
-    override suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem> =
-        ownedAccountRequest { api.scheduleMessage(conversationId, it, content, scheduledAtIso) }.map { it.toDomainScheduled() }
+    override suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            requireConversationOwner(owner, epoch)
+            val intent = scheduledCreationIntent(owner, conversationId, content, scheduledAtIso)
+            val id = prefsLocalStore.beginRoomCreation(intent)
+            requireConversationOwner(owner, epoch)
+            when (val result = api.scheduleMessage(conversationId, owner, content, scheduledAtIso, id)) {
+                is PulseResult.Success -> {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    Result.success(result.value.toDomainScheduled().copy(creationClientId = id))
+                }
+                is PulseResult.Failure -> Result.failure(IllegalStateException(result.message ?: "Schedule was not confirmed. Retry the same details."))
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { Result.failure(error) }
+    }
+
+    override suspend fun acknowledgeScheduledCreation(item: ScheduledItem): Result<Unit> {
+        val id = item.creationClientId ?: return Result.success(Unit)
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireConversationOwner(owner, epoch)
+            prefsLocalStore.finishRoomCreation(scheduledCreationIntent(owner, item.conversationId, item.content, item.scheduledAtIso), id)
+            Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { Result.failure(error) }
+    }
 
     override suspend fun cancelScheduled(scheduledId: String): Result<Unit> =
         ownedAccountRequest { api.cancelScheduled(scheduledId, it) }.map { Unit }

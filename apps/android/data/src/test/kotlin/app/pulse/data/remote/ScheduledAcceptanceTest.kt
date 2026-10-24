@@ -19,6 +19,7 @@ class ScheduledAcceptanceTest {
     @Test fun readsAndActionsRequireOwnedExactReceipts() = runTest {
         for (action in listOf("list", "create", "cancel")) for (mode in listOf("valid", "empty", "version", "owner", "room", "missing", "wrong")) {
             val body = if (mode == "empty") "{}" else buildJsonObject {
+                put("clientId", "scheduled-operation-0001"); put("replayed", false)
                 put("scheduleVersion", if (mode == "version") 0 else 1)
                 put("userId", if (mode == "owner") "other" else "me")
                 put("conversationId", if (mode == "room") "" else "room")
@@ -34,7 +35,7 @@ class ScheduledAcceptanceTest {
                 val api = PulseApi(http, gateway = { "https://scheduled.test" })
                 val result = when (action) {
                     "list" -> api.scheduledMessages("room", "me")
-                    "create" -> api.scheduleMessage("room", "me", "Hello", whenIso)
+                    "create" -> api.scheduleMessage("room", "me", "Hello", whenIso, "scheduled-operation-0001")
                     else -> api.cancelScheduled("queued", "me")
                 }
                 assertEquals("$action:$mode", mode == "valid", result is PulseResult.Success)
@@ -78,6 +79,43 @@ class ScheduledAcceptanceTest {
             assertTrue(api.cancelScheduled("queued", "me") is PulseResult.Failure)
             assertTrue(api.cancelScheduled("queued", "me") is PulseResult.Success)
             assertEquals(2, attempts)
+        } finally { http.close() }
+    }
+    @Test fun creationRequiresTheExactRequestTokenAndBooleanReplayReceipt() = runTest {
+        for (mode in listOf("valid", "replayed", "missing", "wrong", "string-replayed", "missing-replayed", "sent", "cancelled")) {
+            val http = HttpClient(MockEngine { request ->
+                assertEquals("/api/conversations/room/scheduled/create-v2", request.url.encodedPath)
+                val submitted = Json.parseToJsonElement((request.body as io.ktor.http.content.TextContent).text).jsonObject
+                assertEquals("scheduled-operation-0001", submitted["clientId"]?.jsonPrimitive?.content)
+                val body = buildJsonObject {
+                    put("scheduleVersion", 1); put("userId", "me"); put("conversationId", "room")
+                    if (mode != "missing") put("clientId", if (mode == "wrong") "wrong-token" else "scheduled-operation-0001")
+                    if (mode == "string-replayed") put("replayed", "true")
+                    else if (mode != "missing-replayed") put("replayed", mode == "replayed")
+                    put("item", JsonObject(row().toMutableMap().apply {
+                        if (mode == "sent") put("sentAt", JsonPrimitive(whenIso))
+                        if (mode == "cancelled") put("cancelledAt", JsonPrimitive(whenIso))
+                    }))
+                }.toString()
+                respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+            })
+            try {
+                val result = PulseApi(http, gateway = { "https://scheduled.test" }).scheduleMessage("room", "me", "Hello", whenIso, "scheduled-operation-0001")
+                assertEquals("$mode: $result", mode in listOf("valid", "replayed"), result is PulseResult.Success)
+            } finally { http.close() }
+        }
+    }
+    @Test fun oldServerRefusalNeverFallsBackToNonIdempotentCreation() = runTest {
+        var attempts = 0
+        val http = HttpClient(MockEngine { request ->
+            attempts++
+            assertEquals("/api/conversations/room/scheduled/create-v2", request.url.encodedPath)
+            respond("{}", HttpStatusCode.NotFound, headersOf("Content-Type", "application/json"))
+        })
+        try {
+            val result = PulseApi(http, gateway = { "https://scheduled.test" }).scheduleMessage("room", "me", "Hello", whenIso, "scheduled-operation-0001")
+            assertTrue(result is PulseResult.Failure)
+            assertEquals(1, attempts)
         } finally { http.close() }
     }
 }

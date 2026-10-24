@@ -5080,6 +5080,8 @@ final class RoomViewModel: ObservableObject {
                 }
                 self.scheduledItems.removeAll { $0.id == item.id }
                 self.scheduledItems.append(item)
+                try await client.acknowledgeScheduledCreation(item)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 PulseHaptics.success()
                 session.toasts.show("Scheduled - \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
             } catch {

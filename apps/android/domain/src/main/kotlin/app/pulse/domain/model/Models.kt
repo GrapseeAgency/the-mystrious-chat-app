@@ -422,6 +422,7 @@ data class ScheduledItem(
     val scheduledAtIso: String,
     val cancelledAtIso: String? = null,
     val cancelledReason: String? = null,
+    val creationClientId: String? = null,
 )
 
 /**

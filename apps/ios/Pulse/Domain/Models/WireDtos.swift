@@ -521,6 +521,9 @@ public struct WireScheduledItem: Codable, Hashable, Sendable, Identifiable {
     public let sentAt: String?
     public let cancelledAt: String?
     public let cancelledReason: String?
+    /// Local acceptance token, populated only after a matching creation receipt.
+    public var creationClientId: String? = nil
+
 }
 
 public struct WireScheduledPage: Codable, Sendable {

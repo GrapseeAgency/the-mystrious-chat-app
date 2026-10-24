@@ -1895,6 +1895,8 @@ public struct PulseAPIClient: Sendable {
 
     private struct ScheduledReceipt: Decodable {
         let scheduleVersion: Int
+        let clientId: String?
+        let replayed: Bool?
         let userId: String
         let conversationId: String
         let items: [WireScheduledItem]?
@@ -1942,19 +1944,41 @@ public struct PulseAPIClient: Sendable {
         }
         throw Failure(kind: .server, message: "Scheduled list exceeded the safe page limit. No partial list was applied.")
     }
+    private func scheduledCreationIntent(conversationId: String, content: String, when: String) throws -> [String] {
+        guard let date = PulseFormat.date(when) else { throw Failure(kind: .validation, message: "Invalid schedule time.") }
+        let millis = date.timeIntervalSince1970 * 1000
+        guard millis.isFinite, millis >= Double(Int64.min), millis < Double(Int64.max) else {
+            throw Failure(kind: .validation, message: "Schedule time is out of range.")
+        }
+        return [PulseWalletOperations.gatewayKey(baseURL), userId, "scheduled-send", conversationId,
+            content.trimmingCharacters(in: .whitespacesAndNewlines), String(Int64(millis.rounded(.towardZero)))]
+    }
+
     public func scheduleMessage(conversationId: String, content: String, scheduledAtIso: String) async throws -> WireScheduledItem {
-        let data = try await postRaw("/api/conversations/\(q(conversationId))/scheduled",
-            body: ["senderId": userId, "content": content, "scheduledAt": scheduledAtIso])
+        let intent = try scheduledCreationIntent(conversationId: conversationId, content: content, when: scheduledAtIso)
+        let id = try await creationOperations.begin(intent)
+        // Do not retire on terminal refusal: retry must never resurrect a cancelled/delivered schedule.
+        let data = try await postRaw("/api/conversations/\(q(conversationId))/scheduled/create-v2",
+            body: ["senderId": userId, "content": content, "scheduledAt": scheduledAtIso, "clientId": id])
         let receipt = try decoder.decode(ScheduledReceipt.self, from: data)
         try validateScheduledScope(receipt, room: conversationId)
-        guard let row = receipt.item, row.content == content.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard receipt.clientId == id, receipt.replayed != nil,
+              var row = receipt.item, row.content == content.trimmingCharacters(in: .whitespacesAndNewlines),
               row.cancelledAt == nil, row.cancelledReason == nil,
               let actual = PulseFormat.date(row.scheduledAt), let expected = PulseFormat.date(scheduledAtIso),
               abs(actual.timeIntervalSince(expected)) < 0.001 else {
-            throw Failure(kind: .server, message: "The requested scheduled message was not confirmed.")
+            throw Failure(kind: .server, message: "The requested scheduled message was not confirmed. Retry the same details.")
         }
         try validateScheduled(row, room: conversationId)
+        row.creationClientId = id
+        try Task.checkCancellation()
         return row
+    }
+
+    public func acknowledgeScheduledCreation(_ item: WireScheduledItem) async throws {
+        guard let id = item.creationClientId else { return }
+        try await creationOperations.finish(try scheduledCreationIntent(conversationId: item.conversationId,
+            content: item.content, when: item.scheduledAt), id: id)
     }
     public func cancelScheduled(_ id: String) async throws {
         let data = try await deleteRaw("/api/scheduled/\(q(id))", body: ["requesterId": userId])

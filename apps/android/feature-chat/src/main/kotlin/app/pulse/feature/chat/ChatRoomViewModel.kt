@@ -360,8 +360,11 @@ class ChatRoomViewModel @Inject constructor(
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repo.attachmentSessionKey() != epoch) return@launch
                 _scheduled.value = (_scheduled.value.filterNot { it.id == item.id } + item).sortedBy { it.scheduledAtIso }
-                notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)}")
                 confirmed()
+                repo.acknowledgeScheduledCreation(item).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)}")
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
                 if (repo.attachmentSessionKey() == epoch) notify(failureNotice(error), isError = true)
             } finally { if (repo.attachmentSessionKey() == epoch) _scheduledBusy.value = false }

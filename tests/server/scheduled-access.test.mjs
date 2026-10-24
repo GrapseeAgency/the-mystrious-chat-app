@@ -1,4 +1,5 @@
 import test from 'node:test'
+import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,21 +30,23 @@ async function fixture(run) {
    })
    await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
   }
+  await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261024_scheduled_creation_operations.sql',import.meta.url),'utf8'))
   for(const id of ['me','other']) await db.$executeRawUnsafe('INSERT INTO User(id,sessionTokenHash,legacyTokenHashes) VALUES(?,?,?)',id,hashSessionToken(`synthetic-${id}`),'[]')
   for(const id of ['room','second']) await db.conversation.create({data:{id,isGroup:true}})
   for(const [id,userId,conversationId]of [['p1','me','room'],['p2','other','room'],['p3','other','second']]) await db.conversationParticipant.create({data:{id,userId,conversationId,lastReadAt:new Date('2026-01-01')}})
-  const helper=await load('src/lib/scheduled-operation.ts',{messageDeliveryDecision},'({ScheduledError,scheduledErrorResponse,scheduledHeaders,scheduledPage,createScheduled,cancelScheduled,scheduledDispatchPage})')
+  const helper=await load('src/lib/scheduled-operation.ts',{messageDeliveryDecision,createHash},'({ScheduledError,scheduledErrorResponse,scheduledHeaders,scheduledPage,createScheduled,cancelScheduled,scheduledDispatchPage})')
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
   const bindings={db,...helper,requireActionOwner,NextResponse:{json:Response.json},safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',MESSAGE_MAX:2000,
    parseIsoDate:v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?new Date(v):null}
   const base=await load('src/app/api/conversations/[id]/scheduled/route.ts',bindings,'({GET,POST})')
+  const POSTv2=await load('src/app/api/conversations/[id]/scheduled/create-v2/route.ts',{...bindings,createScheduledRequest:base.POST},'POST')
   const cancel=await load('src/app/api/scheduled/[id]/route.ts',bindings,'DELETE')
   const events=[]
   const dispatch=await load('src/app/api/maintenance/dispatch/route.ts',{...bindings,scheduledDeliveryDecision,process:{env:{CRON_SECRET:'synthetic'}},MESSAGE_FULL_INCLUDE:{},
    mapMessage:row=>row, memberIdsOf:room=>db.conversationParticipant.findMany({where:{conversationId:room}}).then(rows=>rows.map(r=>r.userId)),
    notifySocket:async(...args)=>events.push(args),console:{error:()=>{}}},'POST')
   const create=(data={})=>db.scheduledMessage.create({data:{id:'queued',conversationId:'room',senderId:'me',content:'Hello',scheduledAt:new Date(Date.now()+3600000),...data}})
-  await run(db,{...base,DELETE:cancel,dispatch,events,create,helper})
+  await run(db,{...base,POSTv2,DELETE:cancel,dispatch,events,create,helper})
  } finally {await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
 const ctx=(id='room')=>({params:Promise.resolve({id})})
@@ -151,4 +154,78 @@ test('a lost cancellation acknowledgement can be retried without resending or le
  assert.equal((await(await h.dispatch(tick())).json()).dispatched,0)
  assert.equal(await db.message.count(),0)
  assert.equal((await db.scheduledMessage.findUnique({where:{id:'queued'}})).cancelledAt.getTime(),row.cancelledAt.getTime())
+}))
+
+const createKey='scheduled-operation-0001'
+test('scheduled creation receipt replays one row, survives new database handles and allows distinct intentional sends',()=>fixture(async(db,h)=>{
+ const when=new Date(Date.now()+3600000).toISOString(), body={clientId:createKey,scheduledAt:when}
+ const first=await(await h.POSTv2(req('POST','me','synthetic-me',body),ctx())).json()
+ assert.equal(first.clientId,createKey);assert.equal(first.replayed,false)
+ const again=await(await h.POSTv2(req('POST','me','synthetic-me',body),ctx())).json()
+ assert.equal(again.replayed,true);assert.deepEqual(again.item,first.item)
+ await db.$disconnect();await db.$connect()
+ const reopened=await h.helper.createScheduled(db,'me','room','Hello',new Date(when),createKey)
+ assert.equal(reopened.item.id,first.item.id);assert.equal(reopened.replayed,true)
+ const other=await(await h.POSTv2(req('POST','me','synthetic-me',{...body,clientId:'scheduled-operation-0002'}),ctx())).json()
+ assert.notEqual(other.item.id,first.item.id)
+ assert.equal(await db.scheduledMessage.count(),2)
+}))
+test('same-key races settle to one schedule and changed instructions or a removed member are refused',()=>fixture(async(db,h)=>{
+ const when=new Date(Date.now()+3600000).toISOString(), body={clientId:createKey,scheduledAt:when}
+ const responses=await Promise.all([h.POSTv2(req('POST','me','synthetic-me',body),ctx()),h.POSTv2(req('POST','me','synthetic-me',body),ctx())])
+ for(const response of responses) assert.ok([201,409].includes(response.status))
+ assert.equal(await db.scheduledMessage.count(),1)
+ assert.equal((await db.$queryRaw`SELECT * FROM ScheduledCreationOperation`).length,1)
+ assert.equal((await h.POSTv2(req('POST','me','synthetic-me',{...body,content:'Changed'}),ctx())).status,409)
+ assert.equal((await h.POSTv2(req('POST','me','synthetic-me',{...body,scheduledAt:new Date(Date.parse(when)+1000).toISOString()}),ctx())).status,409)
+ await db.conversationParticipant.deleteMany({where:{userId:'me'}})
+ assert.equal((await h.POSTv2(req('POST','me','synthetic-me',body),ctx())).status,403)
+}))
+test('cancelled, delivered or deleted scheduled rows cannot be recreated by replay',()=>fixture(async(db,h)=>{
+ for(const terminal of ['cancelled','sent','deleted']) {
+  const key=createKey+'-'+terminal, when=new Date(Date.now()+3600000).toISOString(), body={clientId:key,scheduledAt:when}
+  const first=await(await h.POSTv2(req('POST','me','synthetic-me',body),ctx())).json()
+  if(terminal==='cancelled') await h.DELETE(req('DELETE'),ctx(first.item.id))
+  if(terminal==='sent') await db.scheduledMessage.update({where:{id:first.item.id},data:{sentAt:new Date()}})
+  if(terminal==='deleted') await db.scheduledMessage.delete({where:{id:first.item.id}})
+  const count=await db.scheduledMessage.count()
+  const response=await h.POSTv2(req('POST','me','synthetic-me',body),ctx())
+  assert.equal(response.status,410);const receipt=await response.json()
+  assert.equal(receipt.code,'schedule_finished');assert.equal(receipt.clientId,key)
+  assert.equal(await db.scheduledMessage.count(),count)
+ }
+}))
+test('receipt write failure rolls back creation and missing upgrade fails closed',()=>fixture(async(db,h)=>{
+ for(const clientId of ['',null,1,{},'too-short','a'.repeat(129)]) {
+  assert.equal((await h.POSTv2(req('POST','me','synthetic-me',{clientId}),ctx())).status,400)
+ }
+ await db.$executeRawUnsafe("CREATE TRIGGER refuse_schedule_receipt BEFORE INSERT ON ScheduledCreationOperation BEGIN SELECT RAISE(ABORT,'receipt failed'); END")
+ await assert.rejects(h.POSTv2(req('POST','me','synthetic-me',{clientId:createKey}),ctx()))
+ assert.equal(await db.scheduledMessage.count(),0)
+ await db.$executeRawUnsafe('DROP TABLE ScheduledCreationOperation')
+ assert.equal((await h.POSTv2(req('POST','me','synthetic-me',{clientId:createKey}),ctx())).status,503)
+ assert.equal(await db.scheduledMessage.count(),0)
+}))
+test('retry admission is owner scoped and is checked before the new-send time horizon',()=>fixture(async(db,h)=>{
+ const when=new Date(Date.now()+3600000), content='Hello'
+ const first=await h.helper.createScheduled(db,'me','room',content,when,createKey)
+ const other=await h.helper.createScheduled(db,'other','room',content,when,createKey)
+ assert.notEqual(first.item.id,other.item.id)
+ // Simulate an old committed receipt with a due-but-not-yet-dispatched row.
+ const past=new Date(Date.now()-1000)
+ const hash=createHash('sha256').update(JSON.stringify(['room',content,past.toISOString()])).digest('hex')
+ await db.scheduledMessage.update({where:{id:first.item.id},data:{scheduledAt:past}})
+ await db.$executeRaw`UPDATE ScheduledCreationOperation SET requestHash=${hash} WHERE userId='me' AND clientId=${createKey}`
+ const replay=await h.helper.createScheduled(db,'me','room',content,past,createKey)
+ assert.equal(replay.item.id,first.item.id);assert.equal(replay.replayed,true)
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,1)
+ assert.equal(await db.message.count(),1)
+ const finished=await h.POSTv2(req('POST','me','synthetic-me',{clientId:createKey,scheduledAt:past.toISOString()}),ctx())
+ assert.equal(finished.status,410)
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,0)
+}))
+
+test('versioned scheduled creation requires a retry key before touching the legacy create path',()=>fixture(async(db,h)=>{
+ assert.equal((await h.POSTv2(req('POST'),ctx())).status,400)
+ assert.equal(await db.scheduledMessage.count(),0)
 }))

@@ -1,12 +1,14 @@
+import { createHash } from 'node:crypto'
 import type { Prisma, PrismaClient } from '../../prisma/generated-client'
 import { messageDeliveryDecision } from './scheduled-delivery'
 
 export class ScheduledError extends Error {
-  constructor(public readonly status: number, message: string) { super(message) }
+  constructor(public readonly status: number, message: string,
+    public readonly code?: string, public readonly clientId?: string) { super(message) }
 }
 export const scheduledHeaders = { 'Cache-Control': 'private, no-store', Vary: 'Authorization' }
 export function scheduledErrorResponse(error: unknown): Response {
-  if (error instanceof ScheduledError) return Response.json({ error: error.message }, { status: error.status, headers: scheduledHeaders })
+  if (error instanceof ScheduledError) return Response.json({ error: error.message, code: error.code, clientId: error.clientId }, { status: error.status, headers: scheduledHeaders })
   if (['P1008', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? '')) {
     return Response.json({ error: 'Scheduled messages changed or are busy. Refresh before retrying.' }, { status: 409, headers: scheduledHeaders })
   }
@@ -50,17 +52,54 @@ export async function scheduledPage(db: PrismaClient, userId: string, conversati
       nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ at: last.scheduledAt.toISOString(), id: last.id })).toString('base64url') : null }
   }, { isolationLevel: 'Serializable' })
 }
-export async function createScheduled(db: PrismaClient, userId: string, conversationId: string, content: string, when: Date) {
-  return db.$transaction(async tx => {
-    const now = new Date()
-    if (when.getTime() < now.getTime() + 30_000 || when.getTime() > now.getTime() + 30 * 86400_000) {
-      throw new ScheduledError(400, 'scheduledAt must be between 30 seconds and 30 days from now.')
+export async function createScheduled(db: PrismaClient, userId: string, conversationId: string, content: string, when: Date, clientId?: unknown) {
+  if (clientId !== undefined && (typeof clientId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(clientId))) {
+    throw new ScheduledError(400, 'clientId must contain 16–128 ASCII letters, digits, underscores or hyphens.')
+  }
+  const key = clientId as string | undefined
+  const hash = createHash('sha256').update(JSON.stringify([conversationId, content, when.toISOString()])).digest('hex')
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await db.$transaction(async tx => {
+        await member(tx, userId, conversationId)
+        if (key !== undefined) {
+          const receipts = await tx.$queryRaw<Array<{ requestHash: string; scheduledId: string }>>`
+            SELECT requestHash, scheduledId FROM ScheduledCreationOperation WHERE userId = ${userId} AND clientId = ${key}`
+          const prior = receipts[0]
+          if (prior) {
+            if (prior.requestHash !== hash) throw new ScheduledError(409, 'This schedule ID was already used for different instructions.')
+            const row = await tx.scheduledMessage.findUnique({ where: { id: prior.scheduledId }, select: { ...fields, senderId: true } })
+            if (!row || row.sentAt !== null || row.cancelledAt !== null) {
+              throw new ScheduledError(410, 'The original schedule was sent, cancelled or removed. Choose a different time for a new send.', 'schedule_finished', key)
+            }
+            if (row.senderId !== userId || row.conversationId !== conversationId || row.content !== content || row.scheduledAt.getTime() !== when.getTime()) {
+              throw new ScheduledError(409, 'The original schedule no longer matches this request.')
+            }
+            const { senderId: _, ...publicRow } = row
+            return { ...scope(userId, conversationId), clientId: key, replayed: true, item: wire(publicRow) }
+          }
+        }
+        const now = new Date()
+        if (when.getTime() < now.getTime() + 30_000 || when.getTime() > now.getTime() + 30 * 86400_000) {
+          throw new ScheduledError(400, 'scheduledAt must be between 30 seconds and 30 days from now.')
+        }
+        const decision = await messageDeliveryDecision(tx, conversationId, userId, now)
+        if (decision.state === 'cancel') throw new ScheduledError(403, `Cannot schedule this message: ${decision.reason}.`)
+        const row = await tx.scheduledMessage.create({ data: { conversationId, senderId: userId, content, scheduledAt: when }, select: fields })
+        if (key !== undefined) await tx.$executeRaw`
+          INSERT INTO ScheduledCreationOperation (userId, clientId, requestHash, scheduledId)
+          VALUES (${userId}, ${key}, ${hash}, ${row.id})`
+        return { ...scope(userId, conversationId), clientId: key, replayed: false, item: wire(row) }
+      }, { isolationLevel: 'Serializable' })
+    } catch (error) {
+      if (error instanceof Error && /no such table: (?:main\.)?ScheduledCreationOperation/.test(error.message)) {
+        throw new ScheduledError(503, 'The server needs its scheduled-send receipt upgrade. Nothing was scheduled; retry after the upgrade.')
+      }
+      if (!['P2034', 'P1008', 'P2028', 'P2002'].includes((error as { code?: string })?.code ?? '')) throw error
+      if (attempt >= 2) throw new ScheduledError(409, 'Scheduling is busy. Retry the same message, time and request ID.')
+      await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)))
     }
-    const decision = await messageDeliveryDecision(tx, conversationId, userId, now)
-    if (decision.state === 'cancel') throw new ScheduledError(403, `Cannot schedule this message: ${decision.reason}.`)
-    const row = await tx.scheduledMessage.create({ data: { conversationId, senderId: userId, content, scheduledAt: when }, select: fields })
-    return { ...scope(userId, conversationId), item: wire(row) }
-  }, { isolationLevel: 'Serializable' })
+  }
 }
 /** Dispatch's sentAt write and cancellation compete inside Serializable transactions.
  * Never acknowledge cancellation based on a stale sentAt read outside the write transaction. */

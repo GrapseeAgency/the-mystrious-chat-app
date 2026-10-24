@@ -19,3 +19,11 @@ Native clients assign a `clientId` **before** a send, retain it in the outbox, a
 The Kotlin/Swift main text composers now persist the optimistic message and retry operation before network I/O. Local acknowledgement updates are transactional and retire only the matching operation, never all messages with matching text. Swift retry envelopes preserve quote, topic and anonymity metadata. Existing ancillary paths still need process-death coverage; media upload itself is not made idempotent by a message-operation key.
 
 A durable receipt prevents repeating downstream side effects after replay, but does not guarantee side effects run if the server crashes immediately after commit. Exactly-once push/bot/XP work would require a separate transactional server event outbox. No such guarantee is claimed here.
+
+## Scheduled-send creation receipts (2026-10-24)
+
+Updated Android and iOS clients create through `POST /api/conversations/{id}/scheduled/create-v2` with a durable `clientId`. There is no fallback to the legacy endpoint. The response must include the same `clientId`, Boolean `replayed`, `scheduleVersion: 1`, requested viewer/room, and the confirmed pending item. Local retry identity is retained until caller acceptance; uncertain failures do not allocate a new ID for the same instruction.
+
+**Server prerequisite:** back up the database and apply `prisma/patches/20261024_scheduled_creation_operations.sql` before deploying this route and releasing clients. It is additive/rerunnable. A missing table fails closed with 503 and creates nothing. The scheduled row and receipt are transactional. Keep receipt rows independent of scheduled-row/conversation cleanup: old retries must not recreate cancelled, sent or deleted schedules. Terminal requests receive 410 `schedule_finished`; clients retain their identity rather than automatically resubmitting a fresh operation.
+
+This does not change legacy no-ID creation, create an offline scheduler, or cancel a previous uncertain schedule when a user changes its text/time. Those changed instructions are distinct; review the scheduled list before submitting a replacement. Coordinated rollout is required; no deployment is implied by source publication.

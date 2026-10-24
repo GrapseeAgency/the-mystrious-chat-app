@@ -3026,9 +3026,11 @@ private struct MirrorScheduleBuilder: View {
         Task {
             defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
-                _ = try await api.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
+                let item = try await api.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
                 guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 onScheduled(body, draftReceipt)
+                try await api.acknowledgeScheduledCreation(item)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 dismiss()
                 onSent()
                 session.toasts.show("Scheduled - it sends on its own")

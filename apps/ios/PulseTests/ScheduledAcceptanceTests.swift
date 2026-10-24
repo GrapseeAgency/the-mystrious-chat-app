@@ -10,6 +10,17 @@ private final class ScheduledProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
             return
         }
+        var requestData = request.httpBody ?? Data()
+        if requestData.isEmpty, let stream = request.httpBodyStream {
+            stream.open(); defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 1024)
+            while true {
+                let count = stream.read(&buffer, maxLength: 1024)
+                if count <= 0 { break }
+                requestData.append(contentsOf: buffer.prefix(count))
+            }
+        }
+        let submitted = (try? JSONSerialization.jsonObject(with: requestData)) as? [String: Any] ?? [:]
         let paging = request.value(forHTTPHeaderField: "X-Paging") == "true"
         let second = URLComponents(url:request.url!,resolvingAgainstBaseURL:false)?.queryItems?.contains(where:{$0.name == "cursor"}) == true
         let row: [String:Any] = ["id":paging ? (second && mode != "duplicate" ? "second" : "first") : "queued",
@@ -18,6 +29,8 @@ private final class ScheduledProtocol: URLProtocol {
         var body: [String:Any] = ["scheduleVersion":mode == "version" ? 0 : 1,"userId":mode == "owner" ? "other" : "me",
             "conversationId":mode == "room" ? "" : "room","item":row,"items":[row],"hasMore":more,
             "nextCursor":more ? "next" as Any : NSNull(),"ok":true,"cancelled":true,"scheduledId":mode == "wrong" ? "other" : "queued"]
+        body["clientId"] = submitted["clientId"] as? String ?? ""
+        body["replayed"] = false
         if mode == "empty" { body = [:] }
         if mode == "missing" { body.removeValue(forKey:"items");body.removeValue(forKey:"item");body.removeValue(forKey:"cancelled") }
         let status = second && mode == "failure" ? 503 : 200
@@ -35,7 +48,10 @@ final class ScheduledAcceptanceTests: XCTestCase {
                 let config = URLSessionConfiguration.ephemeral
                 config.protocolClasses = [ScheduledProtocol.self];config.httpAdditionalHeaders = ["X-Mode":mode]
                 let session = URLSession(configuration:config);defer{session.invalidateAndCancel()}
-                let api = PulseAPIClient(baseURL:URL(string:"https://scheduled.test")!,userId:"me",session:session)
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let api = PulseAPIClient(baseURL:URL(string:"https://scheduled.test")!,userId:"me",session:session,
+                    creationOperations: PulseWalletOperations(directory: directory))
                 do {
                     switch action {
                     case "list": _ = try await api.scheduledMessages(conversationId:"room")

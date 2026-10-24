@@ -2451,10 +2451,14 @@ class PulseApi(
         return PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "Scheduled list exceeded the safe page limit. No partial list was applied.")
     }
 
-    suspend fun scheduleMessage(conversationId: String, senderId: String, content: String, scheduledAtIso: String): PulseResult<ScheduledItemDto> =
-        post("/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/scheduled",
-            jsonOf("senderId" to senderId, "content" to content, "scheduledAt" to scheduledAtIso)) {
+    suspend fun scheduleMessage(conversationId: String, senderId: String, content: String, scheduledAtIso: String, clientId: String): PulseResult<ScheduledItemDto> =
+        post("/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/scheduled/create-v2",
+            jsonOf("senderId" to senderId, "content" to content, "scheduledAt" to scheduledAtIso, "clientId" to clientId)) {
             val root = scheduledScope(it, senderId, conversationId)
+            val echoed = root["clientId"] as? JsonPrimitive
+            require(echoed?.isString == true && echoed.content == clientId && root["replayed"]?.toString() in setOf("true", "false")) {
+                "Scheduled request identity was not confirmed. Retry the same details."
+            }
             val item = root["item"] as? JsonObject ?: error("Scheduled message was not confirmed.")
             PulseJson.decodeFromString(ScheduledItemDto.serializer(), item.toString()).also { row ->
                 validateScheduled(row, conversationId)
