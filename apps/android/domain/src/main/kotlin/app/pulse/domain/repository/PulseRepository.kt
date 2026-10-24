@@ -426,6 +426,10 @@ interface PulseRepository {
     suspend fun queueAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, topicId: String?, sessionKey: String): Result<Message> =
         Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
 
+    /** External share: journal raw image bytes without overwriting a room's unsent attachment draft. */
+    suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> =
+        Result.failure(UnsupportedOperationException("Shared image storage unavailable"))
+
     // offline outbox + drafts (Wave 0 - web pulse-outbox/pulse-drafts parity)
 
     /** Persist an outgoing message for later delivery (FIFO, capped at 50). */

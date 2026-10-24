@@ -65,9 +65,9 @@ data class ShareInPayload(val text: String? = null, val stream: Uri? = null, val
  * is the SAME live source the chats surface uses (repo.observeConversations);
  * text shares go through repo.sendMessage (the offline-queueable path the
  * room composer uses), image shares through the EXISTING staging pipeline
- * (MediaSupport.imageToDataUrl → repo.uploadMedia → repo.sendMediaMessage -
- * photo preparation/upload must succeed first, then the existing durable media outbox
- * owns network delivery. Failed attempts keep the payload; presentation owns cancellation).
+ * (MediaSupport.imageToDataUrl → repo.queueSharedImage). Raw bytes commit before
+ * upload; no room attachment draft is overwritten. Failed preparation/storage
+ * keeps the payload; only the account outbox owns subsequent network delivery.
  */
 @HiltViewModel
 class ShareInViewModel @Inject constructor(

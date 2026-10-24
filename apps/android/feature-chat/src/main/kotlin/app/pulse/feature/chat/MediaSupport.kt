@@ -72,6 +72,9 @@ import app.pulse.ui.PulsePalette
 import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -113,11 +116,16 @@ object MediaSupport {
      */
     suspend fun audioToDataUrl(context: Context, file: File, mime: String = "audio/mp4"): Result<String> =
         withContext(Dispatchers.IO) {
-            runCatching {
-                val bytes = file.takeIf { it.exists() && it.length() > 0 }?.inputStream()?.use { readBounded(it, 3_374_900) }
-                    ?: throw IllegalStateException("Recording file is gone")
-                "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-            }
+            try {
+                val job = currentCoroutineContext()
+                val bytes = file.takeIf { it.exists() && it.length() > 0 }?.inputStream()?.use {
+                    readBounded(it, 3_374_900) { job.ensureActive() }
+                } ?: throw IllegalStateException("Recording file is gone")
+                job.ensureActive()
+                require(bytes.isNotEmpty()) { "The recording file is empty" }
+                Result.success("data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP))
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (failure: Exception) { Result.failure(failure) }
         }
 
     data class Document(
@@ -127,13 +135,14 @@ object MediaSupport {
         val sizeBytes: Long,
     )
 
-    internal fun readBounded(input: java.io.InputStream, maximum: Int): ByteArray {
+    internal fun readBounded(input: java.io.InputStream, maximum: Int, checkpoint: () -> Unit = {}): ByteArray {
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(64 * 1024)
         while (true) {
+            checkpoint()
             val count = input.read(buffer)
             if (count < 0) break
-            if (count == 0) continue
+            check(count > 0) { "Attachment provider returned no data" }
             require(output.size() + count <= maximum) { "Attachment exceeds the supported size limit" }
             output.write(buffer, 0, count)
         }
@@ -142,23 +151,28 @@ object MediaSupport {
 
     /** Document → data-URL with the ≤10MB client gate (spec §1.1). */
     suspend fun documentToDataUrl(context: Context, uri: Uri): Result<Document> = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
+            val job = currentCoroutineContext()
+            job.ensureActive()
             val resolver = context.contentResolver
-            val bytes = resolver.openInputStream(uri)?.use { readBounded(it, 10 * 1024 * 1024) }
+            val bytes = resolver.openInputStream(uri)?.use { readBounded(it, 10 * 1024 * 1024) { job.ensureActive() } }
                 ?: throw IllegalStateException("Could not read the selected document")
+            require(bytes.isNotEmpty()) { "The selected document is empty" }
             if (!PulseMedia.documentFits(bytes.size.toLong())) {
                 throw IllegalStateException("Documents are limited to 10 MB")
             }
+            job.ensureActive()
             val name = queryDisplayName(context, uri)
             val mime = documentMime(resolver.getType(uri), name)
             val size = bytes.size.toLong()
-            Document(
+            Result.success(Document(
                 dataUrl = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP),
                 fileName = name,
                 mime = mime,
                 sizeBytes = size,
-            )
-        }
+            ))
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (failure: Exception) { Result.failure(failure) }
     }
 
     internal fun documentMime(reported: String?, name: String): String {

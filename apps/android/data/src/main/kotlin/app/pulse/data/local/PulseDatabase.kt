@@ -809,6 +809,9 @@ interface OutboxDao {
         "WHERE m.id = 'local_' || outbox.clientId AND m.authorId = :owner AND m.conversationId = outbox.conversationId)")
     suspend fun discardOwnedSnapshot(owner: String, room: String, clientId: String, createdAt: String, expectedFailure: String?): Int
 
+    @Query("SELECT * FROM outbox WHERE clientId = :clientId")
+    suspend fun byClientId(clientId: String): OutboxEntity?
+
     @Query("SELECT * FROM outbox WHERE clientId = :clientId AND failureReason IS NULL")
     suspend fun pendingByClientId(clientId: String): OutboxEntity?
 

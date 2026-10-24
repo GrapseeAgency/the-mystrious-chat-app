@@ -8,14 +8,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** One share presentation owns this sender. Upload never silently follows an account switch. */
+/** One presentation owns preparation; the original account's outbox owns upload and delivery. */
 class SharedContentDelivery(private val router: PulseRepository) {
     private val owner = router.attachmentSessionKey()
     private val account = router.boundToCurrentAccount()
     private val busy = AtomicBoolean(false)
     private val committed = AtomicBoolean(false)
     private var preparedImage: String? = null
-    private var uploadedImage: String? = null
     private val imageClientIds = mutableMapOf<String, String>()
 
     fun isCurrent(): Boolean = owner != null && router.attachmentSessionKey() == owner
@@ -43,9 +42,7 @@ class SharedContentDelivery(private val router: PulseRepository) {
     suspend fun image(conversationId: String, prepare: suspend () -> Result<String>): Result<Unit> = send {
         val bytes = preparedImage ?: prepare().getOrThrow().also { preparedImage = it }
         requireCurrent()
-        val path = uploadedImage ?: account.uploadMedia(bytes).getOrThrow().also { uploadedImage = it }
-        requireCurrent()
         val clientId = imageClientIds.getOrPut(conversationId) { UUID.randomUUID().toString() }
-        account.sendMediaMessage(conversationId = conversationId, body = "", imagePath = path, clientId = clientId).getOrThrow()
+        account.queueSharedImage(conversationId, clientId, bytes, checkNotNull(owner)).getOrThrow()
     }
 }

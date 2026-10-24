@@ -77,4 +77,25 @@ final class ImagePreparationTests: XCTestCase {
         CameraPicker.requestAccess { response = $0 }
         XCTAssertEqual(response, false)
     }
+
+    func testDocumentReaderRefusesEmptyOversizedAndNonFileInputs() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
+        try Data().write(to: file); defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertThrowsError(try PulseMediaSupport.readDocument(url: file))
+        let content = Data("a real document".utf8); try content.write(to: file)
+        XCTAssertEqual(try PulseMediaSupport.readDocument(url: file), content)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.truncate(atOffset: UInt64(PulseMediaSupport.maxDocumentBytes + 1)); try handle.close()
+        XCTAssertThrowsError(try PulseMediaSupport.readDocument(url: file))
+        XCTAssertThrowsError(try PulseMediaSupport.readDocument(url: URL(string: "https://document.test/private.txt")!))
+    }
+
+    func testCancelledDocumentReadDoesNotReturnBytes() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
+        try Data("document".utf8).write(to: file); defer { try? FileManager.default.removeItem(at: file) }
+        let read = Task { try PulseMediaSupport.readDocument(url: file) }
+        read.cancel()
+        do { _ = try await read.value; XCTFail("Cancelled read should not return bytes") }
+        catch is CancellationError { }
+    }
 }

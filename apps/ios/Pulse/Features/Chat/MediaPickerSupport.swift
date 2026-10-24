@@ -94,6 +94,7 @@ enum PulseMediaSupport {
     }
 
     static func readDocument(url: URL) throws -> Data {
+        guard url.isFileURL else { throw CocoaError(.fileReadUnsupportedScheme) }
         guard let stream = InputStream(url: url) else { throw CocoaError(.fileReadUnknown) }
         stream.open(); defer { stream.close() }
         var result = Data()
@@ -108,6 +109,8 @@ enum PulseMediaSupport {
             }
             result.append(contentsOf: buffer.prefix(count))
         }
+        try Task.checkCancellation()
+        guard !result.isEmpty else { throw PulseAPIClient.Failure(kind: .validation, message: "The selected document is empty.") }
         return result
     }
 

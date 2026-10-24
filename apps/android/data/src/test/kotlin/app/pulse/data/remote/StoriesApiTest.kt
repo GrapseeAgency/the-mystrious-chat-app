@@ -176,12 +176,12 @@ class StoriesApiTest {
     @Test fun `feed requires an explicit unique identity snapshot`() = runTest {
         PulseEndpoints.applyBase("https://prod.example")
         for (body in listOf("{}", """{"groups":null}""", """{"groups":[{}]}""",
-            """{"groups":[{"user":{"id":"u"}}]}""",
-            """{"groups":[{"user":{"id":"u"},"stories":[{"id":"a"},{"id":"a"}]}]}""")) {
+            """{"groups":[{"user":{"id":"u","name":"User"}}]}""",
+            """{"groups":[{"user":{"id":"u","name":"User"},"stories":[{"id":"a"},{"id":"a"}]}]}""")) {
             assertTrue(body, api(body = body).stories("owner") is PulseResult.Failure)
         }
         assertTrue(api(body = """{"groups":[]}""").stories("owner") is PulseResult.Success)
-        assertTrue(api(body = """{"groups":[{"user":{"id":"u"},"stories":[{"id":"a"}]}]}""").stories("owner") is PulseResult.Success)
+        assertTrue(api(body = """{"groups":[{"user":{"id":"u","name":"User"},"stories":[{"id":"a"}]}]}""").stories("owner") is PulseResult.Success)
     }
     @Test fun `view mark cannot invent a successful receipt`() = runTest {
         PulseEndpoints.applyBase("https://prod.example")

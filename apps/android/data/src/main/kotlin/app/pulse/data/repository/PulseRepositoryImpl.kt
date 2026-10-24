@@ -1550,6 +1550,47 @@ class PulseRepositoryImpl constructor(
         Result.success(message)
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
+    override suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> = try {
+        val owner = requireAttachmentSession(sessionKey)
+        val files = attachmentFiles() // Capture the original account's directory before suspending.
+        val key = withContext(Dispatchers.IO) {
+            val validated = app.pulse.data.local.AttachmentValidation.validated(
+                app.pulse.domain.model.AttachmentDraft(clientId, conversationId, "image", dataUrl))
+            files.put(clientId, validated.dataUrl)
+        }
+        val message = database.withTransaction {
+            requireAttachmentSession(sessionKey)
+            val existing = outboxDao.byClientId(clientId)
+            val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+            if (existing != null) {
+                check(existing.conversationId == conversationId && existing.kind == "image" &&
+                    echo != null && echo.authorId == owner && echo.conversationId == conversationId &&
+                    (existing.uploadKey == null || existing.uploadKey == key)) { "This share belongs to another queued operation" }
+                check(existing.failureReason == null) { "This photo is already in the chat and needs attention there" }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                requireAttachmentSession(sessionKey)
+                return@withTransaction checkNotNull(echo).toDomain()
+            }
+            val temp = Message(id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
+                conversationId = conversationId, authorId = owner, authorName = owner, kind = Message.Kind.IMAGE,
+                body = "", createdAt = java.time.Instant.now().toString())
+            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+            outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = clientId,
+                content = "", kind = "image", createdAt = temp.createdAt, uploadKey = key))
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireAttachmentSession(sessionKey)
+            temp
+        }
+        // Do not touch attachmentDraftDao: an existing room composer draft is unrelated.
+        eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
+        scope.launch {
+            try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                Log.w(TAG, "Shared image remains queued", error); scheduleSelfHeal()
+            }
+        }
+        Result.success(message)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
     override suspend fun sendMediaMessage(
         conversationId: String,
         body: String,
