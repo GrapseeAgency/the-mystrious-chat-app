@@ -150,7 +150,7 @@ internal fun MirrorRoot(
     // R76 - jump-to-message anchor: Spotlight message hits, home search hits
     // and pulse://room/<id>?jump=<mid> deep links all open the room ANCHORED
     // at one message (web jumpToMessage parity).
-    var pendingJumpId by remember { mutableStateOf<String?>(null) }
+    var pendingJump by remember(viewerId) { mutableStateOf<MirrorRoomJump?>(null) }
 
     // R76 - launcher tab shortcuts switch tabs cold or warm, then self-consume.
     LaunchedEffect(tabRequest) {
@@ -259,7 +259,7 @@ internal fun MirrorRoot(
             userPageFor != null -> userPageFor = null
             managerFor != null -> managerFor = null
             roomInfoFor != null -> roomInfoFor = null
-            openRoom != null -> openRoom = null
+            openRoom != null -> { pendingJump = null; openRoom = null }
             rowOptions != null -> rowOptions = null
             kebabOpen -> kebabOpen = false
             archivedOpen -> archivedOpen = false
@@ -359,10 +359,12 @@ internal fun MirrorRoot(
     val archivedConversations = conversations.filter { it.isArchived }
 
     fun openById(conversationId: String, jumpId: String? = null) {
+        if (conversationId.isBlank()) return
         roomOpenRequest = null
+        pendingJump = null
         val cached = conversations.firstOrNull { it.id == conversationId }
         if (cached != null) {
-            pendingJumpId = jumpId
+            pendingJump = jumpId?.let { MirrorRoomJump(conversationId, it) }
             openRoom = cached
         } else {
             roomOpenSequence++
@@ -372,6 +374,7 @@ internal fun MirrorRoot(
     }
     fun openPersonalChat(peerId: String) {
         if (peerId.isBlank()) return
+        pendingJump = null
         roomOpenSequence++
         roomOpenRequest = MirrorRoomOpenRequest(peerId, roomOpenSequence, null, tab, openRoom?.id,
             viewerId, repository.boundToCurrentAccount(), personal = true)
@@ -412,7 +415,7 @@ internal fun MirrorRoot(
             } else app.pulse.domain.sync.resolveConversationForOpen(request.id, cached, api::conversationDetail)
             if (roomOpenRequest == request && viewerId == owner && api.viewerId == owner && tab == request.tab &&
                 openRoom?.id == request.previousRoomId) {
-                pendingJumpId = request.jumpId
+                pendingJump = request.jumpId?.let { MirrorRoomJump(conversation.id, it) }
                 openRoom = conversation
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -733,7 +736,7 @@ internal fun MirrorRoot(
                         presence = presence,
                         onOpen = {
                             archivedOpen = false
-                            openRoom = it
+                            openById(it.id)
                         },
                         onUnarchive = { convo ->
                             CoroutineScope(Dispatchers.IO).launch {
@@ -808,6 +811,7 @@ internal fun MirrorRoot(
                 val roomTypers = typers
                     .filter { it.conversationId == convo.id }
                     .map { it.userName }
+                val roomJump = pendingJump?.forRoom(convo.id, openRoom?.id)
                 androidx.compose.runtime.key(viewerId, convo.id) {
                     MirrorRoomScaffold(
                         convo = convo,
@@ -821,14 +825,22 @@ internal fun MirrorRoot(
                         typers = roomTypers,
                         pipActive = pipFor?.id == convo.id,
                         onTogglePip = { pipFor = if (pipFor?.id == convo.id) null else convo },
-                        onClose = { openRoom = null },
+                        onClose = { pendingJump = null; openRoom = null },
                         onRoomInfo = { roomInfoFor = convo },
                         onManageGroup = { managerFor = convo },
                         onStartCall = onStartCall,
                         onOpenLiveRoom = onOpenLiveRoom,
                         reducedMotion = reducedMotion,
-                        jumpMessageId = pendingJumpId,
-                        onJumpConsumed = { pendingJumpId = null },
+                        jumpMessageId = roomJump?.messageId,
+                        jumpRequestId = roomJump?.deliveryId,
+                        onJumpConsumed = {
+                            if (pendingJump == roomJump && openRoom?.id == convo.id) pendingJump = null
+                        },
+                        onOpenReminder = { target ->
+                            if (repository.viewerId == viewerId && openRoom?.id == convo.id) {
+                                openById(target.conversationId, target.messageId)
+                            }
+                        },
                     )
                 }
             }
@@ -845,7 +857,7 @@ internal fun MirrorRoot(
                 // this older departure finished. Hide the departed room while
                 // preserving that request's original navigation context.
                 if (roomOpenRequest != null) closingRoomId = id else openRoom = null
-                pendingJumpId = null
+                pendingJump = null
             }
         }
 
@@ -1104,6 +1116,8 @@ private fun MirrorRoomScaffold(
     reducedMotion: Boolean = false,
     /** R76 - web jumpToMessage: open anchored at one message. */
     jumpMessageId: String? = null,
+    jumpRequestId: String? = null,
+    onOpenReminder: (MirrorReminderTarget) -> Unit,
     onJumpConsumed: () -> Unit = {},
 ) {
     val repository = remember(accountRouter, viewerId, convo.id) { accountRouter.boundToCurrentAccount() }
@@ -1227,6 +1241,8 @@ private fun MirrorRoomScaffold(
         ttlSeconds = ttlSeconds,
         // R76 - the jump anchor flows through the scaffold into the room
         jumpMessageId = jumpMessageId,
+        jumpRequestId = jumpRequestId,
+        onOpenReminder = onOpenReminder,
         onJumpConsumed = onJumpConsumed,
         // R72 - channel truth: broadcast rooms carry the Channel pill and the
         // locked composer for non-admin viewers (web broadcastLocked parity)

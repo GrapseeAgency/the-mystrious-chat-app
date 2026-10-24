@@ -76,4 +76,47 @@ final class NavigationHandoffTests: XCTestCase {
         XCTAssertNil(session.pendingJumpMessageId)
     }
 
+    func testLinkedRoomConsumptionInsidePublisherRetainsTheJumpAndDoesNotReplay() async throws {
+        let session = PulseSession()
+        var received: PulseLinkedRoomRequest?
+        var cleanup: Task<Void, Never>?
+        let listener = session.$pendingLinkedRoom.sink { request in
+            guard let request else { return }
+            received = request
+            cleanup = session.consumePendingLinkedRoom(request)
+        }
+        defer { listener.cancel() }
+        XCTAssertTrue(session.requestLinkedRoom(" room ",jumpMessageId:" message "))
+        XCTAssertEqual(received?.conversationId,"room")
+        XCTAssertEqual(received?.jumpMessageId,"message")
+        await cleanup?.value
+        XCTAssertNil(session.pendingLinkedRoom)
+    }
+
+    func testSameRoomNewJumpAndLegacyAssignmentsHaveDistinctConsumptionIdentity() async throws {
+        let session = PulseSession()
+        session.pendingLinkedRoomId = "room"
+        let first = try XCTUnwrap(session.pendingLinkedRoom)
+        let oldCleanup = session.consumePendingLinkedRoom(first)
+        session.requestLinkedRoom("room",jumpMessageId:"message")
+        let latest = try XCTUnwrap(session.pendingLinkedRoom)
+        XCTAssertNotEqual(first.id,latest.id)
+        await oldCleanup.value
+        XCTAssertEqual(session.pendingLinkedRoom,latest)
+        XCTAssertFalse(session.requestLinkedRoom("  ",jumpMessageId:"bad"))
+        XCTAssertEqual(session.pendingLinkedRoom,latest)
+        await session.consumePendingLinkedRoom(latest).value
+        XCTAssertNil(session.pendingLinkedRoomId)
+    }
+
+    func testLinkedRoomCleanupFromPriorSessionCannotClearNewDelivery() async throws {
+        let session = PulseSession()
+        session.requestLinkedRoom("room",jumpMessageId:"old")
+        let cleanup = session.consumePendingLinkedRoom(try XCTUnwrap(session.pendingLinkedRoom))
+        session.stop()
+        session.requestLinkedRoom("room",jumpMessageId:"new")
+        await cleanup.value
+        XCTAssertEqual(session.pendingLinkedRoom?.jumpMessageId,"new")
+    }
+
 }

@@ -58,7 +58,6 @@ struct RootView: View {
     @State private var pendingLoginName: String?
     @State private var linkedRoomTask: Task<Void, Never>?
     @State private var linkedRoomTicket: UUID?
-    @State private var linkedInputTicket = UUID()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
@@ -215,17 +214,10 @@ struct RootView: View {
             callsOpen = false; savedLibraryOpen = false; pendingInvite = nil
             switchTab(.chats)
         }
-        .onReceive(session.$pendingLinkedRoomId) { pending in
-            guard let conversationId = pending else { return }
-            let delivery = UUID(), epoch = session.sessionGeneration
-            linkedInputTicket = delivery
-            openLinkedRoom(conversationId)
-            // Clear after @Published's outer setter, not reentrantly inside it.
-            Task { @MainActor in
-                guard linkedInputTicket == delivery, session.sessionGeneration == epoch,
-                      session.pendingLinkedRoomId == conversationId else { return }
-                session.pendingLinkedRoomId = nil
-            }
+        .onReceive(session.$pendingLinkedRoom) { pending in
+            guard let request = pending else { return }
+            openLinkedRoom(request.conversationId, jumpMessageId: request.jumpMessageId)
+            session.consumePendingLinkedRoom(request)
         }
         // R10-b - home-screen quick actions: cold launch replays the
         // pending route through this subscription (@Published replays the

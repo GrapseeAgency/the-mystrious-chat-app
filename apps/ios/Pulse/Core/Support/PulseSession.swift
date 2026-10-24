@@ -8,6 +8,12 @@ public enum PulseOutboxEvent: Sendable {
     case dropped(clientId: String, conversationId: String)
 }
 
+public struct PulseLinkedRoomRequest: Equatable, Sendable {
+    public let id: UUID
+    public let conversationId: String
+    public let jumpMessageId: String?
+}
+
 /// App-wide realtime session: owns the viewer-bound API client, the Socket.IO
 /// client, presence, typing state and the local store. View models subscribe
 /// to `signals` (UDF: session = transport, features = state).
@@ -59,12 +65,38 @@ public final class PulseSession: ObservableObject {
     /// call `consumePendingUserRoute()` when received.
     @Published public private(set) var pendingUserRoute: UserRoute?
     private var pendingUserDelivery = UUID()
-    /// R2-D - the linked-room bridge (conversation ID only): reminder-
-    /// notification taps (PulseReminderNotificationDelegate) and calls-
-    /// history rows set this; RootView consumes it and follows the exact
-    /// pulse://room path (detail fetch → Chats tab → requestOpenRoom).
-    /// Writable by the feature surfaces; RootView clears it on consumption.
-    @Published public var pendingLinkedRoomId: String?
+    /// Linked-room bridge shared by reminder anchors and room-only callers.
+    /// Root owns cancellable resolution; delivery IDs protect deferred cleanup
+    /// even when the next request targets the same conversation or message.
+    @Published public private(set) var pendingLinkedRoom: PulseLinkedRoomRequest?
+    /// Compatibility for room-only callers; every assignment gets its own delivery.
+    public var pendingLinkedRoomId: String? {
+        get { pendingLinkedRoom?.conversationId }
+        set {
+            if let newValue { requestLinkedRoom(newValue) }
+            else { pendingLinkedRoom = nil }
+        }
+    }
+
+    @discardableResult
+    public func requestLinkedRoom(_ conversationId: String, jumpMessageId: String? = nil) -> Bool {
+        let room = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !room.isEmpty else { return false }
+        let jump = jumpMessageId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        noteRoomNavigationIntent()
+        pendingLinkedRoom = PulseLinkedRoomRequest(id: UUID(), conversationId: room,
+            jumpMessageId: jump?.isEmpty == false ? jump : nil)
+        return true
+    }
+
+    @discardableResult
+    public func consumePendingLinkedRoom(_ request: PulseLinkedRoomRequest) -> Task<Void, Never> {
+        let epoch = generation
+        return Task { @MainActor [weak self] in
+            guard let self, generation == epoch, pendingLinkedRoom?.id == request.id else { return }
+            pendingLinkedRoom = nil
+        }
+    }
     /// Opened on session start (nil before onboarding) - @Published so late
     /// view models can rehydrate the offline cache the moment it exists.
     @Published public private(set) var store: PulseStore?

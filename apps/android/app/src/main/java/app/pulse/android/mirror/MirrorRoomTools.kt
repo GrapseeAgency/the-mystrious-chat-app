@@ -266,6 +266,7 @@ internal fun MirrorRemindersSheet(
     repository: PulseRepository,
     viewerId: String,
     conversationId: String,
+    onOpen: (MirrorReminderTarget) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -390,6 +391,7 @@ internal fun MirrorRemindersSheet(
                                 now = now,
                                 onResolve = { runAction(item.id, TOOL_OP_RESOLVE) },
                                 onDelete = { runAction(item.id, TOOL_OP_DELETE) },
+                                onOpen = onOpen,
                             )
                         }
                     }
@@ -435,6 +437,7 @@ internal fun MirrorRemindersSheet(
                                     now = now,
                                     onResolve = {},
                                     onDelete = {},
+                                    onOpen = onOpen,
                                 )
                             }
                         }
@@ -463,7 +466,9 @@ private fun ToolsReminderRow(
     now: ZonedDateTime,
     onResolve: () -> Unit,
     onDelete: () -> Unit,
+    onOpen: (MirrorReminderTarget) -> Unit,
 ) {
+    val target = MirrorReminderTarget.from(item.conversationId, item.messageId)
     val whenAt = toolsWhen(item.remindAt)
     Row(
         Modifier
@@ -486,7 +491,9 @@ private fun ToolsReminderRow(
                 modifier = Modifier.size(12.dp),
             )
         }
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).clickable(enabled = target != null,
+            onClickLabel = if (target?.messageId != null) "Open original message" else "Open chat",
+        ) { target?.let(onOpen) }) {
             Text(
                 item.conversation.name,
                 color = ToolsInk.Zinc200,
@@ -503,6 +510,8 @@ private fun ToolsReminderRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Text(if (target == null) "No linked chat" else if (target.messageId == null) "Open chat" else "Open original message",
+                color = ToolsInk.Zinc500, fontSize = 10.sp)
         }
         if (!fired) {
             // malformed stamp must never become a blank badge (R67 lesson)

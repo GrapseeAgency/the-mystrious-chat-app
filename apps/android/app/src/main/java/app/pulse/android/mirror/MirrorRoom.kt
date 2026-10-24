@@ -398,6 +398,8 @@ internal fun MirrorRoom(
     avatarPath: String? = null,
     /** R76 - web jumpToMessage (chat-room.tsx:1039): open anchored at one message. */
     jumpMessageId: String? = null,
+    jumpRequestId: String? = null,
+    onOpenReminder: (MirrorReminderTarget) -> Unit,
     onJumpConsumed: () -> Unit = {},
     onBack: () -> Unit,
     onAddPhrase: (String) -> Unit,
@@ -790,7 +792,7 @@ internal fun MirrorRoom(
     // anchor the room this way.
     var jumpFlashId by remember { mutableStateOf<String?>(null) }
     val jumpActive = jumpMessageId != null
-    LaunchedEffect(jumpMessageId, groupId) {
+    LaunchedEffect(jumpMessageId, jumpRequestId, groupId) {
         val target = jumpMessageId ?: return@LaunchedEffect
         historyRequestEpoch.incrementAndGet() // supersede an earlier manual page request
         loadingHistory = false
@@ -2638,7 +2640,13 @@ internal fun MirrorRoom(
 
     // R69 - the Conversation menu surfaces: the same real sheets the web opens
     if (remindersOpen) {
-        MirrorRemindersSheet(repository, viewerId, groupId) { remindersOpen = false }
+        MirrorRemindersSheet(repository, viewerId, groupId,
+            onOpen = { target ->
+                if (roomActionsLive.get() && repository.viewerId == viewerId) {
+                    remindersOpen = false
+                    onOpenReminder(target)
+                }
+            }, onDismiss = { remindersOpen = false })
     }
     if (scheduledOpen) {
         MirrorScheduledSheet(repository, groupId) { scheduledOpen = false; scheduledRefresh++ }

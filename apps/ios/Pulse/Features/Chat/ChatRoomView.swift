@@ -1210,19 +1210,18 @@ private struct RoomContent: View {
                     // jump target riding the established requestOpenRoom bridge
                     // (saved-library "open original" parity).
                     wave7.remindersOpen = false
-                    guard let messageId = item.messageId else { return }
-                    if item.conversationId == nil || item.conversationId == conversation.id {
-                        viewModel.jumpTo(messageId)
+                    guard let targetId = item.conversationId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !targetId.isEmpty else {
+                        session.toasts.show("This reminder has no linked chat.")
+                        return
+                    }
+                    let messageId = item.messageId?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if targetId == conversation.id {
+                        if let messageId, !messageId.isEmpty { viewModel.jumpTo(messageId) }
                     } else {
-                        let targetId = item.conversationId ?? ""
-                        let targetName = item.conversation?.name ?? "another chat"
-                        Task {
-                            if let conv = try? await session.api.conversationDetail(id: targetId, userId: session.api.userId) {
-                                session.requestOpenRoom(conv, jumpMessageId: messageId)
-                            } else {
-                                session.toasts.show("That reminder lives in \(targetName) - open it to see the message")
-                            }
-                        }
+                        // No feature-owned fetch/task: the root resolver captures
+                        // account/navigation generations and cancels superseded opens.
+                        session.requestLinkedRoom(targetId, jumpMessageId: messageId)
                     }
                 },
                 anchored: wave7.reminderAnchor,
