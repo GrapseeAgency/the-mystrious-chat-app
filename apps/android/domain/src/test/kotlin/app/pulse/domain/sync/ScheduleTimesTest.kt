@@ -2,8 +2,8 @@ package app.pulse.domain.sync
 
 import java.time.Instant
 import java.time.ZoneId
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
 
 class ScheduleTimesTest {
     @Test fun `snapshot presets use elapsed durations and the next local morning across DST`() {
