@@ -16,4 +16,6 @@ data class AttachmentDraft(
     val viewOnce: Boolean = false,
     val topicId: String? = null,
     val revision: Long = 0,
+    val replyToId: String? = null,
+    val anon: Boolean = false,
 )

@@ -20,6 +20,9 @@ internal object AttachmentValidation {
         require(bytes.isNotEmpty() && (draft.kind != "file" || bytes.size <= 10 * 1024 * 1024)) { "Attachment is empty or too large" }
         require(draft.kind != "audio" || draft.durationMs?.let { it in 1L..600_000L } == true) { "Voice note duration is invalid" }
         require(draft.caption.trim().length <= 2000) { "Caption exceeds the 2000-character message limit" }
+        require(draft.replyToId == null || (draft.replyToId.isNotBlank() && !draft.replyToId.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX))) {
+            "Wait for the original message to send before replying to it"
+        }
         require(!draft.viewOnce || draft.kind == "image") { "View-once is only supported for photos" }
         val name = draft.fileName?.trim()
         require(draft.kind != "file" || (!name.isNullOrEmpty() && name.length <= 120)) { "Document names must contain 1–120 characters" }

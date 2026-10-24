@@ -155,6 +155,9 @@ object MediaSupport {
             val job = currentCoroutineContext()
             job.ensureActive()
             val resolver = context.contentResolver
+            val name = queryDisplayName(context, uri).trim()
+            require(name.isNotEmpty() && name.length <= 120) { "Rename the document to 1–120 characters, then choose it again" }
+            val mime = documentMime(resolver.getType(uri), name)
             val bytes = resolver.openInputStream(uri)?.use { readBounded(it, 10 * 1024 * 1024) { job.ensureActive() } }
                 ?: throw IllegalStateException("Could not read the selected document")
             require(bytes.isNotEmpty()) { "The selected document is empty" }
@@ -162,8 +165,6 @@ object MediaSupport {
                 throw IllegalStateException("Documents are limited to 10 MB")
             }
             job.ensureActive()
-            val name = queryDisplayName(context, uri)
-            val mime = documentMime(resolver.getType(uri), name)
             val size = bytes.size.toLong()
             Result.success(Document(
                 dataUrl = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP),

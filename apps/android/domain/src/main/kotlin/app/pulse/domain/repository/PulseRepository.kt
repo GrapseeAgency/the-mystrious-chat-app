@@ -426,6 +426,10 @@ interface PulseRepository {
     suspend fun queueAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, topicId: String?, sessionKey: String): Result<Message> =
         Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
 
+    /** Queue a frozen prepared attachment without replacing a separate room composer draft. */
+    suspend fun queuePreparedAttachment(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Message> =
+        Result.failure(UnsupportedOperationException("Prepared attachment storage unavailable"))
+
     /** External share: journal raw image bytes without overwriting a room's unsent attachment draft. */
     suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> =
         Result.failure(UnsupportedOperationException("Shared image storage unavailable"))

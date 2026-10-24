@@ -1535,7 +1535,8 @@ class PulseRepositoryImpl constructor(
                 conversationId = conversationId, authorId = owner, authorName = owner, kind = kindOf(draft.kind),
                 body = caption, createdAt = java.time.Instant.now().toString(), durationMs = draft.durationMs,
                 fileName = draft.fileName.takeIf { draft.kind == "file" }, fileSize = draft.fileSize.takeIf { draft.kind == "file" },
-                viewOnce = viewOnce, topicId = topicId)
+                viewOnce = viewOnce, topicId = topicId, replyToId = draft.replyToId,
+                anon = draft.anon, anonAlias = if (draft.anon) app.pulse.protocol.IncognitoAlias.aliasFor(owner, conversationId) else null)
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = selectionId,
                 content = caption, kind = draft.kind, createdAt = temp.createdAt, uploadKey = record.fileKey))
@@ -1550,33 +1551,45 @@ class PulseRepositoryImpl constructor(
         Result.success(message)
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
-    override suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> = try {
+    override suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> =
+        queuePreparedAttachment(app.pulse.domain.model.AttachmentDraft(clientId, conversationId, "image", dataUrl), sessionKey)
+
+    override suspend fun queuePreparedAttachment(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Message> = try {
+        val clientId = draft.selectionId
+        val conversationId = draft.conversationId
         val owner = requireAttachmentSession(sessionKey)
         val files = attachmentFiles() // Capture the original account's directory before suspending.
-        val key = withContext(Dispatchers.IO) {
-            val validated = app.pulse.data.local.AttachmentValidation.validated(
-                app.pulse.domain.model.AttachmentDraft(clientId, conversationId, "image", dataUrl))
-            files.put(clientId, validated.dataUrl)
+        val validated = withContext(Dispatchers.IO) {
+            app.pulse.data.local.AttachmentValidation.validated(draft.copy(caption = draft.caption.trim()))
         }
+        val key = withContext(Dispatchers.IO) { files.put(clientId, validated.dataUrl) }
         val message = database.withTransaction {
             requireAttachmentSession(sessionKey)
             val existing = outboxDao.byClientId(clientId)
             val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
             if (existing != null) {
-                check(existing.conversationId == conversationId && existing.kind == "image" &&
+                check(existing.conversationId == conversationId && existing.kind == validated.kind && existing.content == validated.caption &&
                     echo != null && echo.authorId == owner && echo.conversationId == conversationId &&
-                    (existing.uploadKey == null || existing.uploadKey == key)) { "This share belongs to another queued operation" }
-                check(existing.failureReason == null) { "This photo is already in the chat and needs attention there" }
+                    echo.topicId == validated.topicId && echo.replyToId == validated.replyToId &&
+                    echo.viewOnce == validated.viewOnce && echo.toDomain().anon == validated.anon &&
+                    echo.fileName == validated.fileName.takeIf { validated.kind == "file" } &&
+                    echo.fileSize == validated.fileSize.takeIf { validated.kind == "file" } && echo.durationMs == validated.durationMs &&
+                    (existing.uploadKey == null || existing.uploadKey == key)) { "This attachment was already queued with different details. Check the chat." }
+                check(existing.failureReason == null) { "This attachment is already in the chat and needs attention there" }
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 requireAttachmentSession(sessionKey)
                 return@withTransaction checkNotNull(echo).toDomain()
             }
             val temp = Message(id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
-                conversationId = conversationId, authorId = owner, authorName = owner, kind = Message.Kind.IMAGE,
-                body = "", createdAt = java.time.Instant.now().toString())
+                conversationId = conversationId, authorId = owner, authorName = owner, kind = kindOf(validated.kind),
+                body = validated.caption, createdAt = java.time.Instant.now().toString(),
+                fileName = validated.fileName.takeIf { validated.kind == "file" },
+                fileSize = validated.fileSize.takeIf { validated.kind == "file" }, durationMs = validated.durationMs,
+                topicId = validated.topicId, replyToId = validated.replyToId, viewOnce = validated.viewOnce,
+                anon = validated.anon, anonAlias = if (validated.anon) app.pulse.protocol.IncognitoAlias.aliasFor(owner, conversationId) else null)
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = clientId,
-                content = "", kind = "image", createdAt = temp.createdAt, uploadKey = key))
+                content = validated.caption, kind = validated.kind, createdAt = temp.createdAt, uploadKey = key))
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             requireAttachmentSession(sessionKey)
             temp
@@ -1585,7 +1598,7 @@ class PulseRepositoryImpl constructor(
         eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
         scope.launch {
             try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
-                Log.w(TAG, "Shared image remains queued", error); scheduleSelfHeal()
+                Log.w(TAG, "Prepared attachment remains queued", error); scheduleSelfHeal()
             }
         }
         Result.success(message)

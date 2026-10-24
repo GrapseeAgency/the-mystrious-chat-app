@@ -98,4 +98,31 @@ final class ImagePreparationTests: XCTestCase {
         do { _ = try await read.value; XCTFail("Cancelled read should not return bytes") }
         catch is CancellationError { }
     }
+    func testReplacingPreparedRoomMediaPreservesLiveCaptionAndImagePrivacy() throws {
+        let session = PulseSession()
+        let room = try JSONDecoder().decode(WireConversationSummary.self,
+            from: Data(#"{"id":"media-room","isGroup":false,"members":[]}"#.utf8))
+        let model = RoomViewModel(conversation: room, session: session, beginAutomaticWork: false)
+        let first = RoomViewModel.StagedMedia(kind: .image, dataUrl: "first", fileName: nil,
+            fileSize: 1, previewURL: nil, viewOnce: true)
+        model.installPreparedAttachment(first)
+        model.caption = "caption edited while replacement loads"
+        model.installPreparedAttachment(.init(kind: .image, dataUrl: "replacement", fileName: nil,
+            fileSize: 2, previewURL: nil, viewOnce: false))
+        XCTAssertEqual(model.staged?.dataUrl, "replacement")
+        XCTAssertEqual(model.staged?.viewOnce, true)
+        XCTAssertEqual(model.caption, "caption edited while replacement loads")
+        model.setStagedViewOnce(false)
+        model.installPreparedAttachment(.init(kind: .image, dataUrl: "third", fileName: nil,
+            fileSize: 3, previewURL: nil, viewOnce: false))
+        XCTAssertEqual(model.staged?.viewOnce, false)
+        model.installPreparedAttachment(.init(kind: .file, dataUrl: "document", fileName: "notes.txt",
+            fileSize: 4, previewURL: nil, viewOnce: false))
+        XCTAssertEqual(model.caption, "caption edited while replacement loads")
+        XCTAssertEqual(model.staged?.viewOnce, false)
+        model.cancelStaged()
+        XCTAssertNil(model.staged)
+        XCTAssertEqual(model.caption, "")
+    }
+
 }

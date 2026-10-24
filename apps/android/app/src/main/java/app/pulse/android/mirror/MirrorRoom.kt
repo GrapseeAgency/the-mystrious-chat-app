@@ -6,8 +6,6 @@ import kotlinx.coroutines.isActive
 
 import app.pulse.domain.sync.reconcileMessageSelection
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
@@ -135,7 +133,6 @@ import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.EffectPayloadDto
 import app.pulse.protocol.VoicePeerDto
 import app.pulse.protocol.WirePulsePrefs
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -361,6 +358,19 @@ internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
     }
 }
 
+internal data class MirrorMediaSelection(
+    val draft: app.pulse.domain.model.AttachmentDraft,
+    val sessionKey: String,
+    val draftRevision: Long? = null,
+    val submitted: app.pulse.domain.model.AttachmentDraft? = null,
+) {
+    fun freeze(caption: String): MirrorMediaSelection =
+        if (submitted != null) this else copy(submitted = draft.copy(caption = caption.trim()))
+
+    fun withViewOnce(enabled: Boolean): MirrorMediaSelection =
+        if (submitted != null || draft.kind != "image") this else copy(draft = draft.copy(viewOnce = enabled))
+}
+
 /**
  * R63 - the chat room as a 1:1 conversion of the web chat-room.tsx render:
  * art-scene canvas, 56dp header (back / 40dp avatar / title+subtitle / three
@@ -463,8 +473,14 @@ internal fun MirrorRoom(
     var pollOpen by remember { mutableStateOf(false) }
     var stickerOpen by remember { mutableStateOf(false) }
     var locationOpen by remember { mutableStateOf(false) }
-    var captionFor by remember { mutableStateOf<Pair<String, String>?>(null) } // dataUrl, fileName
-    var uploadingImage by remember { mutableStateOf(false) }
+    val mediaSession = repository.attachmentSessionKey()
+    var captionFor by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<MirrorMediaSelection?>(null) }
+    var pendingPhoto by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<MirrorMediaSelection?>(null) }
+    var pendingDocument by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<MirrorMediaSelection?>(null) }
+    var uploadingImage by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf(false) }
+    var preparingAttachment by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf(false) }
+    var attachmentJob by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    DisposableEffect(repository, groupId, viewerId, mediaSession) { onDispose { attachmentJob?.cancel() } }
     // R73 - slow mode: server 429 retryAfter drives the countdown chip
     var slowModeUntil by remember { mutableStateOf(0L) }
     var slowModeSecondsLeft by remember { mutableStateOf(0) }
@@ -1385,55 +1401,84 @@ internal fun MirrorRoom(
         onDispose { stopTyping() }
     }
 
-    // R73 - photo pipeline in the room: pick - STAGED caption sheet (web
-    // caption-sheet flow) - upload - imagePath row with the caption body.
+    // Mounted room media uses the same bounded preparation and private-file
+    // journal as the other native entry points. Picker intent owns the account,
+    // topic, reply and anonymity; callback time must not choose a new owner.
+    fun ownsMedia(selection: MirrorMediaSelection): Boolean = roomActionsLive.get() &&
+        selection.sessionKey == mediaSession && repository.attachmentSessionKey() == selection.sessionKey
+    fun newMediaSelection(kind: String): MirrorMediaSelection? {
+        if (uploadingImage || preparingAttachment || pendingPhoto != null || pendingDocument != null || captionFor != null) return null
+        if (broadcastLocked || editing != null || recording || voiceBusy) {
+            sendError = "Finish the current action before adding an attachment."
+            return null
+        }
+        val epoch = mediaSession ?: return null
+        if (repository.attachmentSessionKey() != epoch) return null
+        if (replyTo?.id?.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) == true) {
+            sendError = "Wait for the original message to send before replying to it."
+            return null
+        }
+        return MirrorMediaSelection(app.pulse.domain.model.AttachmentDraft(
+            selectionId = java.util.UUID.randomUUID().toString(), conversationId = groupId, kind = kind, dataUrl = "",
+            caption = if (kind == "file") draftValue.text else "", topicId = activeTopicId,
+            replyToId = replyTo?.id, anon = isGroup && anonNext), epoch,
+            draftRevision = if (kind == "file") composerDraft.revision else null)
+    }
+    fun prepareMedia(uri: Uri?, selection: MirrorMediaSelection?) {
+        if (uri == null) return
+        if (uri.scheme != "content") {
+            sendError = "Choose an attachment through a content provider in the system picker."
+            return
+        }
+        if (selection == null || !ownsMedia(selection)) {
+            sendError = "Selection was interrupted. Choose the attachment again in this account."
+            return
+        }
+        preparingAttachment = true
+        attachmentJob = historyScope.launch {
+            try {
+                val prepared = if (selection.draft.kind == "image") {
+                    selection.draft.copy(dataUrl = app.pulse.feature.chat.MediaSupport.imageToDataUrl(context, uri).getOrThrow())
+                } else {
+                    val document = app.pulse.feature.chat.MediaSupport.documentToDataUrl(context, uri).getOrThrow()
+                    selection.draft.copy(dataUrl = document.dataUrl, fileName = document.fileName, fileSize = document.sizeBytes)
+                }
+                ensureActive()
+                if (ownsMedia(selection)) { captionFor = selection.copy(draft = prepared); sendError = null }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (ownsMedia(selection)) sendError = failure.message ?: "Could not prepare the attachment. Your text is kept."
+            } finally { if (ownsMedia(selection)) preparingAttachment = false }
+        }
+    }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val dataUrl = mirrorUriToDataUrl(context, uri)
-                if (dataUrl != null) {
-                    CoroutineScope(Dispatchers.Main).launch { captionFor = dataUrl to "" }
-                }
-            }
-        }
+        val selection = pendingPhoto; pendingPhoto = null
+        prepareMedia(uri, selection)
     }
-    fun sendStagedImage(dataUrl: String, caption: String) {
-        if (viewerId.isBlank()) return
-        uploadingImage = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val outcome = runCatching {
-                val path = repository.uploadMedia(dataUrl).getOrThrow()
-                repository.sendMediaMessage(groupId, caption, imagePath = path).getOrThrow()
-            }
-            CoroutineScope(Dispatchers.Main).launch {
-                uploadingImage = false
-                outcome.onSuccess { captionFor = null }.onFailure { sendError = "Photo failed to send" }
-            }
-        }
-    }
-    // R64 - attachments tray document pick - upload - kind "file" row; the
-    // composer draft rides as the caption when present (web R40 flow).
     val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            val caption = draftValue.text.trim()
-            val revision = composerDraft.revision
-            val topic = activeTopicId
-            historyScope.launch {
-                try {
-                    val doc = kotlinx.coroutines.withContext(Dispatchers.IO) { mirrorUriToDocumentDataUrl(context, uri) }
-                        ?: error("Could not open document")
-                    val path = repository.uploadMedia(doc.first).getOrThrow()
-                    ensureActive()
-                    repository.sendMediaMessage(groupId, caption.take(2000), filePath = path,
-                        fileName = doc.second, kind = "file", topicId = topic).getOrThrow()
-                    ensureActive()
-                    if (roomActionsLive.get()) composerDraft.clearIfUnchanged(revision)
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    if (roomActionsLive.get()) sendError = "Document could not be sent. Your current text is kept."
+        val selection = pendingDocument; pendingDocument = null
+        prepareMedia(uri, selection)
+    }
+    fun sendStagedAttachment(selection: MirrorMediaSelection, caption: String) {
+        if (uploadingImage || !ownsMedia(selection)) return
+        // Freeze on the first Send. A retry after an ambiguous local result must
+        // not silently change the envelope under the same client ID.
+        val frozen = selection.freeze(caption)
+        val submitted = checkNotNull(frozen.submitted)
+        captionFor = frozen
+        uploadingImage = true
+        attachmentJob = historyScope.launch {
+            try {
+                if (!ownsMedia(selection)) return@launch
+                repository.queuePreparedAttachment(submitted, selection.sessionKey).getOrThrow()
+                ensureActive()
+                if (ownsMedia(selection) && captionFor?.draft?.selectionId == submitted.selectionId) {
+                    selection.draftRevision?.let { composerDraft.clearIfUnchanged(it) }
+                    if (replyTo?.id == submitted.replyToId) replyTo = null
+                    captionFor = null; sendError = null
                 }
-            }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (ownsMedia(selection)) sendError = failure.message ?: "Could not confirm the saved attachment. Retry uses the same operation."
+            } finally { if (ownsMedia(selection)) uploadingImage = false }
         }
     }
 
@@ -2183,7 +2228,11 @@ internal fun MirrorRoom(
                             .size(36.dp)
                             .clip(CircleShape)
                             .clickable {
-                                pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                newMediaSelection("image")?.let { selection ->
+                                    pendingPhoto = selection
+                                    try { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                                    catch (_: Exception) { pendingPhoto = null; sendError = "Photo picker is unavailable." }
+                                }
                             },
                         contentAlignment = Alignment.Center,
                     ) {
@@ -2217,7 +2266,7 @@ internal fun MirrorRoom(
                         }),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (sending || voiceBusy || uploadingImage) {
+                    if (sending || voiceBusy || uploadingImage || preparingAttachment) {
                         MirrorLucideIcon("LLoaderCircle", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
                     } else if (hasText) {
                         MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
@@ -2266,7 +2315,11 @@ internal fun MirrorRoom(
                     listOf(
                         MirrorTrayTileSpec("LFileText", "Document", "Share a PDF, TXT, CSV or ZIP", TrayToneOrange) {
                             trayOpen = false
-                            pickDocument.launch("*/*")
+                            newMediaSelection("file")?.let { selection ->
+                                pendingDocument = selection
+                                try { pickDocument.launch("*/*") }
+                                catch (_: Exception) { pendingDocument = null; sendError = "Document picker is unavailable." }
+                            }
                         },
                         MirrorTrayTileSpec("LMessageSquarePlus", "Quick phrase", "Save lines you send often", TrayToneSky) {
                             trayOpen = false
@@ -2800,10 +2853,13 @@ internal fun MirrorRoom(
     }
     captionFor?.let { staged ->
         MirrorCaptionSheet(
-            imagePath = staged.first,
+            selection = staged,
+            destination = if (isGroup) "$title · ${staged.draft.topicId?.let { id -> topics.firstOrNull { it.id == id }?.name ?: "Original topic" } ?: "General"}" else title,
             busy = uploadingImage,
+            error = sendError,
+            onViewOnce = { value -> if (!uploadingImage && staged.submitted == null) captionFor = staged.withViewOnce(value) },
             onDismiss = { if (!uploadingImage) captionFor = null },
-            onSend = { caption -> sendStagedImage(staged.first, caption) },
+            onSend = { caption -> sendStagedAttachment(staged, caption) },
         )
     }
 
@@ -4240,53 +4296,6 @@ private fun AnnotatedString.Builder.appendPlainWithLinks(text: String, mine: Boo
 }
 
 /** Pick - downscale (max 1280px) - JPEG 82 - data URL (web compressImageToDataUrl parity). */
-private suspend fun mirrorUriToDataUrl(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
-    runCatching {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        var sample = 1
-        val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
-        while (maxSide / (sample * 2) >= 1280) sample *= 2
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bitmap = context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, opts)
-        } ?: return@runCatching null
-        val scaled = if (maxOf(bitmap.width, bitmap.height) > 1280) {
-            val scale = 1280f / maxOf(bitmap.width, bitmap.height)
-            Bitmap.createScaledBitmap(
-                bitmap,
-                (bitmap.width * scale).toInt().coerceAtLeast(1),
-                (bitmap.height * scale).toInt().coerceAtLeast(1),
-                true,
-            )
-        } else {
-            bitmap
-        }
-        val bytes = ByteArrayOutputStream().use { out ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, 82, out)
-            out.toByteArray()
-        }
-        "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-    }.getOrNull()
-}
-
-/**
- * R64 - document pick - base64 data URL + display name (attachments tray
- * Document tile). Reads ANY file the picker returns; the upload route is
- * mime-agnostic so PDF/TXT/CSV/ZIP all ride the same POST /api/uploads.
- */
-private suspend fun mirrorUriToDocumentDataUrl(context: Context, uri: Uri): Pair<String, String>? =
-    withContext(Dispatchers.IO) {
-        runCatching {
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: return@runCatching null
-            if (bytes.isEmpty() || bytes.size > 12 * 1024 * 1024) return@runCatching null
-            val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-            val name = uri.lastPathSegment?.substringAfterLast('/')?.take(120) ?: "document"
-            "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP) to name
-        }.getOrNull()
-    }
-
 /** HH:mm cluster stamp (en-US h23 parity - "08:16"). */
 internal fun MirrorRoomTimeLabel(iso: String): String {
     val parsed = MirrorRoomInstant(iso) ?: return ""
@@ -4837,12 +4846,22 @@ private fun MirrorComposerBar(
 
 /** R73 - the photo caption sheet (web caption-sheet chat-room.tsx:5868-5945). */
 @Composable
-private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -> Unit, onSend: (String) -> Unit) {
-    var caption by remember { mutableStateOf("") }
+private fun MirrorCaptionSheet(selection: MirrorMediaSelection, destination: String, busy: Boolean, error: String?, onViewOnce: (Boolean) -> Unit, onDismiss: () -> Unit, onSend: (String) -> Unit) {
+    val draft = selection.draft
+    val locked = selection.submitted != null
+    var caption by remember(draft.selectionId) { mutableStateOf(draft.caption) }
+    val preview = remember(draft.selectionId) {
+        if (draft.kind == "image") runCatching { Base64.decode(draft.dataUrl.substringAfter(','), Base64.NO_WRAP) }.getOrNull() else null
+    }
     MirrorSheet(title = "Add a caption", onDismiss = onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            AsyncImage(
-                model = imagePath,
+            Text(destination, color = MirrorArt.Dim, fontSize = 12.sp)
+            if (draft.replyToId != null) Text("Replying to the selected message", color = MirrorArt.Dim, fontSize = 12.sp)
+            if (draft.kind == "file") {
+                Text(draft.fileName ?: "Document", color = MirrorArt.Text, fontWeight = FontWeight.SemiBold)
+                Text("${draft.fileSize ?: 0} bytes · review before sending", color = MirrorArt.Dim, fontSize = 12.sp)
+            } else AsyncImage(
+                model = preview,
                 contentDescription = "Staged photo",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -4850,6 +4869,16 @@ private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -
                     .heightIn(max = 220.dp)
                     .clip(RoundedCornerShape(14.dp)),
             )
+            if (draft.kind == "image") {
+                Row(Modifier.fillMaxWidth().clickable(enabled = !busy && !locked) { onViewOnce(!draft.viewOnce) }.padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("View once", color = MirrorArt.Text, fontSize = 13.sp)
+                    Text(if (draft.viewOnce) "On" else "Off", color = MirrorArt.Accent, fontSize = 13.sp)
+                }
+            }
+            if (draft.anon) Text("Sending anonymously", color = MirrorArt.Accent2, fontSize = 12.sp)
+            if (locked) Text("Send was attempted. This attachment may already be queued; retries use the same operation.", color = MirrorArt.Dim, fontSize = 12.sp)
+            error?.let { Text(it, color = MirrorArt.Accent2, fontSize = 12.sp) }
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -4864,15 +4893,16 @@ private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -
                     }
                     BasicTextField(
                         value = caption,
-                        onValueChange = { if (it.length <= 500) caption = it },
+                        onValueChange = { if (!busy && !locked) caption = it },
+                        readOnly = busy || locked,
                         textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                         cursorBrush = SolidColor(MirrorArt.Accent),
                         maxLines = 2,
                     )
                 }
-                if (caption.length > 450) {
+                if (caption.length > 1900) {
                     Text(
-                        "${500 - caption.length}",
+                        "${2000 - caption.trim().length}",
                         color = MirrorArt.Accent2,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -4886,17 +4916,17 @@ private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -
                         .clickable(enabled = !busy, onClick = onDismiss)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    Text("Cancel", color = MirrorArt.Dim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (locked) "Close" else "Cancel", color = MirrorArt.Dim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Box(
                     Modifier
                         .clip(CircleShape)
                         .background(MirrorArt.Accent)
-                        .clickable(enabled = !busy, onClick = { onSend(caption.trim()) })
+                        .clickable(enabled = !busy && caption.trim().length <= 2000, onClick = { onSend(caption.trim()) })
                         .padding(horizontal = 18.dp, vertical = 8.dp),
                 ) {
                     Text(
-                        if (busy) "Sending..." else "Send",
+                        if (busy) "Saving..." else if (locked) "Retry" else "Send",
                         color = Color(0xFF20150C),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,

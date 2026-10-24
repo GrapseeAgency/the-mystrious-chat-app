@@ -4014,7 +4014,7 @@ final class RoomViewModel: ObservableObject {
             && !isRecording
     }
 
-    init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil) {
+    init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil, beginAutomaticWork: Bool = true) {
         self.conversationId = conversation.id
         self.readSessionGeneration = session.sessionGeneration
         self.draftJournal = session.store.map { PulseDraftJournal(store: $0, conversationId: conversation.id) }
@@ -4035,16 +4035,18 @@ final class RoomViewModel: ObservableObject {
                 memberWatermarks[member.id] = PulseFormat.date(stamp)
             }
         }
-        observe(session: session)
-        seedLocalState(conversation: conversation, session: session)
-        loadPins(session: session)
-        startTopicTicker()
-        loadTopics(session: session)
-        // REM-B F-MS-18 - pending scheduled count for the composer banner.
-        loadScheduled(session: session)
-        // R30-b - upcoming reminders for the header badge (one quiet GET).
-        loadUpcomingReminderCount(session: session)
-        requestRefresh(session: session)
+        if beginAutomaticWork {
+            observe(session: session)
+            seedLocalState(conversation: conversation, session: session)
+            loadPins(session: session)
+            startTopicTicker()
+            loadTopics(session: session)
+            // REM-B F-MS-18 - pending scheduled count for the composer banner.
+            loadScheduled(session: session)
+            // R30-b - upcoming reminders for the header badge (one quiet GET).
+            loadUpcomingReminderCount(session: session)
+            requestRefresh(session: session)
+        }
     }
 
     /// Wave 2 - a recording/playback must never outlive the room. Called
@@ -5413,7 +5415,7 @@ final class RoomViewModel: ObservableObject {
     private func stagePreparedImage(_ jpeg: Data) {
         cancelPhotoImport()
         guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
-        staged = StagedMedia(
+        installPreparedAttachment(StagedMedia(
             kind: .image,
             dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),
             fileName: nil,
@@ -5421,8 +5423,7 @@ final class RoomViewModel: ObservableObject {
             previewURL: nil,
             viewOnce: false,
             previewData: jpeg,
-        )
-        caption = ""
+        ))
     }
 
     func stageDocument(url: URL) {
@@ -5431,6 +5432,10 @@ final class RoomViewModel: ObservableObject {
         guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
         guard let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) else {
             errorText = "That file type isn't supported (pdf, zip, txt, csv)"; return
+        }
+        let fileName = url.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fileName.isEmpty, fileName.utf16.count <= 120 else {
+            errorText = "Rename the document to 1–120 characters, then choose it again. Any previous attachment is kept."; return
         }
         let ticket = photoImportGeneration, epoch = session.sessionGeneration
         uploading = true
@@ -5448,15 +5453,25 @@ final class RoomViewModel: ObservableObject {
             do {
                 let (dataUrl, size) = try await withTaskCancellationHandler(operation: { try await prepared.value }, onCancel: { prepared.cancel() })
                 guard !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch else { return }
-                staged = StagedMedia(kind: .file, dataUrl: dataUrl, fileName: url.lastPathComponent,
-                    fileSize: size, previewURL: nil, viewOnce: false)
-                caption = ""
+                installPreparedAttachment(StagedMedia(kind: .file, dataUrl: dataUrl, fileName: fileName,
+                    fileSize: size, previewURL: nil, viewOnce: false))
             } catch {
                 if !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch {
                     errorText = "Couldn't read that document (10 MB maximum). Any previous attachment is kept."
                 }
             }
         }
+    }
+
+    /// Prepared bytes have passed the caller's session/generation checks.
+    /// Replacing media is not an instruction to erase the live caption or to
+    /// turn a view-once image into a permanent image.
+    func installPreparedAttachment(_ prepared: StagedMedia) {
+        guard !isRecording, staged?.kind != .audio else { return }
+        let once = prepared.kind == .image && (prepared.viewOnce || (staged?.kind == .image && staged?.viewOnce == true))
+        staged = StagedMedia(kind: prepared.kind, dataUrl: prepared.dataUrl, fileName: prepared.fileName,
+            fileSize: prepared.fileSize, previewURL: prepared.previewURL, viewOnce: once,
+            durationMs: prepared.durationMs, previewData: prepared.previewData)
     }
 
     /// Wave 2 view-once - flips the staged card's burn flag (image sends).
