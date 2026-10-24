@@ -5366,9 +5366,9 @@ final class RoomViewModel: ObservableObject {
                 if photoImportGeneration == ticket { uploading = false; photoImportTask = nil }
             }
             do {
-                guard let data = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadCorruptFile) }
+                guard let photo = try await item.loadTransferable(type: PulsePickedPhoto.self) else { throw CocoaError(.fileReadCorruptFile) }
                 guard !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch else { return }
-                stageImage(data)
+                stagePreparedImage(photo.jpeg)
             } catch {
                 if !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch {
                     errorText = "Couldn't read the selected photo. Any previous attachment is kept."
@@ -5384,6 +5384,12 @@ final class RoomViewModel: ObservableObject {
             errorText = "Couldn't read that image"
             return
         }
+        stagePreparedImage(jpeg)
+    }
+
+    private func stagePreparedImage(_ jpeg: Data) {
+        cancelPhotoImport()
+        guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
         staged = StagedMedia(
             kind: .image,
             dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),

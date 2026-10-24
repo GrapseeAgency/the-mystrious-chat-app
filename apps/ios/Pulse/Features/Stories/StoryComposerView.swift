@@ -261,11 +261,11 @@ struct StoryComposerView: View {
     /// Pick → re-encode (≤1280px JPEG q0.82 - the exact wire policy) →
     /// POST /api/uploads → imagePath. Failures are visible, never silent.
     private func pickAndUpload(_ item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              let jpeg = PulseMediaSupport.downscaledJPEGData(from: data) else {
+        guard let photo = try? await item.loadTransferable(type: PulsePickedPhoto.self) else {
             cs = cs.withError("Couldn't read that image - try another one")
             return
         }
+        let jpeg = photo.jpeg
         localPreview = UIImage(data: jpeg)
         cs = cs.withUploading(true)
         do {

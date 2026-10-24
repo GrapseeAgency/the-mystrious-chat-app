@@ -3,8 +3,6 @@ package app.pulse.feature.chat
 import app.pulse.ui.PulseIcons
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
@@ -89,50 +87,8 @@ object MediaSupport {
      * inSampleSize (memory-safe), then a bounds-level ≤1280px scale, then
      * JPEG q0.82 - exactly the spec §1.1 upload policy.
      */
-    suspend fun imageToDataUrl(context: Context, uri: Uri): Result<String> = withContext(Dispatchers.IO) {
-        runCatching {
-            val resolver = context.contentResolver
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                ?: throw IllegalStateException("Could not read the selected image")
-            check(bounds.outWidth > 0 && bounds.outHeight > 0, lazyMessage = { "Not a readable image" })
-
-            var sample = 1
-            while (bounds.outWidth / (sample * 2) >= PulseMedia.MAX_IMAGE_DIMENSION_PX ||
-                bounds.outHeight / (sample * 2) >= PulseMedia.MAX_IMAGE_DIMENSION_PX
-            ) {
-                sample *= 2
-            }
-            val options = BitmapFactory.Options().apply { inSampleSize = sample }
-            val decoded = resolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, options)
-            } ?: throw IllegalStateException("Could not decode the selected image")
-
-            val bitmap = if (decoded.width > PulseMedia.MAX_IMAGE_DIMENSION_PX || decoded.height > PulseMedia.MAX_IMAGE_DIMENSION_PX) {
-                val scale = minOf(
-                    PulseMedia.MAX_IMAGE_DIMENSION_PX.toFloat() / decoded.width,
-                    PulseMedia.MAX_IMAGE_DIMENSION_PX.toFloat() / decoded.height,
-                )
-                val scaled = Bitmap.createScaledBitmap(
-                    decoded,
-                    (decoded.width * scale).toInt().coerceAtLeast(1),
-                    (decoded.height * scale).toInt().coerceAtLeast(1),
-                    true,
-                )
-                if (scaled !== decoded) decoded.recycle()
-                scaled
-            } else {
-                decoded
-            }
-
-            val bytes = ByteArrayOutputStream().use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, PulseMedia.IMAGE_JPEG_QUALITY, out)
-                out.toByteArray()
-            }
-            bitmap.recycle()
-            "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-        }
-    }
+    suspend fun imageToDataUrl(context: Context, uri: Uri): Result<String> =
+        app.pulse.ui.media.ImagePreparation.imageToDataUrl(context, uri)
 
     /**
      * D30 camera capture - a fresh JPEG file under cacheDir/camera plus its

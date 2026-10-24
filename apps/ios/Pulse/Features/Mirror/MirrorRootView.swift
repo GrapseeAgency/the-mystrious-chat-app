@@ -2266,11 +2266,10 @@ struct MirrorRoomView: View {
         let anonymous = row.isGroup && anonNext
         roomOperations.run(key: "photo-import", operation: {
             do {
-                guard let raw = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadCorruptFile) }
+                guard let photo = try await item.loadTransferable(type: PulsePickedPhoto.self) else { throw CocoaError(.fileReadCorruptFile) }
                 try Task.checkCancellation()
                 guard generation == session.sessionGeneration else { return false }
-                guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: raw) else { throw CocoaError(.fileReadCorruptFile) }
-                prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),
+                prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: photo.jpeg),
                     envelope: PulseOutboxForward(kind: "image", anon: anonymous))
                 return true
             } catch {

@@ -2,10 +2,7 @@ package app.pulse.feature.stories
 
 import app.pulse.ui.PulseIcons
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,10 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.media.PulseMedia
 import coil.compose.AsyncImage
-import java.io.ByteArrayOutputStream
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private val Zinc700 = Color(0xFF3F3F46)
 private val Zinc800 = Color(0xFF27272A)
@@ -69,55 +63,12 @@ private val Rose500 = Color(0xFFEF4444)
 
 /**
  * Image → downscaled JPEG data-URL - the EXACT ≤1280px q0.82 wire policy.
- * feature-chat's MediaSupport is module-internal, so the pipeline is mirrored
- * here with the SAME :core constants ([PulseMedia.MAX_IMAGE_DIMENSION_PX] +
- * [PulseMedia.IMAGE_JPEG_QUALITY]) - one source of truth for the policy.
+ * Delegates to the same bounded, orientation-aware preparation as chat and camera.
+ * Policy constants remain in [PulseMedia]; decoder ownership is shared in :ui.
  */
 object StoryMedia {
-    suspend fun imageToDataUrl(context: Context, uri: Uri): Result<String> = withContext(Dispatchers.IO) {
-        runCatching {
-            val resolver = context.contentResolver
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                ?: throw IllegalStateException("Could not read the selected image")
-            check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Not a readable image" }
-
-            var sample = 1
-            while (bounds.outWidth / (sample * 2) >= PulseMedia.MAX_IMAGE_DIMENSION_PX ||
-                bounds.outHeight / (sample * 2) >= PulseMedia.MAX_IMAGE_DIMENSION_PX
-            ) {
-                sample *= 2
-            }
-            val options = BitmapFactory.Options().apply { inSampleSize = sample }
-            val decoded = resolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, options)
-            } ?: throw IllegalStateException("Could not decode the selected image")
-
-            val bitmap = if (decoded.width > PulseMedia.MAX_IMAGE_DIMENSION_PX || decoded.height > PulseMedia.MAX_IMAGE_DIMENSION_PX) {
-                val scale = minOf(
-                    PulseMedia.MAX_IMAGE_DIMENSION_PX.toFloat() / decoded.width,
-                    PulseMedia.MAX_IMAGE_DIMENSION_PX.toFloat() / decoded.height,
-                )
-                val scaled = Bitmap.createScaledBitmap(
-                    decoded,
-                    (decoded.width * scale).toInt().coerceAtLeast(1),
-                    (decoded.height * scale).toInt().coerceAtLeast(1),
-                    true,
-                )
-                if (scaled !== decoded) decoded.recycle()
-                scaled
-            } else {
-                decoded
-            }
-
-            val bytes = ByteArrayOutputStream().use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, PulseMedia.IMAGE_JPEG_QUALITY, out)
-                out.toByteArray()
-            }
-            bitmap.recycle()
-            "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-        }
-    }
+    suspend fun imageToDataUrl(context: Context, uri: Uri): Result<String> =
+        app.pulse.ui.media.ImagePreparation.imageToDataUrl(context, uri)
 }
 
 /**
