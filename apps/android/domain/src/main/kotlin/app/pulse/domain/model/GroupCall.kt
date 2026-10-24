@@ -48,6 +48,7 @@ data class GroupCallSignalData(
     val title: String? = null,
     val reason: String? = null,
     val max: Int? = null,
+    val expiresAt: String? = null,
     val callerName: String? = null,
     val callerColor: String? = null,
     val callerAvatar: String? = null,

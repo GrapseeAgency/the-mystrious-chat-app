@@ -3,6 +3,8 @@ package app.pulse.feature.calls
 import app.pulse.domain.model.GroupCallSignalData
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GroupCallSignalOwnershipTest {
@@ -25,5 +27,14 @@ class GroupCallSignalOwnershipTest {
         assertFalse(matchesGroupPeerSignal(signal.copy(callId = "old"), "room", "current", "me", roster))
         assertFalse(matchesGroupPeerSignal(signal, "room", "current", "me", listOf("me")))
         assertFalse(matchesGroupPeerSignal(signal.copy(to = ""), "room", "current", "", roster))
+    }
+    @Test fun `delayed rings retain their deadline and missing or expired identities are refused`() {
+        val now = 2_000_000_000_000L
+        val ring = signal.copy(event = "gcall:ring", expiresAt = java.time.Instant.ofEpochMilli(now + 5_000).toString())
+        assertEquals(now + 5_000, groupRingDeadline(ring, now))
+        assertNull(groupRingDeadline(ring, now + 5_000))
+        for (invalid in listOf(ring.copy(callId = ""), ring.copy(conversationId = ""), ring.copy(from = ""),
+            ring.copy(expiresAt = null), ring.copy(expiresAt = "bad"))) assertNull(groupRingDeadline(invalid, now))
+        assertEquals(now + 45_000, groupRingDeadline(ring.copy(expiresAt = java.time.Instant.ofEpochMilli(now + 90_000).toString()), now))
     }
 }

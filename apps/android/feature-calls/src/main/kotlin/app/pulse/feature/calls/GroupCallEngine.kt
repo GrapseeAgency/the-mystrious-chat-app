@@ -89,7 +89,8 @@ class GroupCallEngine @Inject constructor(
         val caller: GroupCallMember,
         val kind: CallKind,
         val title: String,
-        val receivedAtMs: Long = System.currentTimeMillis(),
+        val callId: String,
+        val expiresAtMs: Long,
     )
 
     /** Immutable UI snapshot - the single thing the group call overlay renders. */
@@ -308,7 +309,7 @@ class GroupCallEngine @Inject constructor(
     }
 
     private fun tick() {
-        if (pendingRing?.let { System.currentTimeMillis() - it.receivedAtMs >= 45_000 } == true) dismissRing()
+        if (pendingRing?.let { System.currentTimeMillis() >= it.expiresAtMs } == true) dismissRing()
         // Keep the shell's desired identity during bootstrap; adopting a temporary
         // null repository owner here would strand calls until the profile changes.
         if (meId.isNotBlank() && repo.viewerId != meId) { onTransportLost(); return }
@@ -336,6 +337,7 @@ class GroupCallEngine @Inject constructor(
     /** Join from the incoming ring - the ring already went out, NEVER re-rings. */
     fun joinCall() {
         val target = pendingRing ?: return
+        if (System.currentTimeMillis() >= target.expiresAtMs) { dismissRing(); return }
         if (phase != UiPhase.IDLE) return
         startJoin(target.conversationId, target.kind, ringOthers = false, title = target.title)
     }
@@ -521,6 +523,9 @@ class GroupCallEngine @Inject constructor(
         if (meId.isBlank() || repo.viewerId != meId) return
         when (s.event) {
             GroupCallEvents.RING -> {
+                val deadline = groupRingDeadline(s, System.currentTimeMillis()) ?: return
+                // An incoming invitation already owns the single answer surface.
+                if (pendingRing != null) return
                 val convId = s.conversationId
                 if (convId.isBlank()) return
                 val ring = Ring(
@@ -532,7 +537,7 @@ class GroupCallEngine @Inject constructor(
                         avatar = s.callerAvatar,
                     ),
                     kind = s.kind,
-                    title = s.title.orEmpty(),
+                    title = s.title.orEmpty(), callId = s.callId, expiresAtMs = deadline,
                 )
                 // Only ring when idle - a participant never sees their own ring.
                 val idle = phase == UiPhase.IDLE && joinedConvId == null && oneToOne.snapshot.value.state == CallState.IDLE
@@ -583,6 +588,7 @@ class GroupCallEngine @Inject constructor(
             GroupCallEvents.ICE -> handleIce(s)
 
             GroupCallEvents.ENDED -> {
+                pendingRing?.let { if (matchesGroupCall(s, it.conversationId, it.callId)) dismissRing() }
                 if (matchesGroupCall(s, joinedConvId, currentCallId)) {
                     teardownMedia()
                     phase = UiPhase.ENDED
@@ -635,7 +641,7 @@ class GroupCallEngine @Inject constructor(
             ringTask = scope.launch {
                 if (!ownsCall(ticket) || target == null) return@launch
                 try {
-                    target.postGroupCallRing(rosterConvId, resolved).getOrThrow()
+                    target.postGroupCallRing(rosterConvId, resolved, callId).getOrThrow()
                 } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { if (ownsCall(ticket)) _notices.tryEmit("Could not ring other members") }
             }
         }

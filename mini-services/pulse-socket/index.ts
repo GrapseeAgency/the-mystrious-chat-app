@@ -660,6 +660,7 @@ interface GroupCallSession {
   hostId: string
   createdAt: number
   members: Map<string, GroupCallMember> // userId -> member
+  ringRecipients?: string[] // defined after the one accepted ring, even when empty
 }
 
 /** conversationId -> live group call */
@@ -704,6 +705,8 @@ function dropGroupCall(
   }
   groupCalls.delete(conversationId)
   const payload = { conversationId, callId: call.callId, reason }
+  // Idle invitees need to dismiss this exact ring too, not just joined devices.
+  for (const userId of call.ringRecipients ?? []) io.to(roomOf(userId)).emit('gcall:ended', payload)
   // The departing owner already left the room. Notify that device directly,
   // not unrelated tabs/devices belonging to the same account.
   io.to(gcallRoomName(conversationId)).emit('gcall:ended', payload)
@@ -826,6 +829,34 @@ async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<
   }
 
   const recipients = sanitizeRecipients(body.recipients)
+  if (event === 'gcall:ring') {
+    const raw = body.payload as Record<string, unknown> | null
+    const caller = raw?.caller as Record<string, unknown> | null
+    const conversationId = asTrimmedString(raw?.conversationId)
+    const callId = asTrimmedString(raw?.callId)
+    const callerId = asTrimmedString(caller?.id)
+    const call = groupCalls.get(conversationId)
+    const deadline = call ? call.createdAt + 45_000 : 0
+    // Check immediately before emitting, not against a stale HTTP preflight.
+    if (!call || !callId || call.callId !== callId || !call.members.has(callerId) ||
+        raw?.kind !== call.kind || Date.now() >= deadline) {
+      sendJson(res, 409, { ok: false, error: 'call is not available to ring' })
+      return
+    }
+    const expiresAt = new Date(deadline).toISOString()
+    const accepted = call.ringRecipients === undefined
+    let delivered = 0
+    if (accepted) {
+      call.ringRecipients = recipients.filter(id => id !== callerId)
+      for (const recipient of call.ringRecipients) {
+        io.to(roomOf(recipient)).emit(event, { ...raw, type: event, callId, expiresAt })
+        delivered++
+      }
+    }
+    sendJson(res, 200, { ok: true, ringReceiptVersion: 1, accepted, delivered,
+      conversationId, callId, callerId, expiresAt })
+    return
+  }
   let delivered = 0
   for (const recipient of recipients) {
     io.to(roomOf(recipient)).emit(event, body.payload ?? null)

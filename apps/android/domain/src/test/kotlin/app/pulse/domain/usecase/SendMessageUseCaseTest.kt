@@ -301,7 +301,7 @@ class SendMessageUseCaseTest {
         override suspend fun emitCall(signal: app.pulse.domain.model.CallSignalOut) {}
         // R8 Task 3-c - group calls + push registration (unused here).
         override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {}
-        override suspend fun postGroupCallRing(conversationId: String, kind: app.pulse.domain.model.CallKind): Result<Unit> =
+        override suspend fun postGroupCallRing(conversationId: String, kind: app.pulse.domain.model.CallKind, callId: String): Result<Unit> =
             Result.failure(IllegalStateException("unavailable in fake"))
         override suspend fun probeGroupCallState(conversationId: String): Result<app.pulse.domain.model.GroupCallProbe?> =
             Result.success(null)

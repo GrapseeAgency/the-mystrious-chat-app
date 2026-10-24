@@ -45,12 +45,16 @@ public final class PulseGroupCallEngine: ObservableObject {
         public let kind: CallKind
         public let caller: PulseGroupCallMember
         public let title: String
+        public let callId: String
+        public let expiresAt: Date
 
         /// Tolerant decode of the relayed gcall:ring payload
         /// { conversationId, kind, caller: {id,name,color,avatar}, title }.
-        static func decode(_ raw: [String: Any]) -> Ring? {
+        static func decode(_ raw: [String: Any], now: Date = Date()) -> Ring? {
             guard let conversationId = raw["conversationId"] as? String,
-                  !conversationId.isEmpty else { return nil }
+                  !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let callId = raw["callId"] as? String, !callId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let expiry = raw["expiresAt"] as? String, let deadline = PulseFormat.date(expiry), deadline > now else { return nil }
             let callerRaw = raw["caller"] as? [String: Any] ?? [:]
             guard let caller = PulseGroupCallMember.decode(callerRaw) else { return nil }
             let title = (raw["title"] as? String) ?? ""
@@ -58,7 +62,8 @@ public final class PulseGroupCallEngine: ObservableObject {
                 conversationId: conversationId,
                 kind: CallKind(wireValue: raw["kind"] as? String),
                 caller: caller,
-                title: title,
+                title: title, callId: callId,
+                expiresAt: min(deadline, now.addingTimeInterval(PulseGroupCallPolicy.ringTimeoutSec)),
             )
         }
     }
@@ -124,7 +129,6 @@ public final class PulseGroupCallEngine: ObservableObject {
     private var joinedAt: Date?
     private var joinIntent = false
     private var mediaReady = false
-    private var ringArrivedAt: Date?
     /// The conversation currently open on screen (drives the probe +
     /// the ONGOING banner, web hook options.conversationId parity).
     /// Public read-only since 3-d - ChatRoomView's onDisappear compares it
@@ -216,6 +220,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     /// Accept an incoming ring (the ring already went out - NEVER re-rings).
     public func joinCall() {
         guard let target = ring, uiState == .idle else { return }
+        guard target.expiresAt > Date() else { dismissRing(); return }
         PulseHaptics.tap()
         startJoin(target.conversationId, wanted: target.kind, ringOthers: false, title: target.title.isEmpty ? displayTitle : target.title)
     }
@@ -231,7 +236,6 @@ public final class PulseGroupCallEngine: ObservableObject {
 
     public func dismissRing() {
         ring = nil
-        ringArrivedAt = nil
     }
 
     public func ignoreOngoing() {
@@ -324,9 +328,10 @@ public final class PulseGroupCallEngine: ObservableObject {
         displayTitle = title
         errorText = nil
         summary = nil
-        ring = nil
-        ringArrivedAt = nil
+        // CallKit observes ring removal synchronously. Publish joining first
+        // so answering does not report the incoming system call as unanswered.
         uiState = .joining
+        ring = nil
         let ticket = UUID()
         joinGeneration = ticket
         preparationTask = Task { await beginJoin(targetConvId, wanted: wanted, ringOthers: ringOthers, title: title, ticket: ticket) }
@@ -421,13 +426,13 @@ public final class PulseGroupCallEngine: ObservableObject {
     private func ringAdmittedCall(conversationId: String) {
         guard pendingRing else { return }
         pendingRing = false
-        guard let api = apiProvider() else { return }
+        guard let api = apiProvider(), let callId = joinedCallId else { return }
         let ticket = joinGeneration, resolved = kind
         ringTask = Task { [weak self] in
             guard let self, !Task.isCancelled, self.joinGeneration == ticket,
                   self.joinedConv == conversationId else { return }
             do {
-                try await api.ringGroupCall(conversationId: conversationId, userId: self.viewer.id, kind: resolved)
+                try await api.ringGroupCall(conversationId: conversationId, userId: self.viewer.id, kind: resolved, callId: callId)
             } catch {
                 guard !Task.isCancelled, self.joinGeneration == ticket, self.joinedConv == conversationId else { return }
                 self.toasts.show("Could not ring other members")
@@ -597,12 +602,12 @@ public final class PulseGroupCallEngine: ObservableObject {
         switch event {
         case "gcall:ring":
             guard let decoded = Ring.decode(raw) else { return }
-            guard decoded.caller.id != viewer.id else { return }
+            // CallKit and the banner must keep the same caller until answered or dismissed.
+            guard decoded.caller.id != viewer.id, ring == nil else { return }
             // Only ring when idle - a participant never sees their own ring
             // (web :459-464). The ended-card state stays untouched too.
-            guard uiState == .idle else { return }
+            guard uiState == .idle, !voiceCallBusy() else { return }
             ring = decoded
-            ringArrivedAt = Date()
             PulseHaptics.incoming()
 
         case "gcall:state":
@@ -677,6 +682,9 @@ public final class PulseGroupCallEngine: ObservableObject {
             }
 
         case "gcall:ended":
+            if let ring, raw["conversationId"] as? String == ring.conversationId, raw["callId"] as? String == ring.callId {
+                dismissRing()
+            }
             if matchesJoinedCall(raw) {
                 teardownMedia()
                 uiState = .ended
@@ -740,12 +748,9 @@ public final class PulseGroupCallEngine: ObservableObject {
         if uiState == .active, let joinedAt {
             durationSec = max(0, Int(Date().timeIntervalSince(joinedAt).rounded()))
         }
-        // The local ring guard - group rings have no server-side timeout;
-        // a stuck incoming surface is worse than a missed ring.
-        if ring != nil, let arrivedAt = ringArrivedAt,
-           Date().timeIntervalSince(arrivedAt) >= PulseGroupCallPolicy.ringTimeoutSec {
+        // Preserve the relay deadline; delayed arrivals cannot restart it.
+        if ring.map({ now >= $0.expiresAt }) == true {
             ring = nil
-            ringArrivedAt = nil
         }
     }
 

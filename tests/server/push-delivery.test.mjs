@@ -148,3 +148,21 @@ test('fanout stamps each registry recipient instead of trusting caller ownership
  await h.fanoutPush(['owner'],payload)
  assert.equal(h.requests[0].payload.message.data.recipientUserId,'owner')
 }))
+
+test('Android call push is data-only so native owner and deadline guards run in background too', () => fixture(async h => {
+  const expiresAt = new Date(now + 12_000).toISOString()
+  const ring = { kind: 'gcall', title: 'Room', body: 'Caller started a call', conversationId: 'room',
+    callId: 'current-call', callKind: 'voice', callerName: 'Caller', recipientUserId: 'owner', expiresAt }
+  await h.sendAndroid('token', ring)
+  const message = h.requests[0].payload.message
+  assert.equal(message.notification, undefined)
+  assert.equal(message.data.title, 'Room')
+  assert.equal(message.data.body, ring.body)
+  assert.equal(message.data.callId, 'current-call')
+  assert.equal(message.data.expiresAt, expiresAt)
+  assert.equal(message.android.ttl, '12s')
+  assert.equal(message.android.priority, 'high')
+  await h.sendIos('token', ring)
+  assert.equal(h.requests[1].payload.callId, 'current-call')
+  assert.equal(h.requests[1].headers['apns-expiration'], String(now / 1000 + 12))
+}))

@@ -67,6 +67,8 @@ class PulseMessagingService : FirebaseMessagingService() {
 
         when (kind) {
             "gcall", "call" -> {
+                val deadline = data["expiresAt"]?.let { app.pulse.domain.sync.messageExpiryEpochMs(it) }
+                if (kind == "gcall" && (data["callId"].isNullOrBlank() || deadline == null)) return
                 val callerName = data["callerName"].orEmpty()
                 val callKind = data["callKind"] ?: "voice"
                 CallRingNotifier.showIncoming(
@@ -81,6 +83,7 @@ class PulseMessagingService : FirebaseMessagingService() {
                     },
                     conversationId = conversationId,
                     notificationId = CALL_NOTIFICATION_BASE + (conversationId?.hashCode()?.and(0x3FFFFFFF) ?: 0),
+                    timeoutMillis = deadline?.let { it - System.currentTimeMillis() } ?: 45_000,
                 )
             }
 

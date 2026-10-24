@@ -97,6 +97,8 @@ data class GroupCallIceDto(
 /** S→C gcall:ring - HTTP-relayed ring for ONLINE members (banner). */
 @Serializable
 data class GroupCallRingPayload(
+    val callId: String = "",
+    val expiresAt: String? = null,
     val type: String = "",
     val conversationId: String = "",
     val kind: String = "voice",

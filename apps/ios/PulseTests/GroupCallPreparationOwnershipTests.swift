@@ -224,4 +224,36 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         observer.cancel()
         engine.leaveCall()
     }
+    func testIncomingRingExpiresAtServerDeadlineAndOnlyMatchingEndDismissesIt() {
+        let e = engine(Media(), Signals())
+        defer { e.stop() }
+        let deadline = Date().addingTimeInterval(10)
+        let raw: [String: Any] = ["conversationId": "room", "callId": "call", "kind": "voice",
+            "caller": ["id": "peer"], "expiresAt": ISO8601DateFormatter().string(from: deadline)]
+        e.handleGroupCallSignal(event: "gcall:ring", raw: raw)
+        XCTAssertEqual(e.ring?.callId, "call")
+        var competing = raw; competing["callId"] = "another-call"; competing["caller"] = ["id": "other"]
+        e.handleGroupCallSignal(event: "gcall:ring", raw: competing)
+        XCTAssertEqual(e.ring?.callId, "call", "The answer surface must not silently switch callers")
+        e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "callId": "old"])
+        XCTAssertNotNil(e.ring)
+        e.tick(now: deadline.addingTimeInterval(1))
+        XCTAssertNil(e.ring)
+        e.handleGroupCallSignal(event: "gcall:ring", raw: raw)
+        e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "callId": "call"])
+        XCTAssertNil(e.ring)
+    }
+    func testAnswerPublishesJoiningBeforeRemovingRingForCallKitObservers() {
+        let e = engine(Media(), Signals())
+        defer { e.stop() }
+        e.handleGroupCallSignal(event: "gcall:ring", raw: ["conversationId": "room", "callId": "call", "kind": "voice",
+            "caller": ["id": "peer"], "expiresAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(30))])
+        var inCallAtRemoval: Bool?
+        let observation = e.$ring.dropFirst().sink { ring in
+            if ring == nil { inCallAtRemoval = e.isInCall }
+        }
+        e.joinCall()
+        XCTAssertEqual(inCallAtRemoval, true)
+        withExtendedLifetime(observation) {}
+    }
 }

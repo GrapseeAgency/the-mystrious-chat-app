@@ -1078,10 +1078,11 @@ public struct PulseAPIClient: Sendable {
     /// socket gcall:join: rings ONLINE members through the relay (gcall:ring)
     /// and pushes OFFLINE ones (APNs/FCM fanout). Fire-and-forget upstream;
     /// failures surface the honest ring toast.
-    public func ringGroupCall(conversationId: String, userId: String, kind: CallKind) async throws {
+    public func ringGroupCall(conversationId: String, userId: String, kind: CallKind, callId: String) async throws {
         _ = try await postRaw("/api/conversations/\(q(conversationId))/calls/ring", body: [
             "userId": userId,
             "kind": kind.rawValue,
+            "callId": callId,
         ])
     }
 

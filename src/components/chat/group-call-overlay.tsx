@@ -56,7 +56,7 @@ export interface GroupCallSessionControls {
   /** Roster INCLUDING me, join-ordered (while in the call). */
   members: GroupCallMemberView[]
   /** Live incoming ring (null = none). Rings surface on ANY open room. */
-  ring: { conversationId: string; caller: GroupCallMemberView; kind: CallKind; title: string } | null
+  ring: { conversationId: string; callId: string; expiresAt: number; caller: GroupCallMemberView; kind: CallKind; title: string } | null
   /** True while the OPEN conversation has a live call I am NOT in. */
   ongoingElsewhere: boolean
   ongoingMembers: GroupCallMemberView[]
@@ -140,6 +140,8 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   const optionsRef = useRef({ meId, meName, meColor, meAvatar, conversationId })
   const ringRef = useRef<GroupCallSessionControls['ring']>(null)
   const joinIntentRef = useRef(false)
+  const pendingRingRef = useRef(false)
+  const joinedCallIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     optionsRef.current = { meId, meName, meColor, meAvatar, conversationId }
@@ -199,6 +201,8 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     joinedConvRef.current = null
     joinedAtRef.current = 0
     joinIntentRef.current = false
+    pendingRingRef.current = false
+    joinedCallIdRef.current = null
     setLocalStream(null)
     setRemoteStreams(new Map())
     setMembers([])
@@ -333,18 +337,13 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
           await acquireMedia(wanted)
           const opts = optionsRef.current
           joinedConvRef.current = targetConvId
+          pendingRingRef.current = ringOthers
+          joinedCallIdRef.current = null
           emitCallEvent('gcall:join', {
             conversationId: targetConvId,
             kind: wanted,
             user: { id: opts.meId, name: opts.meName, color: opts.meColor, avatar: opts.meAvatar },
           })
-          if (ringOthers) {
-            // Ring the other members (online → socket banner, offline → push).
-            void apiJson(`/api/conversations/${targetConvId}/calls/ring`, {
-              method: 'POST',
-              body: JSON.stringify({ userId: opts.meId, kind: wanted }),
-            }).catch(() => toast.error('Could not ring other members'))
-          }
         } catch {
           setStateBoth('idle')
           joinIntentRef.current = false
@@ -364,6 +363,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   const joinCall = useCallback(() => {
     const target = ringRef.current
     if (!target || stateRef.current !== 'idle') return
+    if (target.expiresAt <= Date.now()) { ringRef.current = null; setRing(null); return }
     haptic(14)
     // The ring already went out - joining must NOT re-ring.
     startJoin(target.conversationId, target.kind, false)
@@ -439,12 +439,16 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
 
       if (event === 'gcall:ring') {
         const convId = typeof payload.conversationId === 'string' ? payload.conversationId : ''
-        if (!convId) return
+        const callId = typeof payload.callId === 'string' ? payload.callId : ''
+        const deadline = typeof payload.expiresAt === 'string' ? Date.parse(payload.expiresAt) : NaN
+        if (!convId || !callId || !Number.isFinite(deadline) || deadline <= Date.now()) return
+        if (ringRef.current) return
         const callerRaw = payload.caller
         if (typeof callerRaw !== 'object' || callerRaw === null) return
         const callerObj = callerRaw as Record<string, unknown>
         if (typeof callerObj.id === 'string' && callerObj.id === me) return
         const ringPayload: GroupCallSessionControls['ring'] = {
+          conversationId: convId, callId, expiresAt: Math.min(deadline, Date.now() + 45_000),
           kind: payload.kind === 'video' ? 'video' : 'voice',
           title: typeof payload.title === 'string' && payload.title ? payload.title : '',
           caller: {
@@ -480,7 +484,18 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
           })
         }
         const iAmMember = roster.some((m) => m.id === me)
-        if (iAmMember) {
+        if (iAmMember && joinedConvRef.current === convId) {
+          const callId = typeof payload.callId === 'string' ? payload.callId : ''
+          if (!callId || (joinedCallIdRef.current && joinedCallIdRef.current !== callId)) return
+          joinedCallIdRef.current = callId
+          if (pendingRingRef.current) {
+            pendingRingRef.current = false
+            void apiJson(`/api/conversations/${encodeURIComponent(convId)}/calls/ring`, {
+              method: 'POST', body: JSON.stringify({ userId: me, kind: payload.kind, callId }),
+            }).catch(() => {
+              if (joinedCallIdRef.current === callId) toast.error('Could not ring other members')
+            })
+          }
           setOngoingElsewhere(false)
           applyRoster(roster, convId)
         } else if (stateRef.current === 'idle' && !joinedConvRef.current) {
@@ -576,7 +591,11 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       }
 
       if (event === 'gcall:ended') {
-        if (joinedConvRef.current) {
+        if (ringRef.current?.callId === payload.callId && ringRef.current?.conversationId === payload.conversationId) {
+          ringRef.current = null
+          setRing(null)
+        }
+        if (joinedConvRef.current === payload.conversationId && joinedCallIdRef.current === payload.callId) {
           teardownMedia()
           setStateBoth('ended')
           setSummary('Call ended')
@@ -613,6 +632,14 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     }, 1000)
     return () => clearInterval(timer)
   }, [state])
+
+  useEffect(() => {
+    if (!ring) return
+    const timer = setTimeout(() => {
+      if (ringRef.current?.callId === ring.callId) { ringRef.current = null; setRing(null) }
+    }, Math.max(0, ring.expiresAt - Date.now()))
+    return () => clearTimeout(timer)
+  }, [ring])
 
   // Probe for an ongoing call on mount + while idle (a late-opening room or
   // reload learns about the call without a live ring). Honest socket read.

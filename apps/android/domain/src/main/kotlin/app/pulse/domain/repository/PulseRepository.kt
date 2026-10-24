@@ -792,7 +792,7 @@ interface PulseRepository {
      * member calls this AFTER gcall:join; rings online members + pushes the
      * offline ones (fire-and-forget on the web).
      */
-    suspend fun postGroupCallRing(conversationId: String, kind: CallKind): Result<Unit>
+    suspend fun postGroupCallRing(conversationId: String, kind: CallKind, callId: String): Result<Unit>
 
     /**
      * GET /api/group-call-state?conversationId= - probe for an ONGOING call

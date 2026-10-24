@@ -1013,12 +1013,14 @@ class PulseApi(
         conversationId: String,
         userId: String,
         kind: String,
+        callId: String,
     ): PulseResult<Unit> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/calls/ring",
             buildJsonObject {
                 put("userId", userId)
                 put("kind", kind)
+                put("callId", callId)
             },
         )
 

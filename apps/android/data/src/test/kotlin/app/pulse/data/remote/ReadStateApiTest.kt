@@ -58,4 +58,16 @@ class ReadStateApiTest {
             } finally { http.close() }
         }
     }
+    @Test fun groupRingCarriesTheAdmittedCallIdentity() = runTest {
+        val http = HttpClient(MockEngine { request ->
+            assertEquals("/api/conversations/room/calls/ring", request.url.encodedPath)
+            val body = (request.body as TextContent).text
+            assertTrue(body.contains("\"callId\":\"admitted-call\""))
+            assertTrue(body.contains("\"userId\":\"me\""))
+            respond("""{"ok":true}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        })
+        try {
+            assertTrue(PulseApi(http, gateway = { "https://read.test" }).postGroupCallRing("room", "me", "voice", "admitted-call") is PulseResult.Success)
+        } finally { http.close() }
+    }
 }

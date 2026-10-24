@@ -631,6 +631,8 @@ class PulseRepositoryImpl constructor(
 
     private fun GroupCallRingPayload.toDomainRingSignal() = app.pulse.domain.model.GroupCallSignalData(
         event = app.pulse.protocol.GroupCallEvents.RING,
+        callId = callId,
+        expiresAt = expiresAt,
         conversationId = conversationId,
         kind = app.pulse.domain.model.CallKind.of(kind),
         title = title,
@@ -3385,9 +3387,9 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun postGroupCallRing(conversationId: String, kind: CallKind): Result<Unit> {
+    override suspend fun postGroupCallRing(conversationId: String, kind: CallKind, callId: String): Result<Unit> {
         val id = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
-        return when (val r = api.postGroupCallRing(conversationId, id, kind.wire)) {
+        return when (val r = api.postGroupCallRing(conversationId, id, kind.wire, callId)) {
             is PulseResult.Success -> Result.success(Unit)
             is PulseResult.Failure -> Result.failure(IllegalStateException(r.message ?: "Could not ring other members"))
         }

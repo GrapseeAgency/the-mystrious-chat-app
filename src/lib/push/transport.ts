@@ -39,6 +39,7 @@ export interface PushPayload {
   recipientUserId?: string
   /** Absolute source/root deadline; never extend it during device fanout. */
   expiresAt?: string
+  callId?: string
   callKind?: 'voice' | 'video'
   callerName?: string
 }
@@ -248,6 +249,7 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
         messageId: payload.messageId ?? null,
         ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
         ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+        ...(payload.callId ? { callId: payload.callId } : {}),
         callKind: payload.callKind ?? null,
         callerName: payload.callerName ?? null,
       })
@@ -287,13 +289,17 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
       body: JSON.stringify({
         message: {
           token,
-          notification: { title: payload.title, body: payload.body },
+          // Call data must reach the native deadline/owner guard even when
+          // backgrounded; an OS-rendered mixed notification bypasses it.
+          ...(payload.kind === 'message' ? { notification: { title: payload.title, body: payload.body } } : {}),
           data: {
             kind: payload.kind,
+            ...(payload.kind !== 'message' ? { title: payload.title, body: payload.body } : {}),
             conversationId: payload.conversationId,
             ...(payload.messageId ? { messageId: payload.messageId } : {}),
             ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
             ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+            ...(payload.callId ? { callId: payload.callId } : {}),
             ...(payload.callKind ? { callKind: payload.callKind } : {}),
             ...(payload.callerName ? { callerName: payload.callerName } : {}),
           },
@@ -345,6 +351,7 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
         ...(payload.messageId ? { messageId: payload.messageId } : {}),
             ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
         ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+        ...(payload.callId ? { callId: payload.callId } : {}),
         ...(payload.callKind ? { callKind: payload.callKind } : {}),
         ...(payload.callerName ? { callerName: payload.callerName } : {}),
       })

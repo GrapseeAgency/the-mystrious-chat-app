@@ -198,11 +198,11 @@ final class PulseGroupCallPolicyTests: XCTestCase {
 
     func testRingDecodeCarriesCallerKindAndTitle() {
         let ring = PulseGroupCallEngine.Ring.decode([
-            "conversationId": "conv-1",
+            "conversationId": "conv-1", "callId": "call", "expiresAt": "2033-05-18T03:33:25Z",
             "kind": "video",
             "caller": ["id": "u9", "name": "Ringer", "color": "emerald", "avatar": ""],
             "title": "Design crew",
-        ])
+        ], now: Date(timeIntervalSince1970: 2_000_000_000))
         XCTAssertEqual(ring?.conversationId, "conv-1")
         XCTAssertEqual(ring?.kind, .video)
         XCTAssertEqual(ring?.caller.id, "u9")
@@ -212,20 +212,33 @@ final class PulseGroupCallPolicyTests: XCTestCase {
 
     func testRingDecodeToleratesUnknownKindAndRequiresCaller() {
         let voice = PulseGroupCallEngine.Ring.decode([
-            "conversationId": "conv-1",
+            "conversationId": "conv-1", "callId": "call", "expiresAt": "2033-05-18T03:33:25Z",
             "kind": "hologram",
             "caller": ["id": "u9"],
-        ])
+        ], now: Date(timeIntervalSince1970: 2_000_000_000))
         XCTAssertEqual(voice?.kind, .voice, "unknown wire kind falls back to voice")
         XCTAssertEqual(voice?.title, "", "absent title stays empty (banner substitutes)")
 
         XCTAssertNil(PulseGroupCallEngine.Ring.decode([
             "kind": "voice",
             "caller": ["id": "u9"],
-        ]), "no conversationId → no ring")
+        ], now: Date(timeIntervalSince1970: 2_000_000_000)), "no conversationId → no ring")
         XCTAssertNil(PulseGroupCallEngine.Ring.decode([
-            "conversationId": "conv-1",
-        ]), "no caller → no ring")
+            "conversationId": "conv-1", "callId": "call", "expiresAt": "2033-05-18T03:33:25Z",
+        ], now: Date(timeIntervalSince1970: 2_000_000_000)), "no caller → no ring")
+    }
+
+    func testRingDeadlineRejectsOldIncompleteAndMalformedInvitations() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let raw: [String: Any] = ["conversationId": "room", "callId": "call", "caller": ["id": "peer"], "expiresAt": "2033-05-18T03:33:25Z"]
+        XCTAssertEqual(PulseGroupCallEngine.Ring.decode(raw, now: now)?.expiresAt, now.addingTimeInterval(5))
+        XCTAssertNil(PulseGroupCallEngine.Ring.decode(raw, now: now.addingTimeInterval(5)))
+        for key in ["conversationId", "callId", "caller", "expiresAt"] {
+            var missing = raw; missing.removeValue(forKey: key)
+            XCTAssertNil(PulseGroupCallEngine.Ring.decode(missing, now: now))
+        }
+        var invalid = raw; invalid["expiresAt"] = "bad"
+        XCTAssertNil(PulseGroupCallEngine.Ring.decode(invalid, now: now))
     }
 
     // wire: C→S builders (the relay's validated shapes)

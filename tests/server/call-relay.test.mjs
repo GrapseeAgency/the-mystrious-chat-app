@@ -64,6 +64,41 @@ test('real call relay binds membership, signaling and disconnect to the admitted
     await join(alice, 'alice')
     const state = await join(bob, 'bob')
     const callId = state.callId
+    await t.test('ring admission requires the live call and member, is single-use, and ends idle invitations', async () => {
+      const starter = await connect('starter'), invitee = await connect('invitee')
+      const live = await join(starter, 'starter', 'ring-room')
+      const raw = { conversationId: 'ring-room', callId: live.callId, kind: 'voice', caller: { id: 'starter', name: 'Starter' }, title: 'Room' }
+      const send = async payload => fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'gcall:ring', recipients: ['invitee', 'invitee', 'starter'], payload }) })
+      for (const patch of [{ callId: '' }, { callId: 'old' }, { conversationId: 'missing' }, { kind: 'video' }, { caller: { id: 'outsider' } }]) {
+        assert.equal((await send({ ...raw, ...patch })).status, 409)
+      }
+      const heard = []
+      invitee.on('gcall:ring', row => heard.push(row))
+      const incoming = event(invitee, 'gcall:ring')
+      const receipt = await (await send(raw)).json()
+      const ring = await incoming
+      assert.equal(receipt.accepted, true)
+      assert.equal(receipt.ringReceiptVersion, 1)
+      assert.equal(receipt.delivered, 1)
+      assert.equal(ring.callId, live.callId)
+      assert.equal(Date.parse(ring.expiresAt), live.startedAt + 45_000)
+      assert.equal(receipt.expiresAt, ring.expiresAt)
+      const repeat = await (await send(raw)).json()
+      assert.equal(repeat.accepted, false)
+      assert.equal(repeat.delivered, 0)
+      await barrier(invitee, 'invitee')
+      assert.equal(heard.length, 1)
+      const ended = event(invitee, 'gcall:ended', row => row.callId === live.callId)
+      starter.emit('gcall:leave', { conversationId: 'ring-room', from: 'starter' })
+      await ended
+      assert.equal((await send(raw)).status, 409)
+      const replacement = await join(starter, 'starter', 'ring-room')
+      assert.notEqual(replacement.callId, live.callId)
+      assert.equal((await send(raw)).status, 409)
+      starter.disconnect(); invitee.disconnect()
+    })
+
     let activeAlice = alice
     const received = [], idleReceived = []
     bob.on('gcall:offer', row => received.push(row.sdp))

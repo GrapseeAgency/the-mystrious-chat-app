@@ -10,3 +10,11 @@ internal fun matchesGroupPeerSignal(
     signal: GroupCallSignalData, roomId: String?, callId: String, viewerId: String, memberIds: Collection<String>,
 ): Boolean = viewerId.isNotBlank() && matchesGroupCall(signal, roomId, callId) && signal.to == viewerId &&
     signal.from.isNotBlank() && signal.from != viewerId && signal.from in memberIds
+
+/** A delayed invitation does not get a fresh 45 seconds on arrival. */
+internal fun groupRingDeadline(signal: GroupCallSignalData, nowMs: Long): Long? {
+    if (signal.callId.isBlank() || signal.conversationId.isBlank() || signal.from.isBlank()) return null
+    val deadline = signal.expiresAt?.let { app.pulse.domain.sync.messageExpiryEpochMs(it) } ?: return null
+    if (deadline <= nowMs) return null
+    return minOf(deadline, nowMs + 45_000)
+}

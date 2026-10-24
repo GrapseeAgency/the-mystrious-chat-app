@@ -64,7 +64,9 @@ object CallRingNotifier {
         body: String,
         conversationId: String?,
         notificationId: Int,
+        timeoutMillis: Long = 45_000,
     ): Boolean {
+        if (timeoutMillis <= 0) return false
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -95,6 +97,7 @@ object CallRingNotifier {
             .setFullScreenIntent(contentPi, true)
             .setContentIntent(contentPi)
             .setAutoCancel(true)
+            .setTimeoutAfter(timeoutMillis.coerceAtMost(45_000))
         return runCatching {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.notify(notificationId, builder.build())
