@@ -389,6 +389,13 @@ class SendMessageUseCaseTest {
         assertEquals(1, repo.sent.size)
     }
 
+    @Test fun `repositories without a bound reply implementation never fall back to ordinary send`() = runTest {
+        val repo = FakeRepo()
+        val result = repo.sendNotificationReply("c1", "reply", app.pulse.domain.sync.NotificationReplyOwner("a", "epoch"))
+        assertTrue(result.isFailure)
+        assertTrue(repo.sent.isEmpty())
+    }
+
     @Test
     fun `caps body at the 2000-char server limit (audit D1)`() = runTest {
         val repo = FakeRepo()

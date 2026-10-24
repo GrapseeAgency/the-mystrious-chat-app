@@ -348,6 +348,10 @@ interface PulseRepository {
         topicId: String? = null,
         draftToken: app.pulse.domain.model.ComposerDraftToken? = null,
     ): Result<SendReceipt>
+    /** No fallback to an unbound send when a repository cannot validate the owner. */
+    suspend fun sendNotificationReply(conversationId: String, body: String,
+        owner: app.pulse.domain.sync.NotificationReplyOwner): Result<SendReceipt> =
+        Result.failure(IllegalStateException("Open the original account to reply"))
     suspend fun markRead(conversationId: String): Result<Unit>
     /** Displayed server message boundary; never acknowledge unseen arrivals. */
     suspend fun markReadThrough(conversationId: String, messageId: String): Result<Unit> = markRead(conversationId)

@@ -134,3 +134,17 @@ test('legacy web pings remain payload-free while keyed subscriptions receive bou
  assert.equal((await h.sendWeb(JSON.stringify({endpoint:'https://example.test/push',keys:{p256dh:'key',auth:'auth'}}),{...payload,expiresAt:expiry})).ok,true)
  assert.equal(JSON.parse(h.requests[1].body).expiresAt,expiry)
 }))
+
+test('fanout stamps each registry recipient instead of trusting caller ownership',()=>fixture(async h=>{
+ await h.seed('android');await h.seed('ios','ios')
+ await h.db.pushToken.update({where:{id:'ios'},data:{userId:'other'}})
+ const report=await h.fanoutPush(['owner','other'],{...payload,recipientUserId:'forged'},{bodyFor:id=>`For ${id}`})
+ assert.equal(report.sent,2)
+ const android=h.requests.find(r=>r.platform==='android').payload.message
+ const ios=h.requests.find(r=>r.platform==='ios').payload
+ assert.equal(android.data.recipientUserId,'owner');assert.equal(ios.recipientUserId,'other')
+ assert.equal(android.notification.body,'For owner');assert.equal(ios.aps.alert.body,'For other')
+ h.requests.length=0
+ await h.fanoutPush(['owner'],payload)
+ assert.equal(h.requests[0].payload.message.data.recipientUserId,'owner')
+}))

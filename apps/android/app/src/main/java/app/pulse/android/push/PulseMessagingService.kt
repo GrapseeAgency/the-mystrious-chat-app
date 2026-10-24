@@ -54,6 +54,10 @@ class PulseMessagingService : FirebaseMessagingService() {
         data["expiresAt"]?.let { expiry ->
             if ((app.pulse.domain.sync.messageExpiryEpochMs(expiry) ?: Long.MIN_VALUE) <= System.currentTimeMillis()) return
         }
+        val recipient = data["recipientUserId"]
+        // OS-managed background banners bypass this service; only this custom
+        // receive/quick-reply path can enforce the current account here.
+        if (recipient != null && recipient != repository.viewerId) return
         val kind = data["kind"] ?: "message"
         val conversationId = data["conversationId"]
         val notification = message.notification
@@ -80,12 +84,12 @@ class PulseMessagingService : FirebaseMessagingService() {
                 )
             }
 
-            else -> showMessageNotification(title, body, conversationId, data["messageId"])
+            else -> showMessageNotification(title, body, conversationId, data["messageId"], recipient)
         }
     }
 
     /** The default-importance message push with the room deep-link tap. */
-    private fun showMessageNotification(title: String, body: String, conversationId: String?, messageId: String?) {
+    private fun showMessageNotification(title: String, body: String, conversationId: String?, messageId: String?, recipientUserId: String?) {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -118,12 +122,13 @@ class PulseMessagingService : FirebaseMessagingService() {
         // R10-a - quick reply (RemoteInput): the action routes through
         // PulseReplyReceiver → SendMessageUseCase - the SAME send path the
         // room composer uses, so offline replies queue in the outbox.
-        if (!conversationId.isNullOrBlank()) {
+        if (!conversationId.isNullOrBlank() && !recipientUserId.isNullOrBlank()) {
             val remoteInput = androidx.core.app.RemoteInput.Builder(PulseReplyPayload.KEY_REPLY_TEXT)
                 .setLabel(getString(app.pulse.android.R.string.reply_action))
                 .build()
             val replyIntent = Intent(this, app.pulse.android.notify.PulseReplyReceiver::class.java).apply {
                 putExtra(PulseReplyPayload.EXTRA_CONVERSATION_ID, conversationId)
+                putExtra(PulseReplyPayload.EXTRA_RECIPIENT_USER_ID, recipientUserId)
             }
             val replyPi = PendingIntent.getBroadcast(
                 this,

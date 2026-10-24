@@ -1168,7 +1168,31 @@ class PulseRepositoryImpl constructor(
         parentId: String?,
         topicId: String?,
         draftToken: app.pulse.domain.model.ComposerDraftToken?,
+    ): Result<SendReceipt> = sendTextMessage(conversationId, body, replyToId, parentId, topicId, draftToken)
+
+    override suspend fun sendNotificationReply(conversationId: String, body: String,
+        owner: app.pulse.domain.sync.NotificationReplyOwner): Result<SendReceipt> {
+        val text = body.trim()
+        if (text.isEmpty() || text.length > app.pulse.domain.usecase.SendMessageUseCase.MAX_LENGTH) {
+            return Result.failure(IllegalArgumentException("Reply must contain 1–2000 characters; nothing was sent"))
+        }
+        return try {
+            sendTextMessage(conversationId, text, null, null, null, null, owner)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    private suspend fun sendTextMessage(conversationId: String, body: String, replyToId: String?,
+        parentId: String?, topicId: String?, draftToken: app.pulse.domain.model.ComposerDraftToken?,
+        notificationOwner: app.pulse.domain.sync.NotificationReplyOwner? = null,
     ): Result<SendReceipt> {
+        if (notificationOwner != null && !notificationOwner.matches(viewerId, attachmentSessionKey())) {
+            return Result.failure(IllegalStateException("The notification account changed; nothing was queued"))
+        }
+
         // Demo companion room: fully on-device. No gateway round-trip, no
         // outbox - the bubble settles instantly and Nova replies locally.
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
@@ -1178,7 +1202,7 @@ class PulseRepositoryImpl constructor(
         // keystroke-to-send beat, not after the round-trip. The same clientId
         // then either reconciles with the real row, rides the outbox, or is
         // retracted on a definitive failure.
-        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
+        val owner = notificationOwner?.userId ?: viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
         if (draftToken != null && !draftToken.owns(conversationId, owner, parentId)) {
             return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
         }
@@ -1189,7 +1213,7 @@ class PulseRepositoryImpl constructor(
             id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
             conversationId = conversationId,
             authorId = owner,
-            authorName = viewerId ?: "",
+            authorName = owner,
             kind = Message.Kind.TEXT,
             body = body,
             createdAt = nowIso,
@@ -1198,6 +1222,9 @@ class PulseRepositoryImpl constructor(
             topicId = if (parentId == null) topicId else null,
         )
         persistComposerSend(draftToken) {
+            check(notificationOwner == null || notificationOwner.matches(viewerId, attachmentSessionKey())) {
+                "The notification account changed; nothing was queued"
+            }
             check(parentId == null || !threadIsDenied(parentId)) { "This thread is unavailable. Your draft is still saved." }
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(

@@ -36,12 +36,12 @@ public enum PulseReminderNotifications {
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = "Reminder"
         content.sound = .default
-        content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId, messageId: messageId)
+        content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId, messageId: messageId, ownerId: ownerId)
         // R10-b - conversation-bound postings carry the quick-reply category
         // ("Reply" text-input action → PulseQuickReplyCoordinator). Tapless
         // postings stay tapless - a Reply control without a routable room
         // would be a dead control.
-        if PulseQuickReply.applies(toConversationId: conversationId) {
+        if PulseQuickReply.applies(toConversationId: conversationId), ownerId?.isEmpty == false {
             content.categoryIdentifier = PulseQuickReply.categoryId
         }
 
@@ -99,9 +99,9 @@ public enum PulseReminderNotifications {
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = String(body.prefix(178))
         content.sound = .default
-        content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId, messageId: messageId)
+        content.userInfo = Self.userInfo(reminderId: reminderId, conversationId: conversationId, messageId: messageId, ownerId: ownerId)
         // R10-b - same category stamp as schedule() (see above).
-        if PulseQuickReply.applies(toConversationId: conversationId) {
+        if PulseQuickReply.applies(toConversationId: conversationId), ownerId?.isEmpty == false {
             content.categoryIdentifier = PulseQuickReply.categoryId
         }
         let request = UNNotificationRequest(
@@ -116,8 +116,9 @@ public enum PulseReminderNotifications {
     /// The reminder payload - reminderId + (R2-D) the conversationId the tap
     /// deep-links into. Kept in one place so schedule/showNow stay in lockstep.
     /// Internal (not private) so the tests can pin the exact payload shape.
-    static func userInfo(reminderId: String, conversationId: String?, messageId: String? = nil) -> [String: String] {
+    static func userInfo(reminderId: String, conversationId: String?, messageId: String? = nil, ownerId: String? = nil) -> [String: String] {
         var info = ["reminderId": reminderId]
+        if let ownerId, !ownerId.isEmpty { info["ownerId"] = ownerId }
         // Whitespace-only ids count as blank - a tap would deep-link nowhere.
         if let conversationId, !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             info["conversationId"] = conversationId
@@ -179,7 +180,7 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
             if let conversationId = Self.roomId(from: userInfo) {
                 let text = textResponse.userText
                 Task { @MainActor in
-                    PulseQuickReplyCoordinator.shared.handle(text: text, conversationId: conversationId)
+                    PulseQuickReplyCoordinator.shared.handle(text: text, conversationId: conversationId, userInfo: userInfo)
                     completionHandler() // after the durable commit/failure, never before it
                 }
                 return

@@ -38,6 +38,18 @@ public enum PulseQuickReply {
         UNUserNotificationCenter.current().setNotificationCategories([category])
     }
 
+    /// New remote pushes carry a server-stamped recipient. Local reminders
+    /// additionally require the exact gateway/account owner key. Legacy or
+    /// malformed ownership is not permission to send as the current viewer.
+    static func ownsNotification(_ info: [AnyHashable: Any], userId: String, ownerKey: String) -> Bool {
+        guard !userId.isEmpty else { return false }
+        if info["reminderId"] != nil {
+            guard let owner = info["ownerId"] as? String else { return false }
+            return !ownerKey.isEmpty && owner == ownerKey
+        }
+        return info["kind"] as? String == "message" && info["recipientUserId"] as? String == userId
+    }
+
     enum Persistence: Equatable {
         case ignored
         case queued
@@ -94,7 +106,7 @@ public final class PulseQuickReplyCoordinator {
 
     /// Entry - PulseReminderNotificationDelegate.didReceive funnels every
     /// PULSE_REPLY_ACTION text-input response here.
-    public func handle(text: String, conversationId: String) {
+    public func handle(text: String, conversationId: String, userInfo: [AnyHashable: Any]) {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
         guard let session = sessionProvider?(), session.viewer != nil, let store = session.store else {
@@ -102,6 +114,12 @@ public final class PulseQuickReplyCoordinator {
             sessionProvider?()?.toasts.show("Reply was not saved. Open Pulse and retry after your chats load.")
             openRoom(conversationId)
             return
+        }
+        guard session.viewer?.id == session.api.userId,
+              PulseQuickReply.ownsNotification(userInfo, userId: session.api.userId,
+            ownerKey: PulseReminderDelivery.ownerKey(session.api)) else {
+            session.toasts.show("Reply not sent: this notification belongs to another or unknown account.")
+            return // never copy unowned text into the current account's store
         }
         do {
             switch try PulseQuickReply.persist(text: body, conversationId: conversationId,

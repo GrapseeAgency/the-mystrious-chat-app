@@ -35,6 +35,8 @@ export interface PushPayload {
   body: string
   conversationId: string
   messageId?: string
+  /** Assigned from the registration binding, never trusted from a caller. */
+  recipientUserId?: string
   /** Absolute source/root deadline; never extend it during device fanout. */
   expiresAt?: string
   callKind?: 'voice' | 'video'
@@ -244,6 +246,7 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
         body: payload.body,
         conversationId: payload.conversationId,
         messageId: payload.messageId ?? null,
+        ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
         ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
         callKind: payload.callKind ?? null,
         callerName: payload.callerName ?? null,
@@ -289,6 +292,7 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
             kind: payload.kind,
             conversationId: payload.conversationId,
             ...(payload.messageId ? { messageId: payload.messageId } : {}),
+            ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
             ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
             ...(payload.callKind ? { callKind: payload.callKind } : {}),
             ...(payload.callerName ? { callerName: payload.callerName } : {}),
@@ -339,6 +343,7 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
         kind: payload.kind,
         conversationId: payload.conversationId,
         ...(payload.messageId ? { messageId: payload.messageId } : {}),
+            ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
         ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
         ...(payload.callKind ? { callKind: payload.callKind } : {}),
         ...(payload.callerName ? { callerName: payload.callerName } : {}),
@@ -393,9 +398,11 @@ export async function fanoutPush(
       // devices were being processed. This is a preflight, not provider recall.
       const binding = { id: row.id, userId: row.userId, platform: row.platform, token: row.token, updatedAt: row.updatedAt }
       if (!await db.pushToken.findFirst({ where: binding, select: { id: true } })) { report.skipped += 1; continue }
-      const perUser: PushPayload = options?.bodyFor
-        ? { ...payload, body: options.bodyFor(row.userId) }
-        : payload
+      const perUser: PushPayload = {
+        ...payload,
+        recipientUserId: row.userId,
+        ...(options?.bodyFor ? { body: options.bodyFor(row.userId) } : {}),
+      }
       const result: SendResult =
         row.platform === 'web'
           ? await sendWeb(row.token, perUser)
