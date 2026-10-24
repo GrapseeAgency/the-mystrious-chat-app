@@ -109,6 +109,8 @@ class GroupInfoViewModel @Inject constructor(
 
     /** THIS viewer (prefs-sourced) - drives the (you) tag + self-row guard. */
     val viewerId: String? get() = repo.viewerId
+    val personalScreenPrivacy = repo.observePersonalScreenPrivacy(conversationId)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.domain.model.PersonalScreenPrivacy())
 
     data class UiState(
         val loading: Boolean = false,
@@ -450,18 +452,25 @@ class GroupInfoViewModel @Inject constructor(
         changeWebhook(token = token) { repo.deleteWebhook(token).getOrThrow(); null }
 
 
-    fun setMyPrivacy(on: Boolean) {
+    fun setMyPrivacy(on: Boolean) = writeMyPrivacy(on)
+    fun retryMyPrivacy() = writeMyPrivacy(null)
+    private fun writeMyPrivacy(on: Boolean?) {
+        val target = repo.boundToCurrentAccount()
+        val owner = target.viewerId ?: return
+        val epoch = target.attachmentSessionKey() ?: return
         viewModelScope.launch {
-            repo.setMyScreenPrivacy(conversationId, on)
-                .onSuccess {
-                    notify(if (on) "Screen security on for you" else "Screen security off for you")
-                    load()
-                }
-                .onFailure { notify(it.message ?: "Could not update screen security", isError = true) }
+            try {
+                if (target.viewerId != owner || target.attachmentSessionKey() != epoch) return@launch
+                val result = if (on == null) target.retryPersonalScreenPrivacy(conversationId) else target.setMyScreenPrivacy(conversationId, on)
+                if (target.viewerId != owner || target.attachmentSessionKey() != epoch || repo.attachmentSessionKey() != epoch) return@launch
+                result.onSuccess { load() }
+                    .onFailure { notify(it.message ?: "Could not confirm screen security; your local choice is kept", isError = true) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (target.attachmentSessionKey() == epoch && repo.attachmentSessionKey() == epoch) notify(error.message ?: "Screen security could not be saved", isError = true)
+            }
         }
     }
 
-    /** R38 room-wide switch (any participant; deliberately NOT admin-gated). */
     fun setRoomPrivacy(on: Boolean) {
         viewModelScope.launch {
             repo.setScreenPrivacy(conversationId, on)
@@ -536,6 +545,7 @@ fun GroupInfoScreen(
     onLeft: () -> Unit,
     viewModel: GroupInfoViewModel = hiltViewModel(),
 ) {
+    val personalPrivacy by viewModel.personalScreenPrivacy.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     // R2-A items 6/7/8/9 - automations, webhooks, photo-busy state.
@@ -725,9 +735,12 @@ fun GroupInfoScreen(
                                 )
                             }
                             Switch(
-                                checked = meta?.myScreenPrivacy == true,
+                                checked = personalPrivacy.on ?: true,
                                 onCheckedChange = { viewModel.setMyPrivacy(it) },
                             )
+                        }
+                        if (personalPrivacy.pending) {
+                            TextButton(onClick = viewModel::retryMyPrivacy) { Text("Retry screen-security sync") }
                         }
                         HorizontalDivider()
                         Row(verticalAlignment = Alignment.CenterVertically) {

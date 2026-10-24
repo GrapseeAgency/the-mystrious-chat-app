@@ -1177,6 +1177,8 @@ private fun MirrorRoomScaffold(
     // Covering/reopening the room can include a privacy mutation in room info.
     // Do not drop protection until a fresh owned detail confirms both flags off.
     var screenPrivacy by remember(repository, convo.id, readingEnabled) { mutableStateOf<Boolean?>(null) }
+    val personalPrivacy by repository.observePersonalScreenPrivacy(convo.id).collectAsStateWithLifecycle(
+        initialValue = app.pulse.domain.model.PersonalScreenPrivacy())
     val windowFocused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
     var phraseBusy by remember { mutableStateOf(false) }
     var phraseRevision by remember { mutableStateOf(0L) }
@@ -1197,7 +1199,7 @@ private fun MirrorRoomScaffold(
             if (visible && settingsRevision == revision && settingsReadTicket == readTicket && !settingsBusy &&
                 repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch) {
                 ttlSeconds = meta.ttlSeconds
-                screenPrivacy = meta.screenPrivacyEffective
+                screenPrivacy = meta.screenPrivacy
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -1285,7 +1287,7 @@ private fun MirrorRoomScaffold(
     // A different account/gateway session must not inherit a remembered
     // caption, picker callback, reply target or room-owned coroutine.
     androidx.compose.runtime.key(repository, convo.id, viewerId, repository.attachmentSessionKey()) {
-        MirrorRoomSecurity(enabled = screenPrivacy != false) {
+        MirrorRoomSecurity(enabled = screenPrivacy != false || personalPrivacy.on != false) {
             MirrorRoom(
                 onOpenLiveRoom = { kind -> onOpenLiveRoom(convo.id, kind) },
                 readingEnabled = readingEnabled,

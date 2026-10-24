@@ -471,10 +471,17 @@ public struct PulseAPIClient: Sendable {
     /// a superset of the summary shape; the tolerant envelope handles both
     /// the {conversation: …} wrapper and the bare object.
     public func conversationDetail(id: String, userId: String) async throws -> WireConversationSummary {
-        var request = URLRequest(url: url("/api/conversations/\(id)?userId=\(userId)"))
+        guard !id.isEmpty, !userId.isEmpty, userId == self.userId else {
+            throw Failure(kind: .validation, message: "The room session changed. Reopen the chat before refreshing it.")
+        }
+        var request = URLRequest(url: url("/api/conversations/\(q(id))?userId=\(q(userId))"))
         request.httpMethod = "GET"
         let data = try await send(request)
-        return try WireConversationEnvelope.extract(from: data)
+        let detail = try WireConversationEnvelope.extract(from: data)
+        guard detail.id == id, !userId.isEmpty, detail.members.contains(where: { $0.id == userId }) else {
+            throw Failure(kind: .server, message: "The room response did not confirm your membership in this chat.")
+        }
+        return detail
     }
 
     /// N3-b - create (or dedupe into) a DM/group. Tolerant { conversation } envelope.
@@ -1137,7 +1144,8 @@ public struct PulseAPIClient: Sendable {
     // Wave 7 - collaboration & hub (F-RO / F-HB)
 
     private func q(_ id: String) -> String {
-        id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
+        id.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")) ?? id
     }
 
     private func envelope<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {

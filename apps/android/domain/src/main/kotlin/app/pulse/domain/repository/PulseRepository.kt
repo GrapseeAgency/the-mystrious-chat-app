@@ -612,6 +612,10 @@ interface PulseRepository {
 
     /** PATCH /api/conversations/{id}/screen-privacy { userId, on } - R42 the per-VIEWER veil flag. */
     suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit>
+    fun observePersonalScreenPrivacy(conversationId: String): Flow<app.pulse.domain.model.PersonalScreenPrivacy> =
+        kotlinx.coroutines.flow.flowOf(app.pulse.domain.model.PersonalScreenPrivacy())
+    suspend fun retryPersonalScreenPrivacy(conversationId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Screen-security retry is unavailable"))
 
     /** PATCH /api/conversations/{id} { photo } - admin-only; photo is an uploaded "/api/uploads/<file>" path. */
     suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit>

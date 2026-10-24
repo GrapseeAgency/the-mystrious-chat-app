@@ -321,6 +321,11 @@ public final class PulsePrefs: ObservableObject {
     /// write. The session PATCHes { userId, preferences } and reports the
     /// verdict back via `notePatchSettled`.
     public var patchRemote: ((PulseSettingsTicket) -> Void)?
+    public var patchScreenPrivacy: ((PulseScreenPrivacyTicket) -> Void)?
+    @Published public private(set) var screenPrivacyPending: Set<String> = []
+    @Published public private(set) var screenPrivacyNotes: [String: String] = [:]
+    @Published public private(set) var screenPrivacyReadError: String?
+    private var screenPrivacyActivation = UUID()
     private var localPreferenceRevision: UInt64 = 0
     private var settingsReadTicket = UUID()
     private var loadedSettingsOwner: String?
@@ -561,30 +566,71 @@ public final class PulsePrefs: ObservableObject {
 
     // R2-B R42 - personal screen-security veil
 
-    /// Instant local write-through for MY veil on one conversation; the
-    /// server mirror PATCH runs from the caller (GroupInfoView) and the
-    /// verdict lands via adoptServerScreenPrivacy.
+    private var screenPrivacyJournal: PulseScreenPrivacyJournal { PulseScreenPrivacyJournal(defaults: defaults) }
+
+    /// The scoped value and retry ticket commit before transport is scheduled.
     public func setScreenPrivacy(conversationId: String, on: Bool) {
         refreshSettingsOwner()
-        var map = screenPrivacy
-        map[conversationId] = on
-        storeScreenPrivacy(map)
+        guard let owner = settingsOwnerKey else { return }
+        do {
+            let ticket = try screenPrivacyJournal.stage(owner: owner, room: conversationId, on: on)
+            refreshScreenPrivacy(owner: owner)
+            screenPrivacyNotes[conversationId] = nil
+            patchScreenPrivacy?(ticket)
+        } catch {
+            screenPrivacy[conversationId] = true
+            screenPrivacyNotes[conversationId] = "Screen security could not be saved. Protection is kept on; choose the setting again."
+        }
     }
-
-    /// Server truth landed (detail fetch or PATCH echo): the server value
-    /// wins for that conversation - the same shallow-merge contract as every
-    /// other server-backed blob field.
-    public func adoptServerScreenPrivacy(conversationId: String, on: Bool) {
+    public func retryScreenPrivacy(conversationId: String) {
         refreshSettingsOwner()
-        guard screenPrivacy[conversationId] != on else { return }
-        setScreenPrivacy(conversationId: conversationId, on: on)
+        guard let owner = settingsOwnerKey else { return }
+        do {
+            if let ticket = try screenPrivacyJournal.pending(owner: owner, room: conversationId) { patchScreenPrivacy?(ticket) }
+        } catch { screenPrivacyNotes[conversationId] = "Saved screen-security choices could not be read. Nothing was discarded." }
     }
-
-    private func storeScreenPrivacy(_ map: [String: Bool]) {
-        screenPrivacy = map
-        if let owner = settingsOwnerKey, owner == loadedSettingsOwner,
-           let data = try? JSONEncoder().encode(map) {
-            defaults.set(data, forKey: "pulse.settings.veil.v1." + owner)
+    func screenPrivacyRead(conversationId: String) -> PulseScreenPrivacyRead? {
+        refreshSettingsOwner()
+        guard let owner = settingsOwnerKey else { return nil }
+        do {
+            return PulseScreenPrivacyRead(owner: owner, room: conversationId,
+                revision: try screenPrivacyJournal.entries(owner: owner)[conversationId]?.revision, activation: screenPrivacyActivation)
+        } catch { return nil }
+    }
+    func adoptServerScreenPrivacy(_ read: PulseScreenPrivacyRead, on: Bool) {
+        guard settingsOwnerKey == read.owner, loadedSettingsOwner == read.owner, screenPrivacyActivation == read.activation else { return }
+        do {
+            try screenPrivacyJournal.mergeSnapshot(read, on: on)
+            refreshScreenPrivacy(owner: read.owner)
+        } catch { screenPrivacyNotes[read.room] = "Screen security could not be refreshed. Your local choice is kept." }
+    }
+    func currentScreenPrivacy(_ ticket: PulseScreenPrivacyTicket, api: PulseAPIClient) throws -> Bool {
+        guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner,
+              Self.settingsOwnerKey(for: api.userId, gateway: api.baseURL) == ticket.owner else { throw CancellationError() }
+        return try screenPrivacyJournal.current(ticket)
+    }
+    func acknowledgeScreenPrivacy(_ ticket: PulseScreenPrivacyTicket, on: Bool) throws {
+        guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner else { throw CancellationError() }
+        try screenPrivacyJournal.acknowledge(ticket, on: on)
+        refreshScreenPrivacy(owner: ticket.owner)
+        if !screenPrivacyPending.contains(ticket.room) { screenPrivacyNotes[ticket.room] = nil }
+    }
+    func noteScreenPrivacyFailure(_ ticket: PulseScreenPrivacyTicket) {
+        guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner,
+              (try? screenPrivacyJournal.current(ticket)) == true else { return }
+        screenPrivacyNotes[ticket.room] = "Saved on this device; server confirmation is pending. Retry when connected."
+    }
+    private func refreshScreenPrivacy(owner: String) {
+        do {
+            let entries = try screenPrivacyJournal.entries(owner: owner)
+            screenPrivacyReadError = nil
+            screenPrivacy = entries.mapValues(\.on)
+            screenPrivacyPending = Set(entries.filter { $0.value.pending != nil }.keys)
+        } catch {
+            // Empty means unknown, and the room policy keeps the cover engaged.
+            screenPrivacy = [:]
+            screenPrivacyPending = []
+            screenPrivacyReadError = "Saved screen-security choices could not be read. Protection remains on."
         }
     }
 
@@ -806,11 +852,14 @@ public final class PulsePrefs: ObservableObject {
             lastSeenVisible: false, readReceipts: false, typingVisible: false,
             reducedMotion: false, convThemes: [:]))
         screenPrivacy = [:]
+        screenPrivacyPending = []
+        screenPrivacyNotes = [:]
+        screenPrivacyReadError = nil
+        screenPrivacyActivation = UUID()
         guard let owner else { return }
         if let data = defaults.data(forKey: "pulse.settings.values.v1." + owner),
            let snapshot = try? JSONDecoder().decode(WirePulsePrefs.self, from: data) { applyServer(snapshot) }
-        if let data = defaults.data(forKey: "pulse.settings.veil.v1." + owner),
-           let veil = try? JSONDecoder().decode([String: Bool].self, from: data) { screenPrivacy = veil }
+        refreshScreenPrivacy(owner: owner)
         do { applyServer(try settingsJournal.pendingTicket(owner: owner).patch) }
         catch {
             // An unreadable journal may contain a privacy refusal. Never let a

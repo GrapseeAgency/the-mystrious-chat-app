@@ -2112,44 +2112,62 @@ class PulseRepositoryImpl constructor(
     // REM-A group governance + scheduling (web group-info-sheet parity)
 
     /** Live group meta - ALSO upserts the Room conversation cache (rename TTL etc. flow into the list). */
-    override suspend fun groupMeta(conversationId: String): Result<GroupMeta> =
-        readConversationSnapshot(conversationId) { dto, owner ->
-            val ttl = dto.ttlSeconds
-            val slow = dto.slowModeSeconds
-            val broadcast = dto.broadcastMode
-            val roomPrivacy = dto.screenPrivacy
-            val personalPrivacy = dto.myScreenPrivacy
-            if (dto.id != conversationId || dto.members.none { it.id == owner } ||
-                ttl == null || slow == null || broadcast == null || roomPrivacy == null || personalPrivacy == null ||
-                ttl !in listOf(0, 86_400, 604_800, 2_592_000) || slow !in listOf(0, 5, 10, 30, 60, 300)) {
-                Result.failure(PulseApiException("SERVER", "Room settings were incomplete. Refresh before changing them."))
-            } else {
-                Result.success(
-                    GroupMeta(
-                        myRole = dto.members.firstOrNull { it.id == owner }?.role,
-                        isGroup = dto.isGroup,
-                        ttlSeconds = ttl,
-                        broadcastMode = broadcast,
-                        slowModeSeconds = slow,
-                        screenPrivacy = roomPrivacy,
-                        myScreenPrivacy = personalPrivacy,
-                        inviteCode = dto.inviteCode,
-                        // R6 - M5: the server computes dmBlocked for DM details
-                        // only (src/lib/serializers.ts buildConversationDetail).
-                        dmBlocked = dto.dmBlocked == true,
-                        // R70 - the web room-info page's live detail fields.
-                        description = dto.description,
-                        photo = dto.photo,
-                        myMutedUntilIso = dto.mutedUntil,
-                        myStreakCount = streakCountOf(dto.myStreak),
-                        myStreakBest = streakBestOf(dto.myStreak),
-                        deadStreakCount = streakCountOf(dto.deadStreak),
-                        lostStreakCount = streakCountOf(dto.lostStreak),
-                        lostStreakBest = streakBestOf(dto.lostStreak),
-                    ),
-                )
+    override suspend fun groupMeta(conversationId: String): Result<GroupMeta> {
+        return try {
+            val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+            val epoch = attachmentSession
+            val privacyRead = prefsLocalStore.roomPrivacy.readTicket(conversationId)
+            requireConversationOwner(owner, epoch)
+            val result = readConversationSnapshot(conversationId) { dto, owner ->
+                val ttl = dto.ttlSeconds
+                val slow = dto.slowModeSeconds
+                val broadcast = dto.broadcastMode
+                val roomPrivacy = dto.screenPrivacy
+                val personalPrivacy = dto.myScreenPrivacy
+                if (dto.id != conversationId || dto.members.none { it.id == owner } ||
+                    ttl == null || slow == null || broadcast == null || roomPrivacy == null || personalPrivacy == null ||
+                    ttl !in listOf(0, 86_400, 604_800, 2_592_000) || slow !in listOf(0, 5, 10, 30, 60, 300)) {
+                    Result.failure(PulseApiException("SERVER", "Room settings were incomplete. Refresh before changing them."))
+                } else {
+                    Result.success(
+                        GroupMeta(
+                            myRole = dto.members.firstOrNull { it.id == owner }?.role,
+                            isGroup = dto.isGroup,
+                            ttlSeconds = ttl,
+                            broadcastMode = broadcast,
+                            slowModeSeconds = slow,
+                            screenPrivacy = roomPrivacy,
+                            myScreenPrivacy = personalPrivacy,
+                            inviteCode = dto.inviteCode,
+                            // R6 - M5: the server computes dmBlocked for DM details
+                            // only (src/lib/serializers.ts buildConversationDetail).
+                            dmBlocked = dto.dmBlocked == true,
+                            // R70 - the web room-info page's live detail fields.
+                            description = dto.description,
+                            photo = dto.photo,
+                            myMutedUntilIso = dto.mutedUntil,
+                            myStreakCount = streakCountOf(dto.myStreak),
+                            myStreakBest = streakBestOf(dto.myStreak),
+                            deadStreakCount = streakCountOf(dto.deadStreak),
+                            lostStreakCount = streakCountOf(dto.lostStreak),
+                            lostStreakBest = streakBestOf(dto.lostStreak),
+                        ),
+                    )
+                }
+            }.map { it.first }
+
+            result.map { meta ->
+                prefsLocalStore.roomPrivacy.mergeSnapshot(privacyRead, meta.myScreenPrivacy) {
+                    viewerId == owner && attachmentSession == epoch
+                }
+                val local = prefsLocalStore.roomPrivacy.observe(conversationId).first()
+                requireConversationOwner(owner, epoch)
+                meta.copy(myScreenPrivacy = local.on ?: true)
             }
-        }.map { it.first }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
 
     /** PATCH /api/conversations/{id} - every success carries the updated detail; refresh the cache. */
     private suspend fun patchGroupMeta(
@@ -2179,11 +2197,40 @@ class PulseRepositoryImpl constructor(
 
     // R2-A - round-2 parity (automations · webhooks · recap · privacy · photo)
 
-    override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> = withRoomMutation(conversationId) { owner, _ ->
-        when (val r = api.setMyScreenPrivacy(conversationId, owner, on)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+    private val roomPrivacyWrites = SettingsWriteQueue(scope)
+    override fun observePersonalScreenPrivacy(conversationId: String) = prefsLocalStore.roomPrivacy.observe(conversationId)
+    override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> = writePersonalPrivacy(conversationId, on)
+    override suspend fun retryPersonalScreenPrivacy(conversationId: String): Result<Unit> = writePersonalPrivacy(conversationId, null)
+
+    private suspend fun writePersonalPrivacy(room: String, on: Boolean?): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        fun owns() = viewerId == owner && attachmentSession == epoch
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        return roomPrivacyWrites.submit(
+            prepare = {
+                requireConversationOwner(owner, epoch)
+                conversationSnapshots.invalidate(room)
+                if (on == null) prefsLocalStore.roomPrivacy.pending(room)
+                else prefsLocalStore.roomPrivacy.stage(room, on, ::owns)
+            },
+            send = { ticket ->
+                requireConversationOwner(owner, epoch)
+                if (ticket == null || !prefsLocalStore.roomPrivacy.current(ticket)) Result.success(Unit)
+                else withRoomMutation(room) { _, _ ->
+                    requireConversationOwner(owner, epoch)
+                    if (!prefsLocalStore.roomPrivacy.current(ticket)) Result.success(Unit)
+                    else when (val response = api.setMyScreenPrivacy(room, owner, ticket.on)) {
+                        is PulseResult.Success -> {
+                            requireConversationOwner(owner, epoch)
+                            prefsLocalStore.roomPrivacy.acknowledge(ticket, ticket.on, ::owns)
+                            Result.success(Unit)
+                        }
+                        is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+                    }
+                }
+            },
+        ).await()
     }
 
     override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> = withRoomMutation(conversationId) { owner, epoch ->

@@ -579,6 +579,7 @@ public final class PulseSession: ObservableObject {
         self.prefs = prefs
         prefs.refreshSettingsOwner()
         prefs.notePatchSettled(successful: true, note: nil)
+        prefs.patchScreenPrivacy = { [weak self] ticket in self?.sendScreenPrivacy(ticket) }
         guard prefs.patchRemote == nil else { return }
         prefs.patchRemote = { [weak self] patch in
             self?.sendPrefsPatch(patch)
@@ -593,6 +594,23 @@ public final class PulseSession: ObservableObject {
     /// explicitly confirmed fields. Failure retains intent for explicit Retry;
     /// unrelated replies and older GETs must not reset the local choice.
     private let settingsWrites = PulseSettingsWriteQueue()
+    private func sendScreenPrivacy(_ ticket: PulseScreenPrivacyTicket) {
+        guard let owner = viewer?.id, prefs?.viewer?.id == owner, api.userId == owner else { return }
+        let client = api, epoch = generation
+        settingsWrites.enqueue { [weak self] in
+            guard let self, !Task.isCancelled, self.generation == epoch,
+                  self.viewer?.id == owner, let prefs = self.prefs, prefs.viewer?.id == owner else { return }
+            do {
+                guard try prefs.currentScreenPrivacy(ticket, api: client) else { return }
+                let confirmed = try await client.setMyScreenPrivacy(ticket.room, on: ticket.on)
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner else { return }
+                try prefs.acknowledgeScreenPrivacy(ticket, on: confirmed)
+            } catch {
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner else { return }
+                prefs.noteScreenPrivacyFailure(ticket)
+            }
+        }
+    }
     private func sendPrefsPatch(_ ticket: PulseSettingsTicket) {
         guard let owner = viewer?.id, prefs?.viewer?.id == owner, api.userId == owner else { return }
         let client = api, epoch = generation

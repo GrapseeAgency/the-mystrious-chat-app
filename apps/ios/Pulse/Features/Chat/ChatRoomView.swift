@@ -4056,6 +4056,7 @@ final class RoomViewModel: ObservableObject {
     func handleRoomDisappeared() {
         quickPhraseTask?.cancel()
         quickPhraseReads.stop()
+        privacyReads.stop()
         cancelPhotoImport()
         journalDraft(draftBeforeEdit ?? draft)
         draftSaveTask?.cancel()
@@ -4675,6 +4676,7 @@ final class RoomViewModel: ObservableObject {
     /// refetch. Same adoption rules as loadPrivacyState.
     func applyFreshDetail(_ detail: WireConversationSummary) {
         guard detail.id == conversationId else { return }
+        privacyReads.invalidateReads()
         adoptReadMembers(detail)
         roomScreenPrivacy = detail.screenPrivacy
         dmBlocked = !detail.isGroup && detail.dmBlockedNow
@@ -4693,23 +4695,37 @@ final class RoomViewModel: ObservableObject {
         partnerLastReadAt = memberWatermarks.values.max()
     }
 
+    private let privacyReads = PulseRoomOperations()
+    struct PrivacyReadTicket {
+        let snapshot: PulseRoomOperations.ReadTicket
+        let readers: Int
+    }
+    func beginPrivacyRead() -> PrivacyReadTicket? {
+        privacyReads.beginRead().map { PrivacyReadTicket(snapshot: $0, readers: receiptRevision) }
+    }
+    @discardableResult
+    func applyPrivacyRead(_ ticket: PrivacyReadTicket, detail: WireConversationSummary) -> Bool {
+        guard detail.id == conversationId, privacyReads.accepts(ticket.snapshot) else { return false }
+        if receiptRevision == ticket.readers { adoptReadMembers(detail) }
+        roomScreenPrivacy = detail.screenPrivacy
+        dmBlocked = !detail.isGroup && detail.dmBlockedNow
+        return true
+    }
+
     /// One quiet detail GET on room open (web detail-query parity): refresh
     /// the room-wide flag + adopt the server's per-viewer flag into the
     /// prefs map. Local state stays authoritative until this lands.
     func loadPrivacyState(session: PulseSession) async {
         let viewerId = session.viewer?.id ?? ""
         let epoch = session.sessionGeneration
-        let revision = receiptRevision
+        guard !viewerId.isEmpty, epoch == readSessionGeneration, let ticket = beginPrivacyRead() else { return }
+        let privacyRead = session.prefs?.screenPrivacyRead(conversationId: conversationId)
         let client = session.api
-        guard !viewerId.isEmpty, let detail = try? await client.conversationDetail(id: conversationId, userId: viewerId),
-              !Task.isCancelled, session.sessionGeneration == epoch else { return }
-        if receiptRevision == revision { adoptReadMembers(detail) }
-        roomScreenPrivacy = detail.screenPrivacy
-        // R47 - the same detail GET carries the DM dead-end flag (either
-        // direction); groups always decode false here.
-        dmBlocked = !detail.isGroup && detail.dmBlockedNow
-        if let mine = detail.myScreenPrivacy {
-            session.prefs?.adoptServerScreenPrivacy(conversationId: conversationId, on: mine)
+        guard let detail = try? await client.conversationDetail(id: conversationId, userId: viewerId),
+              !Task.isCancelled, session.sessionGeneration == epoch,
+              applyPrivacyRead(ticket, detail: detail) else { return }
+        if let mine = detail.myScreenPrivacy, let privacyRead {
+            session.prefs?.adoptServerScreenPrivacy(privacyRead, on: mine)
         }
     }
 

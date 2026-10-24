@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
+import { ConversationMetadataError, patchMyScreenPrivacy } from '../../src/lib/conversation-metadata.ts'
 import { privacyPreferenceSnapshot } from '../../src/lib/privacy-preferences.ts'
 const { PrismaClient, Prisma } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path, bindings, expression) {
@@ -16,12 +17,18 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    const user = Prisma.dmmf.datamodel.models.find(m => m.name === 'User')
-    const columns = user.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
-      const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
-      return `"${f.name}" ${type}${f.isId ? ' PRIMARY KEY' : ''}`
-    })
-    await db.$executeRawUnsafe(`CREATE TABLE User (${columns.join(',')})`)
+    for (const name of ['User', 'Conversation', 'ConversationParticipant']) {
+      const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
+      const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
+        const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
+        let def = ''
+        if (typeof f.default === 'string') def = ` DEFAULT '${f.default.replaceAll("'", "''")}'`
+        else if (typeof f.default === 'number' || typeof f.default === 'boolean') def = ` DEFAULT ${Number(f.default)}`
+        else if (f.default?.name === 'now') def = ' DEFAULT CURRENT_TIMESTAMP'
+        return `"${f.name}" ${type}${f.isId ? ' PRIMARY KEY' : ''}${def}`
+      })
+      await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
+    }
     for (const id of ['owner','other']) await db.user.create({ data: {
       id, name:id, color:'amber', preferences: '{"readReceipts":true,"density":"cozy"}',
       sessionTokenHash:hashSessionToken(`synthetic-${id}`), legacyTokenHashes:'[]',
@@ -36,7 +43,18 @@ async function fixture(run, database = db => db) {
     const get = (token='synthetic-owner',userId='owner') => route.GET(new Request(`https://settings.test?userId=${userId}`, {
       headers:token ? {authorization:`Bearer ${token}`} : {},
     }))
-    await run({db,patch,get})
+    await db.conversation.create({data:{id:'room',isGroup:true}})
+    await db.conversationParticipant.create({data:{userId:'owner',conversationId:'room',screenPrivacy:true}})
+    await db.conversationParticipant.create({data:{userId:'other',conversationId:'room',screenPrivacy:true}})
+    const notices=[]
+    const privacy=await load('src/app/api/conversations/[id]/screen-privacy/route.ts', {
+      db, requireActionOwner, ConversationMetadataError, patchMyScreenPrivacy, NextResponse:Response,
+      safeJson:r=>r.json(), strField:v=>typeof v==='string'?v.trim():'', notifySocket:async(...args)=>notices.push(args),
+    }, 'PATCH')
+    const setPrivacy=(on,token='synthetic-owner',userId='owner')=>privacy(new Request('https://settings.test/api/conversations/room/screen-privacy', {
+      method:'PATCH',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId,on}),
+    }), {params:Promise.resolve({id:'room'})})
+    await run({db,patch,get,setPrivacy,notices})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -83,4 +101,24 @@ test('malformed privacy cannot mutate and repair does not silently opt in',()=>f
   assert.equal((await patch({density:'compact'})).status,200)
   const preferences=(await (await get()).json()).preferences
   for(const key of ['readReceipts','lastSeenVisible','typingVisible','notifPreviews']) assert.equal(preferences[key],false)
+}))
+
+
+test('personal room privacy requires its owner credential and repeated desired-state writes are safe',()=>fixture(async({db,setPrivacy,notices})=>{
+  for(const token of [null,'invalid','synthetic-other']) {
+    assert.equal((await setPrivacy(false,token)).status,token?403:401)
+  }
+  assert.equal(notices.length,0)
+  assert.equal((await setPrivacy('false')).status,400)
+  for(let retry=0;retry<2;retry++) {
+    const response=await setPrivacy(false)
+    assert.equal(response.status,200)
+    assert.deepEqual(await response.json(),{ok:true,screenPrivacy:false})
+  }
+  const rows=await db.conversationParticipant.findMany({where:{conversationId:'room'}})
+  assert.equal(rows.find(r=>r.userId==='owner').screenPrivacy,false)
+  assert.equal(rows.find(r=>r.userId==='other').screenPrivacy,true)
+  assert.ok(notices.every(([,recipients])=>JSON.stringify(recipients)==='["owner"]'))
+  await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
+  assert.equal((await setPrivacy(true)).status,403)
 }))

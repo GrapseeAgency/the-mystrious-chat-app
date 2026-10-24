@@ -594,6 +594,9 @@ internal fun MirrorRoomInfoPage(
     val convThemes by repository.convThemes.collectAsState(initial = emptyMap<String, ConvTheme>())
     val prefs by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
 
+    val personalPrivacy by repository.observePersonalScreenPrivacy(conversationId).collectAsState(
+        initial = app.pulse.domain.model.PersonalScreenPrivacy())
+
     // row/UI state
     var ttlOpen by remember { mutableStateOf(false) }
     var slowOpen by remember { mutableStateOf(false) }
@@ -815,7 +818,7 @@ internal fun MirrorRoomInfoPage(
         }
     }
 
-    fun changeScreenPrivacy(on: Boolean, personal: Boolean) {
+    fun changeScreenPrivacy(on: Boolean, personal: Boolean, retry: Boolean = false) {
         val target = repository.boundToCurrentAccount()
         val ticket = privacyGate.beginWrite() ?: return
         if (target.viewerId != viewerId || target.attachmentSessionKey() != ticket.owner) {
@@ -828,7 +831,9 @@ internal fun MirrorRoomInfoPage(
             try {
                 val res = repositoryResult {
                     if (target.viewerId != viewerId || target.attachmentSessionKey() != ticket.owner) throw CancellationException("Account changed")
-                    if (personal) target.setMyScreenPrivacy(conversationId, on) else target.setScreenPrivacy(conversationId, on)
+                    if (personal && retry) target.retryPersonalScreenPrivacy(conversationId)
+                    else if (personal) target.setMyScreenPrivacy(conversationId, on)
+                    else target.setScreenPrivacy(conversationId, on)
                 }
                 currentCoroutineContext().ensureActive()
                 if (!privacyGate.isCurrent(ticket)) return@launch
@@ -1468,7 +1473,7 @@ internal fun MirrorRoomInfoPage(
 
                             // c. SCREEN SECURITY (my) - the personal veil
                             InfoPressableRow {
-                                if (myPrivacyLocal ?: m.myScreenPrivacy) {
+                                if (myPrivacyLocal ?: personalPrivacy.on ?: m.myScreenPrivacy) {
                                     MirrorLucideIcon("LShieldCheck", tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
                                 } else {
                                     MirrorLucideIcon("LEyeOff", tint = MirrorArt.Faint, modifier = Modifier.size(16.dp))
@@ -1492,10 +1497,17 @@ internal fun MirrorRoomInfoPage(
                                     )
                                 }
                                 InfoSwitch(
-                                    checked = myPrivacyLocal ?: m.myScreenPrivacy,
+                                    checked = myPrivacyLocal ?: personalPrivacy.on ?: m.myScreenPrivacy,
                                     onCheckedChange = ::setMyScreenPrivacy,
                                     enabled = myPrivacyLocal == null,
                                 )
+                            }
+
+                            if (personalPrivacy.pending) {
+                                TextButton(onClick = { changeScreenPrivacy(personalPrivacy.on ?: true, personal = true, retry = true) },
+                                    enabled = myPrivacyLocal == null && everyonePrivacyLocal == null) {
+                                    Text("Retry screen-security sync")
+                                }
                             }
 
                             // d. SCREEN SECURITY FOR EVERYONE - the room-wide flag

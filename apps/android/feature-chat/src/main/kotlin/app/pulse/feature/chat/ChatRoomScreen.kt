@@ -245,7 +245,8 @@ fun ChatRoomScreen(
     // the composer chip counts it down live and send/mic stay locked).
     val slowModeRemainingSec by viewModel.slowModeRemainingSec.collectAsStateWithLifecycle()
     val slowBlocked = slowModeRemainingSec > 0
-    val screenPrivacyOn = groupMeta?.screenPrivacyEffective != false
+    val personalPrivacy by viewModel.personalScreenPrivacy.collectAsStateWithLifecycle()
+    val screenPrivacyOn = groupMeta?.screenPrivacy != false || personalPrivacy.on != false
     val roomTheme = convThemes[conversationId]
     val effectiveWallpaper = roomTheme?.wallpaper ?: prefs.wallpaper ?: "none"
 

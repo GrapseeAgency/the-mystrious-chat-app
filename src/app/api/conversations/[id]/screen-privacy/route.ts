@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { notifySocket, safeJson, strField } from '@/lib/serializers'
-import { bearerToken } from '@/lib/session-token'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { ConversationMetadataError, patchMyScreenPrivacy } from '@/lib/conversation-metadata'
 
@@ -18,10 +17,8 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   if (typeof body.on !== 'boolean')
     return NextResponse.json({ error: 'on must be a boolean.' }, { status: 400 })
-  if (bearerToken(req)) {
-    const denied = await requireActionOwner(req, userId, 'personal screen-privacy settings')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, userId, 'personal screen-privacy settings')
+  if (denied) return denied
   try {
     await patchMyScreenPrivacy(db, id, userId, body.on)
     await notifySocket('conversation:updated', [userId], {

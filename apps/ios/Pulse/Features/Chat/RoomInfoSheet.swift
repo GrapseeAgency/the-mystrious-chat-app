@@ -101,12 +101,14 @@ struct RoomInfoSheet: View {
         let epoch = session.sessionGeneration, client = session.api, owner = viewerId, ticket = UUID()
         guard owns(epoch), !owner.isEmpty, prefs.viewer?.id == owner, client.userId == owner,
               PulseWalletOperations.gatewayKey(client.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL) else { return }
+        let privacyRead = prefs.screenPrivacyRead(conversationId: conversation.id)
         loadTicket = ticket
         phase = detail == nil ? .loading : phase
         do {
             let fresh = try await client.conversationDetail(id: conversation.id, userId: owner)
             guard owns(epoch), prefs.viewer?.id == owner, loadTicket == ticket else { return }
             try acceptDetail(fresh)
+            if let privacyRead, let mine = fresh.myScreenPrivacy { prefs.adoptServerScreenPrivacy(privacyRead, on: mine) }
             phase = .loaded
         } catch {
             guard owns(epoch), prefs.viewer?.id == owner, loadTicket == ticket else { return }
@@ -211,7 +213,7 @@ struct RoomInfoSheet: View {
             // switch frosts every member's view. Both OR inside the room.
             Section {
                 Toggle(isOn: Binding(
-                    get: { prefs.screenPrivacy[conversation.id] ?? false },
+                    get: { prefs.screenPrivacy[conversation.id] ?? true },
                     set: { setMyScreenPrivacy($0) },
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -223,6 +225,7 @@ struct RoomInfoSheet: View {
                     }
                 }
                 .accessibilityLabel("Screen security for you")
+                ScreenPrivacySyncNotice(prefs: prefs, room: conversation.id)
                 Toggle(isOn: Binding(
                     get: { detail.screenPrivacy ?? false },
                     set: { setRoomScreenPrivacy($0) },
@@ -336,12 +339,8 @@ struct RoomInfoSheet: View {
     }
 
     private func setMyScreenPrivacy(_ on: Bool) {
-        mutate(optimistic: { prefs.setScreenPrivacy(conversationId: conversation.id, on: on) }, request: { api, _ in
-            try await api.setMyScreenPrivacy(conversation.id, on: on)
-        }, apply: { confirmed in
-            prefs.adoptServerScreenPrivacy(conversationId: conversation.id, on: confirmed)
-            session.toasts.show(confirmed ? "Screen security on for you" : "Screen security off for you")
-        })
+        guard surfaceEpoch == session.sessionGeneration, prefs.viewer?.id == viewerId else { return }
+        prefs.setScreenPrivacy(conversationId: conversation.id, on: on)
     }
 
     private func setRoomScreenPrivacy(_ on: Bool) {

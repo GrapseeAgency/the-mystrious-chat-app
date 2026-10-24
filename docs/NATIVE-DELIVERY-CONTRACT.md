@@ -55,3 +55,9 @@ Settings PATCH preserves disjoint concurrent edits with a bounded snapshot compa
 ### Native preference-cache migration
 
 Swift no longer adopts legacy global server-backed preference or room-theme/veil keys as another account's cache. It restores gateway/viewer snapshots and matching pending intent synchronously; accounts without a trustworthy snapshot start with conservative privacy flags until their owned settings GET succeeds. Android likewise treats missing or malformed cached privacy fields as unknown, not opt-in. Device-wide autumn design language, appearance, app lock and quiet-hours controls are unchanged. This migration does not make cross-device privacy changes instantaneous or prove all old transport events carry correct account provenance.
+
+### Personal room screen-security writes
+
+PATCH `/api/conversations/[id]/screen-privacy` now requires the existing bearer credential of the requested participant, including when the header is absent (401). Another owner's credential is refused (403). Coordinate headerless web/legacy-client credential migration before deploying this route revision; native clients already attach their captured session credential. Participant authority still shares the database transaction with the write.
+
+New personal-privacy intent is retained per room/account/gateway on both platforms, with explicit Retry and read/acknowledgement revision protection. Swift's prior scoped veil dictionary migrates as cached values, not invented pending writes; historical failed intent in that old format cannot be reconstructed. These local tickets do not impose cross-device server revisions or guarantee ordering of a timed-out request that commits later. No production deployment is implied.

@@ -29,6 +29,7 @@ class PulsePrefsLocalStore internal constructor(
     private val storage: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
 ) {
     @Inject constructor(@ApplicationContext context: Context) : this(context.pulsePrefs)
+    internal val roomPrivacy = RoomPrivacyLocalStore(storage)
 
     private fun walletKey(intent: String) = stringPreferencesKey("wallet.operation." +
         java.security.MessageDigest.getInstance("SHA-256").digest(intent.toByteArray(Charsets.UTF_8))

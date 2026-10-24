@@ -133,6 +133,9 @@ class ChatRoomViewModel @Inject constructor(
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
 
+    val personalScreenPrivacy = repo.observePersonalScreenPrivacy(conversationId)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.domain.model.PersonalScreenPrivacy())
+
     // ── R1-W2I - PiP pane (F-PI-01..03), web usePipChat legacy contract ──
 
     /**
