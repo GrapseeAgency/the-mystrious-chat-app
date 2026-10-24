@@ -814,7 +814,7 @@ public struct PulseAPIClient: Sendable {
     /// GET /api/stories?requesterId= - 24h status groups (nil = unreachable,
     /// the UI renders only the My-status cell - honest empty, no fakes).
     public func stories() async -> WireStoriesPage? {
-        try? await get("/api/stories?requesterId=\(userId)", as: WireStoriesPage.self)
+        try? await get("/api/stories?requesterId=\(Self.queryEncoded(userId))", as: WireStoriesPage.self)
     }
 
     // Wave 4 - stories write/owner paths (REST only; zero socket)
@@ -849,15 +849,19 @@ public struct PulseAPIClient: Sendable {
     /// (403 otherwise; oldest viewer first). Empty list on a missing key.
     public func storyViewers(id: String) async throws -> [WireStoryViewer] {
         let page: WireStoryViewersPage = try await get(
-            "/api/stories/\(id)/view?requesterId=\(userId)",
+            "/api/stories/\(id)/view?requesterId=\(Self.queryEncoded(userId))",
             as: WireStoryViewersPage.self,
         )
         return page.viewers ?? []
     }
 
-    /// DELETE /api/stories/{id} { requesterId } - owner-only (403 / 404 wire).
+    /// DELETE /api/stories/{id}?requesterId= - the owner is a query parameter, not a body field.
     public func deleteStory(id: String) async throws {
-        try await deleteEmpty("/api/stories/\(id)", body: ["requesterId": userId])
+        struct Receipt: Decodable { let ok: Bool }
+        let data = try await deleteRaw("/api/stories/\(id)?requesterId=\(Self.queryEncoded(userId))", body: [:])
+        guard (try? decoder.decode(Receipt.self, from: data).ok) == true else {
+            throw Failure(kind: .server, message: "Story deletion was not confirmed. Refresh before retrying.")
+        }
     }
 
     public func folderSnapshot() async throws -> [WireFolder] {

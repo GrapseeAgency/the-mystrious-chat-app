@@ -771,26 +771,12 @@ class PulseApi(
         }
 
     /** DELETE /api/stories/{id}?requesterId= → { ok: true } (owner-only 403, unknown 404). */
-    suspend fun deleteStory(storyId: String, requesterId: String): PulseResult<OkDto> {
-        if (gateway().isBlank()) return offlineFailure
-        return try {
-            val res = http.delete(
-                url("/api/stories/$storyId?requesterId=" +
-                    java.net.URLEncoder.encode(requesterId, "UTF-8")),
-            )
-            val text = res.bodyAsText()
-            if (res.status.isSuccess()) {
-                PulseResult.Success(
-                    runCatching { PulseJson.decodeFromString(OkDto.serializer(), text) }.getOrDefault(OkDto(ok = true)),
-                )
-            } else {
-                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
-            }
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+    suspend fun deleteStory(storyId: String, requesterId: String): PulseResult<OkDto> =
+        deleteAt("/api/stories/$storyId?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")) { text ->
+            val receipt = PulseJson.parseToJsonElement(text).jsonObject
+            if (receipt["ok"] != JsonPrimitive(true)) throw kotlinx.serialization.SerializationException("Story deletion was not confirmed")
+            OkDto(ok = true)
         }
-    }
 
     /** GET /api/folders?userId= - Signal-style folder rail. */
     suspend fun folders(userId: String): PulseResult<FoldersPageDto> =

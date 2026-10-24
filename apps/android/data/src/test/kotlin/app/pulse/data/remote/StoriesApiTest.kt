@@ -30,11 +30,13 @@ class StoriesApiTest {
     private var lastMethod = ""
     private var lastUrl = ""
     private var lastBody = ""
+    private var lastAuthorization: String? = null
 
     private fun api(status: HttpStatusCode = HttpStatusCode.OK, body: String = "{}"): PulseApi =
         PulseApi(
             HttpClient(MockEngine { request ->
                 requests++
+                lastAuthorization = request.headers["Authorization"]
                 lastMethod = request.method.value
                 lastUrl = request.url.toString()
                 // setBody(String) with contentType json lands as TextContent
@@ -50,6 +52,7 @@ class StoriesApiTest {
                     headers = headersOf("Content-Type", "application/json"),
                 )
             }),
+            bearerToken = { "synthetic-token" },
         )
 
     @Before
@@ -147,5 +150,19 @@ class StoriesApiTest {
         assertEquals(PulseResult.Failure.Kind.FORBIDDEN, (forbidden as PulseResult.Failure).kind)
         val missing = api(HttpStatusCode.NotFound, """{"error":"Story not found."}""").storyViewers("s-x", "u1")
         assertEquals(PulseResult.Failure.Kind.NOT_FOUND, (missing as PulseResult.Failure).kind)
+    }
+    @Test fun `all story requests carry the current owner credential including delete`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        api().stories("u1"); assertEquals("Bearer synthetic-token", lastAuthorization)
+        api().postStory("u1", caption = "hello"); assertEquals("Bearer synthetic-token", lastAuthorization)
+        api().markStoryViewed("s1", "u1"); assertEquals("Bearer synthetic-token", lastAuthorization)
+        api().storyViewers("s1", "u1"); assertEquals("Bearer synthetic-token", lastAuthorization)
+        api(body = """{"ok":true}""").deleteStory("s1", "u1"); assertEquals("Bearer synthetic-token", lastAuthorization)
+    }
+    @Test fun `delete never fabricates success from an absent malformed or negative acknowledgement`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        for (body in listOf("", "not json", "{}", """{"ok":false}""", """{"ok":"true"}""", """{"ok":1}""")) {
+            assertTrue("unconfirmed body $body", api(body = body).deleteStory("s1", "u1") is PulseResult.Failure)
+        }
     }
 }

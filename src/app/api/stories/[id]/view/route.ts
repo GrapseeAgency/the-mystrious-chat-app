@@ -1,115 +1,65 @@
-// /api/stories/[id]/view - viewers list + mark-as-viewed
-//
-// Raw SQL instead of typed delegates: StatusStory/StoryView were pushed
-// after the running dev server cached its Prisma client (see /api/stories).
+// Owner viewer list and audience-authorized, idempotent view mark.
 import { randomUUID } from 'node:crypto'
-import { NextResponse } from 'next/server'
 import { Prisma } from '../../../../../../prisma/generated-client'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { privateStoryResponse, storyAudience, storyUnblocked, storyJson } from '@/lib/story-access'
 
 export const dynamic = 'force-dynamic'
+interface RouteCtx { params: Promise<{ id: string }> }
 
-interface RouteCtx {
-  params: Promise<{ id: string }>
-}
-
-/**
- * GET /api/stories/[id]/view?requesterId=
- * Owner-only: who watched this story (oldest first).
- * → { viewers: [{ userId, name, username, color, viewedAt }] }
- */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
-
-  const url = new URL(req.url)
-  const requesterId = url.searchParams.get('requesterId')?.trim() ?? ''
-  if (!requesterId) {
-    return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
-  }
-
-  const storyRows = await db.$queryRaw<Array<{ id: string; userId: string }>>(
-    Prisma.sql`SELECT id, userId FROM StatusStory WHERE id = ${id} LIMIT 1`,
-  )
-  const story = storyRows[0]
-  if (!story) {
-    return NextResponse.json({ error: 'Story not found.' }, { status: 404 })
-  }
-  if (story.userId !== requesterId) {
-    return NextResponse.json({ error: 'Only the owner can see viewers.' }, { status: 403 })
-  }
-
-  const views = await db.$queryRaw<Array<{ userId: string; createdAt: number | bigint }>>(
-    Prisma.sql`SELECT userId, createdAt FROM StoryView WHERE storyId = ${id} ORDER BY createdAt ASC`,
-  )
-
-  const userIds = views.map((v) => v.userId)
-  const users = userIds.length
-    ? await db.user.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, name: true, username: true, color: true },
-      })
-    : []
-  const userById = new Map(users.map((u) => [u.id, u]))
-
-  return NextResponse.json({
-    viewers: views.flatMap((v) => {
-      const user = userById.get(v.userId)
-      if (!user) return []
-      return [
-        {
-          userId: user.id,
-          name: user.name,
-          username: user.username,
-          color: user.color,
-          viewedAt: new Date(Number(v.createdAt)).toISOString(),
-        },
-      ]
-    }),
-  })
+  const requesterId = new URL(req.url).searchParams.get('requesterId')?.trim() ?? ''
+  if (!requesterId) return storyJson({ error: 'requesterId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, requesterId, 'story')
+  if (denied) return privateStoryResponse(denied)
+  return db.$transaction(async tx => {
+    const rows = await tx.$queryRaw<Array<{ userId: string }>>(
+      Prisma.sql`SELECT userId FROM StatusStory WHERE id = ${id} AND expiresAt > ${Date.now()} LIMIT 1`,
+    )
+    if (!rows[0]) return storyJson({ error: 'Story not found.' }, { status: 404 })
+    if (rows[0].userId !== requesterId) return storyJson({ error: 'Only the owner can see viewers.' }, { status: 403 })
+    const views = await tx.$queryRaw<Array<{ userId: string; name: string; username: string | null; color: string; createdAt: number | bigint }>>(
+      Prisma.sql`SELECT v.userId, u.name, u.username, u.color, v.createdAt
+                 FROM StoryView v JOIN User u ON u.id = v.userId
+                 WHERE v.storyId = ${id} AND ${storyUnblocked(Prisma.sql`${requesterId}`, Prisma.sql`v.userId`)}
+                 ORDER BY v.createdAt ASC, v.userId ASC`,
+    )
+    return storyJson({ viewers: views.map(v => ({
+      userId: v.userId, name: v.name, username: v.username, color: v.color,
+      viewedAt: new Date(Number(v.createdAt)).toISOString(),
+    })) })
+  }, { isolationLevel: 'Serializable' })
 }
 
-/**
- * POST /api/stories/[id]/view  body { requesterId }
- * Marks the story viewed (idempotent upsert). The owner never records a
- * self-view. Expired stories are rejected - the feed never surfaces them.
- * → { viewCount, owner?: true }
- */
 export async function POST(req: Request, { params }: RouteCtx) {
   const { id } = await params
-
   const body = await safeJson(req)
   const requesterId = strField(body.requesterId)
-  if (!requesterId) {
-    return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
-  }
-
-  const storyRows = await db.$queryRaw<Array<{ id: string; userId: string; expiresAt: number | bigint }>>(
-    Prisma.sql`SELECT id, userId, expiresAt FROM StatusStory WHERE id = ${id} LIMIT 1`,
-  )
-  const story = storyRows[0]
-  if (!story || Number(story.expiresAt) <= Date.now()) {
-    return NextResponse.json({ error: 'Story not found.' }, { status: 404 })
-  }
-
-  if (story.userId === requesterId) {
-    const viewCount = await countViews(id)
-    return NextResponse.json({ viewCount, owner: true })
-  }
-
-  await db.$executeRaw(
-    Prisma.sql`INSERT INTO StoryView (id, storyId, userId, createdAt)
-               VALUES (${randomUUID()}, ${id}, ${requesterId}, ${Date.now()})
-               ON CONFLICT(storyId, userId) DO NOTHING`,
-  )
-  const viewCount = await countViews(id)
-  return NextResponse.json({ viewCount })
-}
-
-/** SQLite COUNT(*) arrives as number (or bigint) - normalize. */
-async function countViews(storyId: string): Promise<number> {
-  const rows = await db.$queryRaw<Array<{ n: number | bigint }>>(
-    Prisma.sql`SELECT COUNT(*) as n FROM StoryView WHERE storyId = ${storyId}`,
-  )
-  return Number(rows[0]?.n ?? 0)
+  if (!requesterId) return storyJson({ error: 'requesterId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, requesterId, 'story')
+  if (denied) return privateStoryResponse(denied)
+  return db.$transaction(async tx => {
+    const rows = await tx.$queryRaw<Array<{ id: string; userId: string }>>(
+      Prisma.sql`SELECT s.id, s.userId FROM StatusStory s
+                 WHERE s.id = ${id} AND s.expiresAt > ${Date.now()}
+                   AND ${storyAudience(requesterId, Prisma.sql`s.userId`)} LIMIT 1`,
+    )
+    const story = rows[0]
+    // Hidden, expired and nonexistent stories are indistinguishable to a non-audience caller.
+    if (!story) return storyJson({ error: 'Story not found.' }, { status: 404 })
+    const owner = story.userId === requesterId
+    if (!owner) await tx.$executeRaw(
+      Prisma.sql`INSERT INTO StoryView (id, storyId, userId, createdAt)
+                 VALUES (${randomUUID()}, ${id}, ${requesterId}, ${Date.now()})
+                 ON CONFLICT(storyId, userId) DO NOTHING`,
+    )
+    const counts = await tx.$queryRaw<Array<{ n: number | bigint }>>(
+      Prisma.sql`SELECT COUNT(*) AS n FROM StoryView v JOIN User viewer ON viewer.id = v.userId WHERE v.storyId = ${id}
+                 AND ${storyUnblocked(Prisma.sql`${story.userId}`, Prisma.sql`v.userId`)}`,
+    )
+    return storyJson({ viewCount: Number(counts[0]?.n ?? 0), ...(owner ? { owner: true } : {}) })
+  }, { isolationLevel: 'Serializable' })
 }
