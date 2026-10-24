@@ -56,20 +56,20 @@ public final class StoriesSessionModel: ObservableObject {
         let epoch = session.sessionGeneration
         let api = session.api
         if !quiet { flags.loading = true; flags.lastError = nil }
-        let response = await api.stories()
-        guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
-        if let page = response {
-            let fresh = Self.liveGroups(page.groups ?? [], nowMs: nowMs())
-            groups = fresh
+        do {
+            let page = try await api.storySnapshot()
+            guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
+            groups = Self.liveGroups(page.groups ?? [], nowMs: nowMs())
+            flags.loadedOnce = true; flags.lastError = nil
+            persistCache(WireStoriesPage(groups: groups))
+        } catch {
+            guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
+            if Self.discardsViewers(after: error) {
+                groups = []; resetViewers()
+                persistCache(WireStoriesPage(groups: []))
+            }
             flags.loadedOnce = true
-            flags.lastError = nil
-            persistCache(page)
-        } else if groups.isEmpty {
-            // Nothing cached to serve - honest transport failure (D5).
-            flags.loadedOnce = true
-            flags.lastError = ChatsViewModel.describe(
-                PulseAPIClient.Failure(kind: .network, message: nil)
-            )
+            flags.lastError = ChatsViewModel.describe(error)
         }
         flags.loading = false
     }
@@ -124,6 +124,8 @@ public final class StoriesSessionModel: ObservableObject {
     /// failed/cancelled attempt must not publish a successful viewed state.
     public func markViewedLocally(storyId: String, viewCount: Int?) {
         guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
+        refreshGeneration = UUID()
+        flags.loading = false
         groups = groups.map { g in
             let stories = (g.stories ?? []).map { s in
                 s.id == storyId
@@ -133,6 +135,7 @@ public final class StoriesSessionModel: ObservableObject {
             let allSeen = g.mine == true ? g.allSeen : stories.allSatisfy { $0.viewedByMe == true }
             return WireStoryGroupCopy(g, allSeen: allSeen, stories: stories)
         }
+        persistCache(WireStoriesPage(groups: groups))
     }
 
     /// Only a confirmed deletion removes the story and advances its viewer.
@@ -144,6 +147,7 @@ public final class StoriesSessionModel: ObservableObject {
             try await api.deleteStory(id: id)
             guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
             refreshGeneration = UUID()
+            flags.loading = false
             removeLocal(id)
             persistCache(WireStoriesPage(groups: groups))
             return true

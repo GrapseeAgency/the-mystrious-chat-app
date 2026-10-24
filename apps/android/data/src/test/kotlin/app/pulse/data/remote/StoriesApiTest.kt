@@ -172,4 +172,22 @@ class StoriesApiTest {
         }
         assertTrue(api(body = """{"viewers":[]}""").storyViewers("story", "owner") is PulseResult.Success)
     }
+
+    @Test fun `feed requires an explicit unique identity snapshot`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        for (body in listOf("{}", """{"groups":null}""", """{"groups":[{}]}""",
+            """{"groups":[{"user":{"id":"u"}}]}""",
+            """{"groups":[{"user":{"id":"u"},"stories":[{"id":"a"},{"id":"a"}]}]}""")) {
+            assertTrue(body, api(body = body).stories("owner") is PulseResult.Failure)
+        }
+        assertTrue(api(body = """{"groups":[]}""").stories("owner") is PulseResult.Success)
+        assertTrue(api(body = """{"groups":[{"user":{"id":"u"},"stories":[{"id":"a"}]}]}""").stories("owner") is PulseResult.Success)
+    }
+    @Test fun `view mark cannot invent a successful receipt`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        for (body in listOf("{}", """{"viewCount":null}""", """{"viewCount":-1}""", """{"viewCount":"1"}""", """{"viewCount":true}""")) {
+            assertTrue(body, api(body = body).markStoryViewed("story", "owner") is PulseResult.Failure)
+        }
+        assertTrue(api(body = """{"viewCount":0}""").markStoryViewed("story", "owner") is PulseResult.Success)
+    }
 }

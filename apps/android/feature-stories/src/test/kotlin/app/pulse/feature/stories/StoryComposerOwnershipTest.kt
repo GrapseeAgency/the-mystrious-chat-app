@@ -25,6 +25,8 @@ class StoryComposerOwnershipTest {
         var owner = "first"
         val uploads = mutableListOf<Continuation<Result<String>>>()
         val posts = mutableListOf<Continuation<Result<StoryItem>>>()
+        val deletes = mutableListOf<Continuation<Result<Unit>>>()
+        val marks = mutableListOf<Continuation<Result<Int>>>()
         val feeds = mutableListOf<Continuation<Result<List<StoryGroup>>>>()
         @Suppress("UNCHECKED_CAST")
         val repo = Proxy.newProxyInstance(PulseRepository::class.java.classLoader, arrayOf(PulseRepository::class.java)) { proxy, method, args ->
@@ -33,6 +35,8 @@ class StoryComposerOwnershipTest {
                 method.name == "getViewerId" || method.name == "attachmentSessionKey" -> owner
                 method.name.startsWith("uploadMedia") -> { uploads += args!!.last() as Continuation<Result<String>>; COROUTINE_SUSPENDED }
                 method.name.startsWith("createStory") -> { posts += args!!.last() as Continuation<Result<StoryItem>>; COROUTINE_SUSPENDED }
+                method.name.startsWith("deleteStory") -> { deletes += args!!.last() as Continuation<Result<Unit>>; COROUTINE_SUSPENDED }
+                method.name.startsWith("markStoryViewed") -> { marks += args!!.last() as Continuation<Result<Int>>; COROUTINE_SUSPENDED }
                 method.name.startsWith("stories") -> { feeds += args!!.last() as Continuation<Result<List<StoryGroup>>>; COROUTINE_SUSPENDED }
                 else -> error("Unexpected call ${method.name}")
             }
@@ -90,6 +94,38 @@ class StoryComposerOwnershipTest {
             account.owner = "replacement"; vm.refresh()
             assertTrue(vm.groups.value.isEmpty())
             runCurrent(); account.feeds[2].resume(Result.success(emptyList())); runCurrent()
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun `refused actions do not optimistically remove or mark a story`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val account = Account(); val vm = account.model(); val owner = vm.composerSession()!!
+            vm.refresh(); runCurrent(); account.feeds.single().resume(Result.success(feed("a"))); runCurrent()
+            val mark = async { vm.markViewed("a", owner) }; runCurrent()
+            assertFalse(vm.groups.value.single().stories.single().viewedByMe)
+            account.marks.single().resume(Result.failure(IllegalStateException("offline")))
+            assertTrue(mark.await().isFailure)
+            val delete = async { vm.deleteStory("a", owner) }; runCurrent()
+            assertEquals("a", vm.groups.value.single().stories.single().id)
+            account.deletes.single().resume(Result.failure(IllegalStateException("offline")))
+            assertTrue(delete.await().isFailure)
+            assertFalse(vm.groups.value.single().stories.single().viewedByMe)
+        } finally { Dispatchers.resetMain() }
+    }
+    @Test fun `confirmed deletion fences an older feed and account change drops late marks`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val account = Account(); val vm = account.model(); val owner = vm.composerSession()!!
+            vm.refresh(); runCurrent(); account.feeds.single().resume(Result.success(feed("a"))); runCurrent()
+            vm.refresh(); runCurrent()
+            val delete = async { vm.deleteStory("a", owner) }; runCurrent()
+            account.deletes.single().resume(Result.success(Unit)); assertTrue(delete.await().isSuccess)
+            account.feeds.last().resume(Result.success(feed("a"))); runCurrent()
+            assertTrue(vm.groups.value.isEmpty()); assertFalse(vm.flags.value.loading)
+            val mark = async { vm.markViewed("a", owner) }; runCurrent()
+            account.owner = "replacement"; account.marks.single().resume(Result.success(1)); runCurrent()
+            assertTrue(mark.isCancelled); assertTrue(vm.groups.value.isEmpty())
         } finally { Dispatchers.resetMain() }
     }
 }

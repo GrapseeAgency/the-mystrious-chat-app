@@ -724,7 +724,17 @@ class PulseApi(
     /** GET /api/stories?requesterId= - 24h status rail (tolerant subset). */
     suspend fun stories(requesterId: String): PulseResult<StoriesPageDto> =
         get("/api/stories?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")) {
-            PulseJson.decodeFromString(StoriesPageDto.serializer(), it)
+            val root = PulseJson.parseToJsonElement(it).jsonObject
+            if (root["groups"] !is kotlinx.serialization.json.JsonArray) throw kotlinx.serialization.SerializationException("Story feed missing")
+            if ((root["groups"] as kotlinx.serialization.json.JsonArray).any { group -> group.jsonObject["stories"] !is kotlinx.serialization.json.JsonArray })
+                throw kotlinx.serialization.SerializationException("Story rows missing")
+            val page = PulseJson.decodeFromString(StoriesPageDto.serializer(), it)
+            val rows = page.groups.flatMap { group -> group.stories }
+            if (page.groups.any { group -> group.user?.id.isNullOrBlank() } ||
+                page.groups.map { group -> group.user?.id }.distinct().size != page.groups.size ||
+                rows.any { row -> row.id.isBlank() } || rows.map { row -> row.id }.distinct().size != rows.size)
+                throw kotlinx.serialization.SerializationException("Invalid story identities")
+            page
         }
 
     // Wave 4 stories - full native status surface (REST only, no sockets)
@@ -759,6 +769,9 @@ class PulseApi(
             "/api/stories/$storyId/view",
             jsonOf("requesterId" to requesterId),
         ) {
+            val raw = PulseJson.parseToJsonElement(it).jsonObject["viewCount"] as? kotlinx.serialization.json.JsonPrimitive
+            if (raw == null || raw.isString || raw.content.toIntOrNull()?.let { count -> count >= 0 } != true)
+                throw kotlinx.serialization.SerializationException("View acknowledgement missing")
             PulseJson.decodeFromString(StoryViewAckDto.serializer(), it)
         }
 

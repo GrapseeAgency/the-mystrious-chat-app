@@ -2799,8 +2799,16 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun markStoryViewed(storyId: String): Result<Int> =
-        ownedAccountRequest(typedFailure = true) { api.markStoryViewed(storyId, it) }.map { it.viewCount }
+    override suspend fun markStoryViewed(storyId: String): Result<Int> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val result = ownedAccountRequest(typedFailure = true) { api.markStoryViewed(storyId, it) }.map { it.viewCount }
+        result.getOrNull()?.let { count ->
+            try { storySnapshots.viewed("stories:$owner", storyId, count) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                android.util.Log.w("PulseStories", "Confirmed view could not be persisted in the story cache")
+            }
+        }
+        return result
+    }
 
     override suspend fun storyViewers(storyId: String): Result<List<StoryViewer>> =
         ownedAccountRequest(typedFailure = true) { api.storyViewers(storyId, it) }.map { page ->

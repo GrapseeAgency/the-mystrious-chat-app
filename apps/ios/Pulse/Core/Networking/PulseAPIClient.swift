@@ -814,7 +814,23 @@ public struct PulseAPIClient: Sendable {
     /// GET /api/stories?requesterId= - 24h status groups (nil = unreachable,
     /// the UI renders only the My-status cell - honest empty, no fakes).
     public func stories() async -> WireStoriesPage? {
-        try? await get("/api/stories?requesterId=\(Self.queryEncoded(userId))", as: WireStoriesPage.self)
+        try? await storySnapshot()
+    }
+
+    /// Preserve access failures for callers deciding whether a private cache may remain visible.
+    public func storySnapshot() async throws -> WireStoriesPage {
+        let page: WireStoriesPage = try await get("/api/stories?requesterId=\(Self.queryEncoded(userId))", as: WireStoriesPage.self)
+        guard let groups = page.groups,
+              groups.allSatisfy({ !($0.user?.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.stories != nil }),
+              Set(groups.compactMap { $0.user?.id }).count == groups.count else {
+            throw Failure(kind: .server, message: "The gateway did not return a valid story feed.")
+        }
+        let rows = groups.flatMap { $0.stories ?? [] }
+        guard rows.allSatisfy({ !($0.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(rows.compactMap(\.id)).count == rows.count else {
+            throw Failure(kind: .server, message: "The gateway returned invalid story identities.")
+        }
+        return page
     }
 
     // Wave 4 - stories write/owner paths (REST only; zero socket)
@@ -842,11 +858,14 @@ public struct PulseAPIClient: Sendable {
     public func markStoryViewed(id: String) async throws -> Int {
         let data = try await postRaw("/api/stories/\(id)/view", body: ["requesterId": userId])
         let result = try decoder.decode(WireStoryViewCount.self, from: data)
-        return result.viewCount ?? 0
+        guard let count = result.viewCount, count >= 0 else {
+            throw Failure(kind: .server, message: "The gateway did not confirm the story view.")
+        }
+        return count
     }
 
     /// GET /api/stories/{id}/view?requesterId= - owner-only viewers list
-    /// (403 otherwise; oldest viewer first). Empty list on a missing key.
+    /// (403 otherwise; oldest viewer first). Missing lists are protocol failures.
     public func storyViewers(id: String) async throws -> [WireStoryViewer] {
         let page: WireStoryViewersPage = try await get(
             "/api/stories/\(id)/view?requesterId=\(Self.queryEncoded(userId))",

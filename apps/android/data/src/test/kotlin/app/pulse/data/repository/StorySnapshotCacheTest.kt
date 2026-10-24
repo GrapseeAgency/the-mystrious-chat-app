@@ -54,4 +54,32 @@ class StorySnapshotCacheTest {
         assertNull(cache.cached(cache.begin("a")))
         assertEquals(listOf("authorized"), ids(cache.accept(cache.begin("a"), page("authorized"))))
     }
+
+    @Test fun `confirmed view survives delayed feed and normal restart without freezing future counts`() = runTest {
+        val store = Store(); val cache = store.cache()
+        cache.accept(cache.begin("a"), page("viewed"))
+        val stale = cache.begin("a")
+        cache.viewed("a", "viewed", 4)
+        val current = cache.accept(stale, page("viewed"))!!
+        assertTrue(current.groups.single().allSeen)
+        assertEquals(4, current.groups.single().stories.single().viewCount)
+        val restartedCache = store.cache()
+        val restarted = restartedCache.cached(restartedCache.begin("a"))!!
+        assertTrue(restarted.groups.single().stories.single().viewedByMe)
+        val fresh = cache.accept(cache.begin("a"), page("viewed"))!!
+        assertTrue(fresh.groups.single().stories.single().viewedByMe)
+        assertEquals(0, fresh.groups.single().stories.single().viewCount)
+    }
+    @Test fun `a newer pending read does not erase an actual access denial`() = runTest {
+        val cache = Store().cache()
+        cache.accept(cache.begin("a"), page("private"))
+        val denied = cache.begin("a"); val pending = cache.begin("a")
+        cache.deny(denied)
+        assertNull(cache.cached(pending))
+        assertNull(cache.accept(pending, page("private")))
+        val old = cache.begin("a")
+        cache.accept(cache.begin("a"), page("new-authorized"))
+        cache.deny(old)
+        assertEquals(listOf("new-authorized"), ids(cache.cached(cache.begin("a"))))
+    }
 }

@@ -2679,6 +2679,10 @@ final class ChatsViewModel: ObservableObject {
     private var expiryTask: Task<Void, Never>?
     private var hasLoadedSummary = false
     private var refreshGeneration: UInt64 = 0
+    private var sideQueryTask: Task<Void, Never>?
+    private var sideQueryGeneration = UUID()
+    private var sideQueryOwner: UUID?
+    private var folderReadGeneration: UInt64 = 0
     private var searchDebounceTask: Task<Void, Never>?
     private var searchMessageRevision: UInt64 = 0
     private var observing = false
@@ -2859,6 +2863,11 @@ final class ChatsViewModel: ObservableObject {
 
     func start(session: PulseSession, prefs: PulsePrefs) {
         observedSession = session
+        if sideQueryOwner != session.sessionGeneration {
+            sideQueryTask?.cancel(); sideQueryGeneration = UUID(); folderReadGeneration &+= 1
+            sideQueryOwner = session.sessionGeneration
+            storyGroups = []; folders = nil; mentionCount = 0
+        }
         bind(prefs: prefs)
         observe(session: session)
         bindStore(session)
@@ -2876,7 +2885,8 @@ final class ChatsViewModel: ObservableObject {
         guard pollTask == nil else { return }
         guard session.viewer != nil else { return }
         Task { await refresh(session: session, force: summaries.isEmpty) }
-        Task { await loadSideQueries(session: session) }
+        let sideEpoch = session.sessionGeneration
+        sideQueryTask = Task { await loadSideQueries(session: session, epoch: sideEpoch) }
         pollTask = Task { [weak self] in
             // 6s REST poll while the home is visible (web refetchInterval).
             while !Task.isCancelled {
@@ -2889,6 +2899,7 @@ final class ChatsViewModel: ObservableObject {
     }
 
     func stop() {
+        sideQueryTask?.cancel(); sideQueryTask = nil; sideQueryGeneration = UUID(); folderReadGeneration &+= 1
         pollTask?.cancel()
         pollTask = nil
         expiryTask?.cancel()
@@ -2897,6 +2908,8 @@ final class ChatsViewModel: ObservableObject {
 
     private func expireInbox(session: PulseSession) {
         let now = Date()
+        let liveStories = StoriesSessionModel.liveGroups(storyGroups, nowMs: Int64(now.timeIntervalSince1970 * 1000))
+        if liveStories != storyGroups { storyGroups = liveStories }
         if let hits = serverHits {
             let visible = hits.filter { $0.isVisibleSearchHit(now: now) && session.acceptsSyncMessage($0.id, startedAt: searchMessageRevision) }
             if visible != hits { serverHits = visible; serverTotal = visible.count }
@@ -3049,26 +3062,40 @@ final class ChatsViewModel: ObservableObject {
         reloadDrafts(session: session)
     }
 
-    private func loadSideQueries(session: PulseSession) async {
-        // Stories - unreachable today → row degrades to My status only.
-        if let storiesPage = await session.api.stories() {
-            storyGroups = storiesPage.groups ?? []
-        } else {
-            storyGroups = []
+    private func loadSideQueries(session: PulseSession, epoch: UUID) async {
+        guard !Task.isCancelled, epoch == session.sessionGeneration else { return }
+        let api = session.api, ticket = UUID()
+        sideQueryGeneration = ticket
+        do {
+            let page = try await api.storySnapshot()
+            guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
+            storyGroups = StoriesSessionModel.liveGroups(page.groups ?? [], nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+        } catch {
+            guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
+            if StoriesSessionModel.discardsViewers(after: error) { storyGroups = [] }
         }
-        // Folders - nil keeps the rail at All + manage.
-        folders = await session.api.folders()
-        // Mentions - nil → pill shows 0.
-        mentionCount = await session.api.mentionsCount() ?? 0
+        guard !Task.isCancelled, epoch == session.sessionGeneration else { return }
+        await reloadFolders(session: session)
+        guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
+        let count = await api.mentionsCount()
+        guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
+        if let count { mentionCount = count }
     }
 
     /// Wave 6 - refetch JUST the folder rail (folder-manager mutations call
     /// this through onChanged) and clear a dead selection honestly.
     func reloadFolders(session: PulseSession) async {
-        folders = await session.api.folders()
-        if let active = activeFolderId,
-           folders?.contains(where: { $0.id == active }) != true {
-            activeFolderId = nil
+        let epoch = session.sessionGeneration, api = session.api
+        folderReadGeneration &+= 1
+        let ticket = folderReadGeneration
+        do {
+            let fresh = try await api.folderSnapshot()
+            guard !Task.isCancelled, ticket == folderReadGeneration, epoch == session.sessionGeneration else { return }
+            folders = fresh
+            if let active = activeFolderId, !fresh.contains(where: { $0.id == active }) { activeFolderId = nil }
+        } catch {
+            guard !Task.isCancelled, ticket == folderReadGeneration, epoch == session.sessionGeneration else { return }
+            if StoriesSessionModel.discardsViewers(after: error) { folders = nil; activeFolderId = nil }
         }
     }
 
