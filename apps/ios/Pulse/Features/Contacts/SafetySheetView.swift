@@ -9,80 +9,99 @@ import SwiftUI
 final class SafetyBadgeModel: ObservableObject {
     @Published private(set) var state: WireSafetyState?
     @Published private(set) var loading = false
+    @Published private(set) var pending = false
     @Published private(set) var errorText: String?
-
-    private var session: PulseSession?
+    private weak var session: PulseSession?
     private var peerId = ""
-    private var loadedFor = ""
+    private var epoch: UUID?
+    private var generation = UUID()
+    private var readTicket = UUID()
+    private var loaded = false
+    private var actionTask: Task<Void, Never>?
 
-    /// Wire once per surface (onAppear) before load().
     func configure(session: PulseSession, peerId: String) {
-        self.session = session
-        self.peerId = peerId
+        guard epoch != session.sessionGeneration || self.peerId != peerId else { return }
+        stop()
+        self.session = session; self.peerId = peerId; epoch = session.sessionGeneration
+        state = nil; errorText = nil
+    }
+
+    func stop() {
+        generation = UUID(); readTicket = UUID(); epoch = nil
+        actionTask?.cancel(); actionTask = nil
+        pending = false; loading = false; loaded = false
+    }
+
+    func isConfigured(epoch: UUID, peer: String) -> Bool { self.epoch == epoch && peerId == peer }
+
+    private func owns(_ epoch: UUID, _ ticket: UUID) -> Bool {
+        !Task.isCancelled && self.epoch == epoch && session?.sessionGeneration == epoch && generation == ticket
     }
 
     func load(force: Bool = false) async {
-        guard let session, !peerId.isEmpty else { return }
-        guard force || loadedFor != peerId else { return }
-        loadedFor = peerId
-        loading = state == nil
-        defer { loading = false }
+        guard let session, let epoch, owns(epoch, generation), !pending, force || !loaded else { return }
+        let api = session.api, peer = peerId, ticket = generation, read = UUID()
+        readTicket = read; loading = true
+        defer { if owns(epoch, ticket), readTicket == read { loading = false } }
         do {
-            state = try await session.api.safetyState(peerId: peerId)
-            errorText = nil
-            PulseSafetyBadgeCache.shared.mark(peerId, verified: state?.verified == true)
+            let fresh = try await api.safetyState(peerId: peer)
+            guard owns(epoch, ticket), readTicket == read else { return }
+            state = fresh; loaded = true; errorText = nil
+            PulseSafetyBadgeCache.shared.mark(peer, verified: fresh.verified, epoch: epoch)
         } catch {
-            errorText = ChatsViewModel.describe(error)
+            guard owns(epoch, ticket), readTicket == read else { return }
+            loaded = false; errorText = ChatsViewModel.describe(error)
         }
     }
 
-    /// POST verify - settle-confirmed: the toast fires on success, the state
-    /// refetches afterwards (never pre-flips the badge).
-    func verify() async {
-        guard let session else { return }
-        do {
-            _ = try await session.api.verifySafety(peerId: peerId)
-            PulseHaptics.success()
-            session.toasts.show("Safety number verified")
-        } catch {
-            session.toasts.show(ChatsViewModel.describe(error))
-        }
-        await load(force: true)
-    }
+    func verify() { mutate(true) }
+    func reset() { mutate(false) }
 
-    /// DELETE unverify - same settle-then-refetch rule.
-    func reset() async {
-        guard let session else { return }
-        do {
-            try await session.api.resetSafety(peerId: peerId)
-            PulseHaptics.tap()
-            session.toasts.show("Verification reset")
-        } catch {
-            session.toasts.show(ChatsViewModel.describe(error))
+    private func mutate(_ desired: Bool) {
+        guard let session, let epoch, owns(epoch, generation), !pending, !loading, state != nil else { return }
+        let api = session.api, peer = peerId, ticket = generation
+        pending = true; readTicket = UUID(); errorText = nil
+        actionTask = Task { @MainActor in
+            defer { if owns(epoch, ticket) { pending = false; actionTask = nil } }
+            do {
+                guard owns(epoch, ticket) else { return }
+                if desired { _ = try await api.verifySafety(peerId: peer) }
+                else { try await api.resetSafety(peerId: peer) }
+                guard owns(epoch, ticket) else { return }
+                let fresh = try await api.safetyState(peerId: peer)
+                guard owns(epoch, ticket) else { return }
+                state = fresh; loaded = true
+                PulseSafetyBadgeCache.shared.mark(peer, verified: fresh.verified, epoch: epoch)
+                guard fresh.verified == desired else {
+                    errorText = "Comparison state changed. Review it before retrying."
+                    return
+                }
+                PulseHaptics.success()
+                session.toasts.show(desired ? "Account comparison marked" : "Comparison mark reset")
+            } catch {
+                guard owns(epoch, ticket) else { return }
+                errorText = ChatsViewModel.describe(error)
+            }
         }
-        await load(force: true)
     }
 }
 
-/// Roster-level memory of verified peers - populated whenever any surface
-/// fetches a pair's safety state (user page, room header, this sheet).
-/// The contacts rows read it WITHOUT fetching (no N×GET amplification);
-/// a badge appears after any of the two ends verified the pair.
+/// Only this owner's comparison mark can decorate a peer row. Neither the
+/// other account's mark nor another login/gateway's cached mark is evidence.
 @MainActor
 final class PulseSafetyBadgeCache: ObservableObject {
     static let shared = PulseSafetyBadgeCache()
     @Published private(set) var verified: Set<String> = []
+    private var ownerEpoch: UUID?
 
-    func mark(_ userId: String, verified: Bool) {
-        if verified {
-            self.verified.insert(userId)
-        } else {
-            self.verified.remove(userId)
-        }
+    func mark(_ userId: String, verified: Bool, epoch: UUID) {
+        if ownerEpoch != epoch { ownerEpoch = epoch; self.verified = [] }
+        if verified { self.verified.insert(userId) }
+        else { self.verified.remove(userId) }
     }
 
-    func isVerified(_ userId: String) -> Bool {
-        verified.contains(userId)
+    func isVerified(_ userId: String, epoch: UUID) -> Bool {
+        ownerEpoch == epoch && verified.contains(userId)
     }
 }
 
@@ -113,13 +132,18 @@ struct SafetySheetView: View {
                 }
             }
         }
-        .onAppear {
+        .task(id: "\(session.sessionGeneration):\(peer.id)") {
             model.configure(session: session, peerId: peer.id)
+            await model.load()
         }
-        .task { await model.load() }
+        .onDisappear { model.stop() }
     }
 
-    private var verified: Bool { model.state?.verified == true }
+    private var currentState: WireSafetyState? {
+        model.isConfigured(epoch: session.sessionGeneration, peer: peer.id) ? model.state : nil
+    }
+
+    private var verified: Bool { currentState?.verified == true }
 
     private var header: some View {
         VStack(spacing: 8) {
@@ -131,7 +155,7 @@ struct SafetySheetView: View {
                 Label("Contact verified", systemImage: "checkmark.shield.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(PulseTheme.emerald)
-                if let verifiedAt = model.state?.verifiedAt {
+                if let verifiedAt = currentState?.verifiedAt {
                     Text("Since \(PulseFormat.listStamp(verifiedAt))")
                         .font(.system(size: 11))
                         .foregroundStyle(PulseTheme.textTertiary)
@@ -145,12 +169,12 @@ struct SafetySheetView: View {
     /// The 60 digits - 12 groups of 5, rendered 3 per row (web 3×4 glass
     /// tiles). Client-side split via PulseSafetyNumber.groups (pure, tested).
     private var tileGrid: some View {
-        let groups = PulseSafetyNumber.groups(model.state?.safetyNumber ?? "")
+        let groups = PulseSafetyNumber.groups(currentState?.safetyNumber ?? "")
         return VStack(spacing: 8) {
             ForEach(0..<4, id: \.self) { row in
                 HStack(spacing: 8) {
                     ForEach(0..<3, id: \.self) { column in
-                        let group = groups[row * 3 + column]
+                        let group = currentState == nil ? "—" : groups[row * 3 + column]
                         Text(group)
                             .font(.system(size: 15, weight: .semibold, design: .monospaced))
                             .foregroundStyle(PulseTheme.titleOnPanel)
@@ -165,7 +189,7 @@ struct SafetySheetView: View {
     }
 
     private var caption: some View {
-        Text("Compare these 60 digits with \(peer.name) in person. If they match, mark this contact as verified.")
+        Text("Compare this account code with \(peer.name). It is derived from account IDs, not device encryption keys. A match or saved checkmark does not prove end-to-end encryption.")
             .font(.system(size: 12.5))
             .foregroundStyle(PulseTheme.textSecondary)
             .multilineTextAlignment(.center)
@@ -174,11 +198,13 @@ struct SafetySheetView: View {
 
     @ViewBuilder
     private var actionButtons: some View {
-        if model.loading && model.state == nil {
+        if model.loading && currentState == nil {
             ProgressView().padding(.vertical, 10)
+        } else if currentState == nil {
+            Button("Retry account comparison") { Task { await model.load(force: true) } }
         } else if verified {
             Button(role: .destructive) {
-                Task { await model.reset() }
+                model.reset()
             } label: {
                 Text("Reset verification")
                     .font(.system(size: 14, weight: .semibold))
@@ -186,9 +212,10 @@ struct SafetySheetView: View {
             }
             .buttonStyle(.bordered)
             .tint(PulseTheme.rose500)
+            .disabled(model.pending || model.loading)
         } else {
             Button {
-                Task { await model.verify() }
+                model.verify()
             } label: {
                 Text("Mark as verified")
                     .font(.system(size: 14, weight: .bold))
@@ -197,12 +224,17 @@ struct SafetySheetView: View {
                     .background(RoundedRectangle(cornerRadius: 14).fill(PulseTheme.brandGradient))
             }
             .buttonStyle(PulseButtonStyle())
+            .disabled(model.pending || model.loading)
         }
-        if let error = model.errorText {
+        if model.isConfigured(epoch: session.sessionGeneration, peer: peer.id), let error = model.errorText {
             Text(error)
                 .font(.system(size: 11.5))
                 .foregroundStyle(PulseTheme.amber600)
                 .multilineTextAlignment(.center)
+            if currentState != nil {
+                Button("Retry account comparison") { Task { await model.load(force: true) } }
+                    .disabled(model.pending || model.loading)
+            }
         }
     }
 }

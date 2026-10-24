@@ -1,10 +1,7 @@
-// Pulse - Signal-style safety numbers (R35-a).
-//
-// A safety number is the fingerprint two users compare in person to
-// confirm their channel is really end-to-end (Signal's "safety number"
-// paradigm). For Pulse the number is DERIVED from the pair of user ids:
-// deterministic, identical for (a,b) and (b,a), stable across process
-// restarts, and stable for as long as both accounts exist.
+// Pulse account-pair comparison codes. These numbers hash public account IDs,
+// not device identity keys. A matching code or saved checkmark does NOT prove
+// end-to-end encryption, detect a compromised server, or authenticate a device.
+// Both accounts see the same stable code; the owner's saved marker is private.
 //
 // Server-focused module: it pulls node:crypto, so do NOT import it from
 // client components - the UI renders the groups the API already formatted
@@ -12,14 +9,14 @@
 // The module stays PURE (no db import) so scripts and tests can use it too.
 import { createHash } from 'node:crypto'
 
-/** Layout - Signal's canonical format: 12 groups of 5 digits = 60 digits. */
+/** Display layout: 12 groups of 5 digits = 60 digits. */
 export const SAFETY_DIGIT_GROUPS = 12
 export const SAFETY_GROUP_DIGITS = 5
 export const SAFETY_TOTAL_DIGITS = SAFETY_DIGIT_GROUPS * SAFETY_GROUP_DIGITS
 
 /**
- * Application pepper folded into every digest so the number is meaningful
- * only inside Pulse (rotating it re-keys every pair at once - a deliberate
+ * Public domain-separation string folded into every digest so the number is meaningful
+ * only inside Pulse (changing it changes every comparison code - a deliberate
  * operational escape hatch, never done lightly).
  */
 const SAFETY_PEPPER = 'pulse-safety-pepper-v1'
@@ -33,7 +30,7 @@ const SAFETY_PEPPER = 'pulse-safety-pepper-v1'
  *   default lexicographic order, stable for ASCII cuids) expanded to 60
  *   decimal digits via exact BigInt modulo - identical across processes,
  *   restarts and machines.
- * - Not a secret: like Signal's number it is meant to be compared out loud,
+ * - Not a secret: the number is derived entirely from public input and may be compared out loud,
  *   not kept hidden; verification is the state stored in the DB, not the
  *   digits themselves.
  */
@@ -43,7 +40,7 @@ export function deriveSafetyNumber(a: string, b: string): string {
     .update(`${first}|${second}|${SAFETY_PEPPER}`)
     .digest('hex')
 
-  // 256 bits → uniform 60-digit decimal: exact BigInt modulo 10^60,
+  // 256 bits → 60-digit decimal: exact BigInt modulo 10^60,
   // zero-padded so leading zeros are preserved (the format demands
   // exactly SAFETY_TOTAL_DIGITS digits every time). No BigInt literals -
   // the project targets pre-ES2020; the constructor calls are equivalent.

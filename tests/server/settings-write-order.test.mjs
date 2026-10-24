@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
+import { deriveSafetyNumber } from '../../src/lib/safety.ts'
 import { peerBlock, PeerBlockError } from '../../src/lib/peer-block.ts'
 import * as personalSettings from '../../src/lib/conversation-personal-settings.ts'
 import { setConversationPin, ConversationPinError } from '../../src/lib/conversation-pin.ts'
@@ -21,7 +22,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'UserBlock', 'AccountReport']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'UserBlock', 'AccountReport', 'UserVerification']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -35,6 +36,7 @@ async function fixture(run, database = db => db) {
     }
     await db.$executeRawUnsafe('CREATE UNIQUE INDEX "UserBlock_pair" ON "UserBlock" ("blockerId", "blockedId")')
     await db.$executeRawUnsafe('CREATE UNIQUE INDEX "AccountReport_pair_reason" ON "AccountReport" ("reporterId", "reportedId", "reason")')
+    await db.$executeRawUnsafe('CREATE UNIQUE INDEX "UserVerification_pair" ON "UserVerification" ("ownerId", "peerId")')
     for (const id of ['owner','other']) await db.user.create({ data: {
       id, name:id, color:'amber', preferences: '{"readReceipts":true,"density":"cozy"}',
       sessionTokenHash:hashSessionToken(`synthetic-${id}`), legacyTokenHashes:'[]',
@@ -96,7 +98,11 @@ async function fixture(run, database = db => db) {
     const report=(method,body={},token='synthetic-owner',actor='owner',target='other')=>reportRoutes[method](new Request(`https://settings.test?userId=${actor}`,{
       method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='POST'?{body:JSON.stringify({userId:actor,reason:'spam',...body})}:{})
     }),{params:Promise.resolve({id:target})})
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report})
+    const safetyRoutes=await load('src/app/api/users/[id]/safety/route.ts',{...blockDeps,deriveSafetyNumber},'({GET,POST,DELETE})')
+    const safety=(method,token='synthetic-owner',actor='owner',target='other')=>safetyRoutes[method](new Request(`https://settings.test?userId=${actor}`,{
+      method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='POST'?{body:JSON.stringify({userId:actor})}:{})
+    }),{params:Promise.resolve({id:target})})
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -302,4 +308,25 @@ test('report details enforce UTF16 limit without silently truncating or coercing
   assert.equal((await db.accountReport.findFirst()).details,details)
   assert.equal((await report('POST',{reason:'constructor'})).status,400)
   assert.equal(await db.accountReport.count(),1)
+}))
+
+
+test('account comparison marks require the owner credential and remain directional',()=>fixture(async({db,safety})=>{
+  for(const token of [null,'synthetic-other','invalid']) for(const method of ['GET','POST','DELETE'])
+    assert.equal((await safety(method,token)).status,token?403:401)
+  for(const [method,verified] of [['GET',false],['POST',true],['POST',true],['GET',true],['DELETE',false],['DELETE',false]]) {
+    const response=await safety(method);assert.equal(response.status,200)
+    assert.equal(response.headers.get('cache-control'),'private, no-store')
+    const receipt=await response.json()
+    assert.deepEqual({...receipt,verifiedAt:null},{ok:true,safetyReceiptVersion:1,ownerId:'owner',peerId:'other',
+      safetyNumber:deriveSafetyNumber('owner','other'),verified,verifiedAt:null})
+    assert.match(receipt.safetyNumber,/^[0-9]{5}( [0-9]{5}){11}$/)
+    if(verified) assert.ok(Number.isFinite(Date.parse(receipt.verifiedAt)))
+    else assert.equal(receipt.verifiedAt,null)
+    const other=await (await safety('GET','synthetic-other','other','owner')).json()
+    assert.equal(other.verified,false);assert.equal(other.safetyNumber,receipt.safetyNumber)
+    assert.equal(await db.userVerification.count(),verified?1:0)
+  }
+  assert.equal((await safety('POST','synthetic-owner','owner','owner')).status,400)
+  for(const method of ['GET','POST','DELETE']) assert.equal((await safety(method,'synthetic-owner','owner','missing')).status,404)
 }))

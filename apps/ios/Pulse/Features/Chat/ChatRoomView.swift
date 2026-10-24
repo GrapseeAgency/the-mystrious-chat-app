@@ -833,10 +833,10 @@ private struct RoomContent: View {
                         PulseHaptics.tap()
                         safetyOpen = true
                     } label: {
-                        Image(systemName: safetyBadges.isVerified(partner.id) ? "checkmark.shield.fill" : "shield.lefthalf.filled")
-                            .foregroundStyle(safetyBadges.isVerified(partner.id) ? PulseTheme.emberGlowTop : PulseTheme.textSecondary)
+                        Image(systemName: safetyBadges.isVerified(partner.id, epoch: session.sessionGeneration) ? "checkmark.shield.fill" : "shield.lefthalf.filled")
+                            .foregroundStyle(safetyBadges.isVerified(partner.id, epoch: session.sessionGeneration) ? PulseTheme.emberGlowTop : PulseTheme.textSecondary)
                             .overlay(alignment: .topTrailing) {
-                                if !safetyBadges.isVerified(partner.id) {
+                                if !safetyBadges.isVerified(partner.id, epoch: session.sessionGeneration) {
                                     Circle()
                                         .fill(PulseTheme.amber)
                                         .frame(width: 6, height: 6)
@@ -845,7 +845,7 @@ private struct RoomContent: View {
                             }
                     }
                     .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified - open safety number" : "Not verified - open safety number")
+                    .accessibilityLabel(safetyBadges.isVerified(partner.id, epoch: session.sessionGeneration) ? "Verified - open safety number" : "Not verified - open safety number")
                 }
                 // R2-D ITEM 1 - DM info entry (web header-menu parity: the
                 // menu covers DMs with TTL + screen security + mute; iOS had
@@ -960,12 +960,14 @@ private struct RoomContent: View {
                 )
             }
         }
-        .task {
+        .task(id: "\(session.sessionGeneration):\(dmPartner?.id ?? "")") {
             // Wave 6 - populate the verified-badge cache for this DM (one
             // quiet GET on room open; the header badge reads the cache).
             guard let partner = dmPartner else { return }
-            if let state = try? await session.api.safetyState(peerId: partner.id) {
-                safetyBadges.mark(partner.id, verified: state.verified)
+            let api = session.api, epoch = session.sessionGeneration
+            if let state = try? await api.safetyState(peerId: partner.id) {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                safetyBadges.mark(partner.id, verified: state.verified, epoch: epoch)
             }
         }
     }

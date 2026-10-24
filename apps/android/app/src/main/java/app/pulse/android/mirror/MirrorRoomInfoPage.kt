@@ -1820,7 +1820,7 @@ internal fun MirrorRoomInfoPage(
                 // ENCRYPTION section (DMs only)
                 if (!isGroup && peerId != null) {
                     Spacer(Modifier.height(16.dp))
-                    InfoSectionLabel("ENCRYPTION", Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp))
+                    InfoSectionLabel("ACCOUNT COMPARISON", Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp))
                     InfoGlassCard(Modifier.fillMaxWidth().padding(6.dp)) {
                         InfoPressableRow(onClick = { safetyOpen = true }) {
                             MirrorLucideIcon(
@@ -2860,41 +2860,49 @@ private fun InfoSafetySheet(
     onMutated: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var state by remember { mutableStateOf<SafetyState?>(null) }
-    var failed by remember { mutableStateOf(false) }
-    var pending by remember { mutableStateOf(false) }
-    var errorText by remember { mutableStateOf("") }
+    val epoch = repository.attachmentSessionKey()
+    val currentPeer = androidx.compose.runtime.rememberUpdatedState(peerId)
+    var state by remember(repository, peerId, epoch) { mutableStateOf<SafetyState?>(null) }
+    var failed by remember(repository, peerId, epoch) { mutableStateOf(false) }
+    var pending by remember(repository, peerId, epoch) { mutableStateOf(false) }
+    var errorText by remember(repository, peerId, epoch) { mutableStateOf("") }
+    fun owns() = epoch != null && repository.attachmentSessionKey() == epoch && currentPeer.value == peerId
 
     fun refetch() {
+        if (!owns() || pending) return
+        val owned = repository.boundToCurrentAccount()
+        pending = true
         scope.launch {
-            failed = false
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.safetyState(peerId) }.getOrElse { Result.failure(it) }
-            }
-            state = res.getOrNull()
-            failed = res.isFailure
+            try {
+                val fresh = owned.safetyState(peerId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!owns()) return@launch
+                state = fresh; failed = false; errorText = ""
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (owns()) { failed = true; errorText = error.message ?: "Could not refresh account comparison" }
+            } finally { if (owns()) pending = false }
         }
     }
 
-    LaunchedEffect(peerId) { refetch() }
+    LaunchedEffect(repository, peerId, epoch) { refetch() }
 
     fun act(verify: Boolean) {
-        if (pending) return
-        pending = true
-        errorText = ""
+        if (!owns() || pending || state == null) return
+        val owned = repository.boundToCurrentAccount()
+        pending = true; errorText = ""
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching {
-                    if (verify) repository.verifyPeer(peerId) else repository.unverifyPeer(peerId)
-                }.getOrElse { Result.failure(it) }
-            }
-            pending = false
-            res.onSuccess {
-                state = it
-                onMutated()
-            }.onFailure {
-                errorText = it.message ?: if (verify) "Could not verify the safety number" else "Could not reset the verification"
-            }
+            try {
+                val fresh = (if (verify) owned.verifyPeer(peerId) else owned.unverifyPeer(peerId)).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!owns()) return@launch
+                state = fresh; failed = false; onMutated()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (owns()) errorText = error.message ?: "Comparison change was not confirmed"
+            } finally { if (owns()) pending = false }
         }
     }
 
@@ -2917,7 +2925,7 @@ private fun InfoSafetySheet(
             Column(Modifier.weight(1f)) {
                 Text(peerName, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "ENCRYPTION",
+                    "ACCOUNT COMPARISON",
                     color = MirrorArt.Faint,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
@@ -2969,7 +2977,7 @@ private fun InfoSafetySheet(
         }
 
         Text(
-            "Compare these 60 digits with $peerName in person. If they match, mark this contact as verified.",
+            "Compare this account code with $peerName. It uses public account IDs, not device encryption keys. A match or saved checkmark does not prove end-to-end encryption.",
             color = MirrorArt.Dim,
             fontSize = 11.sp,
             lineHeight = 15.sp,

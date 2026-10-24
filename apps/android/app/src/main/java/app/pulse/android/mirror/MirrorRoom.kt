@@ -4535,33 +4535,49 @@ private fun MirrorRoomSafetySheet(
     peerId: String,
     onDismiss: () -> Unit,
 ) {
-    var state by remember { mutableStateOf<app.pulse.domain.model.SafetyState?>(null) }
-    var failed by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var reloadKey by remember { mutableStateOf(0) }
+    val epoch = repository.attachmentSessionKey()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var state by remember(repository, peerId, epoch) { mutableStateOf<app.pulse.domain.model.SafetyState?>(null) }
+    var failed by remember(repository, peerId, epoch) { mutableStateOf(false) }
+    var busy by remember(repository, peerId, epoch) { mutableStateOf(false) }
+    var errorText by remember(repository, peerId, epoch) { mutableStateOf<String?>(null) }
+    var reloadKey by remember(repository, peerId, epoch) { mutableStateOf(0) }
 
-    LaunchedEffect(reloadKey) {
-        failed = false
-        state = runCatching { repository.safetyState(peerId).getOrThrow() }.getOrNull()
-        if (state == null) failed = true
+    LaunchedEffect(repository, peerId, epoch, reloadKey) {
+        if (epoch == null) return@LaunchedEffect
+        val owned = repository.boundToCurrentAccount()
+        busy = true
+        try {
+            val fresh = owned.safetyState(peerId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
+            state = fresh; failed = false; errorText = null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) { if (repository.attachmentSessionKey() == epoch) failed = true }
+        finally { if (repository.attachmentSessionKey() == epoch) busy = false }
     }
 
     fun toggle(verify: Boolean) {
-        if (busy) return
-        busy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val next = runCatching {
-                if (verify) repository.verifyPeer(peerId).getOrThrow() else repository.unverifyPeer(peerId).getOrThrow()
-            }.getOrNull()
-            withContext(Dispatchers.Main) {
-                busy = false
-                if (next != null) state = next
-            }
+        if (busy || state == null || epoch == null || repository.attachmentSessionKey() != epoch) return
+        val owned = repository.boundToCurrentAccount()
+        busy = true; errorText = null
+        actionScope.launch {
+            try {
+                val next = (if (verify) owned.verifyPeer(peerId) else owned.unverifyPeer(peerId)).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() == epoch) state = next
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (repository.attachmentSessionKey() == epoch) errorText = error.message ?: "Comparison change was not confirmed"
+            } finally { if (repository.attachmentSessionKey() == epoch) busy = false }
         }
     }
 
     MirrorSheet(title = "Safety number", onDismiss = onDismiss) {
         MirrorSheetScroll {
+            errorText?.let { Text(it, color = MirrorArt.Red, fontSize = 12.sp) }
             when {
                 failed -> Text(
                     "Could not load the safety number",
@@ -4578,7 +4594,7 @@ private fun MirrorRoomSafetySheet(
                 else -> {
                     val loaded = state!!
                     Text(
-                        "Verify this account's safety number to confirm the end-to-end encryption identity.",
+                        "This code compares public account IDs, not device encryption keys. A matching code or checkmark does not prove end-to-end encryption.",
                         color = MirrorArt.Dim, fontSize = 12.sp, lineHeight = 17.sp,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     )

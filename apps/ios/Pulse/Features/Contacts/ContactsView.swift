@@ -296,7 +296,7 @@ struct ContactsView: View {
             user: user,
             online: session.isOnline(user.id),
             isViewer: user.id == session.viewer?.id,
-            safetyVerified: safetyBadges.isVerified(user.id),
+            safetyVerified: safetyBadges.isVerified(user.id, epoch: session.sessionGeneration),
             opening: viewModel.openingPeerId == user.id,
             actionPending: viewModel.openingPeerId != nil,
             onOpenProfile: {

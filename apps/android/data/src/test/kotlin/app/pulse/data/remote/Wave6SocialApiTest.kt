@@ -126,12 +126,12 @@ class Wave6SocialApiTest {
     @Test
     fun `safety state get and unverify ride the userId query`() = runTest {
         configured()
-        response = """{"peerId":"p1","safetyNumber":"0 1 2","verified":false,"verifiedAt":null}"""
+        response = """{"ok":true,"safetyReceiptVersion":1,"ownerId":"me1","peerId":"p1","safetyNumber":"00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000","verified":false,"verifiedAt":null}"""
         val r = api().safetyState("p1", "me1")
         assertTrue(r is PulseResult.Success)
         assertEquals("https://gw.example/api/users/p1/safety?userId=me1", lastUrl)
 
-        response = """{"verified":false}"""
+        response = """{"ok":true,"safetyReceiptVersion":1,"ownerId":"me1","peerId":"p1","safetyNumber":"00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000","verified":false,"verifiedAt":null}"""
         val un = api().safetyUnverify("p1", "me1")
         assertTrue(un is PulseResult.Success)
         assertEquals(HttpMethod.Delete, lastMethod)
@@ -141,7 +141,7 @@ class Wave6SocialApiTest {
     @Test
     fun `safety verify posts the viewer`() = runTest {
         configured()
-        response = """{"verified":true,"verifiedAt":"2025-05-05T10:00:00.000Z"}"""
+        response = """{"ok":true,"safetyReceiptVersion":1,"ownerId":"me1","peerId":"p1","safetyNumber":"00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000","verified":true,"verifiedAt":"2025-05-05T10:00:00.000Z"}"""
         val r = api().safetyVerify("p1", "me1")
         assertTrue(r is PulseResult.Success)
         assertTrue((r as PulseResult.Success).value.verified)

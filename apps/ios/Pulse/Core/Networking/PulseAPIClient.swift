@@ -668,25 +668,37 @@ public struct PulseAPIClient: Sendable {
         return page.stats
     }
 
-    /// GET /api/users/{id}/safety?userId={viewer} → { peerId, safetyNumber,
-    /// verified, verifiedAt } - the server-computed 12×5 number + MY state.
+    private func confirmedSafety(_ data: Data, peer: String, desired: Bool? = nil) throws -> WireSafetyState {
+        struct Receipt: Decodable {
+            let ok: Bool; let safetyReceiptVersion: Int; let ownerId: String; let peerId: String
+            let safetyNumber: String; let verified: Bool; let verifiedAt: String?
+        }
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard receipt.ok, receipt.safetyReceiptVersion == 1, receipt.ownerId == userId, receipt.peerId == peer,
+              desired == nil || desired == receipt.verified,
+              receipt.safetyNumber.range(of: "^[0-9]{5}( [0-9]{5}){11}$", options: .regularExpression) != nil,
+              receipt.verified ? PulseFormat.date(receipt.verifiedAt) != nil : raw?["verifiedAt"] is NSNull else {
+            throw Failure(kind: .server, message: "Account comparison state was not confirmed.")
+        }
+        return WireSafetyState(peerId: receipt.peerId, safetyNumber: receipt.safetyNumber,
+            verified: receipt.verified, verifiedAt: receipt.verifiedAt)
+    }
+
     public func safetyState(peerId: String) async throws -> WireSafetyState {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        return try await get("/api/users/\(peerId)/safety?userId=\(query)")
+        let request = URLRequest(url: url("/api/users/\(q(peerId))/safety?userId=\(q(userId))"))
+        return try confirmedSafety(try await send(request), peer: peerId)
     }
 
-    /// POST /api/users/{id}/safety { userId } - upsert the verification
-    /// (re-verifying refreshes verifiedAt). No optimistic lies: callers
-    /// refetch the state on settle.
     public func verifySafety(peerId: String) async throws -> WireSafetyVerdict {
-        let data = try await postRaw("/api/users/\(peerId)/safety", body: ["userId": userId])
-        return try decoder.decode(WireSafetyVerdict.self, from: data)
+        let data = try await postRaw("/api/users/\(q(peerId))/safety", body: ["userId": userId])
+        let state = try confirmedSafety(data, peer: peerId, desired: true)
+        return WireSafetyVerdict(verified: state.verified, verifiedAt: state.verifiedAt)
     }
 
-    /// DELETE /api/users/{id}/safety?userId={viewer} - unverify (deleteMany).
     public func resetSafety(peerId: String) async throws {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        try await deleteEmpty("/api/users/\(peerId)/safety?userId=\(query)", body: ["userId": userId])
+        let data = try await deleteRaw("/api/users/\(q(peerId))/safety?userId=\(q(userId))", body: ["userId": userId])
+        _ = try confirmedSafety(data, peer: peerId, desired: false)
     }
 
     /// GET /api/users/{id}/block?userId={actor} - pair block state.

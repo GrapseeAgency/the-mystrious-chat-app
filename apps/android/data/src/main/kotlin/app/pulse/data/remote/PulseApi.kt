@@ -1296,13 +1296,26 @@ class PulseApi(
             PulseJson.decodeFromString(StatsEnvelopeDto.serializer(), it).stats ?: UserStatsDto()
         }
 
+    private fun safetyReceipt(text: String, owner: String, peer: String, desired: Boolean? = null): SafetyStateDto {
+        val raw = PulseJson.parseToJsonElement(text) as? JsonObject
+            ?: throw kotlinx.serialization.SerializationException("Comparison receipt is missing")
+        val state = PulseJson.decodeFromString(SafetyStateDto.serializer(), text)
+        if (raw["ok"] != JsonPrimitive(true) || raw["safetyReceiptVersion"] != JsonPrimitive(1) ||
+            raw["ownerId"] != JsonPrimitive(owner) || raw["peerId"] != JsonPrimitive(peer) ||
+            raw["verified"] != JsonPrimitive(state.verified) || (desired != null && state.verified != desired) ||
+            !Regex("[0-9]{5}( [0-9]{5}){11}").matches(state.safetyNumber) ||
+            (if (state.verified) runCatching { java.time.Instant.parse(state.verifiedAt) }.isFailure else raw["verifiedAt"] != JsonNull))
+            throw kotlinx.serialization.SerializationException("Account comparison state was not confirmed")
+        return state
+    }
+
     /** GET /api/users/{id}/safety?userId= → 12×5 digits + this viewer's verify stamp. */
     suspend fun safetyState(peerId: String, viewerId: String): PulseResult<SafetyStateDto> =
         get(
             "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety?userId=" +
                 java.net.URLEncoder.encode(viewerId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(SafetyStateDto.serializer(), it)
+            safetyReceipt(it, viewerId, peerId)
         }
 
     /** POST /api/users/{id}/safety { userId } → upsert verification. */
@@ -1310,14 +1323,14 @@ class PulseApi(
         post(
             "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety",
             jsonOf("userId" to viewerId),
-        ) { PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
+        ) { safetyReceipt(it, viewerId, peerId, true); PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
 
     /** DELETE /api/users/{id}/safety?userId= → reset verification (idempotent). */
     suspend fun safetyUnverify(peerId: String, viewerId: String): PulseResult<VerifyAckDto> =
         deleteWithQuery(
             "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety",
             viewerId,
-        ) { PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
+        ) { safetyReceipt(it, viewerId, peerId, false); PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
 
     /** GET /api/users/{id}/block?userId= → pair state (drives Block/Unblock label). */
     private fun blockReceipt(text: String, actor: String, target: String, desired: Boolean? = null): BlockStateDto {

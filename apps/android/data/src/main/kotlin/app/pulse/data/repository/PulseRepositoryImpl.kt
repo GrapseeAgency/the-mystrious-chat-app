@@ -4167,29 +4167,23 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun safetyState(peerId: String): Result<SafetyState> =
-        when (val r = api.safetyState(peerId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(
-                SafetyState(r.value.peerId, r.value.safetyNumber, r.value.verified, r.value.verifiedAt),
-            )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        ownedPeerRequest { api.safetyState(peerId, it) }.map {
+            SafetyState(it.peerId, it.safetyNumber, it.verified, it.verifiedAt)
         }
 
-    override suspend fun verifyPeer(peerId: String): Result<SafetyState> =
-        when (val r = api.safetyVerify(peerId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(
-                // Settle-confirmed: the state is ONLY what the server answered.
-                SafetyState(peerId = peerId, verified = r.value.verified, verifiedAtIso = r.value.verifiedAt),
-            )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    private suspend fun changePeerVerification(peerId: String, desired: Boolean): Result<SafetyState> =
+        ownedPeerRequest { owner ->
+            when (val receipt = if (desired) api.safetyVerify(peerId, owner) else api.safetyUnverify(peerId, owner)) {
+                is PulseResult.Failure -> receipt
+                is PulseResult.Success -> api.safetyState(peerId, owner)
+            }
+        }.mapCatching {
+            check(it.verified == desired) { "Comparison state changed. Refresh before retrying." }
+            SafetyState(it.peerId, it.safetyNumber, it.verified, it.verifiedAt)
         }
 
-    override suspend fun unverifyPeer(peerId: String): Result<SafetyState> =
-        when (val r = api.safetyUnverify(peerId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(
-                SafetyState(peerId = peerId, verified = r.value.verified, verifiedAtIso = null),
-            )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun verifyPeer(peerId: String): Result<SafetyState> = changePeerVerification(peerId, true)
+    override suspend fun unverifyPeer(peerId: String): Result<SafetyState> = changePeerVerification(peerId, false)
 
     override suspend fun blockState(userId: String): Result<Boolean> =
         ownedPeerRequest { api.blockState(userId, it) }.map { it.blocked }

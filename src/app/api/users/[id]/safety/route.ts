@@ -1,105 +1,40 @@
-// /api/users/[id]/safety - Signal-style safety-number verification
-// (R35-a). `[id]` is the PEER's user id; the viewer rides along as
-// `userId` (query for GET/DELETE, JSON body for POST).
-//
-// Contract (lead-fixed):
-//   GET    ?userId={viewerId} → 200 { peerId, safetyNumber (12×5 digits
-//          space-separated), verified, verifiedAt ISO|null }
-//   POST   { userId } → upsert verification → 200 { verified: true, verifiedAt }
-//   DELETE ?userId={viewerId} → deleteMany rows → 200 { verified: false }
-//
-// Status policy (documented judgment call): a MISSING viewer id is a
-// malformed request → 400. An id that does not exist in the directory -
-// viewer OR peer alike - is 404, so "this account is gone" is uniform for
-// both sides of the pair.
+// This is an owner-private account comparison marker, not an E2E key proof.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { deriveSafetyNumber } from '@/lib/safety'
-import { safeJson } from '@/lib/serializers'
+import { safeJson, strField } from '@/lib/serializers'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 
 export const dynamic = 'force-dynamic'
+interface RouteCtx { params: Promise<{ id: string }> }
 
-interface RouteCtx {
-  params: Promise<{ id: string }>
-}
-
-/** Look up both ends; returns the first error response or the confirmed ids. */
-async function resolvePair(peerId: string, viewerId: string) {
-  const [peer, viewer] = await Promise.all([
-    db.user.findUnique({ where: { id: peerId }, select: { id: true } }),
-    db.user.findUnique({ where: { id: viewerId }, select: { id: true } }),
-  ])
-  if (!peer) {
-    return { error: NextResponse.json({ error: 'User not found.' }, { status: 404 }) }
-  }
-  if (!viewer) {
-    return { error: NextResponse.json({ error: 'Viewing user not found.' }, { status: 404 }) }
-  }
-  return { peerId: peer.id, viewerId: viewer.id }
-}
-
-/** GET - the pair's shared safety number + THIS viewer's verification state. */
-export async function GET(req: Request, { params }: RouteCtx) {
+async function act(req: Request, { params }: RouteCtx, desired: boolean | null) {
   const { id: peerId } = await params
-
-  const viewerId = new URL(req.url).searchParams.get('userId')?.trim() ?? ''
-  if (viewerId.length === 0) {
-    return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
+  const ownerId = desired === true ? strField((await safeJson(req)).userId) : new URL(req.url).searchParams.get('userId')?.trim() ?? ''
+  if (!ownerId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, ownerId, 'account comparison')
+  if (denied) return denied
+  if (desired !== null && ownerId === peerId) return NextResponse.json({ error: 'Choose another account.' }, { status: 400 })
+  try {
+    const receipt = await db.$transaction(async tx => {
+      const users = await tx.user.findMany({ where: { id: { in: [ownerId, peerId] } }, select: { id: true } })
+      if (!users.some(user => user.id === ownerId) || !users.some(user => user.id === peerId)) return null
+      const pair = { ownerId, peerId }
+      if (desired === true) await tx.userVerification.upsert({ where: { ownerId_peerId: pair },
+        create: pair, update: { verifiedAt: new Date() } })
+      if (desired === false) await tx.userVerification.deleteMany({ where: pair })
+      const row = await tx.userVerification.findUnique({ where: { ownerId_peerId: pair } })
+      return { ok: true, safetyReceiptVersion: 1, ownerId, peerId,
+        safetyNumber: deriveSafetyNumber(ownerId, peerId), verified: row !== null, verifiedAt: row?.verifiedAt.toISOString() ?? null }
+    }, { isolationLevel: 'Serializable' })
+    if (!receipt) return NextResponse.json({ error: 'Account not found.' }, { status: 404 })
+    return NextResponse.json(receipt, { headers: { 'Cache-Control': 'private, no-store' } })
+  } catch (error) {
+    if (['P1008', 'P2002', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? ''))
+      return NextResponse.json({ error: 'Comparison state changed or is busy. Refresh before retrying.' }, { status: 409 })
+    throw error
   }
-
-  const resolved = await resolvePair(peerId, viewerId)
-  if ('error' in resolved) return resolved.error
-
-  const verification = await db.userVerification.findUnique({
-    where: { ownerId_peerId: { ownerId: resolved.viewerId, peerId: resolved.peerId } },
-  })
-
-  return NextResponse.json({
-    peerId: resolved.peerId,
-    safetyNumber: deriveSafetyNumber(resolved.viewerId, resolved.peerId),
-    verified: verification !== null,
-    verifiedAt: verification ? verification.verifiedAt.toISOString() : null,
-  })
 }
-
-/** POST - mark the peer verified (upsert; re-verifying refreshes verifiedAt). */
-export async function POST(req: Request, { params }: RouteCtx) {
-  const { id: peerId } = await params
-
-  const body = await safeJson(req)
-  const viewerId = typeof body.userId === 'string' ? body.userId.trim() : ''
-  if (viewerId.length === 0) {
-    return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
-  }
-
-  const resolved = await resolvePair(peerId, viewerId)
-  if ('error' in resolved) return resolved.error
-
-  const row = await db.userVerification.upsert({
-    where: { ownerId_peerId: { ownerId: resolved.viewerId, peerId: resolved.peerId } },
-    // Re-verification through the compare-digits flow stamps a fresh time.
-    update: { verifiedAt: new Date() },
-    create: { ownerId: resolved.viewerId, peerId: resolved.peerId },
-  })
-
-  return NextResponse.json({ verified: true, verifiedAt: row.verifiedAt.toISOString() })
-}
-
-/** DELETE - reset the verification (idempotent deleteMany). */
-export async function DELETE(req: Request, { params }: RouteCtx) {
-  const { id: peerId } = await params
-
-  const viewerId = new URL(req.url).searchParams.get('userId')?.trim() ?? ''
-  if (viewerId.length === 0) {
-    return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
-  }
-
-  const resolved = await resolvePair(peerId, viewerId)
-  if ('error' in resolved) return resolved.error
-
-  await db.userVerification.deleteMany({
-    where: { ownerId: resolved.viewerId, peerId: resolved.peerId },
-  })
-
-  return NextResponse.json({ verified: false })
-}
+export async function GET(req: Request, ctx: RouteCtx) { return act(req, ctx, null) }
+export async function POST(req: Request, ctx: RouteCtx) { return act(req, ctx, true) }
+export async function DELETE(req: Request, ctx: RouteCtx) { return act(req, ctx, false) }
