@@ -747,14 +747,16 @@ class PulseApi(
 
     /** POST /api/conversations/self {userId} - the viewer's Note to Self chat. */
     suspend fun createSelfChat(userId: String): PulseResult<ConversationSummaryDto> =
-        post(
-            "/api/conversations/self",
-            buildJsonObject { put("userId", userId) },
-        ) {
-            PulseJson.decodeFromString(
-                ConversationSummaryDto.serializer(),
-                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+        post("/api/conversations/self", buildJsonObject { put("userId", userId) }) {
+            val raw = PulseJson.parseToJsonElement(it) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Notebook receipt is missing")
+            if (userId.isBlank() || raw["notebookReceiptVersion"] != JsonPrimitive(1) ||
+                raw["userId"] != JsonPrimitive(userId) || raw["conversation"] !is JsonObject)
+                throw kotlinx.serialization.SerializationException("Notebook owner was not confirmed")
+            val row = PulseJson.decodeFromString(ConversationSummaryDto.serializer(), raw.getValue("conversation").toString())
+            if (row.id.isBlank() || row.isGroup || row.isSelf != true || row.members.size != 1 || row.members.single().id != userId)
+                throw kotlinx.serialization.SerializationException("The returned notebook is not private to this account")
+            row
         }
 
     /** GET /api/search?userId=&q= - server message search (≥2 chars upstream). */

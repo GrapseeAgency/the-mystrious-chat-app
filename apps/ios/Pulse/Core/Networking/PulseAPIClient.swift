@@ -903,8 +903,14 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/conversations/self { userId } - Note to Self create/dedupe.
     public func createSelfChat() async throws -> WireConversationSummary {
+        struct Receipt: Decodable { let notebookReceiptVersion: Int; let userId: String; let conversation: WireConversationSummary }
         let data = try await postRaw("/api/conversations/self", body: ["userId": userId])
-        return try WireConversationEnvelope.extract(from: data)
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.notebookReceiptVersion == 1, receipt.userId == userId,
+              PulseConversationNavigation.selfConversation(in: [receipt.conversation], viewerId: userId) != nil else {
+            throw Failure(kind: .server, message: "The returned notebook is not private to this account.")
+        }
+        return receipt.conversation
     }
 
     /// GET /api/stories?requesterId= - 24h status groups (nil = unreachable,

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
+import { DirectConversationError, openSelfConversation } from '../../src/lib/direct-conversation.ts'
 import { deriveSafetyNumber } from '../../src/lib/safety.ts'
 import { peerBlock, PeerBlockError } from '../../src/lib/peer-block.ts'
 import * as personalSettings from '../../src/lib/conversation-personal-settings.ts'
@@ -102,7 +103,14 @@ async function fixture(run, database = db => db) {
     const safety=(method,token='synthetic-owner',actor='owner',target='other')=>safetyRoutes[method](new Request(`https://settings.test?userId=${actor}`,{
       method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='POST'?{body:JSON.stringify({userId:actor})}:{})
     }),{params:Promise.resolve({id:target})})
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety})
+    const notebookRoute = await load('src/app/api/conversations/self/route.ts', {
+      ...blockDeps, DirectConversationError, openSelfConversation, CONVERSATION_FULL_INCLUDE:{participants:true},
+      buildConversationSummary:async row=>({id:row.id,isSelf:row.isSelf,isGroup:row.isGroup,members:row.participants.map(p=>({id:p.userId}))}),
+    }, 'POST')
+    const notebook=(token='synthetic-owner',userId='owner')=>notebookRoute(new Request('https://settings.test/api/conversations/self',{
+      method:'POST',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId}),
+    }))
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -329,4 +337,21 @@ test('account comparison marks require the owner credential and remain direction
   }
   assert.equal((await safety('POST','synthetic-owner','owner','owner')).status,400)
   for(const method of ['GET','POST','DELETE']) assert.equal((await safety(method,'synthetic-owner','owner','missing')).status,404)
+}))
+
+
+test('private notebook cannot be opened or created by matching public IDs without the owner credential',()=>fixture(async({db,notebook})=>{
+  for(const token of [null,'invalid','synthetic-other']) assert.equal((await notebook(token)).status,token?403:401)
+  assert.equal(await db.conversation.count({where:{isSelf:true}}),0)
+  const first=await notebook(); assert.equal(first.status,201)
+  assert.equal(first.headers.get('cache-control'),'private, no-store')
+  const receipt=await first.json();assert.equal(receipt.notebookReceiptVersion,1);assert.equal(receipt.userId,'owner')
+  assert.equal(receipt.conversation.isSelf,true);assert.equal(receipt.conversation.isGroup,false)
+  assert.deepEqual(receipt.conversation.members,[{id:'owner'}])
+  for(const token of [null,'synthetic-other']) assert.equal((await notebook(token)).status,token?403:401)
+  const retry=await notebook();assert.equal(retry.status,200);assert.deepEqual(await retry.json(),receipt)
+  assert.equal(await db.conversation.count({where:{isSelf:true}}),1)
+  const other=await notebook('synthetic-other','other');assert.equal(other.status,201)
+  const otherBody=await other.json();assert.notEqual(otherBody.conversation.id,receipt.conversation.id)
+  assert.deepEqual(otherBody.conversation.members,[{id:'other'}])
 }))

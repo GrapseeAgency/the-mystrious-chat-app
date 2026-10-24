@@ -106,7 +106,6 @@ struct ChatsView: View {
     // (the SAME NewChatSheet the dock's compose button hosts).
     @State private var callsOpen = false
     @State private var newChatOpen = false
-    @State private var selfOpenTask: Task<Void, Never>?
     // R14 5-b - the spotlight actions block's check-in pending flag.
     @State private var spotlightCheckinPending = false
 
@@ -213,15 +212,15 @@ struct ChatsView: View {
             }
         }
         .onAppear { viewModel.start(session: session, prefs: prefs) }
-        .onDisappear { selfOpenTask?.cancel(); viewModel.stop() }
-        .onChange(of: session.sessionGeneration) { _, _ in selfOpenTask?.cancel() }
-        .onChange(of: newChatOpen) { _, open in if open { selfOpenTask?.cancel() } }
-        .onChange(of: callsOpen) { _, open in if open { selfOpenTask?.cancel() } }
+        .onDisappear { viewModel.cancelSelfOpening(); viewModel.stop() }
+        .onChange(of: session.sessionGeneration) { _, _ in viewModel.cancelSelfOpening() }
+        .onChange(of: newChatOpen) { _, open in if open { viewModel.cancelSelfOpening() } }
+        .onChange(of: callsOpen) { _, open in if open { viewModel.cancelSelfOpening() } }
         .onChange(of: isActive) { _, active in
             if active {
                 viewModel.start(session: session, prefs: prefs)
             } else {
-                selfOpenTask?.cancel()
+                viewModel.cancelSelfOpening()
                 viewModel.stop()
             }
         }
@@ -258,7 +257,7 @@ struct ChatsView: View {
 
     private func openRoom(_ conv: WireConversationSummary, jumpMessageId: String? = nil) {
         session.noteRoomNavigationIntent()
-        selfOpenTask?.cancel()
+        viewModel.cancelSelfOpening()
         // R2-D ITEM 8 - a room opened from search makes its query a recent
         // (web pushRecent on chat/message activation parity).
         viewModel.noteQueryUsed()
@@ -412,16 +411,7 @@ struct ChatsView: View {
                     exists: viewModel.selfConv != nil,
                     creating: viewModel.selfCreating,
                     onPress: {
-                        selfOpenTask?.cancel()
-                        session.noteRoomNavigationIntent()
-                        let epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration
-                        selfOpenTask = Task { @MainActor in
-                            guard session.roomNavigationGeneration == navigation else { return }
-                            if let conv = await viewModel.pressSelf(session: session), !Task.isCancelled,
-                               session.sessionGeneration == epoch, session.roomNavigationGeneration == navigation {
-                                openRoom(conv)
-                            }
-                        }
+                        viewModel.pressSelf(session: session) { openRoom($0) }
                     },
                 )
 
@@ -2899,6 +2889,7 @@ final class ChatsViewModel: ObservableObject {
     }
 
     func stop() {
+        cancelSelfOpening()
         resetConversationActions(epoch: nil)
         sideQueryTask?.cancel(); sideQueryTask = nil; sideQueryGeneration = UUID(); folderReadGeneration &+= 1
         pollTask?.cancel()
@@ -3474,27 +3465,59 @@ final class ChatsViewModel: ObservableObject {
 
     // ── Note to Self ─────────────────────────────────────────
 
-    func pressSelf(session: PulseSession) async -> WireConversationSummary? {
-        guard !selfCreating, let viewer = session.viewer else { return nil }
-        let client = session.api, epoch = session.sessionGeneration, store = session.store
-        PulseHaptics.tap()
+    private var selfOpeningGate = PulseMutationGate()
+    private var selfOpeningOwner: UUID?
+    private var selfOpeningTask: Task<Void, Never>?
+
+    func cancelSelfOpening() {
+        selfOpeningGate.cancel()
+        selfOpeningTask?.cancel(); selfOpeningTask = nil
+        selfCreating = false
+    }
+
+    func beginSelfOpening(epoch: UUID, owner: String) -> PulseMutationGate.Request? {
+        if selfOpeningOwner != epoch { cancelSelfOpening(); selfOpeningOwner = epoch }
+        guard !owner.isEmpty, let ticket = selfOpeningGate.begin(owner: epoch, resource: owner) else { return nil }
         selfCreating = true
-        defer { selfCreating = false }
-        do {
-            let conv = try await PulseConversationNavigation.openSelf(viewerId: viewer.id,
-                cached: selfConv.map { [$0] } ?? []) { try await client.createSelfChat() }
-            guard !Task.isCancelled, session.sessionGeneration == epoch else { return nil }
-            refreshGeneration &+= 1
-            confirmedSelf = conv
-            sheet = nil
-            try? store?.upsert(conversations: [conv.toDomain()])
-            session.noteInboxChanged()
-            // A later inbox refresh is reconciliation, not a navigation prerequisite.
-            return conv
-        } catch {
-            guard !Task.isCancelled, session.sessionGeneration == epoch else { return nil }
-            session.toasts.show("Could not open Note to Self. Reconnect and try again.")
-            return nil
+        return ticket
+    }
+
+    func finishSelfOpening(_ ticket: PulseMutationGate.Request) {
+        if selfOpeningGate.finish(ticket) { selfCreating = false; selfOpeningTask = nil }
+    }
+
+    func pressSelf(session: PulseSession, onOpened: @escaping (WireConversationSummary) -> Void) {
+        guard let viewer = session.viewer else { return }
+        let client = session.api, epoch = session.sessionGeneration, store = session.store
+        guard let ticket = beginSelfOpening(epoch: epoch, owner: viewer.id) else { return }
+        let cached = selfConv.map { [$0] } ?? []
+        session.noteRoomNavigationIntent()
+        let navigation = session.roomNavigationGeneration
+        PulseHaptics.tap()
+        selfOpeningTask = Task { @MainActor in
+            func owns() -> Bool {
+                !Task.isCancelled && session.sessionGeneration == epoch && session.roomNavigationGeneration == navigation &&
+                    selfOpeningGate.isCurrent(ticket, owner: epoch, resource: viewer.id)
+            }
+            defer { finishSelfOpening(ticket) }
+            guard owns() else { return }
+            do {
+                let conv = try await PulseConversationNavigation.openSelf(viewerId: viewer.id, cached: cached) {
+                    try await client.createSelfChat()
+                }
+                guard owns() else { return }
+                refreshGeneration &+= 1
+                confirmedSelf = conv
+                sheet = nil
+                try? store?.upsert(conversations: [conv.toDomain()])
+                session.noteInboxChanged()
+                // Release our claim before navigation tears down the inbox.
+                finishSelfOpening(ticket)
+                onOpened(conv)
+            } catch {
+                guard owns() else { return }
+                session.toasts.show("Could not open Note to Self. Reconnect and try again.")
+            }
         }
     }
 

@@ -363,11 +363,39 @@ class ChatsViewModel @Inject constructor(
 
     // Note to Self
 
+    private var selfOpeningOwner: String? = null
+    private var selfOpeningTicket: java.util.UUID? = null
+    private var selfOpeningTask: Job? = null
+
+    fun cancelSelfOpening() {
+        selfOpeningTicket = null
+        selfOpeningTask?.cancel(); selfOpeningTask = null
+    }
+
     fun createSelfChat(onOpened: (String) -> Unit) {
-        viewModelScope.launch {
-            repo.createSelfChat()
-                .onSuccess { onOpened(it.id) }
-                .onFailure { notify("Could not open Note to Self", isError = true) }
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owner = repo.viewerId ?: return
+        if (selfOpeningOwner != epoch) { cancelSelfOpening(); selfOpeningOwner = epoch }
+        if (selfOpeningTicket != null) return
+        val owned = repo.boundToCurrentAccount()
+        val ticket = java.util.UUID.randomUUID(); selfOpeningTicket = ticket
+        selfOpeningTask = viewModelScope.launch {
+            fun owns() = repo.attachmentSessionKey() == epoch && selfOpeningTicket == ticket
+            try {
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                val cached = owned.observeConversations().firstOrNull().orEmpty()
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                val notebook = app.pulse.domain.sync.resolvePersonalConversation(owner, owner, cached,
+                    owned::createSelfChat, owned::createDm)
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                onOpened(notebook.id)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (owns()) notify("Could not open Note to Self. Reconnect and try again.", isError = true)
+            } finally {
+                if (selfOpeningTicket == ticket) { selfOpeningTicket = null; selfOpeningTask = null }
+            }
         }
     }
 

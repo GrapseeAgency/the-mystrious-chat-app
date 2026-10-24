@@ -259,7 +259,7 @@ fun ChatsScreen(
         val obs = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> viewModel.startPolling()
-                Lifecycle.Event.ON_STOP -> viewModel.stopPolling()
+                Lifecycle.Event.ON_STOP -> { viewModel.cancelSelfOpening(); viewModel.stopPolling() }
                 else -> {}
             }
         }
@@ -267,6 +267,7 @@ fun ChatsScreen(
         viewModel.startPolling()
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(obs)
+            viewModel.cancelSelfOpening()
             viewModel.stopPolling()
         }
     }
@@ -718,7 +719,7 @@ fun ArchivedScreen(
         val obs = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> viewModel.startPolling()
-                Lifecycle.Event.ON_STOP -> viewModel.stopPolling()
+                Lifecycle.Event.ON_STOP -> { viewModel.cancelSelfOpening(); viewModel.stopPolling() }
                 else -> {}
             }
         }
@@ -726,6 +727,7 @@ fun ArchivedScreen(
         viewModel.startPolling()
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(obs)
+            viewModel.cancelSelfOpening()
             viewModel.stopPolling()
         }
     }

@@ -28,6 +28,7 @@ class ConversationActionOwnershipTest {
         var epoch = "owner-a"
         data class Call(val epoch: String, val room: String, val reply: Continuation<Result<Unit>>)
         val calls = mutableListOf<Call>()
+        val notebooks = mutableListOf<Pair<String, Continuation<Result<Conversation>>>>()
         @Suppress("UNCHECKED_CAST")
         fun repository(bound: String? = null): PulseRepository = Proxy.newProxyInstance(PulseRepository::class.java.classLoader,
             arrayOf(PulseRepository::class.java)) { proxy, method, args ->
@@ -41,6 +42,10 @@ class ConversationActionOwnershipTest {
                 method.name == "events" -> emptyFlow<PulseEvent>()
                 method.name.startsWith("archive") || method.name.startsWith("markRead") || method.name.startsWith("setMutedUntil") -> {
                     calls += Call(requireNotNull(bound), args!![0] as String, args.last() as Continuation<Result<Unit>>)
+                    COROUTINE_SUSPENDED
+                }
+                method.name.startsWith("createSelfChat") -> {
+                    notebooks += requireNotNull(bound) to (args!!.last() as Continuation<Result<Conversation>>)
                     COROUTINE_SUSPENDED
                 }
                 method.name == "equals" -> proxy === args?.firstOrNull()
@@ -105,4 +110,29 @@ class ConversationActionOwnershipTest {
             assertFalse(completed)
         } finally { vm.viewModelScope.cancel(); runCurrent(); Dispatchers.resetMain() }
     }
+    @Test fun `notebook taps capture owner and old or cancelled replies cannot navigate or release a successor`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val accounts = Accounts(); val vm = ChatsViewModel(accounts.repository(), accounts.prefs)
+        val opened = mutableListOf<String>()
+        fun notebook(owner: String) = Conversation("book-$owner", Conversation.Kind.DM, "Note to Self", isSelf = true, memberIds = listOf(owner))
+        try {
+            vm.createSelfChat { opened += it }; vm.createSelfChat { opened += it }
+            runCurrent(); assertEquals(1, accounts.notebooks.size)
+            vm.cancelSelfOpening()
+            vm.createSelfChat { opened += it }; runCurrent()
+            accounts.notebooks[0].second.resume(Result.success(notebook("owner-a"))); runCurrent()
+            assertTrue(opened.isEmpty())
+            vm.createSelfChat { opened += it }; runCurrent(); assertEquals(2, accounts.notebooks.size)
+            accounts.epoch = "owner-b"
+            vm.createSelfChat { opened += it }; runCurrent()
+            accounts.notebooks[1].second.resume(Result.success(notebook("owner-a"))); runCurrent()
+            assertTrue(opened.isEmpty())
+            vm.createSelfChat { opened += it }; runCurrent(); assertEquals(3, accounts.notebooks.size)
+            accounts.notebooks[2].second.resume(Result.success(notebook("owner-b"))); runCurrent()
+            assertEquals(listOf("book-owner-b"), opened)
+            vm.createSelfChat { opened += it }; accounts.epoch = "owner-c"; runCurrent()
+            assertEquals(3, accounts.notebooks.size)
+        } finally { vm.viewModelScope.cancel(); runCurrent(); Dispatchers.resetMain() }
+    }
+
 }

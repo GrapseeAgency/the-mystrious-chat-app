@@ -89,7 +89,7 @@ internal enum class MirrorTab { Chats, Hub, Contacts, Profile }
 
 private data class MirrorRoomOpenRequest(val id: String, val ticket: Long, val jumpId: String?,
     val tab: MirrorTab, val previousRoomId: String?, val ownerId: String?, val api: PulseRepository,
-    val personal: Boolean = false)
+    val personal: Boolean = false, val ownerEpoch: String? = api.attachmentSessionKey())
 
 /** One typer in flight - the relay's typing event with a 4s expiry stamp. */
 private data class MirrorTyper(val conversationId: String, val userId: String, val userName: String, val expiresAt: Long)
@@ -381,16 +381,13 @@ internal fun MirrorRoot(
         if (conversationId.isBlank()) return
         roomOpenRequest = null
         pendingJump = null
-        val cached = conversations.firstOrNull { it.id == conversationId }
-        if (cached != null) {
-            pendingJump = jumpId?.let { MirrorRoomJump(conversationId, it) }
-            openRoom = cached
-        } else {
-            roomOpenSequence++
-            roomOpenRequest = MirrorRoomOpenRequest(conversationId, roomOpenSequence, jumpId, tab, openRoom?.id,
-                viewerId, repository.boundToCurrentAccount())
-        }
+        // Use the captured account's canonical cache, not an earlier Compose
+        // list emission that may belong to the preceding account activation.
+        roomOpenSequence++
+        roomOpenRequest = MirrorRoomOpenRequest(conversationId, roomOpenSequence, jumpId, tab, openRoom?.id,
+            viewerId, repository.boundToCurrentAccount())
     }
+
     fun openPersonalChat(peerId: String) {
         if (peerId.isBlank()) return
         pendingJump = null
@@ -425,14 +422,19 @@ internal fun MirrorRoot(
         }
         val api = request.api
         val owner = request.ownerId
-        if (owner == null || viewerId != owner || api.viewerId != owner) { roomOpenRequest = null; return@LaunchedEffect }
+        fun ownsOwner() = owner != null && request.ownerEpoch != null && viewerId == owner && api.viewerId == owner &&
+            api.attachmentSessionKey() == request.ownerEpoch && repository.attachmentSessionKey() == request.ownerEpoch
+        if (!ownsOwner()) { roomOpenRequest = null; return@LaunchedEffect }
         try {
             // Read the repository snapshot, not the possibly older Compose list.
             val cached = api.observeConversations().first()
+            currentCoroutineContext().ensureActive()
+            if (!ownsOwner()) return@LaunchedEffect
             val conversation = if (request.personal) {
-                app.pulse.domain.sync.resolvePersonalConversation(owner, request.id, cached, api::createSelfChat, api::createDm)
+                app.pulse.domain.sync.resolvePersonalConversation(requireNotNull(owner), request.id, cached, api::createSelfChat, api::createDm)
             } else app.pulse.domain.sync.resolveConversationForOpen(request.id, cached, api::conversationDetail)
-            if (roomOpenRequest == request && viewerId == owner && api.viewerId == owner && tab == request.tab &&
+            currentCoroutineContext().ensureActive()
+            if (roomOpenRequest == request && ownsOwner() && tab == request.tab &&
                 openRoom?.id == request.previousRoomId) {
                 pendingJump = request.jumpId?.let { MirrorRoomJump(conversation.id, it) }
                 openRoom = conversation
@@ -440,7 +442,7 @@ internal fun MirrorRoot(
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            if (roomOpenRequest == request && viewerId == owner && api.viewerId == owner) {
+            if (roomOpenRequest == request && ownsOwner()) {
                 android.widget.Toast.makeText(navigationContext,
                     "Couldn't open this chat. Reconnect and try again.", android.widget.Toast.LENGTH_LONG).show()
             }
