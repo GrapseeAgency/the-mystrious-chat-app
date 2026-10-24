@@ -185,11 +185,14 @@ class UserPageViewModel @Inject constructor(
         }
     }
 
-    fun submitReport(reason: String, details: String) = act { owned, profile, owns ->
-        owned.report(profile.id, reason, details.ifBlank { null }).getOrThrow()
+    fun submitReport(reason: String, details: String, onConfirmed: () -> Unit) = act { owned, profile, owns ->
+        owned.report(profile.id, reason, details).getOrThrow()
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        if (owns()) _state.value = _state.value.copy(reasons = (_state.value.reasons + reason).distinct(),
-            notice = "Report submitted. Thanks for helping keep Pulse safe.")
+        if (owns()) {
+            _state.value = _state.value.copy(reasons = (_state.value.reasons + reason).distinct(),
+                notice = "Report submitted. Thanks for helping keep Pulse safe.")
+            onConfirmed()
+        }
     }
 
     fun startDm(onReady: (String) -> Unit) = act { owned, profile, owns ->
@@ -416,10 +419,10 @@ fun UserPageScreen(
             firstName = profile.firstName,
             priorReasons = state.reasons,
             busy = state.busy,
+            errorText = state.notice,
             onDismiss = { reportOpen = false },
             onSubmit = { reason, details ->
-                reportOpen = false
-                viewModel.submitReport(reason, details)
+                viewModel.submitReport(reason, details) { reportOpen = false }
             },
         )
     }
@@ -493,11 +496,12 @@ fun ReportPanel(
     busy: Boolean,
     onDismiss: () -> Unit,
     onSubmit: (String, String) -> Unit,
+    errorText: String? = null,
 ) {
     val sheetState = rememberModalBottomSheetState()
     var reason by remember { mutableStateOf("") }
     var details by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 26.dp)) {
             Text("Report $firstName", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(6.dp))
@@ -515,22 +519,24 @@ fun ReportPanel(
                     fontSize = 13.sp,
                 )
             }
+            errorText?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
             Spacer(Modifier.height(12.dp))
             REPORT_REASONS.forEach { key ->
                 Row(
                     Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { reason = key }
+                        .clickable(enabled = !busy) { reason = key }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RadioButton(selected = reason == key, onClick = { reason = key })
+                    RadioButton(selected = reason == key, enabled = !busy, onClick = { reason = key })
                     Text(REPORT_LABELS[key] ?: key, fontSize = 14.sp)
                 }
             }
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = details,
+                enabled = !busy,
                 onValueChange = { if (it.length <= 500) details = it },
                 placeholder = { Text("Add details (optional)") },
                 supportingText = { Text("${details.length}/500") },

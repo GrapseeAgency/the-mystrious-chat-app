@@ -480,7 +480,7 @@ internal fun MirrorUserPage(
                                     .clip(RoundedCornerShape(16.dp))
                                     .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
                                     .background(MirrorArt.White7)
-                                    .clickable { reportOpen = !reportOpen }
+                                    .clickable(enabled = !reportBusy) { reportOpen = !reportOpen }
                                     .padding(horizontal = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
@@ -514,7 +514,7 @@ internal fun MirrorUserPage(
                                             Row(
                                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                                                     .background(if (active) MirrorArt.ChipActive else Color.Transparent)
-                                                    .clickable { reportReason = reason.first }
+                                                    .clickable(enabled = !reportBusy) { reportReason = reason.first }
                                                     .padding(horizontal = 8.dp, vertical = 6.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                             ) {
@@ -523,6 +523,7 @@ internal fun MirrorUserPage(
                                         }
                                         androidx.compose.foundation.text.BasicTextField(
                                             value = reportDetails,
+                                            enabled = !reportBusy,
                                             onValueChange = { if (it.length <= 500) reportDetails = it },
                                             textStyle = androidx.compose.ui.text.TextStyle(color = MirrorArt.Text, fontSize = 12.sp),
                                             cursorBrush = androidx.compose.ui.graphics.SolidColor(MirrorArt.Accent2),
@@ -549,7 +550,7 @@ internal fun MirrorUserPage(
                                                     val epoch = ownerEpoch ?: return@clickable
                                                     if (repository.attachmentSessionKey() != epoch) return@clickable
                                                     val owned = repository.boundToCurrentAccount()
-                                                    val details = reportDetails.trim().ifBlank { null }
+                                                    val details = reportDetails
                                                     reportBusy = true
                                                     actionScope.launch {
                                                         try {

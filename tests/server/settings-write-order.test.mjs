@@ -21,7 +21,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'UserBlock']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'UserBlock', 'AccountReport']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -34,6 +34,7 @@ async function fixture(run, database = db => db) {
       await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
     }
     await db.$executeRawUnsafe('CREATE UNIQUE INDEX "UserBlock_pair" ON "UserBlock" ("blockerId", "blockedId")')
+    await db.$executeRawUnsafe('CREATE UNIQUE INDEX "AccountReport_pair_reason" ON "AccountReport" ("reporterId", "reportedId", "reason")')
     for (const id of ['owner','other']) await db.user.create({ data: {
       id, name:id, color:'amber', preferences: '{"readReceipts":true,"density":"cozy"}',
       sessionTokenHash:hashSessionToken(`synthetic-${id}`), legacyTokenHashes:'[]',
@@ -91,7 +92,11 @@ async function fixture(run, database = db => db) {
     const blocks=(token='synthetic-owner',actor='owner',target='owner')=>listRoute(new Request(`https://settings.test?userId=${actor}`,{
       headers:token?{authorization:`Bearer ${token}`}:{},
     }),{params:Promise.resolve({id:target})})
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks})
+    const reportRoutes=await load('src/app/api/users/[id]/report/route.ts',blockDeps,'({GET,POST})')
+    const report=(method,body={},token='synthetic-owner',actor='owner',target='other')=>reportRoutes[method](new Request(`https://settings.test?userId=${actor}`,{
+      method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='POST'?{body:JSON.stringify({userId:actor,reason:'spam',...body})}:{})
+    }),{params:Promise.resolve({id:target})})
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -260,4 +265,41 @@ test('self or missing peer mutations cannot yield successful block receipts', ()
   for(const method of ['POST','DELETE']) assert.equal((await peer(method,'synthetic-owner','owner','owner')).status,400)
   for(const method of ['GET','POST','DELETE']) assert.equal((await peer(method,'synthetic-owner','owner','missing')).status,404)
   assert.equal(await db.userBlock.count(),0)
+}))
+
+
+test('private report reads and writes cannot impersonate a public reporter ID',()=>fixture(async({db,report,notices})=>{
+  for(const token of [null,'invalid','synthetic-other']) for(const method of ['GET','POST'])
+    assert.equal((await report(method,{},token)).status,token?403:401)
+  assert.equal(await db.accountReport.count(),0);assert.deepEqual(notices,[])
+  assert.equal((await report('POST',{},'synthetic-owner','owner','owner')).status,400)
+  assert.equal((await report('POST',{},'synthetic-owner','owner','missing')).status,404)
+  assert.equal((await report('GET',{},'synthetic-owner','owner','missing')).status,404)
+}))
+
+test('report receipts confirm exact evidence, repeated reason updates one row and history stays private',()=>fixture(async({db,report,notices})=>{
+  for(const [details,updated] of [[' initial evidence ',false],['new evidence 😀',true]]) {
+    const response=await report('POST',{details});assert.equal(response.status,updated?200:201)
+    assert.equal(response.headers.get('cache-control'),'private, no-store')
+    const receipt=await response.json();assert.ok(Number.isFinite(Date.parse(receipt.reportedAt)))
+    assert.deepEqual({...receipt,reportedAt:null},{ok:true,reportReceiptVersion:1,reporterId:'owner',reportedId:'other',
+      reason:'spam',details,reported:true,updated,reportedAt:null})
+    assert.equal(await db.accountReport.count(),1)
+    assert.equal((await db.accountReport.findFirst()).details,details)
+  }
+  const response=await report('GET');assert.equal(response.headers.get('cache-control'),'private, no-store')
+  const history=await response.json();assert.equal(history.reportHistoryVersion,1);assert.equal(history.reporterId,'owner')
+  assert.equal(history.reportedId,'other');assert.deepEqual(history.reasons.map(row=>row.reason),['spam'])
+  assert.ok(Number.isFinite(Date.parse(history.reasons[0].at)))
+  const other=await (await report('GET',{},'synthetic-other','other','owner')).json();assert.deepEqual(other.reasons,[])
+  assert.deepEqual(notices,[])
+}))
+
+test('report details enforce UTF16 limit without silently truncating or coercing evidence',()=>fixture(async({db,report})=>{
+  const details='😀'.repeat(250)
+  assert.equal((await report('POST',{details})).status,201)
+  for(const bad of [details+'x', '😀'.repeat(251),123,{},[]]) assert.equal((await report('POST',{details:bad})).status,400)
+  assert.equal((await db.accountReport.findFirst()).details,details)
+  assert.equal((await report('POST',{reason:'constructor'})).status,400)
+  assert.equal(await db.accountReport.count(),1)
 }))

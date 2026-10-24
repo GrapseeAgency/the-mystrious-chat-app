@@ -639,8 +639,18 @@ public struct PulseAPIClient: Sendable {
     public func report(userId target: String, reason: String, details: String?) async throws -> WireReportVerdict {
         var body: [String: Any] = ["userId": userId, "reason": reason]
         if let details { body["details"] = details }
-        let data = try await postRaw("/api/users/\(target)/report", body: body)
-        return try decoder.decode(WireReportVerdict.self, from: data)
+        struct Receipt: Decodable {
+            let ok: Bool; let reportReceiptVersion: Int; let reporterId: String; let reportedId: String
+            let reported: Bool; let updated: Bool; let reason: String; let details: String; let reportedAt: String
+        }
+        let data = try await postRaw("/api/users/\(q(target))/report", body: body)
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.reported, receipt.reportReceiptVersion == 1, receipt.reporterId == userId,
+              receipt.reportedId == target, receipt.reason == reason, receipt.details == (details ?? ""),
+              PulseFormat.date(receipt.reportedAt) != nil else {
+            throw Failure(kind: .server, message: "The report was not confirmed for this account and content.")
+        }
+        return WireReportVerdict(reported: true, updated: receipt.updated)
     }
 
     // Wave 6 - social graph & discovery (F-CP/F-SM/F-FD/F-CH)
@@ -699,12 +709,15 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/users/{id}/report?userId={viewer} - MY prior submissions
     /// about this account (private "already reported" hint).
-    public func reportHistory(reportedId: String) async -> [WireReportReasonRow] {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        guard let page: WireReportHistory = try? await get(
-            "/api/users/\(reportedId)/report?userId=\(query)",
-            as: WireReportHistory.self,
-        ) else { return [] }
+    public func reportHistory(reportedId: String) async throws -> [WireReportReasonRow] {
+        struct Page: Decodable { let reportHistoryVersion: Int; let reporterId: String; let reportedId: String; let reasons: [WireReportReasonRow] }
+        let page: Page = try await get("/api/users/\(q(reportedId))/report?userId=\(q(userId))")
+        let allowed: Set<String> = ["spam", "harassment", "impersonation", "inappropriate", "scam", "other"]
+        guard page.reportHistoryVersion == 1, page.reporterId == userId, page.reportedId == reportedId,
+              Set(page.reasons.compactMap(\.reason)).count == page.reasons.count,
+              page.reasons.allSatisfy({ allowed.contains($0.reason ?? "") && PulseFormat.date($0.at) != nil }) else {
+            throw Failure(kind: .server, message: "Report history was not confirmed for this account.")
+        }
         return page.reasons
     }
 

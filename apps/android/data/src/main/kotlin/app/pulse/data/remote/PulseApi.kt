@@ -1375,9 +1375,20 @@ class PulseApi(
             buildJsonObject {
                 put("userId", reporterId)
                 put("reason", reason)
-                if (!details.isNullOrBlank()) put("details", details)
+                if (details != null) put("details", details)
             },
-        ) { PulseJson.decodeFromString(ReportAckDto.serializer(), it) }
+        ) {
+            val raw = PulseJson.parseToJsonElement(it) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Report receipt is missing")
+            val receipt = PulseJson.decodeFromString(ReportAckDto.serializer(), it)
+            if (raw["ok"] != JsonPrimitive(true) || raw["reported"] != JsonPrimitive(true) ||
+                raw["reportReceiptVersion"] != JsonPrimitive(1) || raw["reporterId"] != JsonPrimitive(reporterId) ||
+                raw["reportedId"] != JsonPrimitive(targetId) || raw["reason"] != JsonPrimitive(reason) ||
+                raw["details"] != JsonPrimitive(details.orEmpty()) || raw["updated"] != JsonPrimitive(receipt.updated) ||
+                runCatching { java.time.Instant.parse(raw["reportedAt"]?.jsonPrimitive?.content) }.isFailure)
+                throw kotlinx.serialization.SerializationException("The report was not confirmed for this account and content")
+            receipt
+        }
 
     /** GET /api/users/{id}/report?userId= - the reporter's OWN prior reasons (hint). */
     suspend fun reportReasons(targetId: String, reporterId: String): PulseResult<ReportReasonsPageDto> =
@@ -1385,7 +1396,16 @@ class PulseApi(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/report?userId=" +
                 java.net.URLEncoder.encode(reporterId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(ReportReasonsPageDto.serializer(), it)
+            val raw = PulseJson.parseToJsonElement(it) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Report history is missing")
+            val page = PulseJson.decodeFromString(ReportReasonsPageDto.serializer(), it)
+            if (raw["reportHistoryVersion"] != JsonPrimitive(1) || raw["reporterId"] != JsonPrimitive(reporterId) ||
+                raw["reportedId"] != JsonPrimitive(targetId) || raw["reasons"] !is JsonArray ||
+                page.reasons.map { row -> row.reason }.distinct().size != page.reasons.size ||
+                page.reasons.any { row -> row.reason !in setOf("spam", "harassment", "impersonation", "inappropriate", "scam", "other") ||
+                    runCatching { java.time.Instant.parse(row.at) }.isFailure })
+                throw kotlinx.serialization.SerializationException("Report history was not confirmed for this account")
+            page
         }
 
     /** GET /api/invite/[code]?userId= → public preview (404 unknown code). */

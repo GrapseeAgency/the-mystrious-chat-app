@@ -5,6 +5,7 @@
 // submission refreshes the details/timestamp instead of duplicating.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -37,6 +38,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!reporterId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, reporterId, 'account report')
+  if (denied) return denied
   if (reporterId === reportedId) {
     return NextResponse.json({ error: 'You cannot report your own account.' }, { status: 400 })
   }
@@ -49,7 +52,11 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  const details = strField(body.details)
+  if (body.details != null && typeof body.details !== 'string')
+    return NextResponse.json({ error: 'Details must be text.' }, { status: 400 })
+  // Preserve exactly the submitted text; do not silently truncate or normalize
+  // evidence. The shared limit is UTF-16 units (also Kotlin String.length).
+  const details = typeof body.details === 'string' ? body.details : ''
   if (details.length > DETAILS_MAX) {
     return NextResponse.json(
       { error: `Details must be ${DETAILS_MAX} characters or fewer.` },
@@ -57,33 +64,24 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  const [reporter, reported] = await Promise.all([
-    db.user.findUnique({ where: { id: reporterId }, select: { id: true } }),
-    db.user.findUnique({ where: { id: reportedId }, select: { id: true } }),
-  ])
-  if (!reporter || !reported) {
-    return NextResponse.json({ error: 'Account not found.' }, { status: 404 })
+  try {
+    const outcome = await db.$transaction(async tx => {
+      const users = await tx.user.findMany({where:{id:{in:[reporterId,reportedId]}},select:{id:true}})
+      if (users.length !== 2) return null
+      const key = { reporterId, reportedId, reason }
+      const existing = await tx.accountReport.findUnique({where:{reporterId_reportedId_reason:key},select:{id:true}})
+      const row = await tx.accountReport.upsert({where:{reporterId_reportedId_reason:key},
+        create:{...key,details},update:{details,createdAt:new Date()}})
+      return {ok:true,reportReceiptVersion:1,reporterId,reportedId,reason,details:row.details,
+        reported:true,updated:existing !== null,reportedAt:row.createdAt.toISOString()}
+    },{isolationLevel:'Serializable'})
+    if (!outcome) return NextResponse.json({error:'Account not found.'},{status:404})
+    return NextResponse.json(outcome,{status:outcome.updated?200:201,headers:{'Cache-Control':'private, no-store'}})
+  } catch(error) {
+    if (['P1008','P2002','P2028','P2034'].includes((error as {code?:string})?.code ?? ''))
+      return NextResponse.json({error:'Report state changed or is busy. Refresh before retrying.'},{status:409})
+    throw error
   }
-
-  const existing = await db.accountReport.findUnique({
-    where: {
-      reporterId_reportedId_reason: { reporterId, reportedId, reason },
-    },
-    select: { id: true },
-  })
-
-  if (existing) {
-    await db.accountReport.update({
-      where: { id: existing.id },
-      data: { details, createdAt: new Date() },
-    })
-    return NextResponse.json({ reported: true, updated: true })
-  }
-
-  await db.accountReport.create({
-    data: { reporterId, reportedId, reason, details },
-  })
-  return NextResponse.json({ reported: true }, { status: 201 })
 }
 
 /**
@@ -94,20 +92,20 @@ export async function POST(req: Request, { params }: RouteCtx) {
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id: reportedId } = await params
   const url = new URL(req.url)
-  const reporterId = url.searchParams.get('userId')
+  const reporterId = url.searchParams.get('userId')?.trim()
   if (!reporterId) {
     return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
   }
-  if (reporterId === reportedId) {
-    return NextResponse.json({ reasons: [] })
-  }
-
-  const rows = await db.accountReport.findMany({
-    where: { reporterId, reportedId },
-    select: { reason: true, createdAt: true },
-    orderBy: { createdAt: 'desc' },
-  })
-  return NextResponse.json({
-    reasons: rows.map((r) => ({ reason: r.reason, at: r.createdAt.toISOString() })),
-  })
+  const denied = await requireActionOwner(req, reporterId, 'account report history')
+  if (denied) return denied
+  const rows = await db.$transaction(async tx => {
+    const users = await tx.user.findMany({where:{id:{in:[reporterId,reportedId]}},select:{id:true}})
+    if (!users.some(user=>user.id===reporterId) || !users.some(user=>user.id===reportedId)) return null
+    return tx.accountReport.findMany({where:{reporterId,reportedId},select:{reason:true,createdAt:true},
+      orderBy:[{createdAt:'desc'},{id:'asc'}]})
+  },{isolationLevel:'Serializable'})
+  if (!rows) return NextResponse.json({error:'Account not found.'},{status:404})
+  return NextResponse.json({reportHistoryVersion:1,reporterId,reportedId,
+    reasons:rows.map(row=>({reason:row.reason,at:row.createdAt.toISOString()})),
+  },{headers:{'Cache-Control':'private, no-store'}})
 }

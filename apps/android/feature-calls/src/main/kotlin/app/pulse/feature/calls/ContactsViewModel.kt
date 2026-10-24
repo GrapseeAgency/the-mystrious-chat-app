@@ -29,6 +29,8 @@ class ContactsViewModel @Inject constructor(
     data class UiState(
         val loading: Boolean = false,
         val error: String? = null,
+        val safetyError: String? = null,
+        val safetyPending: Set<String> = emptySet(),
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -97,27 +99,47 @@ class ContactsViewModel @Inject constructor(
     private val pendingSafety = mutableMapOf<String, java.util.UUID>()
     private var safetyEpoch: String? = null
 
-    private fun safetyAction(user: User, action: suspend (PulseRepository) -> Result<Unit>) {
+    private fun safetyAction(user: User, onConfirmed: () -> Unit = {}, action: suspend (PulseRepository) -> Result<Unit>) {
         val epoch = repo.attachmentSessionKey() ?: return
-        if (safetyEpoch != epoch) { safetyEpoch = epoch; pendingSafety.clear() }
+        if (safetyEpoch != epoch) {
+            safetyEpoch = epoch; pendingSafety.clear()
+            _state.value = _state.value.copy(safetyPending = emptySet(), safetyError = null)
+        }
         if (pendingSafety.containsKey(user.id)) return
         val owned = repo.boundToCurrentAccount()
         val ticket = java.util.UUID.randomUUID(); pendingSafety[user.id] = ticket
+        _state.value = _state.value.copy(safetyPending = pendingSafety.keys.toSet(), safetyError = null)
         viewModelScope.launch {
             try {
                 coroutineContext.ensureActive()
                 if (repo.attachmentSessionKey() != epoch) return@launch
                 action(owned).getOrThrow()
                 coroutineContext.ensureActive()
-                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(error = null)
+                if (repo.attachmentSessionKey() == epoch && pendingSafety[user.id] == ticket) {
+                    _state.value = _state.value.copy(safetyError = null)
+                    onConfirmed()
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(error = error.message ?: "Action was not confirmed. Please retry.")
-            } finally { if (pendingSafety[user.id] == ticket) pendingSafety.remove(user.id) }
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(safetyError = error.message ?: "Action was not confirmed. Please retry.")
+            } finally {
+                if (pendingSafety[user.id] == ticket) {
+                    pendingSafety.remove(user.id)
+                    if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(safetyPending = pendingSafety.keys.toSet())
+                }
+            }
         }
     }
 
     fun block(user: User) = safetyAction(user) { it.block(user.id) }
-    fun report(user: User, reason: String, details: String?) = safetyAction(user) { it.report(user.id, reason, details) }
+    fun safetyOwnerKey(): String? = repo.attachmentSessionKey()
+
+    fun report(user: User, reason: String, details: String?, formOwner: String?, onConfirmed: () -> Unit) {
+        if (formOwner == null || formOwner != repo.attachmentSessionKey()) {
+            _state.value = _state.value.copy(safetyError = "Account changed. Reopen the report before submitting.")
+            return
+        }
+        safetyAction(user, onConfirmed) { it.report(user.id, reason, details) }
+    }
 }

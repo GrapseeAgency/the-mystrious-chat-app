@@ -2872,10 +2872,7 @@ class PulseRepositoryImpl constructor(
         ownedPeerRequest { api.unblockUser(userId, it) }.map { Unit }
 
     override suspend fun report(userId: String, reason: String, details: String?): Result<Unit> =
-        when (val r = api.reportUser(userId, viewerId ?: "", reason, details)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedPeerRequest { api.reportUser(userId, it, reason, details) }.map { Unit }
 
     // N10 home-page era
 
@@ -4206,10 +4203,7 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun myReportReasons(userId: String): Result<List<String>> =
-        when (val r = api.reportReasons(userId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.reasons.map { it.reason })
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedPeerRequest { api.reportReasons(userId, it) }.map { page -> page.reasons.map { it.reason } }
 
     override suspend fun invitePreview(code: String): Result<InvitePreview> =
         when (val r = api.invitePreview(code, viewerId)) {

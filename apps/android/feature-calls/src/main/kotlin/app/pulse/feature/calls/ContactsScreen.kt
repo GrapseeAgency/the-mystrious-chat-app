@@ -93,6 +93,7 @@ fun ContactsScreen(
     var filter by remember { mutableStateOf("") }
     var safetyTarget by remember { mutableStateOf<User?>(null) }
     var reportTarget by remember { mutableStateOf<User?>(null) }
+    var reportOwner by remember { mutableStateOf<String?>(null) }
     // Wave 3 - outgoing calls start here. RECORD_AUDIO must be live before
     // the engine touches the mic; denial keeps the call unstarted (honest).
     var callTarget by remember { mutableStateOf<User?>(null) }
@@ -157,6 +158,7 @@ fun ContactsScreen(
             }
         }
 
+        state.safetyError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
         when {
             state.error != null && users.isEmpty() -> Text(
                 state.error ?: "",
@@ -296,6 +298,7 @@ fun ContactsScreen(
             }
             SheetRow(icon = PulseIcons.Flag, label = "Report", tint = EmberPalette.Signal) {
                 safetyTarget = null
+                reportOwner = viewModel.safetyOwnerKey()
                 reportTarget = target
             }
             Spacer(Modifier.height(30.dp))
@@ -307,11 +310,11 @@ fun ContactsScreen(
         ReportPanel(
             firstName = target.name.trim().split(" ").first(),
             priorReasons = emptyList(),
-            busy = false,
+            busy = target.id in state.safetyPending,
+            errorText = state.safetyError,
             onDismiss = { reportTarget = null },
             onSubmit = { reason, details ->
-                viewModel.report(target, reason, details.ifBlank { null })
-                reportTarget = null
+                viewModel.report(target, reason, details, reportOwner) { reportTarget = null }
             },
         )
     }
