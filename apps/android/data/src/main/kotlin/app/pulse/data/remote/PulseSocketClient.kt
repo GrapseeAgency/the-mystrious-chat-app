@@ -443,8 +443,8 @@ class PulseSocketClient(
     // engine tears down honestly on disconnect instead).
 
     /** gcall:join - creates/joins the conversation's ONE live group call. */
-    fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto) {
-        emitCall(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user))
+    fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto, expectedCallId: String? = null) {
+        emitCall(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user, expectedCallId))
     }
 
     /** gcall:offer - joiner → existing member (targeted relay). */

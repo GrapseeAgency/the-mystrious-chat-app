@@ -63,6 +63,7 @@ data class GroupCallSignalOut(
     val kind: CallKind = CallKind.VOICE,
     /** The emitting member identity (join only) - id/name/color/avatar. */
     val user: GroupCallMember? = null,
+    val expectedCallId: String? = null,
     val callId: String = "",
     val from: String = "",
     val to: String = "",

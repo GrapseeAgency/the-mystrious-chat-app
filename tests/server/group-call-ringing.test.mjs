@@ -121,3 +121,44 @@ test('actual ring route authorizes ownership and membership before live admissio
   refusal = new GroupCallRingError(409, 'Ended'); assert.equal((await invoke(request)).status, 409)
   assert.equal(pushes.length, 1)
 })
+
+test('shared web join retains the expected call and releases permission results after cancellation or owner change', async () => {
+  const file = await readFile(new URL('../../src/components/chat/group-call-overlay.tsx', import.meta.url), 'utf8')
+  const source = stripTypeScriptTypes(file.slice(file.indexOf('  const acquireMedia ='), file.indexOf('  const teardownMedia =')) +
+    file.slice(file.indexOf('  const startJoin ='), file.indexOf('  const startCall =')))
+  for (const mode of ['valid', 'cancelled', 'owner-changed']) {
+    let approve, stopped = 0
+    const emitted = [], refs = {
+      localStreamRef: { current: null }, kindRef: { current: 'voice' }, stateRef: { current: 'idle' },
+      joinIntentRef: { current: false }, joinGenerationRef: { current: 0 },
+      optionsRef: { current: { meId: 'me', meName: 'Me', meColor: 'amber', meAvatar: null, conversationId: 'room' } },
+      expectedJoinRef: { current: null }, ringRef: { current: null }, joinedConvRef: { current: null },
+      pendingRingRef: { current: false }, joinedCallIdRef: { current: null },
+    }
+    const noop = () => {}
+    const deps = { ...refs, useCallback: callback => callback, enabled: true, callChannelConnected: true,
+      navigator: { mediaDevices: { getUserMedia: () => new Promise(resolve => { approve = resolve }) } },
+      setLocalStream: noop, setCameraEnabled: noop, DOMException, toast: Object.assign(noop, { error: noop }),
+      setKind: noop, haptic: noop, setError: noop, setSummary: noop, setRing: noop,
+      setStateBoth: state => { refs.stateRef.current = state },
+      emitCallEvent: (event, payload) => emitted.push({ event, payload }),
+      teardownMedia: () => { refs.joinGenerationRef.current++; refs.expectedJoinRef.current = null },
+    }
+    const start = new Function(...Object.keys(deps), source + ';return startJoin')(...Object.values(deps))
+    start('room', 'voice', false, 'observed-call')
+    if (mode === 'cancelled') { deps.teardownMedia(); refs.stateRef.current = 'ended' }
+    if (mode === 'owner-changed') refs.optionsRef.current.meId = 'another-owner'
+    approve({ getTracks: () => [{ stop: () => { stopped++ } }] })
+    await new Promise(resolve => setImmediate(resolve))
+    if (mode === 'valid') {
+      assert.equal(stopped, 0)
+      assert.equal(emitted.length, 1)
+      assert.equal(emitted[0].payload.expectedCallId, 'observed-call')
+      assert.equal(emitted[0].payload.user.id, 'me')
+    } else {
+      assert.equal(stopped, 1)
+      assert.equal(emitted.length, 0)
+      assert.equal(refs.localStreamRef.current, null)
+    }
+  }
+})

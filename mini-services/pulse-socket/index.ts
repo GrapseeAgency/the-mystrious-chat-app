@@ -1766,6 +1766,16 @@ io.on('connection', (socket: Socket) => {
     if (socketUser.get(socket.id) !== me.userId) return
 
     let call = groupCalls.get(conversationId)
+    // An invitation/probe join is not permission to CREATE a replacement call
+    // or take over this account's already-admitted device. Check before any leave.
+    if (data.expectedCallId !== undefined) {
+      const expected = asTrimmedString(data.expectedCallId)
+      const existingDevice = call?.members.get(me.userId)?.socketId
+      if (!expected || call?.callId !== expected || (existingDevice && existingDevice !== socket.id)) {
+        socket.emit('gcall:ended', { conversationId, callId: expected, reason: 'unavailable' })
+        return
+      }
+    }
     // Capacity refusal must not evict an existing call on the user's other device.
     if (call && !call.members.has(me.userId) && call.members.size >= MAX_GROUP_CALL_PARTICIPANTS) {
       socket.emit('gcall:full', { conversationId, callId: call.callId, max: MAX_GROUP_CALL_PARTICIPANTS })

@@ -129,7 +129,9 @@ fun groupCallJoinPayload(
     conversationId: String,
     kind: String,
     user: GroupCallMemberDto,
+    expectedCallId: String? = null,
 ): JsonObject = buildJsonObject {
+    if (expectedCallId != null) put("expectedCallId", expectedCallId)
     put("conversationId", conversationId)
     put("kind", kind)
     put("user", buildJsonObject {

@@ -99,6 +99,44 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       starter.disconnect(); invitee.disconnect()
     })
 
+    await t.test('invitation joins cannot create replacements, evict another device, or leave a current call on refusal', async () => {
+      const host = await connect('bound-host'), otherHostDevice = await connect('bound-host'), joiner = await connect('bound-joiner')
+      const original = await join(host, 'bound-host', 'bound-room')
+      const existing = await join(joiner, 'bound-joiner', 'own-room')
+      const joinRequest = (id, expectedCallId, room = 'bound-room') => ({ conversationId: room, expectedCallId, kind: 'voice', user: { id, name: id } })
+      const read = async room => (await (await fetch(`${base}/gcall?conversationId=${room}`)).json()).state
+      for (const expected of ['', 'old-call']) {
+        const refusal = event(joiner, 'gcall:ended', row => row.callId === expected)
+        joiner.emit('gcall:join', joinRequest('bound-joiner', expected))
+        assert.equal((await refusal).reason, 'unavailable')
+        assert.equal((await read('own-room')).callId, existing.callId)
+        assert.deepEqual((await read('bound-room')).members.map(row => row.id), ['bound-host'])
+      }
+      const hostEnds = []; host.on('gcall:ended', row => hostEnds.push(row))
+      const refusal = event(otherHostDevice, 'gcall:ended', row => row.callId === original.callId)
+      otherHostDevice.emit('gcall:join', joinRequest('bound-host', original.callId))
+      await refusal; await barrier(host, 'bound-host')
+      assert.equal(hostEnds.length, 0)
+      const admitted = event(joiner, 'gcall:state', row => row.callId === original.callId)
+      joiner.emit('gcall:join', joinRequest('bound-joiner', original.callId))
+      assert.equal((await admitted).members.length, 2)
+      assert.equal(await read('own-room'), null)
+      host.emit('gcall:leave', { conversationId: 'bound-room', from: 'bound-host' })
+      await barrier(host, 'bound-host')
+      joiner.emit('gcall:leave', { conversationId: 'bound-room', from: 'bound-joiner' })
+      await barrier(joiner, 'bound-joiner')
+      const missing = event(joiner, 'gcall:ended', row => row.reason === 'unavailable')
+      joiner.emit('gcall:join', joinRequest('bound-joiner', original.callId))
+      await missing; assert.equal(await read('bound-room'), null)
+      const replacement = await join(host, 'bound-host', 'bound-room')
+      const stale = event(joiner, 'gcall:ended', row => row.reason === 'unavailable')
+      joiner.emit('gcall:join', joinRequest('bound-joiner', original.callId))
+      await stale
+      assert.equal((await read('bound-room')).callId, replacement.callId)
+      assert.deepEqual((await read('bound-room')).members.map(row => row.id), ['bound-host'])
+      host.disconnect(); otherHostDevice.disconnect(); joiner.disconnect()
+    })
+
     let activeAlice = alice
     const received = [], idleReceived = []
     bob.on('gcall:offer', row => received.push(row.sdp))

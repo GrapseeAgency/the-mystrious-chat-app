@@ -249,4 +249,11 @@ class GroupCallMeshTest {
         assertEquals("Ada", payload.caller?.name)
         assertEquals("Design crew", payload.title)
     }
+    @Test fun `existing call joins carry an exact expectation while deliberate starts omit it`() {
+        val user = GroupCallMemberDto(id = "me")
+        assertFalse(groupCallJoinPayload("room", "voice", user).containsKey("expectedCallId"))
+        assertEquals("old-call", groupCallJoinPayload("room", "voice", user, "old-call")["expectedCallId"]!!.jsonPrimitive.content)
+        // Even an invalid explicit expectation is retained: never downgrade it to create.
+        assertTrue(groupCallJoinPayload("room", "voice", user, "").containsKey("expectedCallId"))
+    }
 }

@@ -118,6 +118,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     private var localDescriptionSent: Set<String> = []
     private var pendingLocalIce: [String: [[String: Any]]] = [:]
     private var negotiatingPeers: Set<String> = []
+    private var expectedJoin: (roomId: String, callId: String)?
     private var joinedCallId: String?
     private var joinSentAt: Date?
     private var pendingRing = false
@@ -137,6 +138,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     /// The conversation whose live call the ONGOING banner describes
     /// (set from gcall:state / the probe, cleared with the banner).
     private var ongoingConversationId: String?
+    private var ongoingCallId: String?
 
     private var cancellables: Set<AnyCancellable> = []
     private var joinGeneration = UUID()
@@ -222,16 +224,16 @@ public final class PulseGroupCallEngine: ObservableObject {
         guard let target = ring, uiState == .idle else { return }
         guard target.expiresAt > Date() else { dismissRing(); return }
         PulseHaptics.tap()
-        startJoin(target.conversationId, wanted: target.kind, ringOthers: false, title: target.title.isEmpty ? displayTitle : target.title)
+        startJoin(target.conversationId, wanted: target.kind, ringOthers: false, title: target.title.isEmpty ? displayTitle : target.title, expectedCallId: target.callId)
     }
 
     /// Silently join the ONGOING call in the open room - never re-rings.
     public func joinOngoing() {
-        guard uiState == .idle, let conv = ongoingConversationId else { return }
+        guard uiState == .idle, ongoingElsewhere, let conv = ongoingConversationId, let callId = ongoingCallId else { return }
         PulseHaptics.tap()
         let wanted = ongoingKind
         ongoingElsewhere = false
-        startJoin(conv, wanted: wanted, ringOthers: false, title: displayTitle)
+        startJoin(conv, wanted: wanted, ringOthers: false, title: displayTitle, expectedCallId: callId)
     }
 
     public func dismissRing() {
@@ -312,7 +314,7 @@ public final class PulseGroupCallEngine: ObservableObject {
 
     // the join pipeline (web startJoin parity)
 
-    private func startJoin(_ targetConvId: String, wanted: CallKind, ringOthers: Bool, title: String) {
+    private func startJoin(_ targetConvId: String, wanted: CallKind, ringOthers: Bool, title: String, expectedCallId: String? = nil) {
         guard uiState == .idle else { return }
         guard !targetConvId.isEmpty, !viewer.id.isEmpty else { return }
         guard !voiceCallBusy() else {
@@ -324,6 +326,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             return
         }
         joinIntent = true
+        expectedJoin = expectedCallId.map { (targetConvId, $0) }
         kind = wanted
         displayTitle = title
         errorText = nil
@@ -334,10 +337,10 @@ public final class PulseGroupCallEngine: ObservableObject {
         ring = nil
         let ticket = UUID()
         joinGeneration = ticket
-        preparationTask = Task { await beginJoin(targetConvId, wanted: wanted, ringOthers: ringOthers, title: title, ticket: ticket) }
+        preparationTask = Task { await beginJoin(targetConvId, wanted: wanted, ringOthers: ringOthers, title: title, ticket: ticket, expectedCallId: expectedCallId) }
     }
 
-    private func beginJoin(_ convId: String, wanted: CallKind, ringOthers: Bool, title: String, ticket: UUID) async {
+    private func beginJoin(_ convId: String, wanted: CallKind, ringOthers: Bool, title: String, ticket: UUID, expectedCallId: String?) async {
         guard preparationIsCurrent(ticket) else { return }
         var resolved = wanted
         // Camera capability resolves FIRST (web acquireMedia degrade: no
@@ -407,6 +410,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             userName: viewer.name,
             userColor: viewer.color,
             userAvatar: viewer.avatar,
+            expectedCallId: expectedCallId,
         )) else {
             handleSocketDisconnected()
             return
@@ -623,9 +627,11 @@ public final class PulseGroupCallEngine: ObservableObject {
             let roster = PulseGroupCallMember.decodeList(raw["members"])
             let iAmMember = roster.contains { $0.id == viewer.id }
             if conv == joinedConv {
+                if let expectedJoin, raw["callId"] as? String != expectedJoin.callId { return }
                 guard let callId = raw["callId"] as? String, !callId.isEmpty,
                       joinedCallId == nil || joinedCallId == callId else { return }
                 joinedCallId = callId
+                expectedJoin = nil
                 guard iAmMember else {
                     teardownMedia()
                     uiState = .ended
@@ -640,10 +646,11 @@ public final class PulseGroupCallEngine: ObservableObject {
                 applyRoster(roster, rosterConvId: conv)
             } else if uiState == .idle, joinedConv == nil {
                 probeGeneration = UUID() // a slower HTTP probe cannot undo this relay state
-                if !roster.isEmpty && !iAmMember {
+                if !roster.isEmpty && !iAmMember, let callId = raw["callId"] as? String, !callId.isEmpty {
                     ongoingKind = CallKind(wireValue: raw["kind"] as? String)
                     ongoingMembers = roster
                     ongoingConversationId = conv
+                    ongoingCallId = callId
                     ongoingElsewhere = true
                 } else {
                     ongoingMembers = []
@@ -682,6 +689,12 @@ public final class PulseGroupCallEngine: ObservableObject {
             }
 
         case "gcall:ended":
+            if uiState == .joining, let expectedJoin, raw["conversationId"] as? String == expectedJoin.roomId,
+               raw["callId"] as? String == expectedJoin.callId {
+                teardownMedia()
+                uiState = .ended
+                summary = "This call is no longer available"
+            }
             if let ring, raw["conversationId"] as? String == ring.conversationId, raw["callId"] as? String == ring.callId {
                 dismissRing()
             }
@@ -690,7 +703,7 @@ public final class PulseGroupCallEngine: ObservableObject {
                 uiState = .ended
                 summary = "Call ended"
             }
-            if raw["conversationId"] as? String == ongoingConversationId {
+            if raw["conversationId"] as? String == ongoingConversationId, raw["callId"] as? String == ongoingCallId {
                 ongoingElsewhere = false
                 ongoingMembers = []
                 ongoingConversationId = nil
@@ -726,10 +739,11 @@ public final class PulseGroupCallEngine: ObservableObject {
         guard probeGeneration == ticket, joinGeneration == joinTicket,
               activeConversationId == conversationId, uiState == .idle, joinedConv == nil else { return }
         let roster = snapshot.members
-        if !roster.isEmpty, !roster.contains(where: { $0.id == viewer.id }) {
+        if !roster.isEmpty, !roster.contains(where: { $0.id == viewer.id }), let callId = snapshot.callId, !callId.isEmpty {
             ongoingKind = snapshot.resolvedKind
             ongoingMembers = roster
             ongoingConversationId = conversationId
+            ongoingCallId = callId
             ongoingElsewhere = true
         } else {
             ongoingElsewhere = false
@@ -757,6 +771,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     // teardown
 
     private func teardownMedia() {
+        expectedJoin = nil
         joinGeneration = UUID()
         preparationTask?.cancel()
         ringTask?.cancel()

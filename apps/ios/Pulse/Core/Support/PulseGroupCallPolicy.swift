@@ -89,9 +89,7 @@ public enum PulseGroupCallPolicy {
         elapsedSec >= 1 ? "You left · \(CallFormat.duration(elapsedSec))" : "You left"
     }
 
-    /// The 45s local ring guard - group rings have NO server-side timeout
-    /// (web banners sit until dismissed), but a stuck CallKit incoming
-    /// screen is worse than a missed ring, so the iOS path self-clears.
+    /// Maximum local presentation window; the relay absolute deadline may be sooner.
     public static let ringTimeoutSec: TimeInterval = 45
 }
 
@@ -181,9 +179,10 @@ public enum GroupCallWire {
         userId: String,
         userName: String,
         userColor: String?,
-        userAvatar: String?
+        userAvatar: String?,
+        expectedCallId: String? = nil
     ) -> [String: Any] {
-        [
+        var payload: [String: Any] = [
             "conversationId": conversationId,
             "kind": kind.rawValue,
             "user": [
@@ -193,6 +192,8 @@ public enum GroupCallWire {
                 "avatar": userAvatar ?? "",
             ],
         ]
+        if let expectedCallId { payload["expectedCallId"] = expectedCallId }
+        return payload
     }
 
     /// gcall:offer { conversationId, from, to, kind, sdp }

@@ -3363,6 +3363,7 @@ class PulseRepositoryImpl constructor(
                     color = signal.user?.color ?: "emerald",
                     avatar = signal.user?.avatar,
                 ),
+                expectedCallId = signal.expectedCallId,
             )
             app.pulse.protocol.GroupCallEvents.OFFER -> socket.emitGroupCallOffer(
                 GroupCallOfferDto(

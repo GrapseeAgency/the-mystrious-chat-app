@@ -142,6 +142,9 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   const joinIntentRef = useRef(false)
   const pendingRingRef = useRef(false)
   const joinedCallIdRef = useRef<string | null>(null)
+  const expectedJoinRef = useRef<{ roomId: string; callId: string } | null>(null)
+  const ongoingTargetRef = useRef<{ roomId: string; callId: string } | null>(null)
+  const joinGenerationRef = useRef(0)
 
   useEffect(() => {
     optionsRef.current = { meId, meName, meColor, meAvatar, conversationId }
@@ -156,23 +159,26 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   }, [])
 
   // media 
-  const acquireMedia = useCallback(async (wanted: CallKind): Promise<CallKind> => {
+  const acquireMedia = useCallback(async (wanted: CallKind, isCurrent: () => boolean): Promise<CallKind> => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: wanted === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false,
       })
+      if (!isCurrent()) { for (const track of stream.getTracks()) track.stop(); throw new Error('Superseded call') }
       localStreamRef.current = stream
       setLocalStream(stream)
       setCameraEnabled(wanted === 'video')
       return wanted
     } catch (err) {
+      if (!isCurrent()) throw err
       const name = err instanceof DOMException ? err.name : ''
       if (wanted === 'video' && (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'NotReadableError')) {
         toast('Camera unavailable - joining as a voice call')
         setKind('voice')
         kindRef.current = 'voice'
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        if (!isCurrent()) { for (const track of stream.getTracks()) track.stop(); throw new Error('Superseded call') }
         localStreamRef.current = stream
         setLocalStream(stream)
         setCameraEnabled(false)
@@ -183,6 +189,8 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   }, [])
 
   const teardownMedia = useCallback(() => {
+    joinGenerationRef.current++
+    expectedJoinRef.current = null
     const stalePeers = Array.from(peersRef.current.values())
     peersRef.current = new Map()
     for (const pc of stalePeers) {
@@ -315,7 +323,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
 
   // actions 
   const startJoin = useCallback(
-    (targetConvId: string, wanted: CallKind, ringOthers: boolean) => {
+    (targetConvId: string, wanted: CallKind, ringOthers: boolean, expectedCallId?: string) => {
       if (!enabled) return
       if (!targetConvId) return
       if (stateRef.current !== 'idle') return
@@ -325,6 +333,10 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       }
       haptic(14)
       joinIntentRef.current = true
+      const ticket = ++joinGenerationRef.current
+      const opts = { ...optionsRef.current }
+      const isCurrent = () => joinGenerationRef.current === ticket && stateRef.current === 'joining' && optionsRef.current.meId === opts.meId
+      expectedJoinRef.current = expectedCallId === undefined ? null : { roomId: targetConvId, callId: expectedCallId }
       kindRef.current = wanted
       setKind(wanted)
       setError(null)
@@ -334,17 +346,20 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       setStateBoth('joining')
       void (async () => {
         try {
-          await acquireMedia(wanted)
-          const opts = optionsRef.current
+          const resolved = await acquireMedia(wanted, isCurrent)
+          if (!isCurrent()) return
           joinedConvRef.current = targetConvId
           pendingRingRef.current = ringOthers
           joinedCallIdRef.current = null
           emitCallEvent('gcall:join', {
             conversationId: targetConvId,
-            kind: wanted,
+            ...(expectedCallId === undefined ? {} : { expectedCallId }),
+            kind: resolved,
             user: { id: opts.meId, name: opts.meName, color: opts.meColor, avatar: opts.meAvatar },
           })
         } catch {
+          if (!isCurrent()) return
+          teardownMedia()
           setStateBoth('idle')
           joinIntentRef.current = false
           joinedConvRef.current = null
@@ -352,7 +367,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
         }
       })()
     },
-    [acquireMedia, callChannelConnected, emitCallEvent, enabled, setStateBoth],
+    [acquireMedia, callChannelConnected, emitCallEvent, enabled, setStateBoth, teardownMedia],
   )
 
   const startCall = useCallback(
@@ -366,14 +381,15 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     if (target.expiresAt <= Date.now()) { ringRef.current = null; setRing(null); return }
     haptic(14)
     // The ring already went out - joining must NOT re-ring.
-    startJoin(target.conversationId, target.kind, false)
+    startJoin(target.conversationId, target.kind, false, target.callId)
   }, [startJoin])
 
   const joinOngoing = useCallback(() => {
-    if (stateRef.current !== 'idle') return
+    const target = ongoingTargetRef.current
+    if (stateRef.current !== 'idle' || !target || target.roomId !== optionsRef.current.conversationId) return
     haptic(14)
     setOngoingElsewhere(false)
-    startJoin(optionsRef.current.conversationId, ongoingKind, false)
+    startJoin(target.roomId, ongoingKind, false, target.callId)
   }, [ongoingKind, startJoin])
 
   const leaveCall = useCallback(() => {
@@ -487,6 +503,8 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
         if (iAmMember && joinedConvRef.current === convId) {
           const callId = typeof payload.callId === 'string' ? payload.callId : ''
           if (!callId || (joinedCallIdRef.current && joinedCallIdRef.current !== callId)) return
+          if (expectedJoinRef.current && expectedJoinRef.current.callId !== callId) return
+          expectedJoinRef.current = null
           joinedCallIdRef.current = callId
           if (pendingRingRef.current) {
             pendingRingRef.current = false
@@ -499,6 +517,9 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
           setOngoingElsewhere(false)
           applyRoster(roster, convId)
         } else if (stateRef.current === 'idle' && !joinedConvRef.current) {
+          const callId = typeof payload.callId === 'string' ? payload.callId : ''
+          if (!callId) return
+          ongoingTargetRef.current = { roomId: convId, callId }
           if (typeof payload.kind === 'string') setOngoingKind(payload.kind === 'video' ? 'video' : 'voice')
           setOngoingMembers(roster)
           setOngoingElsewhere(true)
@@ -591,6 +612,12 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       }
 
       if (event === 'gcall:ended') {
+        if (stateRef.current === 'joining' && expectedJoinRef.current?.roomId === payload.conversationId &&
+            expectedJoinRef.current?.callId === payload.callId) {
+          teardownMedia()
+          setStateBoth('ended')
+          setSummary('This call is no longer available')
+        }
         if (ringRef.current?.callId === payload.callId && ringRef.current?.conversationId === payload.conversationId) {
           ringRef.current = null
           setRing(null)
@@ -600,8 +627,11 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
           setStateBoth('ended')
           setSummary('Call ended')
         }
-        setOngoingElsewhere(false)
-        setOngoingMembers([])
+        if (ongoingTargetRef.current?.roomId === payload.conversationId && ongoingTargetRef.current?.callId === payload.callId) {
+          ongoingTargetRef.current = null
+          setOngoingElsewhere(false)
+          setOngoingMembers([])
+        }
         return
       }
 
@@ -644,17 +674,20 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   // Probe for an ongoing call on mount + while idle (a late-opening room or
   // reload learns about the call without a live ring). Honest socket read.
   useEffect(() => {
+    ongoingTargetRef.current = null
+    setOngoingElsewhere(false)
     if (!enabled || !conversationId) return
     let cancelled = false
     const probe = async () => {
       if (stateRef.current !== 'idle' || joinedConvRef.current) return
+      const ticket = joinGenerationRef.current
       try {
         const res = await fetch(`/api/group-call-state?conversationId=${encodeURIComponent(conversationId)}`, {
           signal: AbortSignal.timeout(2500),
         })
         if (!res.ok) return
-        const body = (await res.json()) as { members?: unknown; kind?: unknown }
-        if (cancelled) return
+        const body = (await res.json()) as { members?: unknown; kind?: unknown; callId?: unknown }
+        if (cancelled || joinGenerationRef.current !== ticket || stateRef.current !== 'idle' || joinedConvRef.current) return
         if (Array.isArray(body.members) && body.members.length > 0) {
           const roster: GroupCallMemberView[] = []
           for (const item of body.members) {
@@ -668,8 +701,9 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
               avatar: typeof obj.avatar === 'string' ? obj.avatar : null,
             })
           }
-          if (roster.length > 0 && !roster.some((m) => m.id === meId)) {
-            if (body.kind === 'video') setOngoingKind('video')
+          if (roster.length > 0 && !roster.some((m) => m.id === meId) && typeof body.callId === 'string' && body.callId) {
+            ongoingTargetRef.current = { roomId: conversationId, callId: body.callId }
+            setOngoingKind(body.kind === 'video' ? 'video' : 'voice')
             setOngoingMembers(roster)
             setOngoingElsewhere(true)
           } else if (roster.some((m) => m.id === meId)) {
@@ -693,6 +727,8 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   // Left the room mid-call → leave honestly.
   useEffect(() => {
     return () => {
+      joinGenerationRef.current++
+      expectedJoinRef.current = null
       const conv = joinedConvRef.current
       if (conv) {
         emitCallEvent('gcall:leave', { conversationId: conv, from: optionsRef.current.meId })

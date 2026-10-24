@@ -110,6 +110,7 @@ class GroupCallEngine @Inject constructor(
         val ongoingElsewhere: Boolean = false,
         val ongoingMembers: List<GroupCallMember> = emptyList(),
         val ongoingKind: CallKind = CallKind.VOICE,
+        val ongoingCallId: String? = null,
         /** Non-null = honest glass error card replaces the call UI. */
         val error: String? = null,
         val summary: String? = null,
@@ -166,6 +167,7 @@ class GroupCallEngine @Inject constructor(
     private var joinTask: Job? = null
     private var ringTask: Job? = null
     private var callRepository: PulseRepository? = null
+    private var expectedJoin: Pair<String, String>? = null
     private var ringAfterAdmission = false
     private var joinSentAtMs = 0L
     private var ownsForegroundService = false
@@ -297,11 +299,11 @@ class GroupCallEngine @Inject constructor(
         when {
             roster.isEmpty() ->
                 _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList())
-            roster.none { it.id == meId } ->
+            roster.none { it.id == meId } && !probe.callId.isNullOrBlank() ->
                 _snapshot.value = _snapshot.value.copy(
                     ongoingElsewhere = true,
                     ongoingMembers = roster,
-                    ongoingKind = probe.kind,
+                    ongoingKind = probe.kind, ongoingCallId = probe.callId,
                 )
             else ->
                 _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false)
@@ -339,7 +341,7 @@ class GroupCallEngine @Inject constructor(
         val target = pendingRing ?: return
         if (System.currentTimeMillis() >= target.expiresAtMs) { dismissRing(); return }
         if (phase != UiPhase.IDLE) return
-        startJoin(target.conversationId, target.kind, ringOthers = false, title = target.title)
+        startJoin(target.conversationId, target.kind, ringOthers = false, title = target.title, expectedCallId = target.callId)
     }
 
     /** Silently join the ONGOING call in the open room - never re-rings. */
@@ -347,7 +349,9 @@ class GroupCallEngine @Inject constructor(
         if (phase != UiPhase.IDLE) return
         val conv = activeConversationId
         if (conv.isBlank()) return
-        startJoin(conv, _snapshot.value.ongoingKind, ringOthers = false, title = activeTitle)
+        val expected = _snapshot.value.ongoingCallId?.takeIf { it.isNotBlank() } ?: return
+        if (!_snapshot.value.ongoingElsewhere) return
+        startJoin(conv, _snapshot.value.ongoingKind, ringOthers = false, title = activeTitle, expectedCallId = expected)
     }
 
     fun dismissRing() {
@@ -417,7 +421,7 @@ class GroupCallEngine @Inject constructor(
 
     // the join path (web startJoin verbatim)
 
-    private fun startJoin(targetConvId: String, wanted: CallKind, ringOthers: Boolean, title: String) {
+    private fun startJoin(targetConvId: String, wanted: CallKind, ringOthers: Boolean, title: String, expectedCallId: String? = null) {
         if (targetConvId.isBlank()) return
         if (phase != UiPhase.IDLE) return
         if (meId.isBlank()) {
@@ -439,6 +443,7 @@ class GroupCallEngine @Inject constructor(
         val ticket = ++generation
         probeRevision++
         joinIntent = true
+        expectedJoin = expectedCallId?.let { targetConvId to it }
         kind = wanted
         phase = UiPhase.JOINING
         _snapshot.value = _snapshot.value.copy(
@@ -462,7 +467,7 @@ class GroupCallEngine @Inject constructor(
                 joinedConvId = targetConvId
                 ringAfterAdmission = ringOthers
                 joinSentAtMs = System.currentTimeMillis()
-                emitSignal(GroupCallSignalOut(event = GroupCallEvents.JOIN, conversationId = targetConvId,
+                emitSignal(GroupCallSignalOut(event = GroupCallEvents.JOIN, conversationId = targetConvId, expectedCallId = expectedCallId,
                     kind = kind, user = GroupCallMember(id = meId, name = meName, color = meColor, avatar = null)))
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -556,6 +561,7 @@ class GroupCallEngine @Inject constructor(
                 if (!memberPath && !outsiderPath) return
                 val roster = s.members.filter { it.id.isNotBlank() }
                 val iAmMember = roster.any { it.id == meId }
+                if (memberPath && expectedJoin?.second?.let { it != s.callId } == true) return
                 if (memberPath && (s.callId.isBlank() || (currentCallId.isNotBlank() && s.callId != currentCallId))) return
                 if (memberPath && !iAmMember) {
                     teardownMedia()
@@ -574,9 +580,9 @@ class GroupCallEngine @Inject constructor(
                     )
                 ) {
                     _snapshot.value = _snapshot.value.copy(
-                        ongoingElsewhere = roster.isNotEmpty(),
+                        ongoingElsewhere = roster.isNotEmpty() && s.callId.isNotBlank(),
                         ongoingMembers = roster,
-                        ongoingKind = s.kind,
+                        ongoingKind = s.kind, ongoingCallId = s.callId.takeIf { it.isNotBlank() },
                     )
                 } else if (outsiderPath && phase == UiPhase.IDLE) {
                     _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList())
@@ -588,14 +594,20 @@ class GroupCallEngine @Inject constructor(
             GroupCallEvents.ICE -> handleIce(s)
 
             GroupCallEvents.ENDED -> {
+                val pending = expectedJoin
+                if (phase == UiPhase.JOINING && pending != null && matchesGroupCall(s, pending.first, pending.second)) {
+                    teardownMedia()
+                    phase = UiPhase.ENDED
+                    _snapshot.value = _snapshot.value.copy(phase = phase, summary = "This call is no longer available")
+                }
                 pendingRing?.let { if (matchesGroupCall(s, it.conversationId, it.callId)) dismissRing() }
                 if (matchesGroupCall(s, joinedConvId, currentCallId)) {
                     teardownMedia()
                     phase = UiPhase.ENDED
                     _snapshot.value = _snapshot.value.copy(phase = UiPhase.ENDED, summary = "Call ended")
                 }
-                if (s.conversationId == activeConversationId) {
-                    _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList())
+                if (s.conversationId == activeConversationId && s.callId == _snapshot.value.ongoingCallId) {
+                    _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList(), ongoingCallId = null)
                 }
             }
 
@@ -632,6 +644,7 @@ class GroupCallEngine @Inject constructor(
             _snapshot.value = _snapshot.value.copy(phase = UiPhase.ACTIVE)
         }
         if (callId.isNotBlank()) currentCallId = callId
+        expectedJoin = null
         joinSentAtMs = 0L
         if (ringAfterAdmission) {
             ringAfterAdmission = false
@@ -960,6 +973,7 @@ class GroupCallEngine @Inject constructor(
 
     /** Invalidate first; each native release is independent so one failure cannot retain the mic. */
     private fun teardownMedia() {
+        expectedJoin = null
         generation++
         probeRevision++
         joinTask?.cancel()

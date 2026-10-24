@@ -8,11 +8,13 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
     private final class Signals: PulseCallSignalingSending {
         var isReady = true
         var events: [String] = []
+        var payloads: [(String, [String: Any])] = []
         var rejectJoin = false
         @discardableResult
         func send(event: String, payload: [String: Any]) -> Bool {
             guard isReady, !(rejectJoin && event == "gcall:join") else { return false }
             events.append(event)
+            payloads.append((event, payload))
             return true
         }
     }
@@ -255,5 +257,46 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         e.joinCall()
         XCTAssertEqual(inCallAtRemoval, true)
         withExtendedLifetime(observation) {}
+    }
+    func testEndedInvitationDuringPermissionCannotCreateAnotherCallAfterApproval() async throws {
+        let media = Media(), signals = Signals(), prompt = expectation(description: "invitation permission")
+        let e = engine(media, signals)
+        defer { e.stop() }
+        media.requested = { prompt.fulfill() }
+        e.handleGroupCallSignal(event: "gcall:ring", raw: ["conversationId": "room", "callId": "invited", "kind": "voice",
+            "caller": ["id": "peer"], "expiresAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(30))])
+        e.joinCall()
+        let preparation = try XCTUnwrap(e.preparationTask)
+        await fulfillment(of: [prompt], timeout: 1)
+        e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "callId": "different"])
+        XCTAssertEqual(e.uiState, .joining)
+        e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "callId": "invited"])
+        XCTAssertEqual(e.uiState, .ended)
+        media.prompts.removeFirst().resume(returning: true)
+        await preparation.value
+        XCTAssertEqual(media.tracks, 0)
+        XCTAssertFalse(signals.events.contains("gcall:join"))
+    }
+
+    func testOngoingJoinCarriesItsObservedCallAndRefusesReplacementRoster() async throws {
+        let media = Media(), signals = Signals(), prompt = expectation(description: "ongoing permission")
+        media.lendAudio = true
+        let e = engine(media, signals)
+        defer { e.stop() }
+        e.setActiveConversation("room")
+        e.handleGroupCallSignal(event: "gcall:state", raw: roster(call: "observed", ids: ["peer"]))
+        XCTAssertTrue(e.ongoingElsewhere)
+        media.requested = { prompt.fulfill() }
+        e.joinOngoing()
+        let preparation = try XCTUnwrap(e.preparationTask)
+        await fulfillment(of: [prompt], timeout: 1)
+        media.prompts.removeFirst().resume(returning: true)
+        await preparation.value
+        let payload = try XCTUnwrap(signals.payloads.first { $0.0 == "gcall:join" }?.1)
+        XCTAssertEqual(payload["expectedCallId"] as? String, "observed")
+        e.handleGroupCallSignal(event: "gcall:state", raw: roster(call: "replacement", ids: ["me", "peer"]))
+        XCTAssertEqual(e.uiState, .joining)
+        e.handleGroupCallSignal(event: "gcall:state", raw: roster(call: "observed", ids: ["me"]))
+        XCTAssertEqual(e.uiState, .active)
     }
 }

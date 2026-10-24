@@ -352,4 +352,12 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         for payload in [offer, answer, ice] { XCTAssertEqual(payload["callId"] as? String, "current") }
         XCTAssertNil(GroupCallWire.answerPayload(conversationId: "room", from: "a", to: "b", sdp: "legacy")["callId"])
     }
+    func testInvitationJoinExpectationIsNotDowngradedIntoCreate() {
+        let start = GroupCallWire.joinPayload(conversationId: "room", kind: .voice, userId: "me", userName: "Me", userColor: nil, userAvatar: nil)
+        XCTAssertNil(start["expectedCallId"])
+        for expected in ["call", ""] {
+            let join = GroupCallWire.joinPayload(conversationId: "room", kind: .voice, userId: "me", userName: "Me", userColor: nil, userAvatar: nil, expectedCallId: expected)
+            XCTAssertEqual(join["expectedCallId"] as? String, expected)
+        }
+    }
 }
