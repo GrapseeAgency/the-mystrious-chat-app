@@ -22,6 +22,17 @@ device_log = Path('/tmp/pulse-native-instrumented.log')
 if device_log.exists():
     lines.extend(line for line in device_log.read_text(errors='replace').splitlines()
                  if line.startswith(('FAILURE:', '> ', 'Execution failed')))
+if not lines:
+    # Gradle/dependency/daemon failures can occur before a compiler or JUnit
+    # report exists. Surface their bounded summary instead of only "exit 1".
+    for name in ('/tmp/pulse-native-jvm.log', '/tmp/pulse-native-build.log'):
+        log = Path(name)
+        if log.exists():
+            summary = [line for line in log.read_text(errors='replace').splitlines()
+                       if line.startswith(('FAILURE:', 'Execution failed', '* What went wrong:'))
+                       or (line.startswith('> ') and not line.startswith('> Task'))
+                       or 'daemon disappeared' in line.lower()]
+            lines.extend(summary[-30:])
 if lines:
     text = '\n'.join(lines)[:10000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
     print('::error title=Native compile/test diagnostics::' + text)

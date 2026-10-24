@@ -882,14 +882,14 @@ struct GroupInfoView: View {
     private func uploadPhoto(_ item: PhotosPickerItem) {
         let epoch = session.sessionGeneration
         mutate(photo: true, request: { api, owner in
-            let raw = try await item.loadTransferable(type: Data.self)
+            let photo = try await item.loadTransferable(type: PulsePickedPhoto.self)
             try requireSurface(epoch)
-            guard let raw, let jpeg = PulseAvatarImage.jpegData(from: raw) else {
+            guard let photo, let jpeg = PulseAvatarImage.jpegData(from: photo.jpeg) else {
                 throw PulseAPIClient.Failure(kind: .validation, message: "Couldn't read that image - try another one")
             }
             let path = try await api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
             try requireSurface(epoch) // dismissal must not progress an upload into a group mutation
-            return try await api.patchConversation(conversation.id, requesterId: owner, photo: path)
+            return try await api.patchConversation(conversation.id, requesterId: owner, photo: try PulseAvatarImage.managedPath(path))
         }, apply: { fresh in
             try acceptDetail(fresh, notice: "Photo updated")
         })

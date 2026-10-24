@@ -1,10 +1,7 @@
 package app.pulse.android.mirror
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -60,9 +57,9 @@ import app.pulse.domain.model.ProfilePatch
 import app.pulse.domain.model.SavedItem
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.repository.PulseRepository
-import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -392,6 +389,34 @@ private const val EDIT_NAME_MAX = 32
 private const val EDIT_ABOUT_MAX = 140
 private const val EDIT_STATUS_MAX = 48
 
+internal fun clipProfileText(text: String, maximum: Int): String {
+    val limit = maximum.coerceAtLeast(0)
+    if (text.length <= limit) return text
+    if (limit == 0) return ""
+    val breaks = java.text.BreakIterator.getCharacterInstance(java.util.Locale.ROOT)
+    breaks.setText(text)
+    return text.substring(0, breaks.preceding(limit + 1).coerceAtLeast(0))
+}
+
+internal data class MirrorProfileDraft(val name: String, val about: String, val color: String, val statusGlyph: String, val statusText: String) {
+    fun patch(base: UserProfile) = ProfilePatch(
+        name = name.trim().takeIf { it != base.name.trim() },
+        about = about.trim().takeIf { it != base.about.orEmpty().trim() },
+        color = color.takeIf { it != (base.color ?: "emerald") },
+        statusEmoji = statusGlyph.trim().takeIf { it != base.statusEmoji.orEmpty() },
+        statusText = statusText.trim().takeIf { it != base.statusText.orEmpty() })
+
+    fun confirmedBaseline(base: UserProfile, confirmed: UserProfile): UserProfile {
+        require(base.id == confirmed.id) { "Profile response did not match this account" }
+        val sent = patch(base)
+        return base.copy(name = if (sent.name != null) confirmed.name else base.name,
+            about = if (sent.about != null) confirmed.about else base.about,
+            color = if (sent.color != null) confirmed.color else base.color,
+            statusEmoji = if (sent.statusEmoji != null) confirmed.statusEmoji else base.statusEmoji,
+            statusText = if (sent.statusText != null) confirmed.statusText else base.statusText)
+    }
+}
+
 @Composable
 internal fun MirrorEditProfilePage(
     repository: PulseRepository,
@@ -409,14 +434,31 @@ internal fun MirrorEditProfilePage(
     var saving by remember { mutableStateOf(false) }
     var handleOpen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(viewerId) {
-        val loaded = runCatching { repository.userProfile(viewerId) }.getOrNull()?.getOrNull()
-        profile = loaded
-        name = loaded?.name ?: ""
-        about = loaded?.about ?: ""
-        color = loaded?.color ?: "emerald"
-        statusGlyph = loaded?.statusEmoji ?: ""
-        statusText = loaded?.statusText ?: ""
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val gate = remember(repository, viewerId) { app.pulse.domain.sync.RoomControlGate { repository.attachmentSessionKey() } }
+    var pendingPhoto by remember(gate) { mutableStateOf<app.pulse.domain.sync.RoomControlGate.Ticket?>(null) }
+    var photoBusy by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(true) }
+    var loadAttempt by remember { mutableStateOf(0) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.DisposableEffect(gate) { onDispose { gate.invalidate() } }
+    fun form() = MirrorProfileDraft(name, about, color, statusGlyph, statusText)
+
+    LaunchedEffect(viewerId, loadAttempt) {
+        val ticket = gate.beginRead() ?: return@LaunchedEffect
+        loading = true
+        try {
+            val loaded = repository.userProfile(viewerId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (!gate.isCurrent(ticket)) return@LaunchedEffect
+            check(loaded.id == viewerId) { "Profile response did not match this account" }
+            profile = loaded
+            name = loaded.name; about = loaded.about.orEmpty(); color = loaded.color ?: "emerald"
+            statusGlyph = loaded.statusEmoji.orEmpty(); statusText = loaded.statusText.orEmpty()
+            notice = null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            if (gate.isCurrent(ticket)) notice = error.message ?: "Could not load the profile"
+        } finally { if (gate.isCurrent(ticket)) loading = false }
     }
 
     val base = profile
@@ -427,54 +469,54 @@ internal fun MirrorEditProfilePage(
             statusGlyph.trim() != (base.statusEmoji ?: "") ||
             statusText.trim() != (base.statusText ?: "")
         )
-    val canSave = dirty && name.trim().isNotBlank() && !saving
+    val canSave = dirty && name.trim().isNotBlank() && !saving && !photoBusy && !loading && !handleOpen
 
     fun save() {
         if (!canSave) return
+        val original = profile ?: return
+        val ticket = gate.beginWrite() ?: return
+        val submitted = form()
+        val patch = submitted.patch(original)
         saving = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching {
-                repository.patchProfile(
-                    ProfilePatch(
-                        name = name.trim(),
-                        about = about.trim(),
-                        color = color,
-                        statusEmoji = statusGlyph.trim(),
-                        statusText = statusText.trim(),
-                    ),
-                )
-            }
-            withContext(Dispatchers.Main) {
-                saving = false
-                if (result.isSuccess) {
-                    android.widget.Toast.makeText(context, "Profile updated", android.widget.Toast.LENGTH_SHORT).show()
-                    onSaved()
-                } else {
-                    android.widget.Toast.makeText(
-                        context,
-                        result.exceptionOrNull()?.message ?: "Could not save your profile",
-                        android.widget.Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            }
+        scope.launch {
+            try {
+                if (!gate.isCurrent(ticket)) return@launch
+                val confirmed = repository.patchProfile(patch).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!gate.isCurrent(ticket)) return@launch
+                check(confirmed.id == viewerId) { "Profile response did not match this account" }
+                profile = submitted.confirmedBaseline(original, confirmed)
+                if (form() == submitted) onSaved()
+                else notice = "Submitted changes saved. Your newer edits are still here."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (gate.isCurrent(ticket)) notice = error.message ?: "Could not confirm the profile update"
+            } finally { if (gate.isCurrent(ticket)) { gate.finishWrite(ticket); saving = false } }
         }
     }
 
-    // Avatar photo pick: compress -> POST /api/uploads -> PATCH avatar (web AvatarPhotoEditor).
     val pickAvatar = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    val dataUrl = mirrorProfileUriToDataUrl(context, uri, maxSide = 640)
+        val ticket = pendingPhoto; pendingPhoto = null
+        if (ticket != null && gate.isCurrent(ticket)) {
+            if (uri == null) { gate.finishWrite(ticket); photoBusy = false }
+            else scope.launch {
+                try {
+                    val dataUrl = mirrorProfileUriToDataUrl(context, uri)
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!gate.isCurrent(ticket)) return@launch
                     val path = repository.uploadMedia(dataUrl).getOrThrow()
-                    repository.patchProfile(ProfilePatch(avatar = path))
-                    withContext(Dispatchers.Main) {
-                        profile = runCatching { repository.userProfile(viewerId) }.getOrNull()?.getOrNull()
-                        android.widget.Toast.makeText(context, "Profile photo updated", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!gate.isCurrent(ticket)) return@launch
+                    val confirmed = repository.patchProfile(ProfilePatch(avatar = path)).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!gate.isCurrent(ticket)) return@launch
+                    check(confirmed.id == viewerId) { "Profile response did not match this account" }
+                    profile = profile?.copy(avatar = confirmed.avatar)
+                    notice = "Profile photo updated"
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                    if (gate.isCurrent(ticket)) notice = error.message ?: "Could not confirm the photo update"
+                } finally { if (gate.isCurrent(ticket)) { gate.finishWrite(ticket); photoBusy = false } }
             }
-        }
+        } else if (uri != null) notice = "Selection was interrupted. Choose the photo again."
     }
 
     Column(
@@ -544,6 +586,12 @@ internal fun MirrorEditProfilePage(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp),
         ) {
+            notice?.let { Text(it, color = MirrorArt.Accent2, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp)) }
+            if (profile == null) {
+                Text(if (loading) "Loading profile…" else "Tap to retry loading your profile", color = MirrorArt.Dim,
+                    modifier = Modifier.clickable(enabled = !loading) { loadAttempt++ }.padding(vertical = 16.dp))
+                return@Column
+            }
             // avatar editor block
             Column(
                 Modifier
@@ -561,6 +609,7 @@ internal fun MirrorEditProfilePage(
                         showPresence = false,
                         sizeDp = 84,
                         cornerDp = 42,
+                        photo = profile?.avatar,
                     )
                     Box(
                         Modifier
@@ -568,8 +617,12 @@ internal fun MirrorEditProfilePage(
                             .size(28.dp)
                             .clip(CircleShape)
                             .background(MirrorArt.Accent)
-                            .clickable {
-                                pickAvatar.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            .clickable(enabled = !saving && !photoBusy && !handleOpen) {
+                                gate.beginWrite()?.let { ticket ->
+                                    pendingPhoto = ticket; photoBusy = true
+                                    try { pickAvatar.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                                    catch (_: Exception) { pendingPhoto = null; photoBusy = false; gate.finishWrite(ticket); notice = "Photo picker is unavailable" }
+                                }
                             },
                         contentAlignment = Alignment.Center,
                     ) {
@@ -669,7 +722,7 @@ internal fun MirrorEditProfilePage(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .clickable { handleOpen = true }
+                        .clickable(enabled = !saving && !photoBusy) { handleOpen = true }
                         .padding(horizontal = 4.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -713,7 +766,7 @@ internal fun MirrorEditProfilePage(
                 )
             }
             Text(
-                "Changes appear everywhere instantly - profile, chats and mentions.",
+                "Confirmed changes appear in your profile, chats and mentions.",
                 color = SubPageInk.Zinc600,
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center,
@@ -731,8 +784,15 @@ internal fun MirrorEditProfilePage(
             onDismiss = { handleOpen = false },
             onSaved = {
                 handleOpen = false
-                CoroutineScope(Dispatchers.IO).launch {
-                    profile = runCatching { repository.userProfile(viewerId) }.getOrNull()?.getOrNull()
+                val ticket = gate.beginRead()
+                if (ticket != null) scope.launch {
+                    try {
+                        val fresh = repository.userProfile(viewerId).getOrThrow()
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (gate.isCurrent(ticket) && fresh.id == viewerId) profile = profile?.copy(handle = fresh.handle)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                        if (gate.isCurrent(ticket)) notice = error.message ?: "Could not refresh the confirmed handle"
+                    }
                 }
             },
         )
@@ -813,7 +873,7 @@ private fun EditInput(
 ) {
     BasicTextField(
         value = value,
-        onValueChange = { raw -> onChange(raw.take(max)) },
+        onValueChange = { raw -> onChange(clipProfileText(raw, max)) },
         singleLine = singleLine,
         maxLines = if (singleLine) 1 else 3,
         textStyle = TextStyle(color = SubPageInk.Zinc50, fontSize = 14.sp, lineHeight = 19.sp),
@@ -847,6 +907,9 @@ private fun MirrorHandleDialog(
     var handle by remember { mutableStateOf(current) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val owner = remember(repository) { repository.attachmentSessionKey() }
+    fun owned() = owner != null && repository.attachmentSessionKey() == owner
 
     Box(
         Modifier
@@ -932,28 +995,20 @@ private fun MirrorHandleDialog(
                         .background(if (handle.isNotBlank() && !busy) MirrorArt.Accent else MirrorArt.Chip)
                         .clickable(enabled = handle.isNotBlank() && !busy) {
                             busy = true
-                            CoroutineScope(Dispatchers.IO).launch {
-                                val check = runCatching { repository.checkHandle(handle) }.getOrNull()
-                                val available = check?.getOrNull()?.available == true
-                                if (!available) {
-                                    withContext(Dispatchers.Main) {
-                                        busy = false
-                                        error = "That handle is taken - try another."
-                                    }
-                                    return@launch
-                                }
-                                val saved = runCatching {
-                                    repository.patchProfile(ProfilePatch(username = handle))
-                                }.isSuccess
-                                withContext(Dispatchers.Main) {
-                                    busy = false
-                                    if (saved) {
-                                        android.widget.Toast.makeText(context, "Handle saved", android.widget.Toast.LENGTH_SHORT).show()
-                                        onSaved()
-                                    } else {
-                                        error = "Could not save the handle - try again."
-                                    }
-                                }
+                            val candidate = handle.trim()
+                            scope.launch {
+                                try {
+                                    if (!owned()) return@launch
+                                    val verdict = repository.checkHandle(candidate).getOrThrow()
+                                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                    if (!owned()) return@launch
+                                    check(verdict.available || candidate == current) { "That handle is taken - try another." }
+                                    repository.patchProfile(ProfilePatch(username = candidate)).getOrThrow()
+                                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                    if (owned()) onSaved()
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                                    if (owned()) error = failure.message ?: "Could not confirm the handle update"
+                                } finally { if (owned()) busy = false }
                             }
                         },
                     contentAlignment = Alignment.Center,
@@ -1029,30 +1084,7 @@ internal fun MirrorSignOutDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 }
 
 /** Compress the picked image to a base64 data URL (cover/avatar size budget). */
-internal suspend fun mirrorProfileUriToDataUrl(context: Context, uri: Uri, maxSide: Int): String =
-    withContext(Dispatchers.IO) {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        var sample = 1
-        val largest = maxOf(bounds.outWidth, bounds.outHeight)
-        while (largest / (sample * 2) >= maxSide) sample *= 2
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bitmap = context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, opts)
-        } ?: throw IllegalStateException("Could not decode the image")
-        val scaled = if (maxOf(bitmap.width, bitmap.height) > maxSide) {
-            val scale = maxSide.toFloat() / maxOf(bitmap.width, bitmap.height)
-            Bitmap.createScaledBitmap(
-                bitmap,
-                (bitmap.width * scale).toInt().coerceAtLeast(1),
-                (bitmap.height * scale).toInt().coerceAtLeast(1),
-                true,
-            )
-        } else {
-            bitmap
-        }
-        val out = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
-        val base64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
-        "data:image/jpeg;base64,$base64"
-    }
+internal suspend fun mirrorProfileUriToDataUrl(context: Context, uri: Uri): String {
+    require(uri.scheme == "content") { "Choose a photo from the system picker" }
+    return app.pulse.ui.media.ImagePreparation.imageToDataUrl(context, uri).getOrThrow()
+}

@@ -561,9 +561,9 @@ struct ChannelsView: View {
         defer { if photoTicket == ticket { photoBusy = false; photoTask = nil } }
         guard owns(epoch), photoTicket == ticket, mode == .create else { return }
         do {
-            let raw = try await item.loadTransferable(type: Data.self)
+            let photo = try await item.loadTransferable(type: PulsePickedPhoto.self)
             guard owns(epoch), photoTicket == ticket, mode == .create else { return }
-            guard let raw, let jpeg = PulseAvatarImage.jpegData(from: raw) else {
+            guard let photo, let jpeg = PulseAvatarImage.jpegData(from: photo.jpeg) else {
                 session.toasts.show("Couldn't read that image - try another one")
                 return
             }

@@ -4032,6 +4032,9 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun patchProfile(patch: ProfilePatch): Result<UserProfile> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         val body = buildJsonObject {
             patch.name?.let { put("name", it) }
             patch.about?.let { put("about", it) }
@@ -4046,8 +4049,12 @@ class PulseRepositoryImpl constructor(
             // username is "explicit key" on the wire: null = untouched, "" = clear.
             patch.username?.let { put("username", it) }
         }
-        return when (val r = api.patchUser(viewerId ?: "", body)) {
-            is PulseResult.Success -> Result.success(r.value.toUserProfile())
+        val response = api.patchUser(owner, body)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Profile account changed")
+        return when (val r = response) {
+            is PulseResult.Success -> if (r.value.id == owner) Result.success(r.value.toUserProfile())
+                else Result.failure(IllegalStateException("Profile response did not match this account"))
             is PulseResult.Failure -> Result.failure(
                 OnboardingError.of(r).takeIf { r.status == 400 || r.status == 409 }
                     ?: IllegalStateException("${r.kind}: ${r.message}"),

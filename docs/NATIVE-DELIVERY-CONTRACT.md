@@ -37,3 +37,11 @@ Story feed/create/viewer read/view mark/delete now require the existing bearer c
 The upload endpoint must not return a file receipt until `UploadedFile` has accepted the bytes. Both native outboxes treat that receipt as permission to replace their raw upload payload with the stored path. Ensure the existing UploadedFile table and write path are available before rolling out this server revision: missing/unavailable durable storage now returns 503/Retry-After instead of an ephemeral-only success. The uploads directory is only an atomically published optional cache; its loss/failure must still allow DB-backed reads. Current JSON/response fields and native credential formats are unchanged.
 
 New upload/byte responses use private/no-store headers. This does **not** authenticate previously public media URLs or revoke browser/native copies already cached. Media audience authorization/provenance and lost-upload-ack deduplication remain separate open work. No deployment is implied by source delivery.
+
+## Profile mutations: owner credentials and managed photo paths
+
+PATCH `/api/users/[id]` now requires an existing bearer credential accepted for that same user. Headerless profile writers receive 401 and another user's credential receives 403; GET public-profile behavior is unchanged. Coordinate authenticated-client rollout before enabling this endpoint revision for clients that still write profiles without credentials. No deployment is implied here, and no credentials need to be supplied in chat.
+
+Native upload receipts are filenames; profile avatar/cover PATCH values must be `/api/uploads/<filename>` (or an explicit empty/null clear). The iOS editor now normalizes these receipts, as Android already does. Empty bio strings now intentionally clear the bio; wrong-type values are errors rather than implicit clears. Handle uniqueness is ultimately enforced by the database; racing claims return 409, not a success inferred from an earlier availability check.
+
+Successful media metadata updates do not establish ownership of upload URLs, revoke cached media, or make concurrent profile edits revision-safe. Old iOS bio/status cache values without owner provenance are ignored; the editor reloads the current owner's server profile rather than adopting another account's cached fields.

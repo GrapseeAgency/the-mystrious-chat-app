@@ -289,6 +289,7 @@ struct RootView: View {
                     onOpenHub: { switchTab(.hub) },
                     onOpenSettings: { settingsOpen = true },
                 )
+                    .id(session.sessionGeneration)
                     .transition(panelTransition)
             }
         }

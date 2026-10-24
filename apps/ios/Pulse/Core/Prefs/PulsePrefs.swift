@@ -783,3 +783,34 @@ public final class PulsePrefs: ObservableObject {
         return (try? JSONDecoder().decode([String: Bool].self, from: data)) ?? [:]
     }
 }
+
+
+extension PulsePrefs {
+    // The old pulse.viewer.profile dictionary has no account/gateway provenance.
+    // Never claim it belongs to whoever happens to open the next profile editor.
+    private var viewerProfileKey: String? {
+        guard let id = viewer?.id, !id.isEmpty,
+              let identity = try? JSONEncoder().encode([PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL), id]) else { return nil }
+        return "pulse.viewer.profile.v2." + identity.base64EncodedString()
+    }
+    private var extraProfile: [String: String] {
+        guard let key = viewerProfileKey, let data = defaults.data(forKey: key),
+              let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return map
+    }
+    var viewerAbout: String? { extraProfile["about"] }
+    var viewerStatusEmoji: String? { extraProfile["statusEmoji"] }
+    var viewerStatusText: String? { extraProfile["statusText"] }
+
+    func setViewerProfile(about: String?, statusEmoji: String?, statusText: String?) {
+        guard let key = viewerProfileKey else { return }
+        var map: [String: String] = [:]
+        if let about { map["about"] = about }
+        if let statusEmoji { map["statusEmoji"] = statusEmoji }
+        if let statusText { map["statusText"] = statusText }
+        guard let data = try? JSONEncoder().encode(map) else { return }
+        defaults.set(data, forKey: key)
+        defaults.removeObject(forKey: "pulse.viewer.profile")
+        objectWillChange.send()
+    }
+}

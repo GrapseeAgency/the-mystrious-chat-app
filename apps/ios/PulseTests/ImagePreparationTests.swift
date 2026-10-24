@@ -125,4 +125,17 @@ final class ImagePreparationTests: XCTestCase {
         XCTAssertEqual(model.caption, "")
     }
 
+    func testProfileAvatarAndCoverUseDifferentBoundedCrops() throws {
+        let original = try image(width: 3000, height: 1500)
+        let avatar = try XCTUnwrap(UIImage(data: try XCTUnwrap(PulseAvatarImage.jpegData(from: original)))?.cgImage)
+        let cover = try XCTUnwrap(UIImage(data: try XCTUnwrap(PulseCoverImage.jpegData(from: original)))?.cgImage)
+        XCTAssertEqual(avatar.width, 512); XCTAssertEqual(avatar.height, 512)
+        XCTAssertEqual(cover.width, 1200); XCTAssertEqual(cover.height, 600)
+        let thin = try image(width: 1, height: 5000)
+        let tiny = try XCTUnwrap(UIImage(data: try XCTUnwrap(PulseAvatarImage.jpegData(from: thin)))?.cgImage)
+        XCTAssertGreaterThan(tiny.width, 0); XCTAssertGreaterThan(tiny.height, 0)
+        XCTAssertNil(PulseAvatarImage.jpegData(from: Data("bad image".utf8)))
+        XCTAssertNil(PulseCoverImage.jpegData(from: Data("bad image".utf8)))
+    }
+
 }

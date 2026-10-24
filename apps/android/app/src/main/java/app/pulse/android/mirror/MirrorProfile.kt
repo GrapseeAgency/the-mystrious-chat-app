@@ -47,8 +47,7 @@ import app.pulse.domain.model.ProfilePatch
 import app.pulse.domain.repository.PulseRepository
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /**
@@ -88,44 +87,67 @@ internal fun MirrorProfile(
         }
     }
 
-    fun reloadProfile() {
-        CoroutineScope(Dispatchers.IO).launch {
-            profile = runCatching { repository.userProfile(viewerId) }.getOrNull()?.getOrNull()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val gate = remember(repository, viewerId) { app.pulse.domain.sync.RoomControlGate { repository.attachmentSessionKey() } }
+    var coverTicket by remember(gate) { mutableStateOf<app.pulse.domain.sync.RoomControlGate.Ticket?>(null) }
+    androidx.compose.runtime.DisposableEffect(gate) { onDispose { gate.invalidate() } }
+    fun note(text: String) { android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show() }
+
+    LaunchedEffect(viewerId) {
+        val ticket = gate.beginRead() ?: return@LaunchedEffect
+        try {
+            val loaded = repository.userProfile(viewerId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (gate.isCurrent(ticket) && loaded.id == viewerId) profile = loaded
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+            if (gate.isCurrent(ticket)) note("Couldn't refresh the profile")
+        }
+        try {
+            val loaded = repository.userStats(viewerId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() == ticket.owner) stats = loaded
+            val wallet = repository.wallet().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() == ticket.owner) coins = wallet.wallet.coins
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+            // Unknown statistics remain unknown; never convert failure to zero.
         }
     }
 
-    LaunchedEffect(viewerId) {
-        profile = runCatching { repository.userProfile(viewerId) }.getOrNull()?.getOrNull()
-        stats = runCatching { repository.userStats(viewerId) }.getOrNull()?.getOrNull()
-        // Wallet coins render in the stats card (web parity - the hub wallet).
-        runCatching { repository.wallet() }.getOrNull()?.getOrNull()?.let { coins = it.wallet.coins }
+    fun changeCover(ticket: app.pulse.domain.sync.RoomControlGate.Ticket, uri: android.net.Uri?) {
+        scope.launch {
+            try {
+                if (!gate.isCurrent(ticket)) return@launch
+                val path = if (uri != null) {
+                    val dataUrl = mirrorProfileUriToDataUrl(context, uri)
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!gate.isCurrent(ticket)) return@launch
+                    repository.uploadMedia(dataUrl).getOrThrow()
+                } else ""
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!gate.isCurrent(ticket)) return@launch
+                val confirmed = repository.patchProfile(ProfilePatch(coverImage = path)).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!gate.isCurrent(ticket)) return@launch
+                check(confirmed.id == viewerId) { "Profile response did not match this account" }
+                profile = profile?.copy(coverImage = confirmed.coverImage) ?: confirmed
+                note(if (uri == null) "Cover removed" else "Cover updated")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (gate.isCurrent(ticket)) note(error.message ?: "Could not confirm the cover update")
+            } finally { if (gate.isCurrent(ticket)) { gate.finishWrite(ticket); coverBusy = false } }
+        }
     }
-
-    // R39 - cover picture pipeline: pick -> compress -> POST /api/uploads ->
-    // PATCH coverImage (web coverMutation verbatim flow).
     val pickCover = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
-        if (uri != null) {
-            coverBusy = true
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    val dataUrl = mirrorProfileUriToDataUrl(context, uri, maxSide = 1280)
-                    val path = repository.uploadMedia(dataUrl).getOrThrow()
-                    repository.patchProfile(ProfilePatch(coverImage = path))
-                }
-                coverBusy = false
-                reloadProfile()
-            }
-        }
+        val ticket = coverTicket; coverTicket = null
+        if (ticket != null && gate.isCurrent(ticket)) {
+            if (uri == null) { gate.finishWrite(ticket); coverBusy = false }
+            else changeCover(ticket, uri)
+        } else if (uri != null) note("Selection was interrupted. Choose the cover again.")
     }
     val removeCover = {
-        coverBusy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            runCatching { repository.patchProfile(ProfilePatch(coverImage = "")) }
-            coverBusy = false
-            reloadProfile()
-        }
+        gate.beginWrite()?.let { ticket -> coverBusy = true; changeCover(ticket, null) }
         kotlin.Unit
     }
 
@@ -148,11 +170,12 @@ internal fun MirrorProfile(
                     coverPath = profile?.coverImage,
                     onKebab = { kebabOpen = true },
                     onAddCover = {
-                        pickCover.launch(
-                            androidx.activity.result.PickVisualMediaRequest(
-                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
-                            ),
-                        )
+                        gate.beginWrite()?.let { ticket ->
+                            coverTicket = ticket; coverBusy = true
+                            try { pickCover.launch(androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                            catch (_: Exception) { coverTicket = null; coverBusy = false; gate.finishWrite(ticket); note("Photo picker is unavailable") }
+                        }
                     },
                     onRemoveCover = removeCover,
                 )
@@ -325,8 +348,8 @@ internal fun MirrorProfile(
 
                         Spacer(Modifier.height(16.dp))
                         MirrorStatsCard(
-                            messages = stats?.messages ?: 0,
-                            rooms = stats?.chats ?: 0,
+                            messages = stats?.messages,
+                            rooms = stats?.chats,
                             coins = coins,
                             since = MirrorMonthYear(stats?.joinedAtIso),
                         )
@@ -513,7 +536,7 @@ private fun MirrorCoverHeader(
 
 /** 4 column stats: MESSAGES / ROOMS / COINS / SINCE (coins in ember). */
 @Composable
-private fun MirrorStatsCard(messages: Long, rooms: Long, coins: Long?, since: String) {
+private fun MirrorStatsCard(messages: Long?, rooms: Long?, coins: Long?, since: String) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -523,9 +546,9 @@ private fun MirrorStatsCard(messages: Long, rooms: Long, coins: Long?, since: St
             .padding(vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MirrorStatCell(messages.toString(), "MESSAGES", MirrorArt.Text, Modifier.weight(1f))
-        MirrorStatCell(rooms.toString(), "ROOMS", MirrorArt.Text, Modifier.weight(1f))
-        MirrorStatCell((coins ?: 0).toString(), "COINS", MirrorArt.Accent, Modifier.weight(1f))
+        MirrorStatCell(messages?.toString() ?: "—", "MESSAGES", MirrorArt.Text, Modifier.weight(1f))
+        MirrorStatCell(rooms?.toString() ?: "—", "ROOMS", MirrorArt.Text, Modifier.weight(1f))
+        MirrorStatCell(coins?.toString() ?: "—", "COINS", MirrorArt.Accent, Modifier.weight(1f))
         MirrorStatCell(since, "SINCE", MirrorArt.Text, Modifier.weight(1.2f), small = true)
     }
 }

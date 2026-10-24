@@ -240,6 +240,7 @@ internal fun MirrorRoot(
     // R71 - the web SettingsScreen + profile sub-surfaces (profile-tab.tsx)
     var settingsOpen by remember { mutableStateOf(false) }
     var profileEditOpen by remember { mutableStateOf(false) }
+    var profileRefresh by remember { mutableStateOf(0) }
     var profileSavedOpen by remember { mutableStateOf(false) }
 
     // R89 - the system back contract. The phone back button must listen like
@@ -256,7 +257,7 @@ internal fun MirrorRoot(
             viewingStory != null -> viewingStory = null
             spotlightOpen -> spotlightOpen = false
             profileSavedOpen -> profileSavedOpen = false
-            profileEditOpen -> profileEditOpen = false
+            profileEditOpen -> { profileRefresh++; profileEditOpen = false }
             settingsOpen -> settingsOpen = false
             userPageFor != null -> userPageFor = null
             managerFor != null -> managerFor = null
@@ -594,16 +595,19 @@ internal fun MirrorRoot(
                         )
                     }
                     MirrorTab.Profile -> {
-                        MirrorProfile(
-                            viewerId = viewerId.orEmpty(),
-                            repository = repository,
-                            iAmOnline = viewerId != null && presence.contains(viewerId),
-                            onSignOut = { session.forgetViewer() },
-                            onOpenHub = { tab = MirrorTab.Hub },
-                            onOpenSettings = { settingsOpen = true },
-                            onOpenSaved = { profileSavedOpen = true },
-                            onEditProfile = { profileEditOpen = true },
-                        )
+                        androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey(), profileRefresh) {
+                            val profileRepository = remember(repository, viewerId, repository.attachmentSessionKey()) { repository.boundToCurrentAccount() }
+                            MirrorProfile(
+                                viewerId = viewerId.orEmpty(),
+                                repository = profileRepository,
+                                iAmOnline = viewerId != null && presence.contains(viewerId),
+                                onSignOut = { session.forgetViewer() },
+                                onOpenHub = { tab = MirrorTab.Hub },
+                                onOpenSettings = { settingsOpen = true },
+                                onOpenSaved = { profileSavedOpen = true },
+                                onEditProfile = { profileEditOpen = true },
+                            )
+                        }
                     }
                 }
                 }
@@ -894,8 +898,8 @@ internal fun MirrorRoot(
 
         if (roomInfoFor != null) {
             val convo = roomInfoFor!!
-            androidx.compose.runtime.key(viewerId, convo.id) {
-                val infoRepository = remember(repository, viewerId, convo.id) { repository.boundToCurrentAccount() }
+            androidx.compose.runtime.key(viewerId, convo.id, repository.attachmentSessionKey()) {
+                val infoRepository = remember(repository, viewerId, convo.id, repository.attachmentSessionKey()) { repository.boundToCurrentAccount() }
                 val infoScope = androidx.compose.runtime.rememberCoroutineScope()
                 MirrorRoomInfoPage(
                     conversationId = convo.id,
@@ -983,12 +987,15 @@ internal fun MirrorRoot(
         }
         // R71 - the web Edit profile sub-page (real PATCH /api/users/:id)
         if (profileEditOpen) {
-            MirrorEditProfilePage(
-                repository = repository,
-                viewerId = viewerId.orEmpty(),
-                onSaved = { profileEditOpen = false },
-                onDismiss = { profileEditOpen = false },
-            )
+            androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey()) {
+                val profileRepository = remember(repository, viewerId, repository.attachmentSessionKey()) { repository.boundToCurrentAccount() }
+                MirrorEditProfilePage(
+                    repository = profileRepository,
+                    viewerId = viewerId.orEmpty(),
+                    onSaved = { profileRefresh++; profileEditOpen = false },
+                    onDismiss = { profileRefresh++; profileEditOpen = false },
+                )
+            }
         }
         // R71 - the saved-messages library drawer (profile kebab + kebab row)
         if (profileSavedOpen) {

@@ -18,10 +18,7 @@ package app.pulse.android.mirror
 // repository call rides Dispatchers.IO and UI state flips on Main.
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -101,7 +98,6 @@ import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.WirePulsePrefs
 import coil.compose.AsyncImage
-import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -215,41 +211,6 @@ private fun infoTintColor(token: String): Color = when (token) {
     "teal" -> Color(0xFF2DD4BF)
     else -> MirrorArt.Faint
 }
-
-/**
- * Photo pick -> base64 data URL (private copy of the established mirror
- * upload chain): BitmapFactory downscale with the ~1280 max dimension.
- */
-private suspend fun infoUriToDataUrl(context: Context, uri: Uri): String? =
-    withContext(Dispatchers.IO) {
-        runCatching {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            var sample = 1
-            val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
-            while (maxSide / (sample * 2) >= 1280) sample *= 2
-            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            val bitmap = context.contentResolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, opts)
-            } ?: return@runCatching null
-            val scaled = if (maxOf(bitmap.width, bitmap.height) > 1280) {
-                val scale = 1280f / maxOf(bitmap.width, bitmap.height)
-                Bitmap.createScaledBitmap(
-                    bitmap,
-                    (bitmap.width * scale).toInt().coerceAtLeast(1),
-                    (bitmap.height * scale).toInt().coerceAtLeast(1),
-                    true,
-                )
-            } else {
-                bitmap
-            }
-            val bytes = ByteArrayOutputStream().use { out ->
-                scaled.compress(Bitmap.CompressFormat.JPEG, 82, out)
-                out.toByteArray()
-            }
-            "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-        }.getOrNull()
-    }
 
 // Shared private chrome =======================================================
 
@@ -647,6 +608,12 @@ internal fun MirrorRoomInfoPage(
     var slowPending by remember { mutableStateOf(false) }
     var invitePending by remember { mutableStateOf(false) }
     var photoBusy by remember { mutableStateOf(false) }
+    val photoGate = remember(repository, conversationId) { RoomControlGate { repository.attachmentSessionKey() } }
+    var photoTicket by remember(photoGate) { mutableStateOf<RoomControlGate.Ticket?>(null) }
+    var photoJob by remember(photoGate) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    androidx.compose.runtime.DisposableEffect(photoGate) {
+        onDispose { photoGate.invalidate(); photoJob?.cancel() }
+    }
     var myPrivacyLocal by remember { mutableStateOf<Boolean?>(null) }
     var everyonePrivacyLocal by remember { mutableStateOf<Boolean?>(null) }
     var armedId by remember { mutableStateOf<String?>(null) }
@@ -980,40 +947,41 @@ internal fun MirrorRoomInfoPage(
         }
     }
 
-    // R33-b photo chain: pick -> data URL -> uploadMedia -> setGroupPhoto
+    // Reserve the original session before opening the external picker, not
+    // when its result eventually returns. Interrupted ownership is never guessed.
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null && !photoBusy) {
-            metaTicket++
-            photoBusy = true
-            scope.launch {
-                val dataUrl = infoUriToDataUrl(context, uri)
-                if (dataUrl == null) {
-                    metaTicket++
-                    photoBusy = false
-                    showNote("Could not upload that photo", true)
-                    return@launch
-                }
-                val uploadRes = repositoryResult { repository.uploadMedia(dataUrl) }
-                val photoPath = uploadRes.getOrNull()
-                if (photoPath == null) {
-                    metaTicket++
-                    photoBusy = false
-                    showNote("Could not upload that photo", true)
-                    return@launch
-                }
-                val patchRes = repositoryResult { repository.setGroupPhoto(conversationId, photoPath) }
-                metaTicket++
-                photoBusy = false
-                patchRes.onSuccess {
-                    showNote("Photo updated", false)
-                }.onFailure {
-                    showNote(it.message ?: "Could not update the photo", true)
-                }
-                if (patchRes.isSuccess) {
-                    refreshMeta()
-                    withContext(Dispatchers.Main) { onChanged() }
+        val ticket = photoTicket
+        photoTicket = null
+        if (ticket != null && photoGate.isCurrent(ticket)) {
+            if (uri == null) {
+                photoGate.finishWrite(ticket); photoBusy = false
+            } else {
+                photoJob = scope.launch {
+                    try {
+                        require(uri.scheme == "content") { "Choose a photo from the system picker" }
+                        val dataUrl = app.pulse.ui.media.ImagePreparation.imageToDataUrl(context, uri).getOrThrow()
+                        currentCoroutineContext().ensureActive()
+                        if (!photoGate.isCurrent(ticket)) return@launch
+                        val path = repository.uploadMedia(dataUrl).getOrThrow()
+                        currentCoroutineContext().ensureActive()
+                        if (!photoGate.isCurrent(ticket)) return@launch
+                        repository.setGroupPhoto(conversationId, path).getOrThrow()
+                        currentCoroutineContext().ensureActive()
+                        if (!photoGate.isCurrent(ticket)) return@launch
+                        showNote("Photo updated", false)
+                        refreshMeta()
+                        if (photoGate.isCurrent(ticket)) onChanged()
+                    } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
+                        if (photoGate.isCurrent(ticket)) showNote(error.message ?: "Could not confirm the photo update", true)
+                    } finally {
+                        if (photoGate.isCurrent(ticket)) {
+                            photoGate.finishWrite(ticket); photoBusy = false; metaTicket++
+                        }
+                    }
                 }
             }
+        } else if (uri != null) {
+            showNote("Photo selection was interrupted. Choose it again in this account.", true)
         }
     }
 
@@ -1215,9 +1183,15 @@ internal fun MirrorRoomInfoPage(
                                                 indication = null,
                                                 enabled = !photoBusy,
                                             ) {
-                                                pickImage.launch(
-                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                                )
+                                                photoGate.beginWrite()?.let { ticket ->
+                                                    photoTicket = ticket; photoBusy = true; metaTicket++
+                                                    try {
+                                                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                                    } catch (_: Exception) {
+                                                        photoTicket = null; photoBusy = false; photoGate.finishWrite(ticket)
+                                                        showNote("Photo picker is unavailable", true)
+                                                    }
+                                                }
                                             },
                                         contentAlignment = Alignment.Center,
                                     ) {
