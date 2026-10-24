@@ -12,7 +12,7 @@ interface RouteCtx {
 }
 
 /**
- * GET /api/uploads/<uuid>.<ext> → stored attachment bytes (immutable cache).
+ * GET /api/uploads/<uuid>.<ext> → stored attachment bytes (no shared/public cache).
  * Strict filename whitelist blocks any path traversal.
  * R40: the whitelist also carries the document extensions (pdf/txt/csv/zip);
  * their Content-Type comes from UPLOAD_MIME (e.g. application/pdf) so an
@@ -22,7 +22,7 @@ export async function GET(_req: Request, { params }: RouteCtx) {
   const { file } = await params
 
   if (!/^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp|webm|mp3|ogg|wav|m4a|aac|pdf|txt|csv|zip)$/.test(file)) {
-    return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+    return NextResponse.json({ error: 'Not found.' }, { status: 404, headers: { 'Cache-Control': 'private, no-store' } })
   }
   const ext = file.split('.').pop() as string
   const mime = UPLOAD_MIME[ext] ?? 'image/jpeg'
@@ -32,7 +32,8 @@ export async function GET(_req: Request, { params }: RouteCtx) {
     return new NextResponse(new Uint8Array(bytes), {
       headers: {
         'Content-Type': mime,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
         'Content-Length': String(bytes.length),
       },
     })
@@ -46,14 +47,17 @@ export async function GET(_req: Request, { params }: RouteCtx) {
         return new NextResponse(new Uint8Array(row.bytes), {
           headers: {
             'Content-Type': row.mime || mime,
-            'Cache-Control': 'public, max-age=31536000, immutable',
-            'Content-Length': String(row.size),
+            'Cache-Control': 'private, no-store',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Length': String(row.bytes.byteLength),
           },
         })
       }
-    } catch (storeError) {
-      console.error('[uploads] durable store read failed:', storeError)
+    } catch {
+      console.error('[uploads] Durable upload storage unavailable')
+      return NextResponse.json({ error: 'Attachment storage is temporarily unavailable.' },
+        { status: 503, headers: { 'Cache-Control': 'private, no-store', 'Retry-After': '3' } })
     }
-    return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+    return NextResponse.json({ error: 'Not found.' }, { status: 404, headers: { 'Cache-Control': 'private, no-store' } })
   }
 }

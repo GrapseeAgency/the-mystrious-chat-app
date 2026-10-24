@@ -31,3 +31,9 @@ This does not change legacy no-ID creation, create an offline scheduler, or canc
 ### Story audience/deletion rollout (2026-10-24)
 
 Story feed/create/viewer read/view mark/delete now require the existing bearer credential to own `requesterId`; all personalized responses are private/no-store. Deploy compatible native clients before enforcing this server revision: the repaired Kotlin DELETE attaches its bearer token, and Swift DELETE uses the route's encoded `requesterId` query rather than only a body field. Both require `{ok:true}` rather than treating an arbitrary 2xx body as deletion confirmation. Missing-token legacy/web requests fail closed; no new account/sign-in/recovery flow or schema migration is introduced. Story creation still lacks durable lost-ACK deduplication. These changes have not been deployed.
+
+## Upload durability boundary
+
+The upload endpoint must not return a file receipt until `UploadedFile` has accepted the bytes. Both native outboxes treat that receipt as permission to replace their raw upload payload with the stored path. Ensure the existing UploadedFile table and write path are available before rolling out this server revision: missing/unavailable durable storage now returns 503/Retry-After instead of an ephemeral-only success. The uploads directory is only an atomically published optional cache; its loss/failure must still allow DB-backed reads. Current JSON/response fields and native credential formats are unchanged.
+
+New upload/byte responses use private/no-store headers. This does **not** authenticate previously public media URLs or revoke browser/native copies already cached. Media audience authorization/provenance and lost-upload-ack deduplication remain separate open work. No deployment is implied by source delivery.
