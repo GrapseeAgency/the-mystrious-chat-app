@@ -1086,10 +1086,24 @@ public struct PulseAPIClient: Sendable {
         ])
     }
 
-    /// GET /api/group-call-state?conversationId= → { callId, kind, startedAt,
-    /// members } or { members: [] } (honest empty - socket down / no call).
+    /// Viewer-bound ongoing-call receipt. Transport failure is not an empty roster.
     public func groupCallState(conversationId: String) async throws -> PulseGroupCallStateSnapshot {
-        try await get("/api/group-call-state?conversationId=\(q(conversationId))")
+        struct Receipt: Decodable {
+            let callStateVersion: Int; let conversationId: String; let userId: String
+            let callId: String; let kind: String; let startedAt: Int64?
+            let members: [PulseGroupCallMember]
+        }
+        let receipt: Receipt = try await get("/api/group-call-state?conversationId=\(q(conversationId))&userId=\(q(userId))")
+        guard receipt.callStateVersion == 1, receipt.conversationId == conversationId, receipt.userId == userId,
+              ["voice", "video"].contains(receipt.kind), receipt.members.count <= 8,
+              receipt.members.allSatisfy({ !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(receipt.members.map(\.id)).count == receipt.members.count,
+              receipt.members.isEmpty == receipt.callId.isEmpty,
+              receipt.members.isEmpty || (!receipt.callId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (receipt.startedAt ?? -1) >= 0) else {
+            throw Failure(kind: .validation, message: "Call state did not match this viewer and conversation.")
+        }
+        return PulseGroupCallStateSnapshot(callId: receipt.callId.isEmpty ? nil : receipt.callId, kind: receipt.kind,
+            startedAtMs: receipt.startedAt, members: receipt.members)
     }
 
     // Wave 7 - collaboration & hub (F-RO / F-HB)

@@ -3400,7 +3400,8 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun probeGroupCallState(conversationId: String): Result<GroupCallProbe?> {
-        return when (val r = api.groupCallState(conversationId)) {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
+        return when (val r = api.groupCallState(conversationId, owner)) {
             is PulseResult.Success -> Result.success(
                 GroupCallProbe(
                     callId = r.value.callId.takeIf { it.isNotBlank() },

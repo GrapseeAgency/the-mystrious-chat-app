@@ -85,4 +85,32 @@ class ReadStateApiTest {
             assertTrue(PulseApi(http, gateway = { "https://read.test" }).postGroupCallRing("room", "me", "voice", "admitted-call") is PulseResult.Success)
         } finally { http.close() }
     }
+    @Test fun groupProbeRequiresBoundVersionedCompleteStateAndPreservesErrors() = runTest {
+        for (mode in listOf("valid", "empty", "legacy", "room", "owner", "version", "version-string", "missing-members", "missing-call", "kind", "started", "refused")) {
+            val http = HttpClient(MockEngine { request ->
+                assertEquals("me", request.url.parameters["userId"])
+                assertEquals("room", request.url.parameters["conversationId"])
+                val member = buildJsonObject {
+                    put("id", "peer"); put("name", "Peer"); put("color", "emerald"); put("avatar", JsonNull)
+                }
+                val body = buildJsonObject {
+                    if (mode != "legacy") {
+                        if (mode == "version-string") put("callStateVersion", "1")
+                        else put("callStateVersion", if (mode == "version") 0 else 1)
+                        put("conversationId", if (mode == "room") "other" else "room")
+                        put("userId", if (mode == "owner") "other" else "me")
+                        if (mode != "missing-call") put("callId", if (mode == "empty") "" else "call")
+                        put("kind", if (mode == "kind") "unknown" else "voice")
+                        if (mode != "started") put("startedAt", 1000)
+                    }
+                    if (mode != "missing-members") put("members", kotlinx.serialization.json.JsonArray(if (mode == "empty") emptyList() else listOf(member)))
+                }.toString()
+                respond(body, if (mode == "refused") HttpStatusCode.Forbidden else HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+            })
+            try {
+                val result = PulseApi(http, gateway = { "https://read.test" }).groupCallState("room", "me")
+                assertEquals("$mode: $result", mode in listOf("valid", "empty"), result is PulseResult.Success)
+            } finally { http.close() }
+        }
+    }
 }

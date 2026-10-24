@@ -61,6 +61,18 @@ data class GroupCallStatePayload(
     val members: List<GroupCallMemberDto> = emptyList(),
 )
 
+/** Viewer-bound HTTP probe; not the unscoped socket roster decoder. */
+@Serializable
+data class GroupCallProbeReceiptDto(
+    val callStateVersion: Int,
+    val conversationId: String,
+    val userId: String,
+    val callId: String,
+    val kind: String,
+    val members: List<GroupCallMemberDto>,
+    val startedAt: Long? = null,
+)
+
 /** C→S/S→C gcall:offer - joiner → existing member, relayed to the target's user room. */
 @Serializable
 data class GroupCallOfferDto(

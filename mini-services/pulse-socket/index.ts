@@ -1074,6 +1074,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // conversation?" so a late-opening room can show the Join affordance even
   // after the original ring scrolled away. Unknown conversation → null state.
   if (req.method === 'GET' && pathname === '/gcall') {
+    res.setHeader('Cache-Control', 'no-store')
+    if (!PRIVACY_KEY || req.headers['x-pulse-key'] !== PRIVACY_KEY) {
+      sendJson(res, 401, { ok: false, error: 'Unauthorized' })
+      return
+    }
     const conversationId = asTrimmedString(searchParams.get('conversationId')).slice(0, 128)
     sendJson(res, 200, { ok: true, state: conversationId ? gcallStatePayload(conversationId) : null })
     return

@@ -63,6 +63,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
   try {
     const [, port] = await logged(/listening on port (\d+)/)
     const base = `http://127.0.0.1:${port}`
+    const relayProbe = url => fetch(url, { headers: { 'x-pulse-key': 'synthetic-call-key' } })
     async function connect(id) {
       const socket = io(base, { path: '/', transports: ['websocket'], forceNew: true, reconnection: false })
       sockets.push(socket)
@@ -80,6 +81,14 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       socket.emit('gcall:join', { conversationId: room, kind: 'voice', user: { id, name: id }, ...(joinAttemptId === undefined ? {} : { joinAttemptId }) })
       return state
     }
+    await t.test('raw roster probe refuses anonymous and incorrectly keyed requests', async () => {
+      assert.equal((await fetch(`${base}/gcall?conversationId=room`)).status, 401)
+      assert.equal((await fetch(`${base}/gcall?conversationId=room`, { headers: { 'x-pulse-key': 'wrong' } })).status, 401)
+      const response = await relayProbe(`${base}/gcall?conversationId=room`)
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('cache-control'), 'no-store')
+      assert.equal((await response.json()).state, null)
+    })
     const alice = await connect('alice'), idleAlice = await connect('alice')
     const bob = await connect('bob'), idleBob = await connect('bob')
     await join(alice, 'alice')
@@ -125,7 +134,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       const original = await join(host, 'bound-host', 'bound-room')
       const existing = await join(joiner, 'bound-joiner', 'own-room')
       const joinRequest = (id, expectedCallId, room = 'bound-room') => ({ conversationId: room, expectedCallId, kind: 'voice', user: { id, name: id } })
-      const read = async room => (await (await fetch(`${base}/gcall?conversationId=${room}`)).json()).state
+      const read = async room => (await (await relayProbe(`${base}/gcall?conversationId=${room}`)).json()).state
       for (const expected of ['', 'old-call']) {
         const refusal = event(joiner, 'gcall:ended', row => row.callId === expected)
         joiner.emit('gcall:join', joinRequest('bound-joiner', expected))
@@ -164,7 +173,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       const second = await join(owner, 'intent-owner', 'intent-room', 'attempt-B')
       assert.equal(first.callId, second.callId)
       const leave = patch => owner.emit('gcall:leave', { conversationId: 'intent-room', from: 'intent-owner', ...patch })
-      const read = async () => (await (await fetch(`${base}/gcall?conversationId=intent-room`)).json()).state
+      const read = async () => (await (await relayProbe(`${base}/gcall?conversationId=intent-room`)).json()).state
       for (const patch of [{}, { joinAttemptId: 'attempt-A' }, { callId: first.callId, joinAttemptId: 'attempt-A' },
         { callId: 'different-call', joinAttemptId: 'attempt-B' }]) {
         leave(patch); await barrier(owner, 'intent-owner')
@@ -201,7 +210,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
     await t.test('current membership is required and stale permission results cannot admit or evict', async () => {
       const owner = await connect('access-owner')
       const current = await join(owner, 'access-owner', 'access-current', 'current-intent')
-      const read = async room => (await (await fetch(`${base}/gcall?conversationId=${room}`)).json()).state
+      const read = async room => (await (await relayProbe(`${base}/gcall?conversationId=${room}`)).json()).state
       const request = (room, attempt) => owner.emit('gcall:join', { conversationId: room, kind: 'voice',
         user: { id: 'access-owner' }, joinAttemptId: attempt })
       for (const mode of ['deny', 'malformed', 'error']) {
@@ -276,7 +285,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       removed.emit('gcall:offer', { conversationId: 'lease-room', callId: initial.callId, from: 'lease-removed', to: 'lease-host', kind: 'voice', sdp: 'after-removal' })
       await barrier(removed, 'lease-removed')
       assert.equal(offers.length, 0)
-      const stillLive = await (await fetch(`${base}/gcall?conversationId=lease-room`)).json()
+      const stillLive = await (await relayProbe(`${base}/gcall?conversationId=lease-room`)).json()
       assert.equal(stillLive.state.callId, initial.callId)
       assert.deepEqual(stillLive.state.members.map(row => row.id), ['lease-host'])
       // Removing the final conversation member also ends the relay call.
@@ -285,7 +294,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       await fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event: 'conversation:updated', recipients: ['lease-host'], payload: { conversationId: 'lease-room' } }) })
       await ended
-      assert.equal((await (await fetch(`${base}/gcall?conversationId=lease-room`)).json()).state, null)
+      assert.equal((await (await relayProbe(`${base}/gcall?conversationId=lease-room`)).json()).state, null)
       host.disconnect(); removed.disconnect()
     })
 

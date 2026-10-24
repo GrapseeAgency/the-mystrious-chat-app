@@ -699,18 +699,22 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       if (stateRef.current !== 'idle' || joinedConvRef.current) return
       const ticket = joinGenerationRef.current
       try {
-        const res = await fetch(`/api/group-call-state?conversationId=${encodeURIComponent(conversationId)}`, {
+        const res = await fetch(`/api/group-call-state?conversationId=${encodeURIComponent(conversationId)}&userId=${encodeURIComponent(meId)}`, {
           signal: AbortSignal.timeout(2500),
         })
         if (!res.ok) return
-        const body = (await res.json()) as { members?: unknown; kind?: unknown; callId?: unknown }
-        if (cancelled || joinGenerationRef.current !== ticket || stateRef.current !== 'idle' || joinedConvRef.current) return
-        if (Array.isArray(body.members) && body.members.length > 0) {
+        const body = (await res.json()) as { callStateVersion?: unknown; conversationId?: unknown; userId?: unknown; members?: unknown; kind?: unknown; callId?: unknown; startedAt?: unknown }
+        if (cancelled || joinGenerationRef.current !== ticket || stateRef.current !== 'idle' || joinedConvRef.current || optionsRef.current.meId !== meId) return
+        if (body.callStateVersion !== 1 || body.conversationId !== conversationId || body.userId !== meId) return
+        if (!Array.isArray(body.members) || body.members.length > 8 || typeof body.callId !== 'string' ||
+            (body.kind !== 'voice' && body.kind !== 'video') || (body.members.length === 0) !== (body.callId === '')) return
+        if (body.members.length > 0 && (typeof body.startedAt !== 'number' || !Number.isSafeInteger(body.startedAt) || body.startedAt < 0)) return
+        if (body.members.length > 0) {
           const roster: GroupCallMemberView[] = []
           for (const item of body.members) {
-            if (typeof item !== 'object' || item === null) continue
+            if (typeof item !== 'object' || item === null) return
             const obj = item as Record<string, unknown>
-            if (typeof obj.id !== 'string' || !obj.id) continue
+            if (typeof obj.id !== 'string' || !obj.id.trim() || roster.some(member => member.id === obj.id)) return
             roster.push({
               id: obj.id,
               name: typeof obj.name === 'string' && obj.name ? obj.name : 'Someone',
@@ -724,13 +728,16 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
             setOngoingMembers(roster)
             setOngoingElsewhere(true)
           } else if (roster.some((m) => m.id === meId)) {
+            ongoingTargetRef.current = null
             setOngoingElsewhere(false)
           }
         } else {
+          ongoingTargetRef.current = null
+          setOngoingMembers([])
           setOngoingElsewhere(false)
         }
       } catch {
-        // socket down - banner simply won't show
+        // Preserve the last confirmed state while the probe is unavailable.
       }
     }
     void probe()

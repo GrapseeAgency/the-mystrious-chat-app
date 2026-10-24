@@ -1039,13 +1039,35 @@ class PulseApi(
 
     /**
      * GET /api/group-call-state?conversationId= - probe for an ONGOING group
-     * call (late room open). Response = { callId, kind, startedAt, members }
-     * or the honest empty { members: [] } - GroupCallStatePayload defaults
-     * tolerate both shapes.
+     * call (late room open). A versioned viewer/room receipt distinguishes
+     * a verified empty roster from an unavailable or mismatched response.
      */
-    suspend fun groupCallState(conversationId: String): PulseResult<GroupCallStatePayload> =
-        get("/api/group-call-state?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8")) {
-            PulseJson.decodeFromString(GroupCallStatePayload.serializer(), it)
+    suspend fun groupCallState(conversationId: String, userId: String): PulseResult<GroupCallStatePayload> =
+        get("/api/group-call-state?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+            "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) { raw ->
+            val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            val fields = json.parseToJsonElement(raw) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Call state must be an object")
+            val version = fields["callStateVersion"] as? JsonPrimitive
+            if (version == null || version.isString || version.content != "1") {
+                throw kotlinx.serialization.SerializationException("Call state version is not supported")
+            }
+            for ((key, expected) in listOf("conversationId" to conversationId, "userId" to userId)) {
+                val value = fields[key] as? JsonPrimitive
+                if (value == null || !value.isString || value.content != expected) {
+                    throw kotlinx.serialization.SerializationException("Call state identity did not match")
+                }
+            }
+            val receipt = json.decodeFromString(app.pulse.protocol.GroupCallProbeReceiptDto.serializer(), raw)
+            if (receipt.conversationId != conversationId || receipt.userId != userId ||
+                receipt.kind !in listOf("voice", "video") || receipt.members.size > 8 ||
+                receipt.members.any { it.id.isBlank() } || receipt.members.map { it.id }.distinct().size != receipt.members.size ||
+                (receipt.members.isEmpty() != receipt.callId.isEmpty()) ||
+                (receipt.members.isNotEmpty() && (receipt.callId.isBlank() || (receipt.startedAt ?: -1L) < 0))) {
+                throw kotlinx.serialization.SerializationException("Call state did not match this viewer and conversation")
+            }
+            GroupCallStatePayload(callId = receipt.callId, conversationId = conversationId, kind = receipt.kind,
+                startedAt = receipt.startedAt, members = receipt.members)
         }
 
     /** POST /api/push/register { userId, platform: 'android', token } - upsert the FCM token. */
