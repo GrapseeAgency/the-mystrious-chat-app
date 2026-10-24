@@ -245,7 +245,7 @@ fun ChatRoomScreen(
     // the composer chip counts it down live and send/mic stay locked).
     val slowModeRemainingSec by viewModel.slowModeRemainingSec.collectAsStateWithLifecycle()
     val slowBlocked = slowModeRemainingSec > 0
-    val screenPrivacyOn = groupMeta?.screenPrivacyEffective == true
+    val screenPrivacyOn = groupMeta?.screenPrivacyEffective != false
     val roomTheme = convThemes[conversationId]
     val effectiveWallpaper = roomTheme?.wallpaper ?: prefs.wallpaper ?: "none"
 
@@ -393,21 +393,7 @@ fun ChatRoomScreen(
     // Android analogue of the web blur engagement), and the message area
     // covers while the app is backgrounded (web privacyHidden parity).
     var privacyHidden by remember { mutableStateOf(false) }
-    val activity = context as? android.app.Activity
-    DisposableEffect(screenPrivacyOn) {
-        val window = activity?.window
-        if (screenPrivacyOn && window != null) {
-            window.setFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                android.view.WindowManager.LayoutParams.FLAG_SECURE,
-            )
-        }
-        onDispose {
-            if (screenPrivacyOn && window != null) {
-                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-            }
-        }
-    }
+    app.pulse.ui.security.SecureWindowProtection(screenPrivacyOn)
     val lifecycleOwner = LocalLifecycleOwner.current
     fun openViewOnce(target: Message) {
         if (openingViewOnce || lightboxTarget != null) return
@@ -421,6 +407,7 @@ fun ChatRoomScreen(
         }
     }
     DisposableEffect(lifecycleOwner, screenPrivacyOn) {
+        privacyHidden = !lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
         val obs = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> privacyHidden = true

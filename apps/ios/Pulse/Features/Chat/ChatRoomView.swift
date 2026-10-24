@@ -619,6 +619,7 @@ private struct RoomContent: View {
                     }
                 }
                 .allowsHitTesting(!veilEngaged)
+                .accessibilityHidden(veilEngaged)
     }
 
     @ViewBuilder
@@ -1805,14 +1806,13 @@ private struct RoomContent: View {
     /// "unfocused" state is scenePhase != .active (app switcher, another
     /// app, lock - web blur/hidden parity).
     private var veilEngaged: Bool {
-        let eitherOn = viewModel.roomScreenPrivacy == true
-            || (session.prefs?.screenPrivacy[conversation.id] == true)
-        return eitherOn && scenePhase != .active
+        PulseScreenSecurityPolicy.shouldCover(room: viewModel.roomScreenPrivacy,
+            personal: session.prefs?.screenPrivacy[conversation.id], active: scenePhase == .active)
     }
 
     private var veilCover: some View {
         ZStack {
-            Rectangle().fill(.regularMaterial)
+            Rectangle().fill(PulseTheme.emberChrome)
             VStack(spacing: 10) {
                 Image(systemName: "eye.slash")
                     .font(.system(size: 18, weight: .medium))
@@ -3881,7 +3881,7 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var recap: RecapPhase?
     private var recapDismissTask: Task<Void, Never>?
     /// R38 - the room-wide screen-security switch (server conversation flag;
-    /// nil = unknown / older relay → veil off).
+    /// nil = unknown / older relay → keep the inactive veil).
     @Published var roomScreenPrivacy: Bool?
     /// R47 - DM blocked-pair dead-end (wire detail `dmBlocked`, a UserBlock
     /// in EITHER direction; server 403 stays the enforcement - client is UX

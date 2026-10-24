@@ -847,7 +847,7 @@ internal fun MirrorRoot(
                     .filter { it.conversationId == convo.id }
                     .map { it.userName }
                 val roomJump = pendingJump?.forRoom(convo.id, openRoom?.id)
-                androidx.compose.runtime.key(viewerId, convo.id) {
+                androidx.compose.runtime.key(viewerId, convo.id, repository.attachmentSessionKey()) {
                     MirrorRoomScaffold(
                         convo = convo,
                         readingEnabled = readingEnabled && openRoom?.id == convo.id && closingRoomId != convo.id &&
@@ -1163,7 +1163,7 @@ private fun MirrorRoomScaffold(
     onOpenReminder: (MirrorReminderTarget) -> Unit,
     onJumpConsumed: () -> Unit = {},
 ) {
-    val repository = remember(accountRouter, viewerId, convo.id) { accountRouter.boundToCurrentAccount() }
+    val repository = remember(accountRouter, viewerId, convo.id, accountRouter.attachmentSessionKey()) { accountRouter.boundToCurrentAccount() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     val visible by androidx.compose.runtime.rememberUpdatedState(readingEnabled)
@@ -1173,6 +1173,11 @@ private fun MirrorRoomScaffold(
     var ttlSeconds by remember { mutableStateOf<Int?>(null) }
     var settingsBusy by remember { mutableStateOf(false) }
     var settingsRevision by remember { mutableStateOf(0L) }
+    var settingsReadTicket by remember { mutableStateOf(0L) }
+    // Covering/reopening the room can include a privacy mutation in room info.
+    // Do not drop protection until a fresh owned detail confirms both flags off.
+    var screenPrivacy by remember(repository, convo.id, readingEnabled) { mutableStateOf<Boolean?>(null) }
+    val windowFocused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
     var phraseBusy by remember { mutableStateOf(false) }
     var phraseRevision by remember { mutableStateOf(0L) }
     var typingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -1183,10 +1188,17 @@ private fun MirrorRoomScaffold(
 
     suspend fun refreshSettings() {
         val revision = settingsRevision
+        val readTicket = ++settingsReadTicket
+        val epoch = repository.attachmentSessionKey() ?: return
+        if (repository.viewerId != viewerId) return
         try {
             val meta = withContext(Dispatchers.IO) { repository.groupMeta(convo.id).getOrThrow() }
             currentCoroutineContext().ensureActive()
-            if (visible && settingsRevision == revision && !settingsBusy) ttlSeconds = meta.ttlSeconds
+            if (visible && settingsRevision == revision && settingsReadTicket == readTicket && !settingsBusy &&
+                repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch) {
+                ttlSeconds = meta.ttlSeconds
+                screenPrivacy = meta.screenPrivacyEffective
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -1241,7 +1253,6 @@ private fun MirrorRoomScaffold(
     LaunchedEffect(convo.isMuted) { muted = convo.isMuted }
     LaunchedEffect(repository, convo.id, readingEnabled) {
         if (!readingEnabled) return@LaunchedEffect
-        refreshSettings()
         val revision = phraseRevision
         try {
             val loaded = withContext(Dispatchers.IO) { repository.phrases().getOrThrow() }
@@ -1251,6 +1262,14 @@ private fun MirrorRoomScaffold(
             throw cancelled
         } catch (_: Exception) {
             // A failed refresh must not erase known phrases.
+        }
+    }
+
+    LaunchedEffect(repository, convo.id, readingEnabled, windowFocused) {
+        if (!readingEnabled || !windowFocused) return@LaunchedEffect
+        while (true) {
+            refreshSettings()
+            kotlinx.coroutines.delay(20_000)
         }
     }
 
@@ -1266,63 +1285,65 @@ private fun MirrorRoomScaffold(
     // A different account/gateway session must not inherit a remembered
     // caption, picker callback, reply target or room-owned coroutine.
     androidx.compose.runtime.key(repository, convo.id, viewerId, repository.attachmentSessionKey()) {
-        MirrorRoom(
-            onOpenLiveRoom = { kind -> onOpenLiveRoom(convo.id, kind) },
-            readingEnabled = readingEnabled,
-            title = convo.title,
-            color = convo.accentColor ?: other?.color,
-            isGroup = convo.isGroupish,
-            groupId = convo.id,
-            subtitle = subtitle,
-            typers = typers,
-            messages = messages,
-            viewerId = viewerId,
-            viewerName = convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(),
-            repository = repository,
-            viewerColor = convo.members.firstOrNull { it.id == viewerId }?.color,
-            memberNames = convo.members.map { it.name },
-            members = convo.members,
-            phrases = phrases,
-            muted = muted,
-            ttlSeconds = ttlSeconds,
-            // R76 - the jump anchor flows through the scaffold into the room
-            jumpMessageId = jumpMessageId,
-            jumpRequestId = jumpRequestId,
-            onOpenReminder = onOpenReminder,
-            onJumpConsumed = onJumpConsumed,
-            // R72 - channel truth: broadcast rooms carry the Channel pill and the
-            // locked composer for non-admin viewers (web broadcastLocked parity)
-            isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
-            avatarPath = convo.avatar,
-            onBack = onClose,
-            onAddPhrase = { text -> updatePhrase(text = text) },
-            onDeletePhrase = { phraseId -> updatePhrase(removeId = phraseId) },
-            onTyping = { typing ->
-                typingJob?.cancel()
-                typingJob = scope.launch {
-                    try {
-                        repository.setTyping(convo.id, convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(), typing)
-                    } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* ephemeral typing expires on the relay */ }
-                }
-            },
-            onCall = { video ->
-                // R64 - native calls wired through the same engines the shell uses
-                onStartCall?.invoke(convo, video)
-            },
-            onRoomInfo = onRoomInfo,
-            onManageGroup = onManageGroup,
-            roomSettingsBusy = settingsBusy,
-            onMuteChoice = { until ->
-                updateSetting(request = { repository.setMutedUntil(convo.id, until) }, apply = { muted = until != null })
-            },
-            onTtlChoice = { ttl ->
-                updateSetting(request = { repository.setDisappearingTtl(convo.id, ttl) }, apply = { ttlSeconds = it })
-            },
-            onUnpinMessage = { messageId -> repository.unpinMessage(messageId) },
-            fetchPinned = { repository.pinnedMessages(convo.id) },
-            pipActive = pipActive,
-            onTogglePip = onTogglePip,
-        )
+        MirrorRoomSecurity(enabled = screenPrivacy != false) {
+            MirrorRoom(
+                onOpenLiveRoom = { kind -> onOpenLiveRoom(convo.id, kind) },
+                readingEnabled = readingEnabled,
+                title = convo.title,
+                color = convo.accentColor ?: other?.color,
+                isGroup = convo.isGroupish,
+                groupId = convo.id,
+                subtitle = subtitle,
+                typers = typers,
+                messages = messages,
+                viewerId = viewerId,
+                viewerName = convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(),
+                repository = repository,
+                viewerColor = convo.members.firstOrNull { it.id == viewerId }?.color,
+                memberNames = convo.members.map { it.name },
+                members = convo.members,
+                phrases = phrases,
+                muted = muted,
+                ttlSeconds = ttlSeconds,
+                // R76 - the jump anchor flows through the scaffold into the room
+                jumpMessageId = jumpMessageId,
+                jumpRequestId = jumpRequestId,
+                onOpenReminder = onOpenReminder,
+                onJumpConsumed = onJumpConsumed,
+                // R72 - channel truth: broadcast rooms carry the Channel pill and the
+                // locked composer for non-admin viewers (web broadcastLocked parity)
+                isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
+                avatarPath = convo.avatar,
+                onBack = onClose,
+                onAddPhrase = { text -> updatePhrase(text = text) },
+                onDeletePhrase = { phraseId -> updatePhrase(removeId = phraseId) },
+                onTyping = { typing ->
+                    typingJob?.cancel()
+                    typingJob = scope.launch {
+                        try {
+                            repository.setTyping(convo.id, convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(), typing)
+                        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* ephemeral typing expires on the relay */ }
+                    }
+                },
+                onCall = { video ->
+                    // R64 - native calls wired through the same engines the shell uses
+                    onStartCall?.invoke(convo, video)
+                },
+                onRoomInfo = onRoomInfo,
+                onManageGroup = onManageGroup,
+                roomSettingsBusy = settingsBusy,
+                onMuteChoice = { until ->
+                    updateSetting(request = { repository.setMutedUntil(convo.id, until) }, apply = { muted = until != null })
+                },
+                onTtlChoice = { ttl ->
+                    updateSetting(request = { repository.setDisappearingTtl(convo.id, ttl) }, apply = { ttlSeconds = it })
+                },
+                onUnpinMessage = { messageId -> repository.unpinMessage(messageId) },
+                fetchPinned = { repository.pinnedMessages(convo.id) },
+                pipActive = pipActive,
+                onTogglePip = onTogglePip,
+            )
+        }
     }
 }
 
