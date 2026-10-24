@@ -244,6 +244,30 @@ public final class PulseStore: Sendable {
             try db.alter(table: "conversation") { t in t.add(column: "wireJson", .text) }
             try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL, unreadCount = 0")
         }
+        m.registerMigration("v12") { db in
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_quote_source ON message(replyToId)")
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_thread_parent ON message(parentId)")
+            try Self.repairCachedQuotes(db: db, changedId: nil)
+        }
+        m.registerMigration("v13") { db in
+            // Old decoding stored malformed non-null expiry as SQL NULL.
+            // Rebuild only those ambiguous rows from their retained envelope.
+            var after = ""
+            while true {
+                let rows = try Row.fetchAll(db, sql: "SELECT id, wireJson FROM message WHERE expiresAtEpoch IS NULL AND wireJson IS NOT NULL AND id > ? ORDER BY id LIMIT 200", arguments: [after])
+                guard let last = rows.last, let lastID: String = last["id"] else { break }
+                for row in rows {
+                    guard let id: String = row["id"], let wire: String = row["wireJson"] else { continue }
+                    let decoded = try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8))
+                    let expiry: TimeInterval?
+                    if let decoded { expiry = PulseRemediationLogic.expiryEpoch(decoded.expiresAt) }
+                    else { expiry = -Double.greatestFiniteMagnitude }
+                    if let expiry { try db.execute(sql: "UPDATE message SET expiresAtEpoch = ? WHERE id = ?", arguments: [expiry, id]) }
+                }
+                after = lastID
+            }
+            try Self.repairCachedQuotes(db: db, changedId: nil)
+        }
         return m
     }
 
@@ -279,6 +303,10 @@ public final class PulseStore: Sendable {
                 arguments: ["key": key, "json": json, "updatedAt": updatedAt],
             )
         }
+    }
+
+    public func deleteWave7Cache(key: String) throws {
+        try dbQueue.write { db in try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [key]) }
     }
 
     public func loadWave7Cache(key: String) throws -> (json: String, updatedAt: Int64)? {
@@ -328,7 +356,7 @@ public final class PulseStore: Sendable {
                 throw ThreadAccessError()
             }
             try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [Self.threadDenialKey(rootId)])
-            return WireThreadPage(parent: parent, replies: replies)
+            return WireThreadPage(parent: parent, replies: try Self.projectCachedQuotes(replies, db: db))
         }
     }
 
@@ -372,6 +400,13 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Indexed lookup for the active account's notification mute policy.
+    public func cachedConversation(id: String) throws -> PulseConversation? {
+        try dbQueue.read { db in
+            try PulseConversationRow.fetchOne(db, key: id)?.toDomain()
+        }
+    }
+
     // message cache (N3-b - room offline-first seed; v3/v4 full fidelity)
     public func upsert(messages: [WireChatMessage]) throws {
         _ = try mergeMessages(messages)
@@ -380,7 +415,53 @@ public final class PulseStore: Sendable {
     /// Return the same privacy-preserving rows that committed, not stale HTTP inputs.
     public func mergeMessages(_ messages: [WireChatMessage]) throws -> [WireChatMessage] {
         try dbQueue.write { db in
-            try messages.map { try Self.writeMessage($0, db: db) }
+            for message in messages { try Self.writeMessage(message, db: db) }
+            // A later source in the same page may have revoked an earlier quote.
+            return try Self.projectCachedQuotes(messages, db: db)
+        }
+    }
+
+    /// Re-project only existing rows; never replace a paged river with a truncated cache window.
+    public func projectCachedQuotes(_ messages: [WireChatMessage]) throws -> [WireChatMessage] {
+        try dbQueue.read { db in try Self.projectCachedQuotes(messages, db: db) }
+    }
+
+    private static func projectCachedQuotes(_ messages: [WireChatMessage], db: Database) throws -> [WireChatMessage] {
+        var known: [String: WireChatMessage] = [:]
+        func load(_ ids: Set<String>) throws {
+            let values = Array(ids.subtracting(Set(known.keys)))
+            for start in stride(from: 0, to: values.count, by: 400) {
+                let part = Array(values[start..<min(start + 400, values.count)])
+                let placeholders = Array(repeating: "?", count: part.count).joined(separator: ",")
+                let rows = try Row.fetchAll(db, sql: "SELECT * FROM message WHERE id IN (\(placeholders))", arguments: StatementArguments(part))
+                for row in rows { if let message = Self.messageRow(from: row) { known[message.id] = message } }
+            }
+        }
+        try load(Set(messages.flatMap { [$0.id] + [$0.replyTo?.id].compactMap { $0 } }))
+        try load(Set(known.values.compactMap { $0.replyTo?.id }))
+        try load(Set(known.values.compactMap { $0.parentId }))
+        return PulseQuotePrivacy.project(messages, known: Array(known.values))
+    }
+
+    /// Bounded reverse dependency walk, in the SAME write transaction as the source.
+    private static func repairCachedQuotes(db: Database, changedId: String?) throws {
+        var after = ""
+        while true {
+            var arguments: StatementArguments = ["after": after]
+            let affected: String
+            if let changedId {
+                affected = "AND (id = :changed OR replyToId = :changed OR replyToId IN (SELECT id FROM message WHERE parentId = :changed))"
+                arguments += ["changed": changedId]
+            } else { affected = "" }
+            let rows = try Row.fetchAll(db, sql: "SELECT * FROM message WHERE replyToId IS NOT NULL AND id > :after \(affected) ORDER BY id LIMIT 200", arguments: arguments)
+            guard let last = rows.last, let lastID: String = last["id"] else { break }
+            let before = rows.compactMap(Self.messageRow(from:))
+            let projected = try Self.projectCachedQuotes(before, db: db)
+            for (old, safe) in zip(before, projected) where old.replyTo != safe.replyTo {
+                try db.execute(sql: "UPDATE message SET wireJson = ? WHERE id = ?",
+                    arguments: [String(decoding: try JSONEncoder().encode(safe), as: UTF8.self), safe.id])
+            }
+            after = lastID
         }
     }
 
@@ -395,6 +476,7 @@ public final class PulseStore: Sendable {
         var m = PulseMessageMerge.merge(current, incoming: incoming)
         if let deleted: String = row?["deletedAt"], !deleted.isEmpty { m = m.deletedCopy() }
         if let viewed: String = row?["viewedAt"] { m.viewedAt = viewed; m.viewOnce = true }
+        m = try Self.projectCachedQuotes([m], db: db).first ?? m
         try db.execute(
             sql: """
             INSERT INTO message (id, conversationId, authorId, authorName, kind, body,
@@ -410,7 +492,7 @@ public final class PulseStore: Sendable {
                     :viewedAt, :transcript, :transcribedAt, :pollJson,
                     :linkPreviewJson, :topicId, :payloadJson, :translationsJson, :wireJson, :expiresAtEpoch)
             ON CONFLICT(id) DO UPDATE SET
-              authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt,
+              authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt, replyToId=:replyToId,
               parentId=:parentId, imagePath=:imagePath, audioPath=:audioPath,
               durationMs=:durationMs, filePath=:filePath, fileName=:fileName,
               fileSize=:fileSize, editedAt=:editedAt, deletedAt=:deletedAt,
@@ -439,26 +521,40 @@ public final class PulseStore: Sendable {
                 "payloadJson": m.payload,
                 "translationsJson": Self.translationsJsonData(m.translations),
                 "wireJson": String(decoding: try JSONEncoder().encode(m), as: UTF8.self),
-                "expiresAtEpoch": m.expiresAt.flatMap { PulseFormat.date($0)?.timeIntervalSince1970 },
+                "expiresAtEpoch": PulseRemediationLogic.expiryEpoch(m.expiresAt),
             ],
         )
-        return m
+        try Self.repairCachedQuotes(db: db, changedId: m.id)
+        return try Self.projectCachedQuotes([m], db: db).first ?? m
     }
 
     /// Persist operation and optimistic bubble before any network I/O.
-    public func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward) throws {
-        _ = try enqueueMessage(message, clientId: clientId, envelope: envelope, consumingDraft: nil)
+    public func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
+                               forwarding source: WireChatMessage? = nil) throws {
+        _ = try enqueueMessage(message, clientId: clientId, envelope: envelope, consumingDraft: nil, forwarding: source)
     }
 
     @discardableResult
     func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
-                        consumingDraft token: PulseDraftConsumption?) throws -> Bool {
+                        consumingDraft token: PulseDraftConsumption?, forwarding source: WireChatMessage? = nil) throws -> Bool {
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
         if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId || token.parentId != message.parentId || token.parentId != envelope.parentId {
             throw CocoaError(.userCancelled)
         }
         let commit: (Bool) throws -> Void = { consume in
             try self.dbQueue.write { db in
+                if let source {
+                    guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [source.id]),
+                          let current = Self.messageRow(from: row), current.conversationId == source.conversationId,
+                          current.deletedAt == nil, current.viewOnce != true,
+                          PulseRemediationLogic.isAlive(current.expiresAt) else { throw ThreadAccessError() }
+                    if let root = current.parentId {
+                        if try Self.threadIsDenied(db, rootId: root) { throw ThreadAccessError() }
+                        guard let parent = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [root]),
+                              let parentMessage = Self.messageRow(from: parent),
+                              PulseRemediationLogic.threadRootAvailable(parentMessage, roomId: current.conversationId, rootId: root) else { throw ThreadAccessError() }
+                    }
+                }
                 if let root = envelope.parentId, try Self.threadIsDenied(db, rootId: root) { throw ThreadAccessError() }
                 try Self.writeMessage(message, db: db)
                 try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
@@ -535,6 +631,57 @@ public final class PulseStore: Sendable {
         return rows.compactMap(Self.messageRow(from:))
     }
 
+    /// Resolve an offline reply and its root from one read snapshot. A cached
+    /// reply alone never proves its parent is still displayable.
+    func cachedThreadTarget(roomId: String, rootId: String, targetId: String, now: Date = Date()) throws
+        -> (parent: WireChatMessage, reply: WireChatMessage)? {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT m.* FROM message m
+                WHERE m.conversationId = :room AND m.id IN (:root, :target)
+                  AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || :root)
+                  AND NOT EXISTS (SELECT 1 FROM outbox o WHERE m.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)
+                """, arguments: ["room": roomId, "root": rootId, "target": targetId])
+            let messages = rows.compactMap(Self.messageRow(from:))
+            guard let parent = messages.first(where: { $0.id == rootId }),
+                  PulseRemediationLogic.threadRootAvailable(parent, roomId: roomId, rootId: rootId, now: now),
+                  let reply = PulseThreadNavigation.target(in: messages, roomId: roomId, rootId: rootId, targetId: targetId, now: now)
+            else { return nil }
+            return (parent, reply)
+        }
+    }
+
+    /// Keyset pages keep offline history reachable beyond the initial 300-row window.
+    /// Cursor comes from raw rows (including local echoes), so tombstones, failed decode
+    /// or a subsequently removed anchor cannot stall paging or skip timestamp ties.
+    func cachedThreadPage(roomId: String, rootId: String, before: PulseCachedThreadCursor? = nil,
+                          limit: Int = 100, now: Date = Date()) throws -> PulseCachedThreadPage {
+        if let before, before.roomId != roomId || before.rootId != rootId { throw CocoaError(.coderInvalidValue) }
+        let size = min(300, max(1, limit))
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT reply.* FROM message reply
+                JOIN message root ON root.id = reply.parentId AND root.conversationId = reply.conversationId
+                WHERE reply.conversationId = :room AND reply.parentId = :root
+                  AND root.parentId IS NULL AND substr(root.id, 1, 6) != 'local_'
+                  AND root.deletedAt IS NULL AND (root.expiresAtEpoch IS NULL OR root.expiresAtEpoch > :now)
+                  AND (reply.expiresAtEpoch IS NULL OR reply.expiresAtEpoch > :now)
+                  AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || :root)
+                  AND NOT EXISTS (SELECT 1 FROM outbox o WHERE reply.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)
+                  AND (:beforeCreated IS NULL OR reply.createdAt < :beforeCreated
+                       OR (reply.createdAt = :beforeCreated AND reply.id < :beforeId))
+                ORDER BY reply.createdAt DESC, reply.id DESC LIMIT :limit
+                """, arguments: ["room": roomId, "root": rootId, "now": now.timeIntervalSince1970,
+                    "beforeCreated": before?.createdAt, "beforeId": before?.id, "limit": size + 1])
+            let selected = Array(rows.prefix(size))
+            let cursor = selected.last.map { row in
+                PulseCachedThreadCursor(roomId: roomId, rootId: rootId, createdAt: row["createdAt"], id: row["id"])
+            }
+            return PulseCachedThreadPage(messages: selected.reversed().compactMap(Self.messageRow(from:)),
+                                         cursor: cursor, hasMore: rows.count > size)
+        }
+    }
+
     /// Reply counts per cached thread root - one query powers every river
     /// "N replies" chip (no per-thread COUNT round-trips).
     public func threadReplyCounts(now: Date = Date()) throws -> [String: Int] {
@@ -597,7 +744,14 @@ public final class PulseStore: Sendable {
         if let wire: String = row["wireJson"] {
             // Corrupt full envelopes must not fall back to missing privacy flags.
             return (try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8)))
-                .map { PulseMessageMerge.merge(nil, incoming: $0) }
+                .map { incoming in
+                    var safe = PulseMessageMerge.merge(nil, incoming: incoming)
+                    // Legacy column-only terminal writes must also constrain
+                    // dependent quotes, not just the next write of this source.
+                    if let deleted: String = row["deletedAt"], !deleted.isEmpty { safe = safe.deletedCopy() }
+                    if let viewed: String = row["viewedAt"] { safe.viewOnce = true; safe.viewedAt = viewed }
+                    return safe
+                }
         }
         guard let id: String = row["id"],
               let conversationId: String = row["conversationId"],
@@ -809,14 +963,23 @@ public final class PulseStore: Sendable {
     private static func savedItems(in db: Database, now: Date) throws -> [WireSavedItem] {
         try Row.fetchAll(db, sql: """
             SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
-                   c.kind AS savedConversationKind
+                   c.kind AS savedConversationKind, p.expiresAtEpoch AS savedRootExpiry
             FROM savedMessages s JOIN message m ON m.id = s.messageId
             LEFT JOIN conversation c ON c.id = s.conversationId
-            WHERE m.deletedAt IS NULL AND (m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now)
+            LEFT JOIN message p ON p.id = m.parentId
+            WHERE NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || m.parentId)
+              AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.parentId IS NULL AND p.deletedAt IS NULL
+                AND (p.expiresAtEpoch IS NULL OR p.expiresAtEpoch > :now)))
+              AND m.deletedAt IS NULL AND (m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now)
             ORDER BY s.savedAt DESC, s.messageId DESC
             """, arguments: ["now": now.timeIntervalSince1970]).compactMap { row in
-                guard let message = Self.messageRow(from: row),
+                guard var message = Self.messageRow(from: row), message.viewOnce != true,
                       let savedAt: String = row["savedStamp"] else { return nil }
+                // Preview deadline only; leave the canonical reply expiry untouched.
+                if let rootExpiry: Double = row["savedRootExpiry"],
+                   (message.expiresAt.flatMap(PulseFormat.date)?.timeIntervalSince1970 ?? .infinity) > rootExpiry {
+                    message.expiresAt = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: rootExpiry))
+                }
                 let kind: String? = row["savedConversationKind"]
                 return WireSavedItem(
                     savedAt: savedAt,
@@ -880,6 +1043,26 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Commit a notification reply as pending or held in ONE transaction. A
+    /// held reply never exposes an intermediate pending row to the flusher.
+    /// Return the committed pending state; no fallible post-commit read should
+    /// tell the OS a saved reply failed. Never overwrite the composer draft.
+    func persistNotificationReply(conversationId: String, clientId: String, content: String, reason: String?) throws -> Bool {
+        let row = OutboxRow(id: nil, conversationId: conversationId, clientId: clientId,
+            content: content, kind: "text", createdAt: PulseOutboxClock.now(), attempts: 0, failureReason: reason)
+        return try dbQueue.write { db in
+            if let existing = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ?", arguments: [clientId]) {
+                guard existing.conversationId == conversationId, existing.content == content,
+                      existing.kind == "text", existing.payloadJson == nil else {
+                    throw CocoaError(.coderInvalidValue)
+                }
+                return existing.failureReason == nil
+            }
+            try row.insert(db)
+            return reason == nil
+        }
+    }
+
     /// Observe this account's rejected intents, scoped by both room and retained routing envelope.
     public func observeFailedThreadReplies(conversationId: String, rootId: String) -> DatabasePublishers.Value<[OutboxRow]> {
         ValueObservation.tracking { db in
@@ -924,10 +1107,11 @@ public final class PulseStore: Sendable {
         }
     }
 
-    public func countPendingOutbox() -> Int {
-        (try? dbQueue.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE failureReason IS NULL")
-        }) ?? 0
+    /// Unreadable storage is not an empty queue. Callers must keep recovery alive.
+    public func countPendingOutbox() throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE failureReason IS NULL") ?? 0
+        }
     }
 
     /// Do not touch the composer. Keep content + full envelope and retract only
@@ -985,6 +1169,18 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// A stale failed-send row must not discard an operation retried since display.
+    func discardOutboxIfUnchanged(_ expected: OutboxRow) throws -> Bool {
+        try dbQueue.write { db in
+            guard let current = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ?", arguments: [expected.clientId]),
+                  current.conversationId == expected.conversationId, current.createdAt == expected.createdAt,
+                  current.failureReason == expected.failureReason else { return false }
+            try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + expected.clientId])
+            try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [expected.clientId])
+            return true
+        }
+    }
+
     public func deleteOutbox(id: Int64) throws {
         try dbQueue.write { db in
             if let clientId = try String.fetchOne(db, sql: "SELECT clientId FROM outbox WHERE id = ?", arguments: [id]) {
@@ -1007,10 +1203,10 @@ public final class PulseStore: Sendable {
         }
     }
 
-    public func countOutbox() -> Int {
-        (try? dbQueue.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox")
-        }) ?? 0
+    public func countOutbox() throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox") ?? 0
+        }
     }
 
     // drafts (Wave 0 - composer persistence, web pulse-drafts parity)
@@ -1083,6 +1279,18 @@ public final class PulseStore: Sendable {
             try DraftRow
                 .fetchAll(db, sql: "SELECT * FROM draft ORDER BY updatedAt ASC")
                 .filter { !$0.text.isEmpty }
+        }
+    }
+
+    /// Clear only the exact draft the manager displayed, not a newer composer write.
+    func deleteDraftIfUnchanged(_ row: DraftRow, revision: UInt64) throws -> Bool {
+        try draftFence.removeIfCurrent(row.conversationId, expected: revision) {
+            try dbQueue.write { db in
+                let current = try DraftRow.fetchOne(db, sql: "SELECT * FROM draft WHERE conversationId = ?", arguments: [row.conversationId])
+                guard current == row else { return false }
+                try Self.writeDraftSnapshot(db, room: row.conversationId, text: "")
+                return true
+            }
         }
     }
 

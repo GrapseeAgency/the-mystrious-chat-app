@@ -1,11 +1,14 @@
 // /api/maintenance/dispatch - flush DUE scheduled messages.
 // Called on an interval by the socket mini-service (no DB access
-// over there), and safe to call manually. Replays each due row
-// through the exact same pipeline as a live send: real message
-// row, list bump, archive-unlock, socket relay.
+// over there), and safe to call manually. Delivers due rows using current
+// send policy, list/unarchive updates, socket relay and the same
+// privacy-planned push as live messages.
 import { NextResponse } from 'next/server'
+import { deliverMessageNotification } from '@/lib/message-notification'
+import { fanoutPush } from '@/lib/push/transport'
 import { db } from '@/lib/db'
 import { scheduledDeliveryDecision } from '@/lib/scheduled-delivery'
+import { scheduledDispatchPage, scheduledErrorResponse } from '@/lib/scheduled-operation'
 import { mapMessage, memberIdsOf, notifySocket, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -29,15 +32,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
   }
 
-  const due = await db.scheduledMessage.findMany({
-    where: { sentAt: null, cancelledAt: null, scheduledAt: { lte: new Date() } },
-    orderBy: { scheduledAt: 'asc' },
-    take: 25,
-    select: { id: true },
-  })
-  if (due.length === 0) {
-    return NextResponse.json({ dispatched: 0 })
-  }
+  let page: Awaited<ReturnType<typeof scheduledDispatchPage>>
+  try { page = await scheduledDispatchPage(db, new URL(req.url).searchParams.get('cursor')) }
+  catch (error) { return scheduledErrorResponse(error) }
+  const due = page.rows
 
   let dispatched = 0
   for (const { id } of due) {
@@ -70,12 +68,20 @@ export async function POST(req: Request) {
           data: { archivedAt: null },
         })
         return created
-      })
+      }, { isolationLevel: 'Serializable' })
       if (!result) continue
+      // Count durable message commits, not best-effort transport successes.
+      dispatched += 1
+      // Same current-policy planner as manual sends, including per-viewer
+      // preview/mute/block/expiry rules. Do not wait for providers or replay the
+      // message when a push fails. This remains best-effort, not an outbox.
+      void deliverMessageNotification(db, fanoutPush, result.id).catch(error => {
+        console.error('[dispatch] notification failed for', result.id, error instanceof Error ? error.message : error)
+      })
 
-      const recipients = (await memberIdsOf(result.conversationId)).filter(
-        (memberId) => memberId !== result.senderId,
-      )
+      // No live send response reaches the sender when the scheduler fires.
+      // Include the sender's devices or their own message stays invisible until refresh.
+      const recipients = await memberIdsOf(result.conversationId)
       const mapped = mapMessage(result)
       await notifySocket('message:new', recipients, {
         type: 'message:new',
@@ -83,11 +89,10 @@ export async function POST(req: Request) {
         recipientIds: recipients,
         conversationId: result.conversationId,
       })
-      dispatched += 1
     } catch (error) {
       console.error('[dispatch] failed for', id, error instanceof Error ? error.message : error)
     }
   }
 
-  return NextResponse.json({ dispatched })
+  return NextResponse.json({ dispatched, nextCursor: page.nextCursor })
 }

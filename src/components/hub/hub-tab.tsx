@@ -602,11 +602,14 @@ function SwapPanel({ me }: { me: AppUser }) {
 
 // Logs panel (terminal) 
 
-function LogsPanel() {
+function LogsPanel({ me }: { me: AppUser }) {
   const logsQ = useQuery({
-    queryKey: ['hub-logs'],
+    queryKey: ['hub-logs-private-v1', me.id],
     queryFn: async () => {
-      const res = await apiJson<{ logs: LogEntry[] }>('/api/hub/logs?limit=80')
+      const res = await apiJson<{ activityVersion: number; userId: string; logs: LogEntry[] }>(`/api/hub/logs?userId=${encodeURIComponent(me.id)}&limit=80`)
+      if (res.activityVersion !== 1 || res.userId !== me.id || res.logs.some(log => log.user?.id !== me.id)) {
+        throw new Error('Private activity could not be verified. Update the gateway before retrying.')
+      }
       return res.logs
     },
     refetchInterval: 12_000,
@@ -618,7 +621,7 @@ function LogsPanel() {
         <span className="size-2.5 rounded-full bg-rose-500" />
         <span className="size-2.5 rounded-full bg-amber-400" />
         <span className="size-2.5 rounded-full bg-amber-500" />
-        <p className="ml-1 text-[11px] font-semibold text-zinc-400">pulse://logs - live event stream</p>
+        <p className="ml-1 text-[11px] font-semibold text-zinc-400">pulse://logs - your private activity</p>
       </div>
       <ul className="max-h-[26rem] divide-y divide-zinc-900 overflow-y-auto p-2 text-[11px] leading-relaxed dark:divide-white/5">
         {(logsQ.data ?? []).map((l) => (
@@ -642,8 +645,9 @@ function LogsPanel() {
             </span>
           </li>
         ))}
-        {(logsQ.data?.length ?? 0) === 0 ? (
-          <li className="py-8 text-center text-zinc-600">no events yet - use the economy panels to generate some</li>
+        {logsQ.isError ? <li className="py-4 text-center text-amber-400">Private activity needs a verified session. It is not a public feed.</li> : null}
+        {!logsQ.isError && !logsQ.isPending && (logsQ.data?.length ?? 0) === 0 ? (
+          <li className="py-8 text-center text-zinc-600">no activity yet</li>
         ) : null}
       </ul>
     </div>
@@ -985,7 +989,7 @@ export function HubTab({
           {panel === 'tasks' ? <TasksPanel me={me} /> : null}
           {panel === 'market' ? <MarketPanel me={me} /> : null}
           {panel === 'swap' ? <SwapPanel me={me} /> : null}
-          {panel === 'logs' ? <LogsPanel /> : null}
+          {panel === 'logs' ? <LogsPanel key={me.id} me={me} /> : null}
           {panel === 'apps' ? <AppsPanel me={me} /> : null}
         </motion.div>
       </div>

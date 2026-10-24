@@ -85,7 +85,7 @@ class FlushOutboxUseCaseTest {
             Result.failure(UnsupportedOperationException())
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
         override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {}
-        override suspend fun react(messageId: String, emoji: String) = Result.success(Unit)
+        override suspend fun react(messageId: String, emoji: String, present: Boolean) = Result.success(Unit)
         override suspend fun togglePin(conversationId: String, pinned: Boolean) = Result.success(Unit)
         override suspend fun setMuted(conversationId: String, muted: Boolean) = Result.success(Unit)
         override suspend fun archive(conversationId: String, archived: Boolean) = Result.success(Unit)
@@ -187,9 +187,9 @@ class FlushOutboxUseCaseTest {
         // Wave 1 messaging surface (unused by the outbox policy)
         override suspend fun editMessage(messageId: String, content: String) =
             Result.failure<Message>(UnsupportedOperationException())
-        override suspend fun toggleMessagePin(messageId: String) =
+        override suspend fun pinMessage(messageId: String) =
             Result.failure<Message>(UnsupportedOperationException())
-        override suspend fun toggleMessageSave(messageId: String) =
+        override suspend fun setMessageSaved(messageId: String, saved: Boolean) =
             Result.failure<Boolean>(UnsupportedOperationException())
         override suspend fun pinnedMessages(conversationId: String) = emptyList<Message>()
         override suspend fun loadThread(rootId: String) =
@@ -327,7 +327,7 @@ class FlushOutboxUseCaseTest {
         override suspend fun emitCall(signal: app.pulse.domain.model.CallSignalOut) {}
         // R8 Task 3-c - group calls + push registration (unused here).
         override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {}
-        override suspend fun postGroupCallRing(conversationId: String, kind: app.pulse.domain.model.CallKind): Result<Unit> =
+        override suspend fun postGroupCallRing(conversationId: String, kind: app.pulse.domain.model.CallKind, callId: String): Result<Unit> =
             Result.failure(IllegalStateException("unavailable in fake"))
         override suspend fun probeGroupCallState(conversationId: String): Result<app.pulse.domain.model.GroupCallProbe?> =
             Result.success(null)

@@ -10,6 +10,9 @@ import app.pulse.domain.repository.PulseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,8 +26,8 @@ import kotlinx.coroutines.launch
 /**
  * Single owner of the stories feed (Wave 4): the ChatsScreen tray rail, the
  * full-screen viewer and the composer all share ONE activity-scoped instance
- * of this VM, so optimistic updates (seen marks, deletes, publishes) show up
- * everywhere at once.
+ * of this VM, so confirmed view marks, deletions and refreshed publications
+ * reach the tray and viewer together.
  *
  * Transport = REST only (web parity: TanStack 60s refetchInterval + query
  * invalidations - there are ZERO socket events for stories).
@@ -70,12 +73,25 @@ class StoriesViewModel @Inject constructor(
 
     private var pollJob: Job? = null
 
+    private var feedOwner: String? = null
+    private var refreshGeneration = 0L
+    private var refreshJob: Job? = null
+
     /** Pull the feed. quiet=false flips the loading flag (pull-to-refresh / first load). */
     fun refresh(quiet: Boolean = false) {
-        if (repo.viewerId == null) return
-        viewModelScope.launch {
+        val account = repo.boundToCurrentAccount()
+        val owner = account.attachmentSessionKey()
+        val ticket = ++refreshGeneration
+        refreshJob?.cancel()
+        if (feedOwner != owner) {
+            feedOwner = owner; _groups.value = emptyList(); _flags.value = Flags(); resetViewers()
+        }
+        if (owner == null) return
+        refreshJob = viewModelScope.launch {
             if (!quiet) _flags.value = _flags.value.copy(loading = true, error = null)
-            repo.stories().fold(
+            val result = account.stories()
+            if (!isActive || ticket != refreshGeneration || repo.attachmentSessionKey() != owner) return@launch
+            result.fold(
                 onSuccess = { feed ->
                     _groups.value = feed
                     _flags.value = _flags.value.copy(loading = false, loadedOnce = true, error = null)
@@ -83,6 +99,7 @@ class StoriesViewModel @Inject constructor(
                 onFailure = { failure ->
                     // Serve the last good feed when there is one (stale-but-real
                     // beats a full-screen error); honest error only when empty.
+                    if ((failure as? app.pulse.domain.model.PulseApiException)?.kind in setOf("AUTH", "FORBIDDEN", "NOT_FOUND")) _groups.value = emptyList()
                     if (_groups.value.isEmpty()) {
                         _flags.value = _flags.value.copy(
                             loading = false,
@@ -115,63 +132,62 @@ class StoriesViewModel @Inject constructor(
 
     // publish (composer)
 
-    fun publishStory(
-        caption: String,
-        background: String?,
-        imagePath: String?,
-        onDone: (success: Boolean, error: String?) -> Unit,
-    ) {
-        viewModelScope.launch {
-            repo.createStory(caption, background, imagePath).fold(
-                onSuccess = {
-                    refresh(quiet = true)
-                    onDone(true, null)
-                },
-                onFailure = { failure ->
-                    // Surface the server's own copy ("A status needs a photo or
-                    // some text." etc.) - honest errors, never silent drops.
-                    onDone(false, failure.message ?: "Could not post your status")
-                },
-            )
-        }
+    class ComposerSession internal constructor(val owner: String, internal val account: PulseRepository)
+
+    fun composerSession(): ComposerSession? {
+        val account = repo.boundToCurrentAccount()
+        val owner = account.attachmentSessionKey() ?: return null
+        return ComposerSession(owner, account).takeIf { acceptsComposer(it) }
+    }
+    fun acceptsComposer(session: ComposerSession): Boolean = repo.attachmentSessionKey() == session.owner &&
+        session.account.attachmentSessionKey() == session.owner
+
+    private suspend fun requireComposer(session: ComposerSession) {
+        currentCoroutineContext().ensureActive()
+        if (!acceptsComposer(session)) throw CancellationException("The original story account ended")
     }
 
-    /** Compressor → data-URL upload leg; returns the gateway imagePath. */
-    fun uploadStoryImage(dataUrl: String, onDone: (imagePath: String?) -> Unit) {
-        viewModelScope.launch {
-            onDone(repo.uploadMedia(dataUrl).getOrNull())
-        }
+    /** The calling presentation owns the coroutine; never detach its upload/post into viewModelScope. */
+    suspend fun publishStory(caption: String, background: String?, imagePath: String?, session: ComposerSession): Result<Unit> {
+        requireComposer(session)
+        val result = session.account.createStory(caption, background, imagePath)
+        requireComposer(session)
+        if (result.isSuccess) refresh(quiet = true)
+        return result.map { Unit }
+    }
+
+    suspend fun uploadStoryImage(dataUrl: String, session: ComposerSession): Result<String> {
+        requireComposer(session)
+        val result = session.account.uploadMedia(dataUrl)
+        requireComposer(session)
+        return result
     }
 
     // viewer actions
 
-    /**
-     * ONE view-mark attempt per call (the viewer machine drives the single
-     * retry - D6). Optimistic: the story flips to viewed locally BEFORE the
-     * POST so the ring reacts instantly; the next feed fetch reconciles
-     * against server truth.
-     */
-    fun markViewed(storyId: String, onOk: (Int) -> Unit, onFail: () -> Unit) {
-        viewModelScope.launch {
-            markViewedLocal(storyId, viewCount = null)
-            repo.markStoryViewed(storyId).fold(
-                onSuccess = { count ->
-                    markViewedLocal(storyId, count)
-                    onOk(count)
-                },
-                onFailure = { onFail() },
-            )
+    /** Calls remain in the viewer's coroutine; only acknowledged actions change shared state. */
+    suspend fun markViewed(storyId: String, session: ComposerSession): Result<Int> {
+        requireComposer(session)
+        val result = session.account.markStoryViewed(storyId)
+        requireComposer(session)
+        result.onSuccess { count ->
+            refreshGeneration++; refreshJob?.cancel()
+            _flags.value = _flags.value.copy(loading = false)
+            markViewedLocal(storyId, count)
         }
+        return result
     }
 
-    /** Optimistic removal - the viewer's machine reconciles via GroupsUpdated (D3). */
-    fun deleteStory(storyId: String, onDone: (success: Boolean) -> Unit) {
-        removeStoryLocal(storyId)
-        viewModelScope.launch {
-            val ok = repo.deleteStory(storyId).isSuccess
-            refresh(quiet = true)
-            onDone(ok)
+    suspend fun deleteStory(storyId: String, session: ComposerSession): Result<Unit> {
+        requireComposer(session)
+        val result = session.account.deleteStory(storyId)
+        requireComposer(session)
+        if (result.isSuccess) {
+            refreshGeneration++; refreshJob?.cancel()
+            _flags.value = _flags.value.copy(loading = false)
+            removeStoryLocal(storyId)
         }
+        return result
     }
 
     private fun markViewedLocal(storyId: String, viewCount: Int?) {
@@ -208,24 +224,32 @@ class StoriesViewModel @Inject constructor(
     private val _viewersLoading = MutableStateFlow(false)
     val viewersLoading: StateFlow<Boolean> = _viewersLoading.asStateFlow()
 
-    /** One fetch - the sheet re-issues it every 5s while open (D7 poll loop). */
-    fun loadViewers(storyId: String) {
+    private val _viewersError = MutableStateFlow<String?>(null)
+    val viewersError: StateFlow<String?> = _viewersError.asStateFlow()
+    private var viewersStoryId: String? = null
+
+    /** The sheet owns polling and cancellation. An unavailable list is not an empty-success list. */
+    suspend fun loadViewers(storyId: String, session: ComposerSession) {
+        requireComposer(session)
+        if (viewersStoryId != storyId) { resetViewers(); viewersStoryId = storyId }
         val ticket = ++viewersGeneration
-        viewModelScope.launch {
-            _viewersLoading.value = true
-            val result = repo.storyViewers(storyId)
-            if (ticket != viewersGeneration) return@launch
-            result.fold(
-                onSuccess = { _viewers.value = it },
-                onFailure = { /* sheet keeps the last list; count badge stays honest */ },
-            )
-            _viewersLoading.value = false
-        }
+        _viewersLoading.value = true
+        val result = session.account.storyViewers(storyId)
+        requireComposer(session)
+        if (ticket != viewersGeneration) return
+        result.fold(onSuccess = { _viewers.value = it; _viewersError.value = null }, onFailure = { failure ->
+            if ((failure as? app.pulse.domain.model.PulseApiException)?.kind in setOf("AUTH", "FORBIDDEN", "NOT_FOUND")) _viewers.value = emptyList()
+            _viewersError.value = failure.message ?: "Viewers couldn't be loaded. Reconnect to retry."
+        })
+        _viewersLoading.value = false
     }
 
     fun resetViewers() {
         viewersGeneration++
+        viewersStoryId = null
         _viewersLoading.value = false
         _viewers.value = emptyList()
+        _viewersError.value = null
     }
+
 }

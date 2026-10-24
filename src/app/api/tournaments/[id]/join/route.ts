@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/tournaments/[id]/join - enter a season's standings
 // (Task R24-d)
 //
@@ -35,6 +36,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'game')
+  if (denied) return denied
 
   try {
     const entry = await joinTournament(db, id, userId)

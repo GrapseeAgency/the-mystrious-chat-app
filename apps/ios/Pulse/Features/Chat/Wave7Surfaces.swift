@@ -35,8 +35,8 @@ final class Wave7RoomActions: ObservableObject {
 
     // Card-side fetchers/actors, wired once by the room (captures session.api).
     var cardRedPacketLoad: (String) async -> WireRedPacketDetail? = { _ in nil }
-    var cardGameLoad: (String) async -> WireGameDetail? = { _ in nil }
-    var cardTournamentLoad: (String) async -> WireTournamentSummary? = { _ in nil }
+    var cardGameLoad: (String) async throws -> WireGameDetail? = { _ in nil }
+    var cardTournamentLoad: (String) async throws -> WireTournamentSummary? = { _ in nil }
     var cardGrab: (String) -> Void = { _ in }
     var cardMove: (String, Int) async -> WireGameDetail? = { _, _ in nil }
     var cardJoinGame: (String) async -> WireGameDetail? = { _ in nil }
@@ -323,7 +323,7 @@ final class Wave7RoomActions: ObservableObject {
                     let ms = Self.epochMs(from: iso)
                     if let ms {
                         PulseReminderNotifications.requestAuthorization()
-                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId, ownerId: PulseReminderDelivery.ownerKey(api))
+                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId, ownerId: PulseReminderDelivery.ownerKey(api), messageId: item.messageId)
                     }
                 }
                 toast("Reminder set")
@@ -536,7 +536,7 @@ struct Wave7RedPacketCreateSheet: View {
 struct Wave7TicTacToeCard: View {
     let matchId: String
     let viewerId: String
-    let load: (String) async -> WireGameDetail?
+    let load: (String) async throws -> WireGameDetail?
     let onMove: (Int) async -> WireGameDetail?
     let onJoin: () async -> WireGameDetail?
     // R7 - rematch (web game-tictactoe-card.tsx:452-476): the hub carries the
@@ -549,12 +549,16 @@ struct Wave7TicTacToeCard: View {
     @StateObject private var operations = PulseRoomOperations()
 
     private func refresh() async {
-        guard scenePhase == .active else { return }
-        guard let ticket = operations.beginRead() else { return }
-        let response = await load(matchId)
-        guard operations.accepts(ticket) else { return }
-        if let response { detail = response; loadFailed = false }
-        else { loadFailed = true } // never replace a confirmed board with nil
+        guard scenePhase == .active, let ticket = operations.beginRead() else { return }
+        do {
+            let result = try await load(matchId)
+            guard !Task.isCancelled, operations.accepts(ticket) else { return }
+            if let result { detail = result; loadFailed = false } else { loadFailed = true }
+        } catch {
+            guard !Task.isCancelled, operations.accepts(ticket) else { return }
+            loadFailed = true
+            if (error as? PulseAPIClient.Failure)?.invalidatesPrivateGameSnapshot == true { detail = nil }
+        }
     }
     private func mutate(_ operation: @escaping () async -> WireGameDetail?) {
         var response: WireGameDetail?
@@ -749,7 +753,7 @@ struct Wave7TournamentCard: View {
     let name: String
     let viewerId: String
     let isAdmin: Bool
-    let load: (String) async -> WireTournamentSummary?
+    let load: (String) async throws -> WireTournamentSummary?
     let onJoin: () async -> Bool
     let onFinish: () async -> Bool
 
@@ -758,12 +762,16 @@ struct Wave7TournamentCard: View {
     @State private var loadFailed = false
     @StateObject private var operations = PulseRoomOperations()
     private func refresh() async {
-        guard scenePhase == .active else { return }
-        guard let ticket = operations.beginRead() else { return }
-        let result = await load(tournamentId)
-        guard operations.accepts(ticket) else { return }
-        if let result { tournament = result; loadFailed = false }
-        else { loadFailed = true }
+        guard scenePhase == .active, let ticket = operations.beginRead() else { return }
+        do {
+            let result = try await load(tournamentId)
+            guard !Task.isCancelled, operations.accepts(ticket) else { return }
+            if let result { tournament = result; loadFailed = false } else { loadFailed = true }
+        } catch {
+            guard !Task.isCancelled, operations.accepts(ticket) else { return }
+            loadFailed = true
+            if (error as? PulseAPIClient.Failure)?.invalidatesPrivateGameSnapshot == true { tournament = nil }
+        }
     }
 
     var body: some View {

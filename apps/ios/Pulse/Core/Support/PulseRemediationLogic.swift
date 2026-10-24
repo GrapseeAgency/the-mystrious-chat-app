@@ -77,9 +77,15 @@ public enum PulseRemediationLogic {
     /// Rows with a non-nil expiresAt in the past never render (web parity:
     /// the TTL sweep deletes server-side, the client hides until then).
     public static func isAlive(_ expiresAtIso: String?, now: Date = Date()) -> Bool {
-        guard let iso = expiresAtIso, !iso.isEmpty else { return true }
-        guard let expires = PulseFormat.date(iso) else { return true }
-        return expires > now
+        guard let deadline = expiryEpoch(expiresAtIso) else { return true }
+        return deadline > now.timeIntervalSince1970
+    }
+
+    /// SQL and UI share the same policy: malformed is already unavailable.
+    /// Use a finite sentinel so SQLite can bind it without NaN/infinity rules.
+    static func expiryEpoch(_ raw: String?) -> TimeInterval? {
+        guard let raw else { return nil }
+        return PulseFormat.date(raw)?.timeIntervalSince1970 ?? -Double.greatestFiniteMagnitude
     }
 
     public static func threadRootAvailable(_ root: WireChatMessage, roomId: String, rootId: String, now: Date = Date()) -> Bool {

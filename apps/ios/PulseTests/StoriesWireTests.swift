@@ -161,6 +161,15 @@ final class StoryViewerMachineTests: XCTestCase {
         XCTAssertEqual(m.state.current?.id, "a0")
     }
 
+    func testFreshFeedRevocationClosesAViewerEvenWhenPlaybackIsPaused() {
+        let m = makeMachine([group(userId: "alice", [story(id: "a0")])])
+        m.setPlaybackBlocked(true, nowMs: now)
+        m.groupsUpdated([], nowMs: now + 1)
+        XCTAssertTrue(m.state.dismissed)
+        XCTAssertNil(m.state.current)
+        XCTAssertNil(m.state.pendingMark)
+    }
+
     func testResumeCannotReleaseAnActiveHold() {
         let m = makeMachine([group(userId: "alice", [story(id: "a0")])])
         m.holdStart(nowMs: 10)
@@ -313,6 +322,13 @@ final class StoryComposerStateTests: XCTestCase {
         XCTAssertEqual(StoryComposerState.captionMax, 280)
     }
 
+    func testCaptionLimitUsesWireUTF16UnitsWithoutSplittingEmoji() {
+        XCTAssertEqual(StoryComposerState().withCaption(String(repeating: "😀", count: 280)).caption, String(repeating: "😀", count: 140))
+        XCTAssertEqual(StoryComposerState().withCaption(String(repeating: "a", count: 279) + "😀").caption, String(repeating: "a", count: 279))
+        XCTAssertEqual(StoryComposerState().withCaption(String(repeating: "a", count: 278) + "😀").caption.utf16.count, 280)
+        XCTAssertFalse(StoryComposerState(caption: String(repeating: "😀", count: 141)).canPost)
+    }
+
     func testPhotoModeCanPostRequiresUploadedImageAndIdleWork() {
         var cs = StoryComposerState(mode: .photo)
         XCTAssertFalse(cs.canPost)
@@ -356,5 +372,17 @@ final class StoryStoreCacheTests: XCTestCase {
         let updated = try XCTUnwrap(try store.loadStoryCache(key: "stories:me"))
         XCTAssertEqual(updated.groupsJson, "{\"groups\":[{\"mine\":true}]}")
         XCTAssertEqual(updated.updatedAt, 1_700_000_060_000)
+    }
+
+    func testFailedPhotoReplacementPreservesConfirmedPhotoAndCaption() {
+        let original = StoryComposerState().withCaption("sunset").withImage("confirmed.jpg")
+        let uploading = original.withUploading(true)
+        XCTAssertFalse(uploading.canPost)
+        let failed = uploading.withUploading(false).withError("Upload failed")
+        XCTAssertEqual(failed.imagePath, "confirmed.jpg")
+        XCTAssertEqual(failed.caption, "sunset")
+        XCTAssertTrue(failed.canPost)
+        XCTAssertFalse(StoryComposerState().withImage("   ").canPost)
+        XCTAssertEqual(failed.withMode(.text).imagePath, "confirmed.jpg")
     }
 }

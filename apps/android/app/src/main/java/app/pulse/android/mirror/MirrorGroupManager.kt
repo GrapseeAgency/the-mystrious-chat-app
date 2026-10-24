@@ -78,7 +78,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.core.PulseEndpoints
 import app.pulse.domain.model.Conversation
-import app.pulse.domain.model.GroupLeave
 import app.pulse.domain.model.GroupMeta
 import app.pulse.domain.model.User
 import app.pulse.domain.model.Webhook
@@ -91,6 +90,9 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -132,6 +134,17 @@ private fun mgrStamp(iso: String?): String {
     }
 }
 
+private suspend fun <T> mgrRepositoryResult(work: suspend () -> Result<T>): Result<T> = try {
+    val result = withContext(Dispatchers.IO) { work() }
+    currentCoroutineContext().ensureActive()
+    (result.exceptionOrNull() as? CancellationException)?.let { throw it }
+    result
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (error: Exception) {
+    Result.failure(error)
+}
+
 private const val GROUP_NAME_MAX = 48 // web GROUP_NAME_MAX (serializers.ts)
 private const val WEBHOOK_NAME_MAX = 32 // web WEBHOOK_NAME_MAX (webhooks route)
 
@@ -155,6 +168,7 @@ internal fun MirrorGroupManagerSheet(
     presence: Set<String>,
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
+    onLeft: () -> Unit,
     // R72 - the web #/user/:id page (member row tap = openProfileForUser)
     onOpenUser: (String) -> Unit = {},
 ) {
@@ -164,6 +178,8 @@ internal fun MirrorGroupManagerSheet(
     // live server truth - groupMeta on open, after every mutation, 30s beat
     var meta by remember { mutableStateOf<GroupMeta?>(null) }
     var loadError by remember { mutableStateOf(false) }
+    var metaTicket by remember { mutableStateOf(0L) }
+    var actionPending by remember { mutableStateOf(false) }
     var directory by remember { mutableStateOf<Map<String, User>>(emptyMap()) }
     var modal by remember { mutableStateOf<MgrModal>(MgrModal.None) }
     var memberAction by remember { mutableStateOf<app.pulse.domain.model.ConversationMember?>(null) }
@@ -178,22 +194,21 @@ internal fun MirrorGroupManagerSheet(
     // (roles included) rides the conversations flow - no extra fetch.
     val members = liveConvo?.members ?: emptyList()
 
-    fun refresh(work: suspend () -> Unit = {}) {
-        scope.launch(Dispatchers.IO) {
-            runCatching {
-                repository.groupMeta(conversationId).fold(
-                    onSuccess = { m ->
-                        meta = m
-                        loadError = false
-                    },
-                    onFailure = { loadError = true },
-                )
-                repository.users().onSuccess { list ->
-                    directory = list.associateBy { it.id }
-                }
-                work()
-            }
-            withContext(Dispatchers.Main) { onChanged() }
+    suspend fun reloadMeta() {
+        val ticket = ++metaTicket
+        val result = mgrRepositoryResult { repository.groupMeta(conversationId) }
+        if (ticket != metaTicket) return
+        meta = result.getOrNull()
+        loadError = result.isFailure
+    }
+
+    fun refresh() {
+        if (actionPending) return
+        scope.launch {
+            reloadMeta()
+            val ticket = metaTicket
+            val result = mgrRepositoryResult { repository.users() }
+            if (ticket == metaTicket) result.onSuccess { directory = it.associateBy { user -> user.id } }
         }
     }
 
@@ -219,11 +234,29 @@ internal fun MirrorGroupManagerSheet(
         }
     }
 
-    fun act(work: suspend () -> Unit) {
-        scope.launch(Dispatchers.IO) {
-            runCatching { work() }
-            withContext(Dispatchers.Main) { onChanged() }
-            refresh()
+    fun <T> act(onSuccess: (T) -> Unit, refreshAfterSuccess: Boolean = true, work: suspend () -> Result<T>) {
+        if (actionPending) return
+        actionPending = true
+        metaTicket++
+        actionError = ""
+        val submittedModal = modal
+        scope.launch {
+            try {
+                val result = mgrRepositoryResult(work)
+                metaTicket++
+                result.fold(
+                    onSuccess = {
+                        if (modal == submittedModal) modal = MgrModal.None
+                        onSuccess(it)
+                    },
+                    onFailure = { actionError = it.message ?: "The change couldn't be confirmed. Refresh before retrying." },
+                )
+                if (result.isSuccess && !refreshAfterSuccess) return@launch
+                onChanged()
+                reloadMeta()
+            } finally {
+                actionPending = false
+            }
         }
     }
 
@@ -264,6 +297,9 @@ internal fun MirrorGroupManagerSheet(
                 )
             }
 
+            if (actionPending) {
+                Text("Updating group…", color = MirrorArt.TextSoft, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
+            }
             if (meta == null && !loadError) {
                 MgrSkeleton()
             } else if (loadError && meta == null) {
@@ -287,9 +323,9 @@ internal fun MirrorGroupManagerSheet(
                     Spacer(Modifier.height(12.dp))
                     MgrActionTiles(
                         isAdmin = isAdmin,
-                        onAdd = { modal = MgrModal.Add },
-                        onRename = { modal = MgrModal.Rename },
-                        onLeave = { modal = MgrModal.Leave },
+                        onAdd = { if (!actionPending) modal = MgrModal.Add },
+                        onRename = { if (!actionPending) modal = MgrModal.Rename },
+                        onLeave = { if (!actionPending) modal = MgrModal.Leave },
                     )
                     Spacer(Modifier.height(12.dp))
                     MgrWebhooksSection(
@@ -319,7 +355,7 @@ internal fun MirrorGroupManagerSheet(
                         presence = presence,
                         viewerId = viewerId,
                         isAdmin = isAdmin,
-                        onManage = { memberAction = it },
+                        onManage = { if (!actionPending) memberAction = it },
                         onOpenUser = onOpenUser,
                     )
                     Spacer(Modifier.height(24.dp))
@@ -341,64 +377,40 @@ internal fun MirrorGroupManagerSheet(
             when (val m = modal) {
                 is MgrModal.Rename -> MgrRenameModal(
                     currentName = title,
-                    pending = false,
+                    pending = actionPending,
                     onClose = { modal = MgrModal.None },
                     onConfirm = { name ->
-                        scope.launch(Dispatchers.IO) {
-                            val result = repository.renameGroup(conversationId, name)
-                            withContext(Dispatchers.Main) {
-                                result.fold(
-                                    onSuccess = {
-                                        note = "Group renamed"
-                                        modal = MgrModal.None
-                                        actionError = ""
-                                    },
-                                    onFailure = { e -> actionError = e.message ?: "Could not rename the group" },
-                                )
-                            }
-                            refresh()
-                        }
+                        act(onSuccess = { note = "Group renamed" }) { repository.renameGroup(conversationId, name) }
                     },
                 )
                 is MgrModal.Add -> MgrAddModal(
                     repository = repository,
                     conversationId = conversationId,
                     existingIds = members.map { it.id }.toSet(),
+                    pending = actionPending,
+                    error = actionError,
                     onClose = { modal = MgrModal.None },
-                    onAdded = { count ->
-                        scope.launch(Dispatchers.IO) {
-                            withContext(Dispatchers.Main) {
-                                note = if (count == 1) "1 member added" else "$count members added"
-                                modal = MgrModal.None
+                    onAdd = { selected ->
+                        act(onSuccess = { added: List<String> ->
+                            note = when (added.size) {
+                                0 -> "No new members were added"
+                                1 -> "1 member added"
+                                else -> "${added.size} members added"
                             }
-                            refresh()
-                        }
+                        }) { repository.addGroupMembers(conversationId, selected) }
                     },
                 )
                 is MgrModal.Leave -> MgrConfirmModal(
                     title = "Leave \"${title.ifBlank { "this group" }}\"?",
-                    body = "You'll stop receiving messages. History stays on your device. If you're the last admin, the longest-standing member is promoted automatically.",
-                    confirmLabel = "Leave group",
+                    body = if (isChannel) "You'll stop receiving channel messages. A channel must keep an admin." else
+                        "You'll stop receiving messages. If you're the last admin, the longest-standing member is promoted automatically.",
+                    confirmLabel = if (isChannel) "Leave channel" else "Leave group",
                     destructive = true,
-                    pending = false,
+                    pending = actionPending,
                     onClose = { modal = MgrModal.None },
                     onConfirm = {
-                        scope.launch(Dispatchers.IO) {
-                            val result: Result<GroupLeave> = repository.leaveGroup(conversationId)
-                            withContext(Dispatchers.Main) {
-                                result.fold(
-                                    onSuccess = { left ->
-                                        note = left.promotedUserId?.let { promoted ->
-                                            val name = members.firstOrNull { it.id == promoted }?.name
-                                            if (name != null) "You left the group - $name is now an admin" else "You left the group"
-                                        } ?: "You left the group"
-                                        modal = MgrModal.None
-                                        onDismiss()
-                                    },
-                                    onFailure = { e -> actionError = e.message ?: "Could not leave the group" },
-                                )
-                            }
-                            refresh()
+                        act(onSuccess = { _: app.pulse.domain.model.GroupLeave -> onLeft() }, refreshAfterSuccess = false) {
+                            repository.leaveGroup(conversationId)
                         }
                     },
                 )
@@ -409,11 +421,10 @@ internal fun MirrorGroupManagerSheet(
                         body = "Admins can rename the group, add and remove members, and toggle announcement mode.",
                         confirmLabel = "Promote",
                         destructive = false,
-                        pending = false,
+                        pending = actionPending,
                         onClose = { modal = MgrModal.None },
                         onConfirm = {
-                            modal = MgrModal.None
-                            act { repository.setMemberRole(conversationId, m.userId, true) }
+                            act(onSuccess = { note = "Member promoted" }) { repository.setMemberRole(conversationId, m.userId, true) }
                         },
                     )
                 }
@@ -424,11 +435,10 @@ internal fun MirrorGroupManagerSheet(
                         body = "They lose admin powers. A group always keeps at least one admin.",
                         confirmLabel = "Demote",
                         destructive = false,
-                        pending = false,
+                        pending = actionPending,
                         onClose = { modal = MgrModal.None },
                         onConfirm = {
-                            modal = MgrModal.None
-                            act { repository.setMemberRole(conversationId, m.userId, false) }
+                            act(onSuccess = { note = "Member demoted" }) { repository.setMemberRole(conversationId, m.userId, false) }
                         },
                     )
                 }
@@ -439,11 +449,10 @@ internal fun MirrorGroupManagerSheet(
                         body = "They lose access to this chat. They can be added back anytime.",
                         confirmLabel = "Remove",
                         destructive = true,
-                        pending = false,
+                        pending = actionPending,
                         onClose = { modal = MgrModal.None },
                         onConfirm = {
-                            modal = MgrModal.None
-                            act { repository.kickMember(conversationId, m.userId) }
+                            act(onSuccess = { note = "Removed from the group" }) { repository.kickMember(conversationId, m.userId) }
                         },
                     )
                 }
@@ -696,25 +705,31 @@ private fun MgrWebhooksSection(
     clipboard: androidx.compose.ui.platform.ClipboardManager,
     onNote: (String) -> Unit,
 ) {
+    if (!isAdmin) {
+        Text("Webhook credentials are available to admins only.", color = MirrorArt.TextSoft, fontSize = 12.sp)
+        return
+    }
     var webhooks by remember { mutableStateOf<List<Webhook>?>(null) }
     var loadError by remember { mutableStateOf(false) }
     var createOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Webhook?>(null) }
     var pending by remember { mutableStateOf(false) }
+    var revision by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
 
     fun load() {
-        scope.launch(Dispatchers.IO) {
-            val result = repository.webhooks(conversationId)
-            withContext(Dispatchers.Main) {
-                result.fold(
-                    onSuccess = {
-                        webhooks = it
-                        loadError = false
-                    },
-                    onFailure = { loadError = true },
-                )
-            }
+        if (pending) return
+        revision += 1
+        val ticket = revision
+        val epoch = repository.attachmentSessionKey()
+        loadError = false
+        scope.launch {
+            val result = mgrRepositoryResult { repository.webhooks(conversationId) }
+            if (ticket != revision || epoch != repository.attachmentSessionKey()) return@launch
+            result.fold(
+                onSuccess = { webhooks = it; loadError = false },
+                onFailure = { webhooks = null; loadError = true },
+            )
         }
     }
     LaunchedEffect(conversationId) { load() }
@@ -809,7 +824,7 @@ private fun MgrWebhooksSection(
                 }
             }
         }
-        if (isAdmin) {
+        if (isAdmin && webhooks != null && !loadError) {
             Spacer(Modifier.height(8.dp))
             MgrWideButton(label = "Create webhook", leading = "LPlus", onClick = { createOpen = true })
         }
@@ -818,22 +833,27 @@ private fun MgrWebhooksSection(
     if (createOpen) {
         MgrCreateWebhookModal(
             pending = pending,
-            onClose = { createOpen = false },
-            onConfirm = { name ->
+            onClose = { if (!pending) createOpen = false },
+            onConfirm = create@ { name ->
+                if (pending) return@create
+                revision += 1
+                val epoch = repository.attachmentSessionKey()
                 pending = true
-                scope.launch(Dispatchers.IO) {
-                    val result = repository.createWebhook(conversationId, name)
-                    withContext(Dispatchers.Main) {
-                        pending = false
+                scope.launch {
+                    try {
+                        val result = mgrRepositoryResult { repository.createWebhook(conversationId, name) }
+                        if (epoch != repository.attachmentSessionKey()) return@launch
                         result.fold(
                             onSuccess = { created ->
+                                revision += 1
+                                webhooks = (webhooks.orEmpty().filterNot { it.id == created.id }) + created
+                                loadError = false
                                 onNote("Webhook \"${created.name}\" created")
                                 createOpen = false
                             },
                             onFailure = { e -> onNote(e.message ?: "Could not create the webhook") },
                         )
-                    }
-                    load()
+                    } finally { pending = false }
                 }
             },
         )
@@ -845,22 +865,27 @@ private fun MgrWebhooksSection(
             confirmLabel = "Delete",
             destructive = true,
             pending = pending,
-            onClose = { deleteTarget = null },
-            onConfirm = {
+            onClose = { if (!pending) deleteTarget = null },
+            onConfirm = remove@ {
+                if (pending) return@remove
+                revision += 1
+                val epoch = repository.attachmentSessionKey()
                 pending = true
-                scope.launch(Dispatchers.IO) {
-                    val result = repository.deleteWebhook(target.token)
-                    withContext(Dispatchers.Main) {
-                        pending = false
+                scope.launch {
+                    try {
+                        val result = mgrRepositoryResult { repository.deleteWebhook(target.token) }
+                        if (epoch != repository.attachmentSessionKey()) return@launch
                         result.fold(
                             onSuccess = {
+                                revision += 1
+                                webhooks = webhooks.orEmpty().filterNot { it.id == target.id }
+                                loadError = false
                                 onNote("Webhook deleted")
                                 deleteTarget = null
                             },
                             onFailure = { e -> onNote(e.message ?: "Could not delete the webhook") },
                         )
-                    }
-                    load()
+                    } finally { pending = false }
                 }
             },
         )
@@ -888,7 +913,7 @@ private fun MgrCreateWebhookModal(
         Spacer(Modifier.height(12.dp))
         MgrTextField(
             value = name,
-            onValue = { if (it.length <= WEBHOOK_NAME_MAX) name = it },
+            onValue = { if (!pending && it.length <= WEBHOOK_NAME_MAX) name = it },
             placeholder = "e.g. Deploys · CI · Weather",
         )
         Text(
@@ -902,7 +927,7 @@ private fun MgrCreateWebhookModal(
         )
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MgrModalButton(label = "Cancel", destructive = false, enabled = true, pending = false, onClick = onClose, modifier = Modifier.weight(1f))
+            MgrModalButton(label = "Cancel", destructive = false, enabled = !pending, pending = false, onClick = onClose, modifier = Modifier.weight(1f))
             MgrModalButton(
                 label = "Create",
                 destructive = false,
@@ -930,7 +955,7 @@ private fun MgrLeaderboardSection(
 
     fun load() {
         scope.launch(Dispatchers.IO) {
-            val result = repository.leaderboard(conversationId)
+            val result = mgrRepositoryResult { repository.leaderboard(conversationId) }
             withContext(Dispatchers.Main) {
                 result.fold(
                     onSuccess = {
@@ -1048,7 +1073,7 @@ private fun MgrLeaderboardDrawer(
 
     fun load() {
         scope.launch(Dispatchers.IO) {
-            val result = repository.leaderboard(conversationId)
+            val result = mgrRepositoryResult { repository.leaderboard(conversationId) }
             withContext(Dispatchers.Main) {
                 result.fold(
                     onSuccess = {
@@ -1256,14 +1281,14 @@ private fun MgrTournamentSection(
 
     fun load() {
         scope.launch(Dispatchers.IO) {
-            val result = repository.tournaments(conversationId)
+            val result = mgrRepositoryResult { repository.tournaments(conversationId) }
             withContext(Dispatchers.Main) {
                 result.fold(
                     onSuccess = {
                         seasons = it.tournaments
                         loadError = false
                     },
-                    onFailure = { loadError = true },
+                    onFailure = { loadError = true; if (it is app.pulse.domain.sync.PrivateGameUnavailableException) seasons = null },
                 )
             }
         }
@@ -1757,7 +1782,7 @@ private fun MgrPillButton(label: String, amber: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MgrTextField(value: String, onValue: (String) -> Unit, placeholder: String) {
+private fun MgrTextField(value: String, onValue: (String) -> Unit, placeholder: String, enabled: Boolean = true) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -1775,6 +1800,7 @@ private fun MgrTextField(value: String, onValue: (String) -> Unit, placeholder: 
             BasicTextField(
                 value = value,
                 onValueChange = onValue,
+                enabled = enabled,
                 singleLine = true,
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp),
                 cursorBrush = SolidColor(MirrorArt.Accent),
@@ -1877,18 +1903,17 @@ private fun MgrAddModal(
     conversationId: String,
     existingIds: Set<String>,
     onClose: () -> Unit,
-    onAdded: (Int) -> Unit,
+    pending: Boolean,
+    error: String,
+    onAdd: (List<String>) -> Unit,
 ) {
     var users by remember { mutableStateOf<List<User>?>(null) }
     var loadError by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var pending by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        val result = repository.users()
+        val result = mgrRepositoryResult { repository.users() }
         withContext(Dispatchers.Main) {
             result.fold(
                 onSuccess = { users = it },
@@ -1952,7 +1977,7 @@ private fun MgrAddModal(
                             .fillMaxWidth()
                             .heightIn(min = 52.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable {
+                            .clickable(enabled = !pending) {
                                 selected = if (checked) selected - user.id else selected + user.id
                             }
                             .padding(horizontal = 8.dp, vertical = 8.dp),
@@ -2010,20 +2035,7 @@ private fun MgrAddModal(
                 destructive = false,
                 enabled = selected.isNotEmpty() && !pending,
                 pending = pending,
-                onClick = {
-                    pending = true
-                    error = ""
-                    scope.launch(Dispatchers.IO) {
-                        val result = repository.addGroupMembers(conversationId, selected.toList())
-                        withContext(Dispatchers.Main) {
-                            pending = false
-                            result.fold(
-                                onSuccess = { added -> onAdded(added.size) },
-                                onFailure = { e -> error = e.message ?: "Could not add members" },
-                            )
-                        }
-                    }
-                },
+                onClick = { if (!pending) onAdd(selected.toList()) },
                 modifier = Modifier.weight(1.4f),
             )
         }
@@ -2049,7 +2061,7 @@ private fun MgrRenameModal(
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(12.dp))
-        MgrTextField(value = name, onValue = { if (it.length <= GROUP_NAME_MAX) name = it }, placeholder = "Group name")
+        MgrTextField(value = name, onValue = { if (!pending && it.length <= GROUP_NAME_MAX) name = it }, placeholder = "Group name", enabled = !pending)
         Text(
             "${trimmed.length}/$GROUP_NAME_MAX",
             color = MirrorArt.Faint,

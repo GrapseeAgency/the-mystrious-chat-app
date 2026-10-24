@@ -41,6 +41,10 @@ export interface ReplySnippet {
   content: string
   senderName: string
   deleted: boolean
+  /** Versioned privacy bounds, optional only for legacy/local constructions. */
+  quoteVersion?: 1
+  expiresAt?: string | null
+  viewOnce?: boolean
 }
 
 /** Cached Open-Graph metadata attached to a message containing a link. */
@@ -167,6 +171,7 @@ export type GroupRole = 'admin' | 'member'
 /** One row of the broadcast-channel directory (GET /api/channels, R30-c). */
 export interface ChannelSummary {
   id: string // conversation id
+  conversationId?: string // additive alias for native clients; identical to id
   name: string
   description: string
   createdAt: string

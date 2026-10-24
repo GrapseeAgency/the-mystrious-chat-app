@@ -25,14 +25,18 @@ public final class StoriesSessionModel: ObservableObject {
     @Published public private(set) var flags = Flags()
     @Published public private(set) var viewers: [WireStoryViewer] = []
     @Published public private(set) var viewersLoading = false
+    @Published public private(set) var viewersError: String?
+    private var viewersStoryId: String?
 
     private var viewersGeneration = UUID()
     private var refreshGeneration = UUID()
     private unowned let session: PulseSession
+    private let ownerEpoch: UUID
     private var cacheKey: String { "stories:\(session.viewer?.id ?? "")" }
 
     public init(session: PulseSession) {
         self.session = session
+        self.ownerEpoch = session.sessionGeneration
         // Cold-start rehydrate - instant tray from the last good snapshot.
         if let store = session.store,
            let cached = try? store.loadStoryCache(key: cacheKey),
@@ -45,26 +49,27 @@ public final class StoriesSessionModel: ObservableObject {
 
     /// Pull the feed. quiet=false flips the loading flag (first load).
     public func refresh(quiet: Bool = false) async {
-        guard session.viewer != nil else { return }
+        guard !Task.isCancelled, session.viewer != nil, session.sessionGeneration == ownerEpoch else { return }
+        groups = Self.liveGroups(groups, nowMs: nowMs())
         let ticket = UUID()
         refreshGeneration = ticket
         let epoch = session.sessionGeneration
         let api = session.api
         if !quiet { flags.loading = true; flags.lastError = nil }
-        let response = await api.stories()
-        guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
-        if let page = response {
-            let fresh = Self.liveGroups(page.groups ?? [], nowMs: nowMs())
-            groups = fresh
+        do {
+            let page = try await api.storySnapshot()
+            guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
+            groups = Self.liveGroups(page.groups ?? [], nowMs: nowMs())
+            flags.loadedOnce = true; flags.lastError = nil
+            persistCache(WireStoriesPage(groups: groups))
+        } catch {
+            guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
+            if Self.discardsViewers(after: error) {
+                groups = []; resetViewers()
+                persistCache(WireStoriesPage(groups: []))
+            }
             flags.loadedOnce = true
-            flags.lastError = nil
-            persistCache(page)
-        } else if groups.isEmpty {
-            // Nothing cached to serve - honest transport failure (D5).
-            flags.loadedOnce = true
-            flags.lastError = ChatsViewModel.describe(
-                PulseAPIClient.Failure(kind: .network, message: nil)
-            )
+            flags.lastError = ChatsViewModel.describe(error)
         }
         flags.loading = false
     }
@@ -77,7 +82,8 @@ public final class StoriesSessionModel: ObservableObject {
             while !Task.isCancelled {
                 do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { break }
                 guard !Task.isCancelled else { break }
-                await self?.refresh(quiet: true)
+                guard let self, self.session.sessionGeneration == self.ownerEpoch else { break }
+                await self.refresh(quiet: true)
             }
         }
     }
@@ -91,9 +97,19 @@ public final class StoriesSessionModel: ObservableObject {
     /// POST /api/stories → refresh. Returns the server's error copy on failure.
     @discardableResult
     public func publish(caption: String, background: String?, imagePath: String?) async -> String? {
+        guard session.sessionGeneration == ownerEpoch else { return "The original story session ended." }
+        let epoch = session.sessionGeneration
+        let api = session.api
         do {
-            _ = try await session.api.postStory(caption: caption, background: background, imagePath: imagePath)
-            await refresh(quiet: true)
+            try Task.checkCancellation()
+            _ = try await api.postStory(caption: caption, background: background, imagePath: imagePath)
+            try Task.checkCancellation()
+            guard session.sessionGeneration == epoch else { return "The original story session ended." }
+            // Feed refresh is not part of the publication acknowledgement.
+            Task { [weak self] in
+                guard let self, self.session.sessionGeneration == epoch else { return }
+                await self.refresh(quiet: true)
+            }
             return nil
         } catch let failure as PulseAPIClient.Failure {
             return failure.message ?? "Could not post your status"
@@ -104,10 +120,12 @@ public final class StoriesSessionModel: ObservableObject {
 
     // viewer actions
 
-    /// Optimistic seen-flip (D6) - the POST result lands here; local update
-    /// happens immediately so rings react instantly, server truth reconciles
-    /// on the next fetch.
+    /// Apply a confirmed view receipt to the shared feed. A presentation's
+    /// failed/cancelled attempt must not publish a successful viewed state.
     public func markViewedLocally(storyId: String, viewCount: Int?) {
+        guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
+        refreshGeneration = UUID()
+        flags.loading = false
         groups = groups.map { g in
             let stories = (g.stories ?? []).map { s in
                 s.id == storyId
@@ -117,18 +135,23 @@ public final class StoriesSessionModel: ObservableObject {
             let allSeen = g.mine == true ? g.allSeen : stories.allSatisfy { $0.viewedByMe == true }
             return WireStoryGroupCopy(g, allSeen: allSeen, stories: stories)
         }
+        persistCache(WireStoriesPage(groups: groups))
     }
 
-    /// Optimistic removal; the viewer's machine auto-advances (D3) when the
-    /// refreshed feed reports the story gone.
+    /// Only a confirmed deletion removes the story and advances its viewer.
+    /// An older feed read cannot restore the row after that acknowledgement.
     public func deleteStory(id: String) async -> Bool {
-        removeLocal(id)
+        guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
+        let api = session.api
         do {
-            try await session.api.deleteStory(id: id)
-            await refresh(quiet: true)
+            try await api.deleteStory(id: id)
+            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
+            refreshGeneration = UUID()
+            flags.loading = false
+            removeLocal(id)
+            persistCache(WireStoriesPage(groups: groups))
             return true
         } catch {
-            await refresh(quiet: true)
             return false
         }
     }
@@ -137,20 +160,34 @@ public final class StoriesSessionModel: ObservableObject {
 
     /// One fetch - the sheet re-issues it every ≤5s while open.
     public func loadViewers(storyId: String) async {
+        guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
+        if viewersStoryId != storyId { resetViewers(); viewersStoryId = storyId }
         let ticket = UUID()
         viewersGeneration = ticket
-        let epoch = session.sessionGeneration
         let api = session.api
         viewersLoading = true
-        let list = try? await api.storyViewers(id: storyId)
-        guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == epoch else { return }
-        if let list { viewers = list }
+        do {
+            let list = try await api.storyViewers(id: storyId)
+            guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == ownerEpoch else { return }
+            viewers = list; viewersError = nil
+        } catch {
+            guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == ownerEpoch else { return }
+            if Self.discardsViewers(after: error) { viewers = [] }
+            viewersError = (error as? PulseAPIClient.Failure)?.message ?? "Viewers couldn't be loaded. Reconnect to retry."
+        }
         viewersLoading = false
+    }
+
+    static func discardsViewers(after error: Error) -> Bool {
+        guard let failure = error as? PulseAPIClient.Failure else { return false }
+        return [.auth, .forbidden, .notFound].contains(failure.kind)
     }
 
     public func resetViewers() {
         viewersGeneration = UUID()
+        viewersStoryId = nil
         viewers = []
+        viewersError = nil
         viewersLoading = false
     }
 

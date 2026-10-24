@@ -61,6 +61,9 @@ import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 private val StageBlack = EmberPalette.BackdropBase
 private val BarTrack = Color.White.copy(alpha = 0.32f)
@@ -85,6 +88,14 @@ fun StoryViewerScreen(
     onClose: () -> Unit,
     storiesVm: StoriesViewModel,
 ) {
+    val owner = storiesVm.composerSession()?.owner
+    androidx.compose.runtime.key(owner, startUserId) { OwnedStoryViewerScreen(startUserId, onClose, storiesVm) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OwnedStoryViewerScreen(startUserId: String?, onClose: () -> Unit, storiesVm: StoriesViewModel) {
+    val session = remember { storiesVm.composerSession() }
     val groups by storiesVm.groups.collectAsStateWithLifecycle()
     val flags by storiesVm.flags.collectAsStateWithLifecycle()
     val machine = remember(startUserId) { StoryViewerStateMachine(startUserId) }
@@ -92,13 +103,17 @@ fun StoryViewerScreen(
     val state by machine.state.collectAsStateWithLifecycle()
     val viewers by storiesVm.viewers.collectAsStateWithLifecycle()
     val viewersLoading by storiesVm.viewersLoading.collectAsStateWithLifecycle()
+    val viewersError by storiesVm.viewersError.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
+    var deleting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
     var viewersOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     var viewersTarget by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.current?.story?.id) {
+        if (viewersTarget != state.current?.story?.id) { viewersOpen = false; viewersTarget = null; storiesVm.resetViewers() }
         if (deleteTarget != state.current?.story?.id) { confirmDelete = false; deleteTarget = null }
     }
 
@@ -112,21 +127,24 @@ fun StoryViewerScreen(
         }
     }
 
+    val blocked = viewersOpen || confirmDelete || deleting || deleteError != null
+    LaunchedEffect(machine, lifecycle, groups, flags.loadedOnce) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                if (flags.loadedOnce || groups.isNotEmpty()) machine.on(StoryViewerInput.GroupsUpdated(groups, System.currentTimeMillis()))
+                delay(1_000)
+            }
+        }
+    }
     // Foreground + modal gate is independent of the hold gesture gate.
-    LaunchedEffect(machine, lifecycle, viewersOpen, confirmDelete, groups) {
+    LaunchedEffect(machine, lifecycle, blocked) {
         machine.on(StoryViewerInput.PlaybackBlocked(true, SystemClock.elapsedRealtime()))
-        if (viewersOpen || confirmDelete) return@LaunchedEffect
+        if (blocked) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             machine.on(StoryViewerInput.PlaybackBlocked(false, SystemClock.elapsedRealtime()))
             try {
-                var expiryCheck = 0L
                 while (isActive) {
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - expiryCheck >= 1000 && (flags.loadedOnce || groups.isNotEmpty())) {
-                        machine.on(StoryViewerInput.GroupsUpdated(groups, System.currentTimeMillis()))
-                        expiryCheck = now
-                    }
-                    machine.on(StoryViewerInput.Tick(now))
+                    machine.on(StoryViewerInput.Tick(SystemClock.elapsedRealtime()))
                     delay(16)
                 }
             } finally {
@@ -136,14 +154,16 @@ fun StoryViewerScreen(
     }
 
     // D6: mark non-mine stories as viewed the moment they are DISPLAYED
-    // (not after 5s) - optimistic + single retry driven by the machine.
-    LaunchedEffect(state.pendingMark?.storyId, state.pendingMark?.attempt) {
+    // (not after 5s); confirmation and the single retry are driven by the machine.
+    LaunchedEffect(state.pendingMark, lifecycle, blocked) {
         val mark = state.pendingMark ?: return@LaunchedEffect
-        storiesVm.markViewed(
-            mark.storyId,
-            onOk = { count -> machine.on(StoryViewerInput.ViewMarkOk(mark.storyId, count)) },
-            onFail = { machine.on(StoryViewerInput.ViewMarkFailed(mark.storyId)) },
-        )
+        if (blocked || session == null) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val result = storiesVm.markViewed(mark.storyId, session)
+            currentCoroutineContext().ensureActive()
+            result.fold(onSuccess = { machine.on(StoryViewerInput.ViewMarkOk(mark.storyId, it)) },
+                onFailure = { machine.on(StoryViewerInput.ViewMarkFailed(mark.storyId)) })
+        }
     }
 
     LaunchedEffect(state.dismissed) {
@@ -286,13 +306,24 @@ fun StoryViewerScreen(
                         storiesVm.resetViewers()
                         viewersOpen = true
                     },
-                    onAskDelete = { deleteTarget = current.story.id; confirmDelete = true },
+                    onAskDelete = { if (!deleting) { deleteTarget = current.story.id; confirmDelete = true } },
                     onCancelDelete = { confirmDelete = false },
                     onConfirmDelete = {
                         confirmDelete = false
-                        // Optimistic removal; the machine auto-advances (D3)
-                        // when GroupsUpdated reports the story gone.
-                        deleteTarget?.let { storiesVm.deleteStory(it) {} }
+                        deleteTarget?.let { id ->
+                            if (!deleting && session != null) {
+                                deleting = true
+                                scope.launch {
+                                    try {
+                                        storiesVm.deleteStory(id, session).getOrThrow()
+                                        currentCoroutineContext().ensureActive()
+                                    } catch (cancelled: CancellationException) { throw cancelled
+                                    } catch (failure: Exception) {
+                                        if (storiesVm.acceptsComposer(session)) deleteError = failure.message ?: "Deletion wasn't confirmed. Reconnect and retry."
+                                    } finally { if (storiesVm.acceptsComposer(session)) deleting = false }
+                                }
+                            }
+                        }
                         deleteTarget = null
                     },
                     onClose = onClose,
@@ -301,7 +332,7 @@ fun StoryViewerScreen(
 
             if (state.paused) {
                 Text(
-                    "Paused",
+                    if (deleting) "Deleting…" else "Paused",
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -315,14 +346,18 @@ fun StoryViewerScreen(
         }
     }
 
+    if (deleteError != null) ModalBottomSheet(onDismissRequest = { deleteError = null }, containerColor = EmberPalette.BubbleOut) {
+        Text(deleteError.orEmpty(), color = Color.White, modifier = Modifier.padding(20.dp))
+    }
     if (viewersOpen && viewersTarget != null) {
         // D7: the sheet polls every ≤5s while open and the count badge
         // (header eye) reflects the fresh list size on close.
         LaunchedEffect(viewersTarget, lifecycle) {
             val target = viewersTarget ?: return@LaunchedEffect
+            if (session == null) return@LaunchedEffect
             lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 while (isActive) {
-                    storiesVm.loadViewers(target)
+                    storiesVm.loadViewers(target, session)
                     delay(5_000)
                 }
             }
@@ -342,7 +377,8 @@ fun StoryViewerScreen(
                 fontSize = 15.sp,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
             )
-            if (viewers.isEmpty()) {
+            viewersError?.let { Text(it, color = Color.White, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
+            if (viewers.isEmpty() && viewersError == null) {
                 Text(
                     if (viewersLoading) "Loading…" else "No views yet",
                     color = Color(0xFFA1A1AA),

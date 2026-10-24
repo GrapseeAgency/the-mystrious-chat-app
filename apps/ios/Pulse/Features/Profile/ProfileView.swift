@@ -40,7 +40,20 @@ struct ProfileView: View {
     @State private var signOutArmed = false
     // R39 - profile cover picture (web parity): pick, upload, remove.
     @State private var coverItem: PhotosPickerItem?
-    @State private var coverBusy = false
+    @State private var coverOwner: ProfileMutationGate.Owner?
+    @State private var coverGate = ProfileMutationGate()
+    @State private var coverTask: Task<Void, Never>?
+    private var coverBusy: Bool { coverGate.active != nil }
+
+    @MainActor private var currentCoverOwner: ProfileMutationGate.Owner? {
+        guard let id = prefs.viewer?.id, session.viewer?.id == id,
+              PulseWalletOperations.gatewayKey(session.api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL) else { return nil }
+        return .init(userId: id, session: session.sessionGeneration)
+    }
+
+    @MainActor private func acceptsCover(_ ticket: ProfileMutationGate.Ticket) -> Bool {
+        !Task.isCancelled && coverGate.accepts(ticket, current: currentCoverOwner)
+    }
 
     var body: some View {
         NavigationStack {
@@ -91,15 +104,31 @@ struct ProfileView: View {
                 session.requestOpenRoom(conversation, jumpMessageId: messageId)
             }
         }
-        .task {
-            await loadWallet()
-            await loadStats()
+        .onAppear {
+            // Bind once per mounted profile, before the system picker opens.
+            // A callback from an old presentation cannot adopt the new account.
+            if coverOwner == nil { coverOwner = currentCoverOwner }
+            if let coverOwner { coverGate.bind(coverOwner) }
+        }
+        .onDisappear {
+            coverTask?.cancel()
+            coverTask = nil
+            coverGate.invalidate()
+        }
+        .task(id: coverOwner) {
+            guard let owner = coverOwner else { return }
+            await loadWallet(expectedOwner: owner)
+        }
+        .task(id: coverOwner) {
+            guard let owner = coverOwner else { return }
+            await loadStats(expectedOwner: owner)
         }
         // R39 - cover pick flows through the upload pipeline.
         .onChange(of: coverItem) { _, item in
             guard let item else { return }
             coverItem = nil
-            Task { await setCover(item) }
+            guard let ticket = coverGate.begin(current: currentCoverOwner) else { return }
+            coverTask = Task { await setCover(item, ticket: ticket) }
         }
     }
 
@@ -200,7 +229,8 @@ struct ProfileView: View {
                     .disabled(coverBusy)
                     Button {
                         PulseHaptics.tap()
-                        Task { await removeCover() }
+                        guard let ticket = coverGate.begin(current: currentCoverOwner) else { return }
+                        coverTask = Task { await removeCover(ticket: ticket) }
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 11, weight: .semibold))
@@ -239,51 +269,56 @@ struct ProfileView: View {
 
     /// R39 - PhotosPicker byte flow: 2:1 banner crop -> POST /api/uploads ->
     /// PATCH coverImage -> viewer mirror refresh (web coverMutation parity).
-    private func setCover(_ item: PhotosPickerItem) async {
-        guard !coverBusy, let viewer = prefs.viewer else { return }
-        coverBusy = true
-        defer { coverBusy = false }
-        let epoch = session.sessionGeneration
+    @MainActor private func setCover(_ item: PhotosPickerItem, ticket: ProfileMutationGate.Ticket) async {
+        defer { coverGate.finish(ticket) }
+        guard acceptsCover(ticket), let viewer = prefs.viewer else { return }
         let api = session.api
-        guard let raw = try? await item.loadTransferable(type: Data.self),
-              let jpeg = PulseCoverImage.jpegData(from: raw) else {
+        guard let photo = try? await item.loadTransferable(type: PulsePickedPhoto.self),
+              let jpeg = PulseCoverImage.jpegData(from: photo.jpeg) else {
+            guard acceptsCover(ticket) else { return }
             session.toasts.show("Couldn't read that image - try another one")
             return
         }
-        guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
+        guard acceptsCover(ticket) else { return }
         do {
             let path = try await api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
-            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
+            guard acceptsCover(ticket) else { return }
             let user = try await api.updateProfile(
                 userId: viewer.id,
-                body: ["coverImage": "/api/uploads/\(path)"],
+                body: ["coverImage": try PulseAvatarImage.managedPath(path)],
             )
-            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
-            prefs.setViewer(PulseViewer(from: user))
+            guard acceptsCover(ticket) else { return }
+            guard user.id == viewer.id, let current = prefs.viewer else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account.")
+            }
+            prefs.setViewer(PulseViewer(id: current.id, name: current.name, username: current.username,
+                color: current.color, avatar: current.avatar, coverImage: user.coverImage))
             PulseHaptics.success()
             session.toasts.show("Cover picture updated")
         } catch {
-            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
+            guard acceptsCover(ticket) else { return }
             PulseHaptics.warning()
             session.toasts.show(ChatsViewModel.describe(error))
         }
     }
 
     /// R39 - cover removal mirrors the web remove mutation (PATCH "").
-    private func removeCover() async {
-        guard !coverBusy, let viewer = prefs.viewer else { return }
-        coverBusy = true
-        defer { coverBusy = false }
-        let epoch = session.sessionGeneration
+    @MainActor private func removeCover(ticket: ProfileMutationGate.Ticket) async {
+        defer { coverGate.finish(ticket) }
+        guard acceptsCover(ticket), let viewer = prefs.viewer else { return }
         let api = session.api
         do {
             let user = try await api.updateProfile(userId: viewer.id, body: ["coverImage": ""])
-            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
-            prefs.setViewer(PulseViewer(from: user))
+            guard acceptsCover(ticket) else { return }
+            guard user.id == viewer.id, let current = prefs.viewer else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account.")
+            }
+            prefs.setViewer(PulseViewer(id: current.id, name: current.name, username: current.username,
+                color: current.color, avatar: current.avatar, coverImage: user.coverImage))
             PulseHaptics.success()
             session.toasts.show("Cover picture removed")
         } catch {
-            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
+            guard acceptsCover(ticket) else { return }
             PulseHaptics.warning()
             session.toasts.show(ChatsViewModel.describe(error))
         }
@@ -452,12 +487,12 @@ struct ProfileView: View {
 
     private var statsValueText: String {
         guard let stats else { return statsFailed ? "-" : "·" }
-        return (stats.messages ?? 0).formatted()
+        return stats.messages?.formatted() ?? "—"
     }
 
     private var roomsValueText: String {
         guard let stats else { return statsFailed ? "-" : "·" }
-        return (stats.chats ?? 0).formatted()
+        return stats.chats?.formatted() ?? "—"
     }
 
     private var coinsValueText: String {
@@ -547,29 +582,37 @@ struct ProfileView: View {
         prefs.setViewer(nil)
     }
 
-    private func loadStats() async {
-        guard let viewerId = session.viewer?.id else {
-            statsFailed = true
-            return
-        }
+    @State private var statsReadId = UUID()
+    @State private var walletReadId = UUID()
+
+    @MainActor private func loadStats(expectedOwner: ProfileMutationGate.Owner) async {
+        guard !Task.isCancelled, currentCoverOwner == expectedOwner else { return }
+        let owner = expectedOwner.userId, epoch = expectedOwner.session, api = session.api, ticket = UUID()
+        statsReadId = ticket; stats = nil; statsFailed = false
         do {
-            stats = try await session.api.userStats(viewerId)
+            let fresh = try await api.userStats(owner)
+            guard !Task.isCancelled, statsReadId == ticket, session.sessionGeneration == epoch, session.viewer?.id == owner else { return }
+            stats = fresh
         } catch {
+            guard !Task.isCancelled, statsReadId == ticket, session.sessionGeneration == epoch, session.viewer?.id == owner else { return }
             statsFailed = true
         }
     }
 
-    private func loadWallet() async {
-        // The route upserts a zero wallet and answers { wallet: { coins } }.
-        guard session.viewer != nil else {
-            walletPhase = .failed
-            return
-        }
+    @MainActor private func loadWallet(expectedOwner: ProfileMutationGate.Owner) async {
+        guard !Task.isCancelled, currentCoverOwner == expectedOwner else { return }
+        let owner = expectedOwner.userId, epoch = expectedOwner.session, api = session.api, ticket = UUID()
+        walletReadId = ticket; walletPhase = .loading
         do {
-            let wallet = try await session.api.wallet()
-            walletCoins = wallet.coins ?? 0
+            let wallet = try await api.wallet()
+            guard !Task.isCancelled, walletReadId == ticket, session.sessionGeneration == epoch, session.viewer?.id == owner else { return }
+            guard let coins = wallet.coins else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Wallet balance was not confirmed.")
+            }
+            walletCoins = coins
             walletPhase = .loaded
         } catch {
+            guard !Task.isCancelled, walletReadId == ticket, session.sessionGeneration == epoch, session.viewer?.id == owner else { return }
             walletPhase = .failed
         }
     }
@@ -701,9 +744,9 @@ struct ProfileView: View {
             emberCardHeader("Wallet")
             Button {
                 // A failed fetch is honest - tap retries (web refetch parity).
-                guard walletPhase == .failed else { return }
+                guard walletPhase == .failed, let owner = coverOwner, currentCoverOwner == owner else { return }
                 walletPhase = .loading
-                Task { await loadWallet() }
+                Task { await loadWallet(expectedOwner: owner) }
             } label: {
                 HStack(spacing: 12) {
                     emberRowIcon("bitcoinsign.circle")

@@ -1,9 +1,6 @@
 package app.pulse.feature.settings
 
 import app.pulse.ui.PulseIcons
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,12 +64,12 @@ import app.pulse.ui.pulseStatusGlyph
 import app.pulse.ui.pulseStatusGlyphFor
 import coil.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 
 /** The 8 profile colours the server whitelist accepts (web parity). */
@@ -89,8 +86,7 @@ private val EDIT_COLORS = listOf(
 
 @HiltViewModel
 class ProfileEditViewModel @Inject constructor(
-    private val repo: PulseRepository,
-    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
+    repository: PulseRepository,
 ) : ViewModel() {
 
     data class HandleCheck(val state: String, val suggestion: String? = null)
@@ -103,7 +99,7 @@ class ProfileEditViewModel @Inject constructor(
         val handle: String = "",
         val color: String = "emerald",
         val avatar: String? = null,
-        /** R39 - profile cover picture: server path, "local:cover" marker, or null. */
+        /** Confirmed server cover path, or null. */
         val coverImage: String? = null,
         val statusEmoji: String = "",
         val statusText: String = "",
@@ -118,221 +114,186 @@ class ProfileEditViewModel @Inject constructor(
         val coverBusy: Boolean = false,
     )
 
+    private val repo = repository.boundToCurrentAccount()
+    private val owner = repo.viewerId
+    private val session = repo.attachmentSessionKey()
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
+    private var baseline: app.pulse.domain.model.UserProfile? = null
+    private var editRevision = 0L
+    private var handleRevision = 0L
+    private var handleJob: kotlinx.coroutines.Job? = null
+    private var loadJob: kotlinx.coroutines.Job? = null
+    private var pendingPicker: Boolean? = null // false = avatar, true = cover; belongs to this VM's original session
 
-    init {
-        viewModelScope.launch {
-            val me = repo.me()
-            _state.value = State(
-                loading = false,
-                userId = repo.viewerId,
-                name = me?.name.orEmpty(),
-                bio = me?.bio.orEmpty(),
-                handle = me?.handle.orEmpty(),
-                color = me?.color ?: "emerald",
-                avatar = me?.avatar,
-                // Normalize on read: stale/unknown values (legacy emoji) never
-                // ride along - the editor seeds a registry id or nothing.
-                statusEmoji = statusIconIdOrNull(me?.statusEmoji).orEmpty(),
-                statusText = me?.statusText.orEmpty(),
-            )
+    private fun owned(): Boolean {
+        val active = owner != null && session != null && repo.viewerId == owner && repo.attachmentSessionKey() == session
+        if (!active) {
+            baseline = null; pendingPicker = null
+            _state.value = State(loading = false, error = "Reopen the profile in its original account.")
         }
+        return active
     }
-
-    fun set(field: String, value: String) {
-        val s = _state.value
-        _state.value = when (field) {
-            "name" -> s.copy(name = value.take(32))
-            "bio" -> s.copy(bio = value.take(140))
-            "statusText" -> s.copy(statusText = value.take(48))
-            // Persist registry ids only; blank clears the status. Stale raw
-            // emoji can never round-trip through the editor.
-            "statusEmoji" -> s.copy(statusEmoji = statusIconIdOrNull(value).orEmpty())
-            "color" -> s.copy(color = value)
-            else -> s
-        }
+    private suspend fun requireOwner() {
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (!owned()) throw kotlinx.coroutines.CancellationException("Profile session ended")
     }
+    private fun busy() = _state.value.let { it.loading || it.saving || it.uploading || it.removing || it.coverBusy }
+    init { reload() }
 
-    fun setHandle(raw: String) {
-        val sanitized = raw.filter { it in 'a'..'z' || it in '0'..'9' || it == '_' }.take(20)
-        _state.value = _state.value.copy(handle = sanitized, handleCheck = checkLocally(sanitized))
-        if (sanitized.length >= 3) {
-            viewModelScope.launch {
-                delay(350)
-                if (_state.value.handle == sanitized && sanitized.isNotBlank()) {
-                    val current = _state.value
-                    if (sanitized == current.handle) {
-                        repo.checkHandle(sanitized)
-                            .onSuccess { check ->
-                                if (current.handle == sanitized) {
-                                    _state.value = _state.value.copy(
-                                        handleCheck = if (check.available) {
-                                            HandleCheck("free", check.suggestion)
-                                        } else {
-                                            HandleCheck("taken", check.suggestion)
-                                        },
-                                    )
-                                }
-                            }
-                            .onFailure {
-                                if (current.handle == sanitized) {
-                                    _state.value = _state.value.copy(handleCheck = HandleCheck("error"))
-                                }
-                            }
-                    }
-                }
+    fun reload() {
+        if (loadJob?.isActive == true || baseline != null) return
+        if (!owned()) { _state.value = State(loading = false, error = "Reopen the profile in its original account."); return }
+        _state.value = _state.value.copy(loading = true, error = null)
+        loadJob = viewModelScope.launch {
+            try {
+                requireOwner()
+                val fresh = repo.userProfile(checkNotNull(owner)).getOrThrow()
+                requireOwner()
+                check(fresh.id == owner) { "Profile response did not match this account" }
+                baseline = fresh
+                _state.value = State(loading = false, userId = owner, name = fresh.name, bio = fresh.about.orEmpty(),
+                    handle = fresh.handle.orEmpty(), color = fresh.color ?: "emerald", avatar = fresh.avatar,
+                    coverImage = fresh.coverImage, statusEmoji = statusIconIdOrNull(fresh.statusEmoji).orEmpty(), statusText = fresh.statusText.orEmpty())
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (owned()) _state.value = _state.value.copy(loading = false, error = error.message ?: "Could not load profile")
             }
         }
     }
 
-    private fun checkLocally(handle: String): HandleCheck = when {
-        handle.isBlank() -> HandleCheck("idle")
-        handle.length !in 3..20 -> HandleCheck("short")
-        else -> HandleCheck("checking")
+    private fun clip(text: String, maximum: Int): String {
+        if (text.length <= maximum) return text
+        val breaks = java.text.BreakIterator.getCharacterInstance(java.util.Locale.ROOT)
+        breaks.setText(text)
+        return text.substring(0, breaks.preceding(maximum + 1).coerceAtLeast(0))
     }
-
-    fun uploadAvatar(dataUrl: String) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(uploading = true, error = null)
-            repo.uploadMedia(dataUrl)
-                .onSuccess { path ->
-                    _state.value = _state.value.copy(uploading = false, avatar = path)
+    fun set(field: String, value: String) {
+        if (!owned() || baseline == null) return
+        val old = _state.value
+        val next = when (field) {
+            "name" -> old.copy(name = clip(value, 32))
+            "bio" -> old.copy(bio = clip(value, 140))
+            "statusText" -> old.copy(statusText = clip(value, 48))
+            "statusEmoji" -> old.copy(statusEmoji = statusIconIdOrNull(value).orEmpty())
+            "color" -> old.copy(color = value)
+            else -> old
+        }
+        if (next != old) { editRevision++; _state.value = next }
+    }
+    fun setHandle(raw: String) {
+        if (!owned() || baseline == null) return
+        val value = raw.lowercase(java.util.Locale.ROOT).filter { it in 'a'..'z' || it in '0'..'9' || it == '_' }.take(20)
+        if (value != _state.value.handle) editRevision++
+        handleRevision++; val ticket = handleRevision
+        handleJob?.cancel()
+        _state.value = _state.value.copy(handle = value, handleCheck = HandleCheck(when {
+            value.isBlank() -> "idle"
+            value == baseline?.handle -> "current"
+            value.length < 3 -> "short"
+            else -> "checking"
+        }))
+        if (_state.value.handleCheck.state != "checking") return
+        handleJob = viewModelScope.launch {
+            try {
+                delay(350); requireOwner()
+                val result = repo.checkHandle(value).getOrThrow()
+                requireOwner()
+                if (handleRevision == ticket && _state.value.handle == value) {
+                    _state.value = _state.value.copy(handleCheck = HandleCheck(if (result.available) "free" else "taken", result.suggestion))
                 }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(uploading = false, error = e.message ?: "Upload failed - try again")
-                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                if (owned() && handleRevision == ticket) _state.value = _state.value.copy(handleCheck = HandleCheck("error"))
+            }
         }
     }
 
-    // ------------------------------------------------------------------
-    // R39 - profile cover picture (web parity: User.coverImage + upload).
-
-    /**
-     * Cover pick: upload through /api/uploads when a gateway answers; fully
-     * offline the cropped image is kept on this device (filesDir) and the
-     * UI says so honestly. Server covers ride the next successful save.
-     */
-    fun uploadCover(dataUrl: String) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(coverBusy = true, error = null)
-            repo.uploadMedia(dataUrl)
-                .onSuccess { path ->
-                    _state.value = _state.value.copy(coverBusy = false, coverImage = path, notice = "Cover updated")
-                }
-                .onFailure {
-                    val kept = runCatching { writeLocalCover(dataUrl) }.getOrDefault(false)
-                    _state.value = _state.value.copy(
-                        coverBusy = false,
-                        coverImage = if (kept) "local:cover" else _state.value.coverImage,
-                        notice = if (kept) "Cover saved on this device - it uploads when Pulse reconnects" else null,
-                        error = if (kept) null else "Could not set the cover - try again",
-                    )
-                }
-        }
-    }
-
-    /** Decode a data URL cover onto this device (offline fallback). */
-    private fun writeLocalCover(dataUrl: String): Boolean {
-        val base64 = dataUrl.substringAfter("base64;", "").ifBlank { dataUrl.substringAfter("base64,", "") }
-        if (base64.isBlank()) return false
-        val bytes = Base64.decode(base64, Base64.NO_WRAP)
-        java.io.File(appContext.filesDir, "pulse_cover.jpg").writeBytes(bytes)
+    fun beginPhotoSelection(cover: Boolean): Boolean {
+        if (!owned() || busy() || baseline == null) return false
+        pendingPicker = cover
+        _state.value = _state.value.copy(uploading = !cover, coverBusy = cover, error = null, notice = null)
         return true
     }
-
-    private fun deleteLocalCover() {
-        runCatching { java.io.File(appContext.filesDir, "pulse_cover.jpg").delete() }
+    fun photoPickerFailed(cover: Boolean) {
+        if (pendingPicker != cover) return
+        pendingPicker = null
+        if (owned()) _state.value = _state.value.copy(uploading = false, coverBusy = false, error = "Photo picker is unavailable")
     }
-
-    /** Cover removal mirrors removeAvatar: PATCH "" clears the column. */
-    fun removeCover() {
-        val s = _state.value
-        if (s.userId == null || s.coverBusy) return
-        viewModelScope.launch {
-            _state.value = s.copy(coverBusy = true, error = null)
-            repo.patchProfile(ProfilePatch(coverImage = ""))
-                .onSuccess {
-                    deleteLocalCover()
-                    _state.value = _state.value.copy(coverBusy = false, coverImage = null, notice = "Cover removed")
-                }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        coverBusy = false,
-                        error = e.message ?: "Could not remove the cover - try again when connected",
-                    )
-                }
+    fun photoSelected(context: android.content.Context, uri: android.net.Uri?, cover: Boolean) {
+        if (pendingPicker != cover || !owned()) return
+        pendingPicker = null
+        if (uri == null) { _state.value = _state.value.copy(uploading = false, coverBusy = false); return }
+        changeMedia(cover) {
+            require(uri.scheme == "content") { "Choose a photo from the system picker" }
+            app.pulse.ui.media.ImagePreparation.imageToDataUrl(context, uri).getOrThrow()
         }
     }
+    // Prepared-image callers share the same transaction boundary as picker results.
+    fun uploadAvatar(dataUrl: String) { if (beginPhotoSelection(false)) { pendingPicker = null; changeMedia(false) { dataUrl } } }
+    fun uploadCover(dataUrl: String) { if (beginPhotoSelection(true)) { pendingPicker = null; changeMedia(true) { dataUrl } } }
+    fun removeAvatar() { if (beginPhotoSelection(false)) { pendingPicker = null; changeMedia(false) { null } } }
+    fun removeCover() { if (beginPhotoSelection(true)) { pendingPicker = null; changeMedia(true) { null } } }
 
-    /**
-     * R14 gap 8 - "Remove photo" (web avatar-editor.tsx runRemovePhoto):
-     * an immediate PATCH /api/users/{id} with avatar:"" - the server nulls
-     * the column - with the same optimistic-preview + rollback contract the
-     * set/replace path honors (failure restores the previous avatar).
-     */
-    fun removeAvatar() {
-        val s = _state.value
-        if (s.userId == null || s.saving || s.removing || s.uploading) return
-        val previous = s.avatar
+    private fun changeMedia(cover: Boolean, prepare: suspend () -> String?) {
         viewModelScope.launch {
-            _state.value = s.copy(removing = true, error = null, avatar = null)
-            repo.patchProfile(ProfilePatch(avatar = ""))
-                .onSuccess {
-                    _state.value = _state.value.copy(removing = false, notice = "Profile photo removed")
+            try {
+                requireOwner()
+                val dataUrl = prepare()
+                requireOwner()
+                val path = if (dataUrl == null) "" else repo.uploadMedia(dataUrl).getOrThrow()
+                requireOwner()
+                val confirmed = repo.patchProfile(if (cover) ProfilePatch(coverImage = path) else ProfilePatch(avatar = path)).getOrThrow()
+                requireOwner()
+                check(confirmed.id == owner) { "Profile response did not match this account" }
+                if (cover) {
+                    baseline = baseline?.copy(coverImage = confirmed.coverImage)
+                    _state.value = _state.value.copy(coverImage = confirmed.coverImage, notice = "Cover update confirmed")
+                } else {
+                    baseline = baseline?.copy(avatar = confirmed.avatar)
+                    _state.value = _state.value.copy(avatar = confirmed.avatar, notice = "Photo update confirmed")
                 }
-                .onFailure { e ->
-                    _state.value = _state.value.copy(
-                        removing = false,
-                        avatar = previous,
-                        error = e.message ?: "Could not remove your photo",
-                    )
-                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (owned()) _state.value = _state.value.copy(error = error.message ?: "Photo was not confirmed. Choose it again to retry.", notice = null)
+            } finally { if (owned()) _state.value = _state.value.copy(uploading = false, coverBusy = false, removing = false) }
         }
     }
 
     fun save() {
-        val s = _state.value
-        val userId = s.userId ?: return
-        if (s.saving) return
+        if (!owned() || busy()) return
+        val original = baseline ?: return
+        val submitted = _state.value
+        if (submitted.name.trim().isEmpty()) { _state.value = submitted.copy(error = "Enter a display name"); return }
+        val revision = editRevision
+        val patch = ProfilePatch(
+            name = submitted.name.trim().takeIf { it != original.name.trim() },
+            about = submitted.bio.trim().takeIf { it != original.about.orEmpty().trim() },
+            color = submitted.color.takeIf { it != (original.color ?: "emerald") },
+            statusEmoji = submitted.statusEmoji.takeIf { it != statusIconIdOrNull(original.statusEmoji).orEmpty() },
+            statusText = submitted.statusText.takeIf { it != original.statusText.orEmpty() },
+            username = submitted.handle.takeIf { it != original.handle.orEmpty() })
+        if (patch == ProfilePatch()) {
+            _state.value = submitted.copy(error = null, notice = "No changes to save")
+            return
+        }
+        _state.value = submitted.copy(saving = true, error = null, notice = null)
         viewModelScope.launch {
-            _state.value = s.copy(saving = true, error = null)
-            val patch = ProfilePatch(
-                name = s.name.trim().takeIf { it.isNotEmpty() },
-                about = s.bio.ifBlank { null },
-                color = s.color,
-                avatar = s.avatar,
-                // Only real server paths ride the wire - the offline
-                // "local:cover" marker is a device-side render hint.
-                coverImage = s.coverImage?.takeIf { it.startsWith("/api/uploads/") },
-                statusEmoji = s.statusEmoji,
-                statusText = s.statusText,
-                username = s.handle,
-            )
-            repo.patchProfile(patch)
-                .onSuccess {
-                    _state.value = _state.value.copy(saving = false, notice = "Profile updated")
-                }
-                .onFailure { e ->
-                    val message = e.message ?: "Could not save the profile - try again"
-                    _state.value = _state.value.copy(saving = false, error = message)
-                    if (message.contains("already taken") || message.contains("taken")) {
-                        _state.value = _state.value.copy(handleCheck = HandleCheck("taken"))
-                        // Re-check for a suggestion
-                        repo.checkHandle(s.handle)
-                            .onSuccess { check ->
-                                _state.value = _state.value.copy(
-                                    handleCheck = HandleCheck("taken", check.suggestion),
-                                )
-                            }
-                    }
-                }
+            try {
+                requireOwner()
+                val confirmed = repo.patchProfile(patch).getOrThrow()
+                requireOwner()
+                check(confirmed.id == owner) { "Profile response did not match this account" }
+                baseline = original.copy(name = if (patch.name != null) confirmed.name else original.name,
+                    about = if (patch.about != null) confirmed.about else original.about,
+                    color = if (patch.color != null) confirmed.color else original.color,
+                    statusEmoji = if (patch.statusEmoji != null) confirmed.statusEmoji else original.statusEmoji,
+                    statusText = if (patch.statusText != null) confirmed.statusText else original.statusText,
+                    handle = if (patch.username != null) confirmed.handle else original.handle)
+                _state.value = _state.value.copy(notice = if (editRevision == revision) "Profile updated" else "Submitted changes saved. Newer edits are kept.")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (owned()) _state.value = _state.value.copy(error = error.message ?: "Could not confirm the profile update")
+            } finally { if (owned()) _state.value = _state.value.copy(saving = false) }
         }
     }
-
-    fun consumeTransient() {
-        _state.value = _state.value.copy(notice = null)
-    }
+    fun consumeTransient() { _state.value = _state.value.copy(notice = null) }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -345,25 +306,11 @@ fun ProfileEditScreen(
     val context = LocalContext.current
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            runCatching {
-                val source = BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
-                val side = minOf(source.width, source.height)
-                val left = (source.width - side) / 2
-                val top = (source.height - side) / 2
-                val square = Bitmap.createBitmap(source, left, top, side, side)
-                val scaled = if (square.width > 512) {
-                    Bitmap.createScaledBitmap(square, 512, 512, true)
-                } else {
-                    square
-                }
-                val bytes = ByteArrayOutputStream().use { out ->
-                    scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                    out.toByteArray()
-                }
-                "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-            }.getOrNull()?.let(viewModel::uploadAvatar)
-        }
+        viewModel.photoSelected(context.applicationContext, uri, cover = false)
+    }
+
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        viewModel.photoSelected(context.applicationContext, uri, cover = true)
     }
 
     LaunchedEffect(state.notice) {
@@ -386,35 +333,15 @@ fun ProfileEditScreen(
             Text("Edit profile", fontWeight = FontWeight.Bold, fontSize = 20.sp)
         }
         Spacer(Modifier.height(12.dp))
-
-        // R39 - profile cover picture (web parity): tap to pick, uploads
-        // through /api/uploads when connected, kept on-device otherwise.
-        val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-            if (uri != null) {
-                runCatching {
-                    val source = BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
-                        ?: return@runCatching null
-                    // Center-crop to 2:1 at 1024 wide - the banner aspect.
-                    val targetW = 1024
-                    val targetH = 512
-                    val scale = maxOf(
-                        targetW.toFloat() / source.width,
-                        targetH.toFloat() / source.height,
-                    )
-                    val scaledW = (source.width * scale).toInt().coerceAtLeast(targetW)
-                    val scaledH = (source.height * scale).toInt().coerceAtLeast(targetH)
-                    val scaled = Bitmap.createScaledBitmap(source, scaledW, scaledH, true)
-                    val left = ((scaledW - targetW) / 2).coerceAtLeast(0)
-                    val top = ((scaledH - targetH) / 2).coerceAtLeast(0)
-                    val cropped = Bitmap.createBitmap(scaled, left, top, targetW, targetH)
-                    val bytes = ByteArrayOutputStream().use { out ->
-                        cropped.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                        out.toByteArray()
-                    }
-                    "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-                }.getOrNull()?.let(viewModel::uploadCover)
-            }
+        if (state.userId == null) {
+            if (state.loading) CircularProgressIndicator()
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (!state.loading) TextButton(onClick = viewModel::reload) { Text("Retry loading profile") }
+            return@Column
         }
+
+        // Profile cover: bounded preparation followed by upload and confirmed PATCH.
+        // Failure keeps the previous cover; there is no unimplemented offline queue.
 
         Spacer(Modifier.height(16.dp))
         Text("Cover picture", fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -426,7 +353,12 @@ fun ProfileEditScreen(
                 .clip(RoundedCornerShape(20.dp))
                 .background(Color.White.copy(alpha = 0.05f))
                 .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(20.dp))
-                .clickable { coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                .clickable(enabled = !state.loading && !state.coverBusy && !state.uploading && !state.saving) {
+                    if (viewModel.beginPhotoSelection(true)) {
+                        try { coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                        catch (_: Exception) { viewModel.photoPickerFailed(true) }
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             when (state.coverImage) {
@@ -436,14 +368,6 @@ fun ProfileEditScreen(
                         Spacer(Modifier.height(6.dp))
                         Text("Add a cover picture", fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f))
                     }
-                }
-                "local:cover" -> {
-                    AsyncImage(
-                        model = java.io.File(context.filesDir, "pulse_cover.jpg"),
-                        contentDescription = "Your cover picture",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
                 }
                 else -> {
                     AsyncImage(
@@ -462,7 +386,7 @@ fun ProfileEditScreen(
             }
         }
         if (state.coverImage != null) {
-            TextButton(onClick = viewModel::removeCover) {
+            TextButton(onClick = viewModel::removeCover, enabled = !state.coverBusy && !state.uploading && !state.saving) {
                 Text("Remove cover", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
             }
         }
@@ -471,7 +395,12 @@ fun ProfileEditScreen(
 
         // Avatar
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.clickable { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+            Box(Modifier.clickable(enabled = !state.loading && !state.coverBusy && !state.uploading && !state.saving) {
+                if (viewModel.beginPhotoSelection(false)) {
+                    try { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                    catch (_: Exception) { viewModel.photoPickerFailed(false) }
+                }
+            }) {
                 val path = state.avatar
                 if (path != null && path.startsWith("/api/uploads/")) {
                     AsyncImage(
@@ -494,7 +423,7 @@ fun ProfileEditScreen(
             Column {
                 Text("Tap the avatar to change it", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Text(
-                    "Square crop, ≤512 px - stored on the server",
+                    "Bounded photo preparation; updated only after server confirmation",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                 )
@@ -503,7 +432,7 @@ fun ProfileEditScreen(
                 if (state.avatar != null) {
                     TextButton(
                         onClick = viewModel::removeAvatar,
-                        enabled = !state.removing && !state.uploading && !state.saving,
+                        enabled = !state.removing && !state.uploading && !state.coverBusy && !state.saving,
                     ) {
                         Text("Remove photo", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                     }
@@ -549,6 +478,8 @@ fun ProfileEditScreen(
         )
         val check = state.handleCheck
         if (check.state == "checking") HandleHint("Checking @${state.handle}…", MaterialTheme.colorScheme.onSurfaceVariant)
+        if (check.state == "error") HandleHint("Could not check this handle. Edit it to retry.", MaterialTheme.colorScheme.error)
+        if (check.state == "current") HandleHint("That's your current handle", MaterialTheme.colorScheme.primary)
         if (check.state == "free") HandleHint("@${state.handle} is free", MaterialTheme.colorScheme.primary)
         if (check.state == "short") HandleHint("3–20 characters: a-z, 0-9, underscore.", MaterialTheme.colorScheme.onSurfaceVariant)
         if (check.state == "taken") {
@@ -632,7 +563,7 @@ fun ProfileEditScreen(
         }
         Spacer(Modifier.height(10.dp))
         Text(
-            "Changes appear everywhere instantly - profile, chats and mentions.",
+            "Confirmed changes appear in your profile, chats and mentions.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
         )
@@ -644,7 +575,7 @@ fun ProfileEditScreen(
         }
         Button(
             onClick = viewModel::save,
-            enabled = !state.saving && !state.uploading && state.name.isNotBlank(),
+            enabled = !state.loading && !state.saving && !state.uploading && !state.coverBusy && state.name.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (state.saving) {

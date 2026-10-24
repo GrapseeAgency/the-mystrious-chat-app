@@ -158,7 +158,11 @@ dependencies {
     // R10-a - the quick-reply payload parser is pinned by a pure JVM test.
     testImplementation(libs.junit4)
 
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     androidTestImplementation(libs.androidx.test.core.ktx)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.exifinterface)
 }

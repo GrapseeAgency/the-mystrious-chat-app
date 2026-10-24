@@ -315,161 +315,253 @@ class HubViewModel @Inject constructor(
     private val _tasks = MutableStateFlow<HubTasksPageDto?>(null)
     val tasks: StateFlow<HubTasksPageDto?> = _tasks.asStateFlow()
 
+    private val _taskMutationBusy = MutableStateFlow(false)
+    val taskMutationBusy = _taskMutationBusy.asStateFlow()
+    private var taskReads = 0L
+
     fun loadTasks() {
+        if (_taskMutationBusy.value) return
+        val ticket = ++taskReads
+        val epoch = repo.attachmentSessionKey()
+        val owned = repo.boundToCurrentAccount()
+        if (_tasks.value?.userId != owned.viewerId) _tasks.value = null
         viewModelScope.launch {
-            if (_tasks.value == null) repo.cachedHubTasks()?.let { cached -> _tasks.value = cached }
-            repo.hubTasks().fold(
-                onSuccess = { v -> _tasks.value = v },
-                onFailure = { t -> if (_tasks.value == null) notify(t.message ?: "Could not load tasks", isError = true) },
-            )
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val cached = if (_tasks.value == null) owned.cachedHubTasks() else null
+                if (taskReads != ticket || repo.attachmentSessionKey() != epoch) return@launch
+                if (cached != null) _tasks.value = cached
+                val page = owned.hubTasks().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (taskReads == ticket && repo.attachmentSessionKey() == epoch) _tasks.value = page
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (taskReads == ticket && repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not load tasks", isError = true)
+            }
         }
     }
 
-    fun createTask(title: String) {
+    private fun taskAction(operation: suspend (PulseRepository) -> Unit, completed: (Boolean) -> Unit = {}) {
+        if (_taskMutationBusy.value) { completed(false); return }
+        val epoch = repo.attachmentSessionKey() ?: run { completed(false); return }
+        val owned = repo.boundToCurrentAccount()
+        _taskMutationBusy.value = true; taskReads++
         viewModelScope.launch {
-            repo.createHubTask(title, "todo").fold(
-                onSuccess = { _ -> loadTasks(); notify("Task added") },
-                onFailure = { t -> notify(t.message ?: "Could not add the task", isError = true) },
-            )
+            var accepted = false
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                operation(owned)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                accepted = repo.attachmentSessionKey() == epoch
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not update this task", isError = true)
+            } finally { _taskMutationBusy.value = false; taskReads++ }
+            if (repo.attachmentSessionKey() == epoch) { completed(accepted); loadTasks() }
         }
     }
 
-    fun moveTask(task: HubTaskDto, status: String) {
-        viewModelScope.launch {
-            repo.updateHubTask(task.id, null, status).fold(
-                onSuccess = { _ -> loadTasks() },
-                onFailure = { t -> notify(t.message ?: "Could not move the task", isError = true) },
-            )
-        }
-    }
+    fun createTask(title: String, completed: (Boolean) -> Unit) = taskAction({ owned ->
+        owned.createHubTask(title, "todo").getOrThrow()
+    }, { accepted -> if (accepted) notify("Task added"); completed(accepted) })
 
-    fun deleteTask(taskId: String) {
-        viewModelScope.launch {
-            repo.deleteHubTask(taskId).fold(
-                onSuccess = { _ -> loadTasks() },
-                onFailure = { t -> notify(t.message ?: "Could not delete the task", isError = true) },
-            )
-        }
-    }
+    fun moveTask(task: HubTaskDto, status: String) = taskAction({ owned ->
+        owned.updateHubTask(task.id, null, status).getOrThrow()
+    })
+
+    fun deleteTask(taskId: String) = taskAction({ owned -> owned.deleteHubTask(taskId).getOrThrow() })
 
     // ── F-HB-06 market ──
     private val _market = MutableStateFlow<List<MarketListingDto>>(emptyList())
     val market: StateFlow<List<MarketListingDto>> = _market.asStateFlow()
 
+    private val _marketBusy = MutableStateFlow(false)
+    val marketBusy = _marketBusy.asStateFlow()
+    private val _marketLoaded = MutableStateFlow(false)
+    val marketLoaded = _marketLoaded.asStateFlow()
+    private val _marketLoading = MutableStateFlow(false)
+    val marketLoading = _marketLoading.asStateFlow()
+    private val _marketError = MutableStateFlow<String?>(null)
+    val marketError = _marketError.asStateFlow()
+    private val _marketActionError = MutableStateFlow<String?>(null)
+    val marketActionError = _marketActionError.asStateFlow()
+    private var marketReads = 0L
+    private var marketOwner: String? = null
+
     fun loadMarket() {
+        val epoch = repo.attachmentSessionKey()
+        if (marketOwner != epoch) {
+            _market.value = emptyList(); _marketLoaded.value = false; marketOwner = epoch
+            _marketError.value = "Account changed. Refresh the market."; _marketActionError.value = null; marketReads++
+        }
+        if (_marketBusy.value) return
+        val ticket = ++marketReads
+        _marketLoading.value = true; _marketError.value = null
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
-            repo.market().fold(
-                onSuccess = { v -> _market.value = v.listings },
-                onFailure = { t -> notify(t.message ?: "Could not load the market", isError = true) },
-            )
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val page = owned.market().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (ticket == marketReads && repo.attachmentSessionKey() == epoch) { _market.value = page.listings; _marketLoaded.value = true }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (ticket == marketReads && repo.attachmentSessionKey() == epoch) _marketError.value = error.message ?: "Could not load the market"
+            } finally {
+                if (ticket == marketReads && repo.attachmentSessionKey() == epoch) _marketLoading.value = false
+            }
         }
     }
 
-    fun createListing(title: String, price: Long, description: String?) {
+    internal fun <T> marketAction(spendsMoney: Boolean = false, operation: suspend (PulseRepository) -> T,
+        accepted: (T) -> Unit, completed: (Boolean) -> Unit = {}) {
+        if (_marketBusy.value || _walletMutationBusy.value) { completed(false); return }
+        val epoch = repo.attachmentSessionKey() ?: run { completed(false); return }
+        val owned = repo.boundToCurrentAccount()
+        _marketBusy.value = true; marketReads++; _marketLoading.value = false; _marketActionError.value = null
+        if (spendsMoney) { _walletMutationBusy.value = true; walletReadRevision++ }
         viewModelScope.launch {
-            repo.createListing(title, description, price).fold(
-                onSuccess = { v -> loadMarket(); notify("Listed \"${v.title}\" for $price PC") },
-                onFailure = { t -> notify(t.message ?: "Could not list", isError = true) },
-            )
+            var confirmed = false
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val value = operation(owned)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch) { accepted(value); confirmed = true }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) {
+                    _marketActionError.value = error.message ?: "Market action was not confirmed; refresh before retrying."
+                    notify(_marketActionError.value!!, isError = true)
+                }
+            } finally {
+                _marketBusy.value = false; marketReads++
+                if (spendsMoney) _walletMutationBusy.value = false
+            }
+            if (repo.attachmentSessionKey() == epoch) { completed(confirmed); loadMarket(); if (spendsMoney) loadWallet() }
         }
     }
 
-    fun buy(listing: MarketListingDto) {
-        mutateWallet(send = { repo.buyListing(listing.id) }) { result ->
-            result.fold(
-                onSuccess = { _ -> notify("Bought \"${listing.title}\""); loadWallet(); loadMarket() },
-                onFailure = { t -> loadWallet(); notify(t.message ?: "Purchase failed", isError = true) },
-            )
-        }
-    }
+    fun createListing(title: String, price: Long, description: String?, completed: (Boolean) -> Unit) =
+        marketAction(operation = { it.createListing(title, description, price).getOrThrow() }, accepted = { row ->
+            _market.value = listOf(row) + _market.value.filterNot { it.id == row.id }; _marketLoaded.value = true
+            notify("Listed \"${row.title}\" for $price PC")
+        }, completed = completed)
+
+    fun buy(listing: MarketListingDto) = marketAction(spendsMoney = true,
+        operation = { it.buyListing(listing.id).getOrThrow() }, accepted = {
+            _market.value = _market.value.filterNot { it.id == listing.id }
+            notify("Bought \"${listing.title}\"")
+        })
 
     // ── F-HB-07 logs ──
     private val _logs = MutableStateFlow<List<HubLogDto>>(emptyList())
     val logs: StateFlow<List<HubLogDto>> = _logs.asStateFlow()
 
+    private var logsRequest = 0L
     fun loadLogs() {
+        val ticket = ++logsRequest
+        val epoch = repo.attachmentSessionKey()
+        val owned = repo.boundToCurrentAccount()
+        val owner = owned.viewerId
+        _logs.value = if (owner == null) emptyList() else _logs.value.filter { it.user?.id == owner }
         viewModelScope.launch {
-            repo.hubLogs(limit = 80, kind = null).fold(
-                onSuccess = { v -> _logs.value = v.logs },
-                onFailure = { t -> notify(t.message ?: "Could not load logs", isError = true) },
-            )
-        }
-    }
-
-    // ── F-HB-08/09/10 apps ──
-    fun loadInstallState(appId: String) {
-        viewModelScope.launch {
-            repo.appInstallState(appId).onSuccess { v ->
-                _installs.value = _installs.value + (
-                    appId to AppInstallRow(
-                        appId = appId,
-                        installed = v.installed,
-                        installs = v.installs,
-                        status = v.status,
-                        installedAt = v.installedAt,
-                        installers = v.installers,
-                    )
-                    )
+            if (logsRequest != ticket || repo.attachmentSessionKey() != epoch) return@launch
+            try {
+                val page = owned.hubLogs(limit = 80, kind = null).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (logsRequest == ticket && repo.attachmentSessionKey() == epoch) _logs.value = page.logs
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (logsRequest == ticket && repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not load activity", isError = true)
             }
         }
     }
 
-    fun installApp(appId: String, name: String) {
-        viewModelScope.launch {
-            repo.installApp(appId).fold(
-                onSuccess = { v ->
-                    notify(if (v.installed) "Connected to $name" else "Disconnected from $name")
-                    loadInstallState(appId)
-                },
-                onFailure = { t -> notify(t.message ?: "Install failed", isError = true) },
-            )
+    // ── F-HB-08/09/10 apps ──
+    private val appGates = mutableMapOf<String, app.pulse.domain.sync.RoomRefreshGate>()
+    private val _appBusy = MutableStateFlow<Set<String>>(emptySet())
+    val appBusy = _appBusy.asStateFlow()
+    private val _appErrors = MutableStateFlow<Map<String, String>>(emptyMap())
+    val appErrors = _appErrors.asStateFlow()
+    private var appsOwner: String? = null
+    private var appsScan = 0L
+    private val _appsLoading = MutableStateFlow(false)
+    val appsLoading = _appsLoading.asStateFlow()
+    private fun prepareApps() {
+        if (appsOwner != repo.attachmentSessionKey()) {
+            _installs.value = emptyMap(); _appErrors.value = emptyMap(); appGates.clear()
+            appsOwner = repo.attachmentSessionKey(); appsScan++; _appsLoading.value = false
         }
     }
-
-    fun uninstallApp(appId: String, name: String) {
-        viewModelScope.launch {
-            repo.uninstallApp(appId).fold(
-                onSuccess = { _ -> notify("Disconnected from $name"); loadInstallState(appId) },
-                onFailure = { t -> notify(t.message ?: "Disconnect failed", isError = true) },
-            )
+    private suspend fun fetchInstall(appId: String, owned: PulseRepository, epoch: String?) {
+        if (repo.attachmentSessionKey() != epoch || "install:$appId" in _appBusy.value) return
+        val gate = appGates.getOrPut("install:$appId") { app.pulse.domain.sync.RoomRefreshGate() }
+        val ticket = gate.beginRead() ?: return
+        try {
+            val row = owned.appInstallState(appId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() == epoch && gate.accepts(ticket)) {
+                _installs.value = _installs.value + (appId to AppInstallRow(appId, row.installed, row.installs, row.status, row.installedAt, row.installers))
+                _appErrors.value = _appErrors.value - "read:$appId"
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) {
+            if (repo.attachmentSessionKey() == epoch && gate.accepts(ticket)) _appErrors.value = _appErrors.value + ("read:$appId" to (error.message ?: "Connection status unavailable."))
         }
     }
-
-    /** F-HB-09 - join (or fetch) the app community → real conversation id. */
-    fun joinCommunity(appId: String, name: String, onJoined: (String) -> Unit) {
+    fun loadInstallState(appId: String) {
+        prepareApps()
+        val owned = repo.boundToCurrentAccount(); val epoch = repo.attachmentSessionKey()
+        viewModelScope.launch { fetchInstall(appId, owned, epoch) }
+    }
+    private fun <T> appAction(key: String, operation: suspend (PulseRepository) -> T, accepted: (T) -> Unit, refresh: () -> Unit = {}) {
+        prepareApps()
+        if (key in _appBusy.value) return
+        val owned = repo.boundToCurrentAccount(); val epoch = repo.attachmentSessionKey() ?: return
+        val gate = appGates.getOrPut(key) { app.pulse.domain.sync.RoomRefreshGate() }
+        _appBusy.value = _appBusy.value + key; _appErrors.value = _appErrors.value - key; gate.beginWrite()
         viewModelScope.launch {
-            repo.joinAppCommunity(appId).fold(
-                onSuccess = { v ->
-                    v.conversation?.id?.let { id ->
-                        notify("Welcome to the $name community")
-                        onJoined(id)
-                    } ?: notify("Community unavailable", isError = true)
-                },
-                onFailure = { t -> notify(t.message ?: "Could not join the community", isError = true) },
-            )
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val row = operation(owned)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch) accepted(row)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) _appErrors.value = _appErrors.value + (key to (error.message ?: "App action was not confirmed."))
+            } finally { _appBusy.value = _appBusy.value - key; gate.endWrite() }
+            if (repo.attachmentSessionKey() == epoch) refresh()
         }
     }
-
-    /** F-HB-10 - fan-out My apps state (web hub-data.tsx parity). */
+    private fun setInstalled(appId: String, name: String, installed: Boolean) = appAction("install:$appId", operation = { owned ->
+        (if (installed) owned.installApp(appId) else owned.uninstallApp(appId)).getOrThrow()
+    }, accepted = { row ->
+        _installs.value = _installs.value + (appId to AppInstallRow(appId, row.installed, row.installs, row.status, row.installedAt, row.installers))
+        notify(if (installed) "Connected to $name" else "Disconnected from $name")
+    }, refresh = { loadInstallState(appId) })
+    fun installApp(appId: String, name: String) = setInstalled(appId, name, true)
+    fun uninstallApp(appId: String, name: String) = setInstalled(appId, name, false)
+    fun joinCommunity(appId: String, name: String, onJoined: (String) -> Unit) = appAction("community:$appId",
+        operation = { it.joinAppCommunity(appId).getOrThrow() }, accepted = { row ->
+            require(row.joined); onJoined(requireNotNull(row.conversation).id)
+        })
     fun loadMyApps(catalog: HubCatalog) {
+        prepareApps()
+        if (_appsLoading.value) return
+        val epoch = repo.attachmentSessionKey(); val owned = repo.boundToCurrentAccount(); val ticket = ++appsScan
+        _appsLoading.value = true
         viewModelScope.launch {
-            val ids = catalog.apps.take(24).map { it.n.toString() }
-            val rows = ids.map { id -> async { id to runCatching { repo.appInstallState(id).getOrNull() }.getOrNull() } }.awaitAll()
-            val map = rows.mapNotNull { (id, state) ->
-                state?.let {
-                    id to AppInstallRow(
-                        appId = id,
-                        installed = it.installed,
-                        installs = it.installs,
-                        status = it.status,
-                        installedAt = it.installedAt,
-                        installers = it.installers,
-                    )
+            try {
+                // All catalog entries, bounded sequential traffic; never silently drop apps 25–100.
+                for (app in catalog.apps) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (ticket != appsScan || repo.attachmentSessionKey() != epoch) return@launch
+                    fetchInstall(app.n.toString(), owned, epoch)
                 }
-            }.toMap()
-            _installs.value = _installs.value + map
+            } finally { if (ticket == appsScan && repo.attachmentSessionKey() == epoch) _appsLoading.value = false }
         }
     }
+
 }
 
 // ── Surface routing (hub tab → sub-surface sheets) ───────────────────────
@@ -881,6 +973,7 @@ private fun TasksSheet(vm: HubViewModel, onDismiss: () -> Unit) {
     var title by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { vm.loadTasks() }
     val tasks by vm.tasks.collectAsStateWithLifecycle()
+    val pending by vm.taskMutationBusy.collectAsStateWithLifecycle()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Text("Tasks", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -891,7 +984,13 @@ private fun TasksSheet(vm: HubViewModel, onDismiss: () -> Unit) {
             )
             Spacer(Modifier.height(6.dp))
             Button(
-                onClick = { if (title.isNotBlank()) { vm.createTask(title.trim()); title = "" } },
+                enabled = !pending,
+                onClick = {
+                    if (title.isNotBlank()) {
+                        val submitted = title
+                        vm.createTask(title.trim()) { accepted -> if (accepted && title == submitted) title = "" }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Add task") }
             Spacer(Modifier.height(10.dp))
@@ -911,10 +1010,11 @@ private fun TasksSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(t.title, Modifier.weight(1f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (col != "todo") Text("‹", Modifier.clickable { vm.moveTask(t, prevStatus(col)) }.padding(6.dp))
-                        if (col != "done") Text("›", Modifier.clickable { vm.moveTask(t, nextStatus(col)) }.padding(6.dp))
+                        if (col != "todo") Text("‹", Modifier.clickable(enabled = !pending) { vm.moveTask(t, prevStatus(col)) }.padding(6.dp))
+                        if (col != "done") Text("›", Modifier.clickable(enabled = !pending) { vm.moveTask(t, nextStatus(col)) }.padding(6.dp))
                         // R35 Neo - icon affordance instead of the old glyph button.
                         IconButton(
+                            enabled = !pending,
                             onClick = { vm.deleteTask(t.id) },
                             modifier = Modifier.size(28.dp),
                         ) {
@@ -941,42 +1041,62 @@ private fun nextStatus(s: String) = when (s) { "todo" -> "doing"; else -> "done"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MarketSheet(vm: HubViewModel, onDismiss: () -> Unit) {
-    var title by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
-    var creating by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var confirmBuy by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { vm.loadMarket() }
+    var title by remember(vm.viewerId) { mutableStateOf("") }
+    var price by remember(vm.viewerId) { mutableStateOf("") }
+    var creating by remember(vm.viewerId) { mutableStateOf(false) }
+    var error by remember(vm.viewerId) { mutableStateOf<String?>(null) }
+    var confirmBuy by remember(vm.viewerId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(vm.viewerId) { vm.loadMarket() }
     val listings by vm.market.collectAsStateWithLifecycle()
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val marketBusy by vm.marketBusy.collectAsStateWithLifecycle()
+    val walletBusy by vm.walletMutationBusy.collectAsStateWithLifecycle()
+    val busy = marketBusy || walletBusy
+    val loaded by vm.marketLoaded.collectAsStateWithLifecycle()
+    val loading by vm.marketLoading.collectAsStateWithLifecycle()
+    val loadError by vm.marketError.collectAsStateWithLifecycle()
+    val actionError by vm.marketActionError.collectAsStateWithLifecycle()
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(confirmValueChange = { !busy || it != androidx.compose.material3.SheetValue.Hidden })) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Market", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = { creating = !creating }) { Text(if (creating) "Close" else "+ List") }
+                TextButton(enabled = !busy, onClick = { creating = !creating }) { Text(if (creating) "Close" else "+ List") }
             }
             if (creating) {
-                OutlinedTextField(value = title, onValueChange = { title = it.take(80) }, label = { Text("Title (1–80)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(enabled = !busy, value = title, onValueChange = { title = it.take(80) }, label = { Text("Title (1–80)") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(value = price, onValueChange = { price = it.filter(Char::isDigit).take(6) }, label = { Text("Price PC") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(enabled = !busy, value = price, onValueChange = { price = it.filter(Char::isDigit).take(6) }, label = { Text("Price PC") }, modifier = Modifier.fillMaxWidth())
                 error?.let {
                     Spacer(Modifier.height(6.dp))
                     Text(it, color = EmberPalette.Signal, fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
+                    enabled = !busy,
                     onClick = {
                         val p = price.toLongOrNull() ?: 0
                         when {
                             title.isBlank() -> error = "Title must be 1–80 characters."
                             p !in 1..100_000 -> error = "Price must be a positive whole number (max 100,000 PC)."
-                            else -> { vm.createListing(title.trim(), p, null); title = ""; price = ""; creating = false }
+                            else -> {
+                                error = null
+                                val sentTitle = title; val sentPrice = price
+                                vm.createListing(title.trim(), p, null) { accepted ->
+                                    if (accepted && title == sentTitle && price == sentPrice) { title = ""; price = ""; creating = false }
+                                }
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Post listing") }
                 Spacer(Modifier.height(10.dp))
             }
-            if (listings.isEmpty()) Text("Nothing on the market yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            actionError?.let { Text(it, color = EmberPalette.Signal) }
+            if (loading) Text("Refreshing market…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            loadError?.let { message ->
+                Text(message, color = EmberPalette.Signal)
+                TextButton(enabled = !busy && !loading, onClick = { vm.loadMarket() }) { Text("Retry") }
+            }
+            if (loaded && listings.isEmpty()) Text("Nothing on the market yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             listings.forEach { l ->
                 Row(
                     Modifier
@@ -996,9 +1116,9 @@ private fun MarketSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                         l.mine -> Text("Yours", color = EmberPalette.Online, fontSize = 12.sp)
                         confirmBuy == l.id -> Row {
                             TextButton(onClick = { confirmBuy = null }) { Text("No") }
-                            Button(onClick = { vm.buy(l); confirmBuy = null }) { Text("Buy") }
+                            Button(enabled = !busy, onClick = { vm.buy(l); confirmBuy = null }) { Text("Buy") }
                         }
-                        else -> OutlinedButton(onClick = { confirmBuy = l.id }) { Text("Buy") }
+                        else -> OutlinedButton(enabled = !busy, onClick = { confirmBuy = l.id }) { Text("Buy") }
                     }
                 }
             }
@@ -1042,6 +1162,9 @@ private fun AppsSheet(
     var category by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf<HubCatalogApp?>(null) }
 
+    val loading by vm.appsLoading.collectAsStateWithLifecycle()
+    val failures by vm.appErrors.collectAsStateWithLifecycle()
+    val verified = catalog.apps.all { installs[it.n.toString()] != null && failures["read:${it.n}"] == null }
     val visible = catalog.apps
         .filter { !myAppsOnly || (installs[it.n.toString()]?.installed == true) }
         .filter { category == null || it.category == category }
@@ -1075,7 +1198,12 @@ private fun AppsSheet(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            if (visible.isEmpty()) {
+            if (loading) Text("Checking connections…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!loading && !verified) {
+                Text("Connections could not all be verified. Previously confirmed apps are kept.", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { vm.loadMyApps(catalog) }) { Text("Retry") }
+            }
+            if (visible.isEmpty() && (!myAppsOnly || (verified && !loading))) {
                 Text(
                     if (myAppsOnly) "No apps connected yet - open Mini apps to connect."
                     else "No apps match.",

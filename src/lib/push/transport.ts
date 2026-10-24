@@ -21,6 +21,8 @@
 // 
 import 'server-only'
 import crypto from 'node:crypto'
+import { postApns, apnsOrigin } from './apns-http2.ts'
+import { pushDeliveryWindow, shouldRetirePushToken, apnsInvalidatedAt } from './delivery-policy.ts'
 import { db } from '@/lib/db'
 
 export type PushPlatform = 'web' | 'android' | 'ios'
@@ -33,6 +35,11 @@ export interface PushPayload {
   body: string
   conversationId: string
   messageId?: string
+  /** Assigned from the registration binding, never trusted from a caller. */
+  recipientUserId?: string
+  /** Absolute source/root deadline; never extend it during device fanout. */
+  expiresAt?: string
+  callId?: string
   callKind?: 'voice' | 'video'
   callerName?: string
 }
@@ -57,7 +64,7 @@ async function webPushSender(): Promise<typeof import('web-push') | null> {
     // Bundler interop: web-push is CJS - `.default` may be undefined under
     // webpack/turbopack; fall back to the namespace itself.
     const mod = await import('web-push')
-    const lib = ((mod as { default?: typeof mod }).default ?? mod) as typeof import('web-push')
+    const lib = mod.default ?? mod
     lib.setVapidDetails(
       process.env.VAPID_SUBJECT || 'mailto:push@pulse.chat',
       publicKey,
@@ -199,8 +206,10 @@ async function apnsBearer(): Promise<string | null> {
 // online suppression 
 
 async function onlineUserIds(): Promise<Set<string>> {
+  const secret = process.env.CRON_SECRET
+  if (!secret) return new Set()
   try {
-    const res = await fetch(`${SOCKET_URL}/online`, { signal: AbortSignal.timeout(1500) })
+    const res = await fetch(`${SOCKET_URL}/online`, { headers: { 'x-pulse-key': secret }, signal: AbortSignal.timeout(1500) })
     if (!res.ok) return new Set()
     const body = (await res.json()) as { onlineUserIds?: unknown }
     if (!Array.isArray(body.onlineUserIds)) return new Set()
@@ -212,7 +221,7 @@ async function onlineUserIds(): Promise<Set<string>> {
 
 // per-platform senders 
 
-type SendResult = { ok: boolean; pruneToken: boolean; skipped?: boolean }
+type SendResult = { ok: boolean; pruneToken: boolean; skipped?: boolean; invalidatedAt?: number }
 
 async function sendWeb(token: string, payload: PushPayload): Promise<SendResult> {
   const lib = await webPushSender()
@@ -229,7 +238,10 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
   }
   if (!subscription) subscription = { endpoint: token }
   if (!subscription.endpoint) return { ok: false, pruneToken: true }
-  const hasKeys = Boolean(subscription.keys?.p256dh && subscription.keys?.auth)
+  const window = pushDeliveryWindow(payload)
+  if (!window) return { ok: false, pruneToken: false, skipped: true }
+  const hasKeys = typeof subscription.keys?.p256dh === 'string' && subscription.keys.p256dh.length > 0 &&
+    typeof subscription.keys?.auth === 'string' && subscription.keys.auth.length > 0
   const body = hasKeys
     ? JSON.stringify({
         kind: payload.kind,
@@ -237,13 +249,21 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
         body: payload.body,
         conversationId: payload.conversationId,
         messageId: payload.messageId ?? null,
+        ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+        ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+        ...(payload.callId ? { callId: payload.callId } : {}),
         callKind: payload.callKind ?? null,
         callerName: payload.callerName ?? null,
       })
     : undefined
   try {
-    await lib.sendNotification(subscription as { endpoint: string; keys?: Record<string, string> }, body, {
-      TTL: 3600,
+    // web-push does not require encryption keys for a payload-free legacy ping.
+    // Its declarations require the keys object even in that mode.
+    await lib.sendNotification({ endpoint: subscription.endpoint, keys: {
+      p256dh: hasKeys ? subscription.keys!.p256dh : '',
+      auth: hasKeys ? subscription.keys!.auth : '',
+    } }, body, {
+      TTL: window.ttlSeconds,
       urgency: payload.kind === 'message' ? 'normal' : 'high',
     })
     return { ok: true, pruneToken: false }
@@ -262,6 +282,8 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
   const bearer = await fcmBearer()
   if (!bearer) return { ok: false, pruneToken: false, skipped: true }
   const projectId = fcmCredentials()?.projectId ?? ''
+  const window = pushDeliveryWindow(payload)
+  if (!window) return { ok: false, pruneToken: false, skipped: true }
   try {
     const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
       method: 'POST',
@@ -269,23 +291,30 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
       body: JSON.stringify({
         message: {
           token,
-          notification: { title: payload.title, body: payload.body },
+          // Call data must reach the native deadline/owner guard even when
+          // backgrounded; an OS-rendered mixed notification bypasses it.
+          ...(payload.kind === 'message' ? { notification: { title: payload.title, body: payload.body } } : {}),
           data: {
             kind: payload.kind,
+            ...(payload.kind !== 'message' ? { title: payload.title, body: payload.body } : {}),
             conversationId: payload.conversationId,
             ...(payload.messageId ? { messageId: payload.messageId } : {}),
+            ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+            ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+            ...(payload.callId ? { callId: payload.callId } : {}),
             ...(payload.callKind ? { callKind: payload.callKind } : {}),
             ...(payload.callerName ? { callerName: payload.callerName } : {}),
           },
           android: {
+            ttl: `${window.ttlSeconds}s`,
             priority: payload.kind === 'message' ? 'normal' : 'high',
           },
         },
       }),
       signal: AbortSignal.timeout(8000),
     })
-    const prune = res.status === 404 || res.status === 410 || res.status === 400
-    return { ok: res.ok, pruneToken: prune }
+    const error: unknown = res.ok ? null : await res.json().catch(() => null)
+    return { ok: res.ok, pruneToken: shouldRetirePushToken('android', res.status, error) }
   } catch {
     return { ok: false, pruneToken: false }
   }
@@ -294,17 +323,19 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
 async function sendIos(token: string, payload: PushPayload): Promise<SendResult> {
   const bearer = await apnsBearer()
   if (!bearer) return { ok: false, pruneToken: false, skipped: true }
+  const window = pushDeliveryWindow(payload)
+  if (!window) return { ok: false, pruneToken: false, skipped: true }
   try {
-    const res = await fetch(`https://api.push.apple.com/3/device/${encodeURIComponent(token)}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `bearer ${bearer}`,
-        'apns-topic': process.env.PULSE_APNS_BUNDLE_ID || 'chat.pulse.app',
-        'apns-push-type': 'alert',
-        'apns-priority': '10',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    const origin = apnsOrigin(process.env.PULSE_APNS_ENVIRONMENT)
+    if (!origin) return { ok: false, pruneToken: false, skipped: true }
+    const res = await postApns(origin, token, {
+      authorization: `bearer ${bearer}`,
+      'apns-topic': process.env.PULSE_APNS_BUNDLE_ID || 'app.pulse.chat',
+      'apns-push-type': 'alert',
+      'apns-priority': '10',
+      'apns-expiration': String(window.expiresAtSeconds),
+      'content-type': 'application/json',
+    }, {
         aps: {
           alert: { title: payload.title, body: payload.body },
           sound: 'default',
@@ -320,13 +351,13 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
         kind: payload.kind,
         conversationId: payload.conversationId,
         ...(payload.messageId ? { messageId: payload.messageId } : {}),
+            ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+        ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+        ...(payload.callId ? { callId: payload.callId } : {}),
         ...(payload.callKind ? { callKind: payload.callKind } : {}),
         ...(payload.callerName ? { callerName: payload.callerName } : {}),
-      }),
-      signal: AbortSignal.timeout(8000),
-    })
-    const prune = res.status === 404 || res.status === 410 || res.status === 403
-    return { ok: res.ok, pruneToken: prune }
+      })
+    return { ok: res.status === 200, pruneToken: shouldRetirePushToken('ios', res.status, res.body), invalidatedAt: apnsInvalidatedAt(res.body) }
   } catch {
     return { ok: false, pruneToken: false }
   }
@@ -371,23 +402,30 @@ export async function fanoutPush(
     const tokens = await db.pushToken.findMany({ where: { userId: { in: targets } } })
     report.devices = tokens.length
     for (const row of tokens) {
-      const perUser: PushPayload = options?.bodyFor
-        ? { ...payload, body: options.bodyFor(row.userId) }
-        : payload
-      const result =
+      if (!pushDeliveryWindow(payload)) { report.skipped += 1; continue }
+      // A queued provider call must not use a registration rebound while earlier
+      // devices were being processed. This is a preflight, not provider recall.
+      const binding = { id: row.id, userId: row.userId, platform: row.platform, token: row.token, updatedAt: row.updatedAt }
+      if (!await db.pushToken.findFirst({ where: binding, select: { id: true } })) { report.skipped += 1; continue }
+      const perUser: PushPayload = {
+        ...payload,
+        recipientUserId: row.userId,
+        ...(options?.bodyFor ? { body: options.bodyFor(row.userId) } : {}),
+      }
+      const result: SendResult =
         row.platform === 'web'
           ? await sendWeb(row.token, perUser)
           : row.platform === 'android'
             ? await sendAndroid(row.token, perUser)
             : row.platform === 'ios'
               ? await sendIos(row.token, perUser)
-              : { ok: false, pruneToken: true, skipped: true }
+              : { ok: false, pruneToken: false, skipped: true }
       if (result.skipped) report.skipped += 1
       else if (result.ok) report.sent += 1
-      if (result.pruneToken) {
-        report.pruned += 1
+      if (result.pruneToken && (result.invalidatedAt === undefined || result.invalidatedAt > row.updatedAt.getTime())) {
         try {
-          await db.pushToken.delete({ where: { id: row.id } })
+          const removed = await db.pushToken.deleteMany({ where: binding })
+          report.pruned += removed.count
         } catch {
           // already gone
         }

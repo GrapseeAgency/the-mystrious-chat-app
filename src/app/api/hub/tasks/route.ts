@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/hub/tasks - personal kanban (Hub → Tasks panel)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -17,6 +18,8 @@ export async function GET(req: Request) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'personal tasks')
+  if (denied) return denied
 
   const tasks = await db.hubTask.findMany({
     where: { ownerId: userId },
@@ -29,14 +32,16 @@ export async function GET(req: Request) {
   )
 
   return NextResponse.json({
+    userId,
     tasks: ordered.map((t) => ({
       id: t.id,
+      ownerId: t.ownerId,
       title: t.title,
       status: t.status,
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),
     })),
-  })
+  }, { headers: { 'Cache-Control': 'private, no-store', Vary: 'Authorization' } })
 }
 
 /** POST /api/hub/tasks { userId, title, status? } → 201 { task } */
@@ -49,6 +54,8 @@ export async function POST(req: Request) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'personal tasks')
+  if (denied) return denied
   if (!title || title.length > TASK_TITLE_MAX) {
     return NextResponse.json({ error: `Title must be 1–${TASK_TITLE_MAX} characters.` }, { status: 400 })
   }
@@ -64,6 +71,7 @@ export async function POST(req: Request) {
     {
       task: {
         id: task.id,
+        ownerId: task.ownerId,
         title: task.title,
         status: task.status,
         createdAt: task.createdAt.toISOString(),

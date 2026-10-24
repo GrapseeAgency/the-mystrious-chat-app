@@ -198,11 +198,11 @@ final class PulseGroupCallPolicyTests: XCTestCase {
 
     func testRingDecodeCarriesCallerKindAndTitle() {
         let ring = PulseGroupCallEngine.Ring.decode([
-            "conversationId": "conv-1",
+            "conversationId": "conv-1", "callId": "call", "expiresAt": "2033-05-18T03:33:25Z",
             "kind": "video",
             "caller": ["id": "u9", "name": "Ringer", "color": "emerald", "avatar": ""],
             "title": "Design crew",
-        ])
+        ], now: Date(timeIntervalSince1970: 2_000_000_000))
         XCTAssertEqual(ring?.conversationId, "conv-1")
         XCTAssertEqual(ring?.kind, .video)
         XCTAssertEqual(ring?.caller.id, "u9")
@@ -212,20 +212,33 @@ final class PulseGroupCallPolicyTests: XCTestCase {
 
     func testRingDecodeToleratesUnknownKindAndRequiresCaller() {
         let voice = PulseGroupCallEngine.Ring.decode([
-            "conversationId": "conv-1",
+            "conversationId": "conv-1", "callId": "call", "expiresAt": "2033-05-18T03:33:25Z",
             "kind": "hologram",
             "caller": ["id": "u9"],
-        ])
+        ], now: Date(timeIntervalSince1970: 2_000_000_000))
         XCTAssertEqual(voice?.kind, .voice, "unknown wire kind falls back to voice")
         XCTAssertEqual(voice?.title, "", "absent title stays empty (banner substitutes)")
 
         XCTAssertNil(PulseGroupCallEngine.Ring.decode([
             "kind": "voice",
             "caller": ["id": "u9"],
-        ]), "no conversationId → no ring")
+        ], now: Date(timeIntervalSince1970: 2_000_000_000)), "no conversationId → no ring")
         XCTAssertNil(PulseGroupCallEngine.Ring.decode([
-            "conversationId": "conv-1",
-        ]), "no caller → no ring")
+            "conversationId": "conv-1", "callId": "call", "expiresAt": "2033-05-18T03:33:25Z",
+        ], now: Date(timeIntervalSince1970: 2_000_000_000)), "no caller → no ring")
+    }
+
+    func testRingDeadlineRejectsOldIncompleteAndMalformedInvitations() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let raw: [String: Any] = ["conversationId": "room", "callId": "call", "caller": ["id": "peer"], "expiresAt": "2033-05-18T03:33:25Z"]
+        XCTAssertEqual(PulseGroupCallEngine.Ring.decode(raw, now: now)?.expiresAt, now.addingTimeInterval(5))
+        XCTAssertNil(PulseGroupCallEngine.Ring.decode(raw, now: now.addingTimeInterval(5)))
+        for key in ["conversationId", "callId", "caller", "expiresAt"] {
+            var missing = raw; missing.removeValue(forKey: key)
+            XCTAssertNil(PulseGroupCallEngine.Ring.decode(missing, now: now))
+        }
+        var invalid = raw; invalid["expiresAt"] = "bad"
+        XCTAssertNil(PulseGroupCallEngine.Ring.decode(invalid, now: now))
     }
 
     // wire: C→S builders (the relay's validated shapes)
@@ -329,5 +342,30 @@ final class PulseGroupCallPolicyTests: XCTestCase {
             from: Data(#"{"callId":"g","kind":"voice","startedAt":1700000000.5,"members":[]}"#.utf8),
         )
         XCTAssertEqual(partial.startedAtMs, 1_700_000_000, "seconds-form startedAt coerces to ms-ish integer")
+    }
+
+    func testAdmittedPeerPayloadsCarryCallIdentityWithoutChangingLegacyDefault() {
+        let offer = GroupCallWire.offerPayload(conversationId: "room", from: "a", to: "b", kind: .voice, sdp: "offer", callId: "current")
+        let answer = GroupCallWire.answerPayload(conversationId: "room", from: "b", to: "a", sdp: "answer", callId: "current")
+        let ice = GroupCallWire.icePayload(conversationId: "room", from: "a", to: "b", kind: .voice,
+            candidate: "candidate", sdpMid: "0", sdpMLineIndex: 0, callId: "current")
+        for payload in [offer, answer, ice] { XCTAssertEqual(payload["callId"] as? String, "current") }
+        XCTAssertNil(GroupCallWire.answerPayload(conversationId: "room", from: "a", to: "b", sdp: "legacy")["callId"])
+    }
+    func testInvitationJoinExpectationIsNotDowngradedIntoCreate() {
+        let start = GroupCallWire.joinPayload(conversationId: "room", kind: .voice, userId: "me", userName: "Me", userColor: nil, userAvatar: nil)
+        XCTAssertNil(start["expectedCallId"])
+        for expected in ["call", ""] {
+            let join = GroupCallWire.joinPayload(conversationId: "room", kind: .voice, userId: "me", userName: "Me", userColor: nil, userAvatar: nil, expectedCallId: expected)
+            XCTAssertEqual(join["expectedCallId"] as? String, expected)
+        }
+    }
+    func testLeavePayloadCarriesTheJoinAttemptBeforeRosterAndCallIDAfterAdmission() {
+        let pending = GroupCallWire.leavePayload(conversationId: "room", from: "me", joinAttemptId: "attempt-A")
+        XCTAssertNil(pending["callId"])
+        XCTAssertEqual(pending["joinAttemptId"] as? String, "attempt-A")
+        let admitted = GroupCallWire.leavePayload(conversationId: "room", from: "me", callId: "call-A", joinAttemptId: "attempt-A")
+        XCTAssertEqual(admitted["callId"] as? String, "call-A")
+        XCTAssertEqual(admitted["joinAttemptId"] as? String, "attempt-A")
     }
 }

@@ -8,9 +8,10 @@
 // keeps working unchanged once a fresh client is loaded.
 // SQLite DateTime columns are stored as INTEGER epoch milliseconds.
 import { randomUUID } from 'node:crypto'
-import { NextResponse } from 'next/server'
 import { Prisma } from '../../../../prisma/generated-client'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { privateStoryResponse, storyAudience, storyUnblocked, storyJson } from '@/lib/story-access'
 import { AVATAR_COLORS, safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -51,25 +52,22 @@ function iso(value: number | bigint): string {
   return new Date(Number(value)).toISOString()
 }
 
-async function viewCountsFor(
-  storyIds: string[],
-  requesterId: string,
-): Promise<Map<string, { count: number; mine: boolean }>> {
-  const map = new Map<string, { count: number; mine: boolean }>()
-  if (storyIds.length === 0) return map
-  const rows = await db.$queryRaw<Array<{ storyId: string; userId: string }>>(
-    Prisma.sql`SELECT storyId, userId FROM StoryView WHERE storyId IN (${Prisma.join(storyIds)})`,
+async function viewCountsFor(tx: Prisma.TransactionClient, requesterId: string, nowMs: number): Promise<Map<string, { count: number; mine: boolean }>> {
+  // Aggregate in SQLite, not by loading every viewer of every story into memory.
+  // The fixed-parameter audience predicate avoids an unbounded IN (...) id list.
+  const rows = await tx.$queryRaw<Array<{ storyId: string; n: number | bigint; mine: number | bigint }>>(
+    Prisma.sql`SELECT v.storyId, COUNT(*) AS n,
+                 MAX(CASE WHEN v.userId = ${requesterId} THEN 1 ELSE 0 END) AS mine
+               FROM StoryView v JOIN StatusStory s ON s.id = v.storyId
+               JOIN User viewer ON viewer.id = v.userId
+               WHERE s.expiresAt > ${nowMs} AND ${storyAudience(requesterId, Prisma.sql`s.userId`)}
+                 AND ${storyUnblocked(Prisma.sql`s.userId`, Prisma.sql`v.userId`)}
+               GROUP BY v.storyId`,
   )
-  for (const row of rows) {
-    const entry = map.get(row.storyId) ?? { count: 0, mine: false }
-    entry.count += 1
-    if (row.userId === requesterId) entry.mine = true
-    map.set(row.storyId, entry)
-  }
-  return map
+  return new Map(rows.map(row => [row.storyId, { count: Number(row.n), mine: Number(row.mine) === 1 }]))
 }
 
-function mapStory(story: StoryRow, requesterId: string, views: { count: number; mine: boolean }): StoryItem {
+function mapStory(story: StoryRow, views: { count: number; mine: boolean }): StoryItem {
   return {
     id: story.id,
     kind: story.imagePath ? 'image' : 'text',
@@ -95,89 +93,67 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const requesterId = url.searchParams.get('requesterId')?.trim() ?? ''
   if (!requesterId) {
-    return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
+    return storyJson({ error: 'requesterId is required.' }, { status: 400 })
   }
 
-  const requester = await db.user.findUnique({ where: { id: requesterId }, select: { id: true } })
-  if (!requester) {
-    return NextResponse.json({ error: 'User not found.' }, { status: 404 })
-  }
+  const denied = await requireActionOwner(req, requesterId, 'story')
+  if (denied) return privateStoryResponse(denied)
 
-  // Social graph: users who share ≥1 conversation with the requester.
-  const myConvs = await db.conversationParticipant.findMany({
-    where: { userId: requesterId },
-    select: { conversationId: true },
-  })
-  const convIds = myConvs.map((c) => c.conversationId)
-  const contactRows =
-    convIds.length > 0
-      ? await db.conversationParticipant.findMany({
-          where: { conversationId: { in: convIds }, userId: { not: requesterId } },
-          select: { userId: true },
-          distinct: ['userId'],
-        })
-      : []
-  const audience = [requesterId, ...contactRows.map((c) => c.userId)]
+  const groups = await db.$transaction(async tx => {
+    const nowMs = Date.now()
+    const rows = await tx.$queryRaw<Array<StoryRow & { name: string; username: string | null; color: string }>>(
+      Prisma.sql`SELECT s.id, s.userId, s.imagePath, s.caption, s.background, s.createdAt, s.expiresAt,
+                        u.name, u.username, u.color
+                 FROM StatusStory s JOIN User u ON u.id = s.userId
+                 WHERE s.expiresAt > ${nowMs} AND ${storyAudience(requesterId, Prisma.sql`s.userId`)}
+                 ORDER BY s.createdAt ASC, s.id ASC`,
+    )
+    const views = await viewCountsFor(tx, requesterId, nowMs)
 
-  const nowMs = Date.now()
-  const rows = await db.$queryRaw<StoryRow[]>(
-    Prisma.sql`SELECT id, userId, imagePath, caption, background, createdAt, expiresAt
-               FROM StatusStory
-               WHERE expiresAt > ${nowMs} AND userId IN (${Prisma.join(audience)})
-               ORDER BY createdAt ASC`,
-  )
-
-  const storyIds = rows.map((r) => r.id)
-  const views = await viewCountsFor(storyIds, requesterId)
-
-  // Group per user, oldest story first inside each group.
-  const byUser = new Map<string, StoryItem[]>()
-  for (const row of rows) {
-    const list = byUser.get(row.userId) ?? []
-    list.push(mapStory(row, requesterId, views.get(row.id) ?? { count: 0, mine: false }))
-    byUser.set(row.userId, list)
-  }
-
-  interface StoryGroup {
-    user: { id: string; name: string; username: string | null; color: string }
-    mine: boolean
-    allSeen: boolean
-    stories: StoryItem[]
-  }
-
-  const groupUserIds = [...byUser.keys()]
-  const users = groupUserIds.length
-    ? await db.user.findMany({
-        where: { id: { in: groupUserIds } },
-        select: { id: true, name: true, username: true, color: true },
-      })
-    : []
-  const userById = new Map(users.map((u) => [u.id, u]))
-
-  const others: StoryGroup[] = []
-  let mine: StoryGroup | null = null
-  for (const userId of groupUserIds) {
-    const stories = byUser.get(userId) as StoryItem[]
-    const user = userById.get(userId)
-    if (!user) continue
-    const group: StoryGroup = {
-      user,
-      mine: userId === requesterId,
-      allSeen: stories.every((s) => s.viewedByMe),
-      stories,
+    // Group per user, oldest story first inside each group.
+    const byUser = new Map<string, StoryItem[]>()
+    for (const row of rows) {
+      const list = byUser.get(row.userId) ?? []
+      list.push(mapStory(row, views.get(row.id) ?? { count: 0, mine: false }))
+      byUser.set(row.userId, list)
     }
-    if (group.mine) mine = group
-    else others.push(group)
-  }
-  // Contacts with the freshest story first.
-  others.sort(
-    (a, b) =>
-      Date.parse(b.stories[b.stories.length - 1].createdAt) -
-      Date.parse(a.stories[a.stories.length - 1].createdAt),
-  )
 
-  const groups = mine ? [mine, ...others] : others
-  return NextResponse.json({ groups })
+    interface StoryGroup {
+      user: { id: string; name: string; username: string | null; color: string }
+      mine: boolean
+      allSeen: boolean
+      stories: StoryItem[]
+    }
+
+    const userById = new Map(rows.map(row => [row.userId, {
+      id: row.userId, name: row.name, username: row.username, color: row.color,
+    }]))
+
+    const others: StoryGroup[] = []
+    let mine: StoryGroup | null = null
+    for (const userId of byUser.keys()) {
+      const stories = byUser.get(userId) as StoryItem[]
+      const user = userById.get(userId)
+      if (!user) continue
+      const group: StoryGroup = {
+        user,
+        mine: userId === requesterId,
+        allSeen: stories.every((s) => s.viewedByMe),
+        stories,
+      }
+      if (group.mine) mine = group
+      else others.push(group)
+    }
+    // Contacts with the freshest story first.
+    others.sort(
+      (a, b) =>
+        Date.parse(b.stories[b.stories.length - 1].createdAt) -
+        Date.parse(a.stories[a.stories.length - 1].createdAt),
+    )
+
+    return mine ? [mine, ...others] : others
+  }, { isolationLevel: 'Serializable' })
+  return storyJson({ groups })
 }
 
 /**
@@ -190,17 +166,15 @@ export async function POST(req: Request) {
   const body = await safeJson(req)
   const requesterId = strField(body.requesterId)
   if (!requesterId) {
-    return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
+    return storyJson({ error: 'requesterId is required.' }, { status: 400 })
   }
 
-  const requester = await db.user.findUnique({ where: { id: requesterId }, select: { id: true } })
-  if (!requester) {
-    return NextResponse.json({ error: 'User not found.' }, { status: 404 })
-  }
+  const denied = await requireActionOwner(req, requesterId, 'story')
+  if (denied) return privateStoryResponse(denied)
 
   const caption = strField(body.caption)
   if (caption.length > STORY_CAPTION_MAX) {
-    return NextResponse.json(
+    return storyJson(
       { error: `Caption must be ${STORY_CAPTION_MAX} characters or fewer.` },
       { status: 400 },
     )
@@ -209,10 +183,10 @@ export async function POST(req: Request) {
   const rawImage = strField(body.imagePath)
   const hasImage = rawImage.length > 0
   if (hasImage && !STORY_IMAGE_RE.test(rawImage)) {
-    return NextResponse.json({ error: 'imagePath must be an uploaded image filename.' }, { status: 400 })
+    return storyJson({ error: 'imagePath must be an uploaded image filename.' }, { status: 400 })
   }
   if (!hasImage && caption.length === 0) {
-    return NextResponse.json(
+    return storyJson(
       { error: 'A status needs a photo or some text.' },
       { status: 400 },
     )
@@ -224,7 +198,7 @@ export async function POST(req: Request) {
     const requested = strField(body.background)
     if (requested.length > 0) {
       if (!(AVATAR_COLORS as readonly string[]).includes(requested)) {
-        return NextResponse.json({ error: 'Unknown background gradient.' }, { status: 400 })
+        return storyJson({ error: 'Unknown background gradient.' }, { status: 400 })
       }
       background = requested
     }
@@ -237,7 +211,7 @@ export async function POST(req: Request) {
                VALUES (${id}, ${requesterId}, ${hasImage ? rawImage : null}, ${caption}, ${background}, ${nowMs}, ${nowMs + STORY_TTL_MS})`,
   )
 
-  return NextResponse.json(
+  return storyJson(
     {
       story: {
         id,

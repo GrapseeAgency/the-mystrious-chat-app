@@ -7,6 +7,8 @@
 //      conversation → 409.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { roomControl } from '@/lib/room-control'
 import { mapAutomation, safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -28,32 +30,36 @@ export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
 
   const userId = new URL(req.url).searchParams.get('userId')?.trim() ?? ''
+  const refusal = await requireActionOwner(req, userId, 'automation')
+  if (refusal) return refusal
   if (!userId) {
     return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
   }
 
-  const conv = await db.conversation.findUnique({ where: { id }, select: { id: true } })
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
+  return roomControl(db, async tx => {
+    const conv = await tx.conversation.findUnique({ where: { id }, select: { id: true } })
+    if (!conv) {
+      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    }
 
-  const participant = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: id } },
-    select: { id: true },
-  })
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
+    const participant = await tx.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId: id } },
+      select: { id: true },
+    })
+    if (!participant) {
+      return NextResponse.json(
+        { error: 'You are not a participant of this conversation.' },
+        { status: 403 },
+      )
+    }
 
-  const rows = await db.automation.findMany({
-    where: { conversationId: id },
-    orderBy: { createdAt: 'desc' },
-    include: AUTOMATION_INCLUDE,
+    const rows = await tx.automation.findMany({
+      where: { conversationId: id },
+      orderBy: { createdAt: 'desc' },
+      include: AUTOMATION_INCLUDE,
+    })
+    return NextResponse.json({ automations: rows.map(mapAutomation) })
   })
-  return NextResponse.json({ automations: rows.map(mapAutomation) })
 }
 
 /**
@@ -65,6 +71,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   const body = await safeJson(req)
   const userId = strField(body.userId)
+  const refusal = await requireActionOwner(req, userId, 'automation')
+  if (refusal) return refusal
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
@@ -85,44 +93,46 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  const conv = await db.conversation.findUnique({ where: { id }, select: { id: true } })
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
+  return roomControl(db, async tx => {
+    const conv = await tx.conversation.findUnique({ where: { id }, select: { id: true } })
+    if (!conv) {
+      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    }
 
-  const participant = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: id } },
-    select: { role: true },
-  })
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-  if (participant.role !== 'admin') {
-    return NextResponse.json(
-      { error: 'Only admins can create automations.' },
-      { status: 403 },
-    )
-  }
+    const participant = await tx.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId: id } },
+      select: { role: true },
+    })
+    if (!participant) {
+      return NextResponse.json(
+        { error: 'You are not a participant of this conversation.' },
+        { status: 403 },
+      )
+    }
+    if (participant.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Only admins can create automations.' },
+        { status: 403 },
+      )
+    }
 
-  // Dedupe: same trigger (case-insensitive) already exists in THIS conversation.
-  // SQLite has no case-insensitive collation here, so normalize in Node.
-  const existing = await db.automation.findMany({
-    where: { conversationId: id },
-    select: { id: true, trigger: true },
-  })
-  if (existing.some((row) => row.trigger.toLowerCase() === trigger.toLowerCase())) {
-    return NextResponse.json(
-      { error: 'An automation with this trigger already exists in this conversation.' },
-      { status: 409 },
-    )
-  }
+    // Dedupe: same trigger (case-insensitive) already exists in THIS conversation.
+    // SQLite has no case-insensitive collation here, so normalize in Node.
+    const existing = await tx.automation.findMany({
+      where: { conversationId: id },
+      select: { id: true, trigger: true },
+    })
+    if (existing.some((row) => row.trigger.toLowerCase() === trigger.toLowerCase())) {
+      return NextResponse.json(
+        { error: 'An automation with this trigger already exists in this conversation.' },
+        { status: 409 },
+      )
+    }
 
-  const created = await db.automation.create({
-    data: { conversationId: id, trigger, reply, createdById: userId },
-    include: AUTOMATION_INCLUDE,
+    const created = await tx.automation.create({
+      data: { conversationId: id, trigger, reply, createdById: userId },
+      include: AUTOMATION_INCLUDE,
+    })
+    return NextResponse.json({ automation: mapAutomation(created) }, { status: 201 })
   })
-  return NextResponse.json({ automation: mapAutomation(created) }, { status: 201 })
 }

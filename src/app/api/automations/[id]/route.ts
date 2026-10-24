@@ -8,6 +8,9 @@
 // DELETE ?userId= (or JSON body) - admin-only, removes the rule.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { roomControl } from '@/lib/room-control'
+import type { Prisma } from '../../../../../prisma/generated-client'
 import { mapAutomation, safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -27,8 +30,8 @@ const AUTOMATION_REPLY_MAX = 500
  * of the rule's conversation. Being the creator alone is not enough - the
  * creator counts only while they still hold the admin role.
  */
-async function requireAdmin(userId: string, automationId: string) {
-  const automation = await db.automation.findUnique({
+async function requireAdmin(userId: string, automationId: string, tx: Prisma.TransactionClient): Promise<{ error: Response } | { automation: { id: string; conversationId: string } }> {
+  const automation = await tx.automation.findUnique({
     where: { id: automationId },
     select: { id: true, conversationId: true },
   })
@@ -37,7 +40,7 @@ async function requireAdmin(userId: string, automationId: string) {
       error: NextResponse.json({ error: 'Automation not found.' }, { status: 404 }),
     }
   }
-  const participant = await db.conversationParticipant.findUnique({
+  const participant = await tx.conversationParticipant.findUnique({
     where: { userId_conversationId: { userId, conversationId: automation.conversationId } },
     select: { role: true },
   })
@@ -63,10 +66,13 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
   const body = await safeJson(req)
   const userId = strField(body.userId)
+  const refusal = await requireActionOwner(req, userId, 'automation')
+  if (refusal) return refusal
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
+  if (body.enabled !== undefined && typeof body.enabled !== 'boolean') return NextResponse.json({ error: 'enabled must be a boolean.' }, { status: 400 })
   const hasEnabled = typeof body.enabled === 'boolean'
   const hasReply = body.reply !== undefined
   const hasTrigger = body.trigger !== undefined
@@ -101,34 +107,36 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     }
   }
 
-  const gate = await requireAdmin(userId, id)
-  if ('error' in gate) return gate.error
+  return roomControl(db, async tx => {
+    const gate = await requireAdmin(userId, id, tx)
+    if ('error' in gate) return gate.error
 
-  // Dedupe (R41): the new trigger must be unique per conversation,
-  // case-insensitively, EXCLUDING the rule being renamed.
-  if (trigger !== undefined) {
-    const siblings = await db.automation.findMany({
-      where: { conversationId: gate.automation.conversationId, id: { not: id } },
-      select: { id: true, trigger: true },
-    })
-    if (siblings.some((row) => row.trigger.toLowerCase() === trigger.toLowerCase())) {
-      return NextResponse.json(
-        { error: 'An automation with this trigger already exists in this conversation.' },
-        { status: 409 },
-      )
+    // Dedupe (R41): the new trigger must be unique per conversation,
+    // case-insensitively, EXCLUDING the rule being renamed.
+    if (trigger !== undefined) {
+      const siblings = await tx.automation.findMany({
+        where: { conversationId: gate.automation.conversationId, id: { not: id } },
+        select: { id: true, trigger: true },
+      })
+      if (siblings.some((row) => row.trigger.toLowerCase() === trigger.toLowerCase())) {
+        return NextResponse.json(
+          { error: 'An automation with this trigger already exists in this conversation.' },
+          { status: 409 },
+        )
+      }
     }
-  }
 
-  const updated = await db.automation.update({
-    where: { id },
-    data: {
-      ...(hasEnabled ? { enabled: body.enabled as boolean } : {}),
-      ...(reply !== undefined ? { reply } : {}),
-      ...(trigger !== undefined ? { trigger } : {}),
-    },
-    include: { createdBy: { select: { id: true, name: true, color: true, avatar: true } } },
+    const updated = await tx.automation.update({
+      where: { id },
+      data: {
+        ...(hasEnabled ? { enabled: body.enabled as boolean } : {}),
+        ...(reply !== undefined ? { reply } : {}),
+        ...(trigger !== undefined ? { trigger } : {}),
+      },
+      include: { createdBy: { select: { id: true, name: true, color: true, avatar: true } } },
+    })
+    return NextResponse.json({ automation: mapAutomation(updated) })
   })
-  return NextResponse.json({ automation: mapAutomation(updated) })
 }
 
 /** DELETE - remove the rule (idempotent 404 when already gone). */
@@ -140,13 +148,17 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
     const body = await safeJson(req)
     userId = strField(body.userId)
   }
+  const refusal = await requireActionOwner(req, userId, 'automation')
+  if (refusal) return refusal
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const gate = await requireAdmin(userId, id)
-  if ('error' in gate) return gate.error
+  return roomControl(db, async tx => {
+    const gate = await requireAdmin(userId, id, tx)
+    if ('error' in gate) return gate.error
 
-  await db.automation.delete({ where: { id } })
-  return NextResponse.json({ ok: true })
+    await tx.automation.delete({ where: { id } })
+    return NextResponse.json({ ok: true, deleted: true, automationId: id, userId })
+  })
 }

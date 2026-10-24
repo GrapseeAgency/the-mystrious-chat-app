@@ -18,10 +18,7 @@ package app.pulse.android.mirror
 // repository call rides Dispatchers.IO and UI state flips on Main.
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,10 +51,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -87,6 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.core.PulseEndpoints
 import app.pulse.domain.model.Automation
+import app.pulse.domain.sync.RoomControlGate
 import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
@@ -97,7 +100,6 @@ import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.WirePulsePrefs
 import coil.compose.AsyncImage
-import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -211,41 +213,6 @@ private fun infoTintColor(token: String): Color = when (token) {
     "teal" -> Color(0xFF2DD4BF)
     else -> MirrorArt.Faint
 }
-
-/**
- * Photo pick -> base64 data URL (private copy of the established mirror
- * upload chain): BitmapFactory downscale with the ~1280 max dimension.
- */
-private suspend fun infoUriToDataUrl(context: Context, uri: Uri): String? =
-    withContext(Dispatchers.IO) {
-        runCatching {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            var sample = 1
-            val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
-            while (maxSide / (sample * 2) >= 1280) sample *= 2
-            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            val bitmap = context.contentResolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, opts)
-            } ?: return@runCatching null
-            val scaled = if (maxOf(bitmap.width, bitmap.height) > 1280) {
-                val scale = 1280f / maxOf(bitmap.width, bitmap.height)
-                Bitmap.createScaledBitmap(
-                    bitmap,
-                    (bitmap.width * scale).toInt().coerceAtLeast(1),
-                    (bitmap.height * scale).toInt().coerceAtLeast(1),
-                    true,
-                )
-            } else {
-                bitmap
-            }
-            val bytes = ByteArrayOutputStream().use { out ->
-                scaled.compress(Bitmap.CompressFormat.JPEG, 82, out)
-                out.toByteArray()
-            }
-            "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-        }.getOrNull()
-    }
 
 // Shared private chrome =======================================================
 
@@ -596,6 +563,7 @@ internal fun MirrorRoomInfoPage(
     presence: Set<String>,
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
+    onLeft: () -> Unit,
     onOpenManager: () -> Unit,
     // R72 - the web #/user/:id page (member row tap = openProfileForUser)
     onOpenUser: (String) -> Unit = {},
@@ -607,9 +575,16 @@ internal fun MirrorRoomInfoPage(
     // server truth (fetched on open + after every mutation + 20s loop)
     var meta by remember { mutableStateOf<GroupMeta?>(null) }
     var metaFailed by remember { mutableStateOf(false) }
+    var metaTicket by remember { mutableStateOf(0L) }
     var pinnedCount by remember { mutableStateOf(0) }
     var automations by remember { mutableStateOf<List<Automation>>(emptyList()) }
     var automationsLoading by remember { mutableStateOf(true) }
+    var automationsLoaded by remember { mutableStateOf(false) }
+    var automationSnapshotOwner by remember { mutableStateOf<String?>(null) }
+    var automationsError by remember { mutableStateOf<String?>(null) }
+    var automationsBusy by remember { mutableStateOf(false) }
+    val automationGate = remember(repository, conversationId) { RoomControlGate { repository.attachmentSessionKey() } }
+    androidx.compose.runtime.DisposableEffect(automationGate) { onDispose { automationGate.invalidate() } }
     var directory by remember { mutableStateOf<List<User>>(emptyList()) }
     var directoryFailed by remember { mutableStateOf(false) }
     var historyPartial by remember { mutableStateOf(false) }
@@ -620,6 +595,11 @@ internal fun MirrorRoomInfoPage(
     val messages by repository.observeMessages(conversationId).collectAsState(initial = emptyList<Message>())
     val convThemes by repository.convThemes.collectAsState(initial = emptyMap<String, ConvTheme>())
     val prefs by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
+
+    val personalPrivacy by androidx.compose.runtime.key(repository, conversationId, repository.attachmentSessionKey()) {
+        remember { repository.observePersonalScreenPrivacy(conversationId) }.collectAsStateWithLifecycle(
+            initialValue = app.pulse.domain.model.PersonalScreenPrivacy())
+    }
 
     // row/UI state
     var ttlOpen by remember { mutableStateOf(false) }
@@ -635,8 +615,18 @@ internal fun MirrorRoomInfoPage(
     var slowPending by remember { mutableStateOf(false) }
     var invitePending by remember { mutableStateOf(false) }
     var photoBusy by remember { mutableStateOf(false) }
-    var myPrivacyLocal by remember { mutableStateOf<Boolean?>(null) }
-    var everyonePrivacyLocal by remember { mutableStateOf<Boolean?>(null) }
+    val photoGate = remember(repository, conversationId) { RoomControlGate { repository.attachmentSessionKey() } }
+    var photoTicket by remember(photoGate) { mutableStateOf<RoomControlGate.Ticket?>(null) }
+    var photoJob by remember(photoGate) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    androidx.compose.runtime.DisposableEffect(photoGate) {
+        onDispose { photoGate.invalidate(); photoJob?.cancel() }
+    }
+    val privacyGate = remember(repository, conversationId, viewerId) {
+        RoomControlGate { repository.attachmentSessionKey().takeIf { repository.viewerId == viewerId } }
+    }
+    androidx.compose.runtime.DisposableEffect(privacyGate) { onDispose { privacyGate.invalidate() } }
+    var myPrivacyLocal by remember(privacyGate) { mutableStateOf<Boolean?>(null) }
+    var everyonePrivacyLocal by remember(privacyGate) { mutableStateOf<Boolean?>(null) }
     var armedId by remember { mutableStateOf<String?>(null) }
     var armedKind by remember { mutableStateOf("") }
     var rolePendingId by remember { mutableStateOf<String?>(null) }
@@ -651,10 +641,26 @@ internal fun MirrorRoomInfoPage(
         }
     }
 
+    suspend fun <T> repositoryResult(block: suspend () -> Result<T>): Result<T> = try {
+        withContext(Dispatchers.IO) { block() }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
     suspend fun refreshMeta() {
-        val res = withContext(Dispatchers.IO) {
-            runCatching { repository.groupMeta(conversationId) }.getOrElse { Result.failure(it) }
+        val target = repository.boundToCurrentAccount()
+        val epoch = target.attachmentSessionKey() ?: return
+        if (target.viewerId != viewerId) return
+        val ticket = ++metaTicket
+        val res = repositoryResult {
+            if (target.viewerId != viewerId || target.attachmentSessionKey() != epoch) throw CancellationException("Account changed")
+            target.groupMeta(conversationId)
         }
+        currentCoroutineContext().ensureActive()
+        if (ticket != metaTicket || target.viewerId != viewerId || target.attachmentSessionKey() != epoch ||
+            repository.attachmentSessionKey() != epoch) return
         meta = res.getOrNull()
         metaFailed = res.isFailure
     }
@@ -667,17 +673,53 @@ internal fun MirrorRoomInfoPage(
     }
 
     suspend fun refreshAutomations() {
-        val res = withContext(Dispatchers.IO) {
-            runCatching { repository.automations(conversationId) }.getOrElse { Result.failure(it) }
-        }
+        val ticket = automationGate.beginRead() ?: return
+        if (automationSnapshotOwner != ticket.owner) { automations = emptyList(); automationsLoaded = false }
+        automationsLoading = true
+        automationsError = null
+        try {
+            val res = repositoryResult { repository.automations(conversationId) }
+            currentCoroutineContext().ensureActive()
+            if (!automationGate.isCurrent(ticket)) return
+            automations = res.getOrDefault(emptyList())
+            automationsLoaded = res.isSuccess
+            if (res.isSuccess) automationSnapshotOwner = ticket.owner
+            automationsError = if (res.isFailure) res.exceptionOrNull()?.message ?: "Could not load automations. Try again." else null
+        } finally { if (automationGate.isCurrent(ticket)) automationsLoading = false }
+    }
+
+    suspend fun <T> changeAutomation(operation: suspend () -> Result<T>, apply: (T) -> Unit): Result<T> {
+        if (!automationsLoaded || automationSnapshotOwner != repository.attachmentSessionKey()) return Result.failure(IllegalStateException("Load the automation list before changing it."))
+        val ticket = automationGate.beginWrite() ?: return Result.failure(IllegalStateException("Another change is still pending."))
+        automationsBusy = true
         automationsLoading = false
-        res.onSuccess { automations = it }
+        try {
+            currentCoroutineContext().ensureActive()
+            if (!automationGate.isCurrent(ticket)) throw CancellationException("Account changed")
+            val value = repositoryResult(operation).getOrThrow()
+            currentCoroutineContext().ensureActive()
+            if (!automationGate.isCurrent(ticket)) throw CancellationException("Room manager changed")
+            apply(value)
+            return Result.success(value)
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (error: Exception) { return Result.failure(error)
+        } finally {
+            if (automationGate.finishWrite(ticket)) {
+                automationsBusy = false
+                if (repository.attachmentSessionKey() != ticket.owner) {
+                    automations = emptyList(); automationsLoaded = false
+                    automationsError = "Account changed. Reopen this room."
+                }
+            }
+        }
+    }
+
+    fun applyAutomation(row: Automation) {
+        automations = if (automations.any { it.id == row.id }) automations.map { if (it.id == row.id) row else it } else automations + row
     }
 
     suspend fun refreshUsers() {
-        val res = withContext(Dispatchers.IO) {
-            runCatching { repository.users() }.getOrElse { Result.failure(it) }
-        }
+        val res = repositoryResult { repository.users() }
         directoryFailed = res.isFailure
         res.onSuccess { directory = it }
     }
@@ -690,9 +732,7 @@ internal fun MirrorRoomInfoPage(
     }
 
     suspend fun refreshSafetyRow(peer: String) {
-        val res = withContext(Dispatchers.IO) {
-            runCatching { repository.safetyState(peer) }.getOrElse { Result.failure(it) }
-        }
+        val res = repositoryResult { repository.safetyState(peer) }
         safetyRow = res.getOrNull()
     }
 
@@ -745,102 +785,95 @@ internal fun MirrorRoomInfoPage(
 
     fun doMute(until: String?) {
         if (mutePending) return
+        metaTicket++
         mutePending = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setMutedUntil(conversationId, until) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.setMutedUntil(conversationId, until) }
+            metaTicket++
             mutePending = false
             res.onSuccess {
                 showNote(if (until == null) "Notifications unmuted" else "Notifications muted", false)
             }.onFailure {
                 showNote(it.message ?: "Could not update the mute", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
     fun commitTtl(ttlSeconds: Int) {
         if (ttlPending) return
+        metaTicket++
         ttlPending = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setDisappearingTtl(conversationId, ttlSeconds) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.setDisappearingTtl(conversationId, ttlSeconds) }
+            metaTicket++
             ttlPending = false
-            res.onSuccess {
+            res.onSuccess { applied ->
                 showNote(
-                    if (ttlSeconds == 0) "Disappearing messages off" else "New messages vanish after ${infoTtlLong(ttlSeconds)}",
+                    if (applied == 0) "Disappearing messages off" else "New messages vanish after ${infoTtlLong(applied)}",
                     false,
                 )
             }.onFailure {
                 showNote(it.message ?: "Could not update disappearing messages", true)
             }
-            if (res.isSuccess) {
+            refreshMeta()
+            onChanged()
+        }
+    }
+
+    fun changeScreenPrivacy(on: Boolean, personal: Boolean, retry: Boolean = false) {
+        val target = repository.boundToCurrentAccount()
+        val ticket = privacyGate.beginWrite() ?: return
+        if (target.viewerId != viewerId || target.attachmentSessionKey() != ticket.owner) {
+            privacyGate.finishWrite(ticket)
+            return
+        }
+        metaTicket++
+        if (personal) myPrivacyLocal = on else everyonePrivacyLocal = on
+        scope.launch {
+            try {
+                val res = repositoryResult {
+                    if (target.viewerId != viewerId || target.attachmentSessionKey() != ticket.owner) throw CancellationException("Account changed")
+                    if (personal && retry) target.retryPersonalScreenPrivacy(conversationId)
+                    else if (personal) target.setMyScreenPrivacy(conversationId, on)
+                    else target.setScreenPrivacy(conversationId, on)
+                }
+                currentCoroutineContext().ensureActive()
+                if (!privacyGate.isCurrent(ticket)) return@launch
+                metaTicket++
+                res.onSuccess {
+                    if (personal) meta = meta?.copy(myScreenPrivacy = on)
+                    showNote(if (personal) "Screen security updated for you" else "Room screen security updated", false)
+                }.onFailure { showNote(it.message ?: "Could not confirm screen security", true) }
                 refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
+                if (privacyGate.isCurrent(ticket)) onChanged()
+            } finally {
+                if (privacyGate.finishWrite(ticket)) {
+                    if (personal) myPrivacyLocal = null else everyonePrivacyLocal = null
+                }
             }
         }
     }
 
-    fun setMyScreenPrivacy(on: Boolean) {
-        myPrivacyLocal = on
-        scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setMyScreenPrivacy(conversationId, on) }.getOrElse { Result.failure(it) }
-            }
-            myPrivacyLocal = null
-            res.onSuccess {
-                showNote(if (on) "Screen security on for you" else "Screen security off for you", false)
-            }.onFailure {
-                showNote(it.message ?: "Could not update screen security", true)
-            }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
-        }
-    }
-
-    fun setEveryoneScreenPrivacy(on: Boolean) {
-        everyonePrivacyLocal = on
-        scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setScreenPrivacy(conversationId, on) }.getOrElse { Result.failure(it) }
-            }
-            everyonePrivacyLocal = null
-            res.onSuccess {
-                showNote(if (on) "Screen security on" else "Screen security off", false)
-            }.onFailure {
-                showNote(it.message ?: "Could not update screen security", true)
-            }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
-        }
-    }
+    fun setMyScreenPrivacy(on: Boolean) = changeScreenPrivacy(on, personal = true)
+    fun setEveryoneScreenPrivacy(on: Boolean) = changeScreenPrivacy(on, personal = false)
 
     fun commitSlowMode(seconds: Int) {
         if (slowPending) return
+        metaTicket++
         slowPending = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setSlowMode(conversationId, seconds) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.setSlowMode(conversationId, seconds) }
+            metaTicket++
             slowPending = false
             res.onSuccess {
                 showNote(if (seconds > 0) "Slow mode on - members wait ${infoSlowLabel(seconds)}" else "Slow mode off", false)
             }.onFailure {
                 showNote(it.message ?: "Could not update slow mode", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
@@ -862,61 +895,55 @@ internal fun MirrorRoomInfoPage(
 
     fun createInvite() {
         if (invitePending) return
+        metaTicket++
         invitePending = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.createGroupInvite(conversationId, false) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.createGroupInvite(conversationId, false) }
+            metaTicket++
             invitePending = false
             res.onSuccess { code ->
                 copyInvite(code)
             }.onFailure {
                 showNote(it.message ?: "Could not create the invite link", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
     fun setMemberRole(userId: String, promote: Boolean) {
         if (rolePendingId != null) return
+        metaTicket++
         rolePendingId = userId
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setMemberRole(conversationId, userId, promote) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.setMemberRole(conversationId, userId, promote) }
+            metaTicket++
             rolePendingId = null
             res.onSuccess {
                 showNote(if (promote) "Promoted to admin" else "Role set to member", false)
             }.onFailure {
                 showNote(it.message ?: "Could not update the role", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
     fun kickMember(userId: String) {
         if (rolePendingId != null) return
+        metaTicket++
         rolePendingId = userId
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.kickMember(conversationId, userId) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.kickMember(conversationId, userId) }
+            metaTicket++
             rolePendingId = null
             res.onSuccess {
                 showNote("Removed from the group", false)
             }.onFailure {
                 showNote(it.message ?: "Could not remove the member", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
@@ -924,16 +951,16 @@ internal fun MirrorRoomInfoPage(
 
     fun leaveChannel() {
         if (leavingChannel) return
+        metaTicket++
         leavingChannel = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.unsubscribeChannel(conversationId) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.unsubscribeChannel(conversationId) }
+            metaTicket++
             leavingChannel = false
             res.onSuccess {
                 withContext(Dispatchers.Main) {
                     onChanged()
-                    onDismiss()
+                    onLeft()
                 }
             }.onFailure {
                 showNote(it.message ?: "Could not leave the channel", true)
@@ -941,40 +968,41 @@ internal fun MirrorRoomInfoPage(
         }
     }
 
-    // R33-b photo chain: pick -> data URL -> uploadMedia -> setGroupPhoto
+    // Reserve the original session before opening the external picker, not
+    // when its result eventually returns. Interrupted ownership is never guessed.
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null && !photoBusy) {
-            photoBusy = true
-            scope.launch {
-                val dataUrl = infoUriToDataUrl(context, uri)
-                if (dataUrl == null) {
-                    photoBusy = false
-                    showNote("Could not upload that photo", true)
-                    return@launch
-                }
-                val uploadRes = withContext(Dispatchers.IO) {
-                    runCatching { repository.uploadMedia(dataUrl) }.getOrElse { Result.failure(it) }
-                }
-                val photoPath = uploadRes.getOrNull()
-                if (photoPath == null) {
-                    photoBusy = false
-                    showNote("Could not upload that photo", true)
-                    return@launch
-                }
-                val patchRes = withContext(Dispatchers.IO) {
-                    runCatching { repository.setGroupPhoto(conversationId, photoPath) }.getOrElse { Result.failure(it) }
-                }
-                photoBusy = false
-                patchRes.onSuccess {
-                    showNote("Photo updated", false)
-                }.onFailure {
-                    showNote(it.message ?: "Could not update the photo", true)
-                }
-                if (patchRes.isSuccess) {
-                    refreshMeta()
-                    withContext(Dispatchers.Main) { onChanged() }
+        val ticket = photoTicket
+        photoTicket = null
+        if (ticket != null && photoGate.isCurrent(ticket)) {
+            if (uri == null) {
+                photoGate.finishWrite(ticket); photoBusy = false
+            } else {
+                photoJob = scope.launch {
+                    try {
+                        require(uri.scheme == "content") { "Choose a photo from the system picker" }
+                        val dataUrl = app.pulse.ui.media.ImagePreparation.imageToDataUrl(context, uri).getOrThrow()
+                        currentCoroutineContext().ensureActive()
+                        if (!photoGate.isCurrent(ticket)) return@launch
+                        val path = repository.uploadMedia(dataUrl).getOrThrow()
+                        currentCoroutineContext().ensureActive()
+                        if (!photoGate.isCurrent(ticket)) return@launch
+                        repository.setGroupPhoto(conversationId, path).getOrThrow()
+                        currentCoroutineContext().ensureActive()
+                        if (!photoGate.isCurrent(ticket)) return@launch
+                        showNote("Photo updated", false)
+                        refreshMeta()
+                        if (photoGate.isCurrent(ticket)) onChanged()
+                    } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
+                        if (photoGate.isCurrent(ticket)) showNote(error.message ?: "Could not confirm the photo update", true)
+                    } finally {
+                        if (photoGate.isCurrent(ticket)) {
+                            photoGate.finishWrite(ticket); photoBusy = false; metaTicket++
+                        }
+                    }
                 }
             }
+        } else if (uri != null) {
+            showNote("Photo selection was interrupted. Choose it again in this account.", true)
         }
     }
 
@@ -1176,9 +1204,15 @@ internal fun MirrorRoomInfoPage(
                                                 indication = null,
                                                 enabled = !photoBusy,
                                             ) {
-                                                pickImage.launch(
-                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                                                )
+                                                photoGate.beginWrite()?.let { ticket ->
+                                                    photoTicket = ticket; photoBusy = true; metaTicket++
+                                                    try {
+                                                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                                    } catch (_: Exception) {
+                                                        photoTicket = null; photoBusy = false; photoGate.finishWrite(ticket)
+                                                        showNote("Photo picker is unavailable", true)
+                                                    }
+                                                }
                                             },
                                         contentAlignment = Alignment.Center,
                                     ) {
@@ -1443,7 +1477,7 @@ internal fun MirrorRoomInfoPage(
 
                             // c. SCREEN SECURITY (my) - the personal veil
                             InfoPressableRow {
-                                if (myPrivacyLocal ?: m.myScreenPrivacy) {
+                                if (myPrivacyLocal ?: personalPrivacy.on ?: m.myScreenPrivacy) {
                                     MirrorLucideIcon("LShieldCheck", tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
                                 } else {
                                     MirrorLucideIcon("LEyeOff", tint = MirrorArt.Faint, modifier = Modifier.size(16.dp))
@@ -1467,9 +1501,21 @@ internal fun MirrorRoomInfoPage(
                                     )
                                 }
                                 InfoSwitch(
-                                    checked = myPrivacyLocal ?: m.myScreenPrivacy,
+                                    checked = myPrivacyLocal ?: personalPrivacy.on ?: m.myScreenPrivacy,
                                     onCheckedChange = ::setMyScreenPrivacy,
+                                    enabled = myPrivacyLocal == null,
                                 )
+                            }
+
+                            if (personalPrivacy.unreadable) {
+                                Text("Saved screen-security choices could not be read. Protection remains on.",
+                                    color = MirrorArt.Faint, fontSize = 12.sp)
+                            }
+                            if (personalPrivacy.pending) {
+                                TextButton(onClick = { changeScreenPrivacy(personalPrivacy.on ?: true, personal = true, retry = true) },
+                                    enabled = myPrivacyLocal == null && everyonePrivacyLocal == null) {
+                                    Text("Retry screen-security sync")
+                                }
                             }
 
                             // d. SCREEN SECURITY FOR EVERYONE - the room-wide flag
@@ -1500,6 +1546,7 @@ internal fun MirrorRoomInfoPage(
                                 InfoSwitch(
                                     checked = everyonePrivacyLocal ?: m.screenPrivacy,
                                     onCheckedChange = ::setEveryoneScreenPrivacy,
+                                    enabled = everyonePrivacyLocal == null,
                                 )
                             }
 
@@ -1758,16 +1805,16 @@ internal fun MirrorRoomInfoPage(
                     Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
                 )
                 InfoAutomationsSection(
-                    repository = repository,
-                    conversationId = conversationId,
                     isAdmin = meta?.isAdmin == true,
                     rows = automations,
+                    busy = automationsBusy,
+                    loadError = automationsError,
+                    onRetry = { scope.launch { refreshAutomations() } },
+                    onToggle = { row, enabled -> changeAutomation({ repository.setAutomationEnabled(row.id, enabled) }, ::applyAutomation).map { Unit } },
+                    onDelete = { row -> changeAutomation({ repository.deleteAutomation(row.id) }) { automations = automations.filterNot { it.id == row.id } } },
                     loading = automationsLoading && automations.isEmpty(),
                     onOpenCreate = { createOpen = true },
                     onOpenEdit = { editTarget = it },
-                    onRowsChanged = {
-                        scope.launch { refreshAutomations() }
-                    },
                 )
 
                 // ENCRYPTION section (DMs only)
@@ -1902,9 +1949,10 @@ internal fun MirrorRoomInfoPage(
                 directoryFailed = directoryFailed,
                 onClose = { addOpen = false },
                 onAdded = { count ->
+                    metaTicket++
                     addOpen = false
                     showNote(
-                        if (count == 1) "1 member added" else "$count members added",
+                        when (count) { 0 -> "Selected people are already members"; 1 -> "1 member added"; else -> "$count members added" },
                         false,
                     )
                     scope.launch {
@@ -1932,13 +1980,9 @@ internal fun MirrorRoomInfoPage(
         // automation create sheet
         if (createOpen) {
             InfoAutomationCreateSheet(
-                repository = repository,
-                conversationId = conversationId,
+                submit = { trigger, reply -> changeAutomation({ repository.createAutomation(conversationId, trigger, reply) }, ::applyAutomation) },
                 onDismiss = { createOpen = false },
-                onCreated = {
-                    createOpen = false
-                    scope.launch { refreshAutomations() }
-                },
+                onCreated = { createOpen = false },
             )
         }
 
@@ -1946,13 +1990,10 @@ internal fun MirrorRoomInfoPage(
         val editRow = editTarget
         if (editRow != null) {
             InfoAutomationEditSheet(
-                repository = repository,
+                submit = { trigger -> changeAutomation({ repository.setAutomationTrigger(editRow.id, trigger) }, ::applyAutomation) },
                 automation = editRow,
                 onDismiss = { editTarget = null },
-                onSaved = {
-                    editTarget = null
-                    scope.launch { refreshAutomations() }
-                },
+                onSaved = { editTarget = null },
             )
         }
     }
@@ -2296,14 +2337,16 @@ private fun InfoThemePicker(
  */
 @Composable
 private fun InfoAutomationsSection(
-    repository: PulseRepository,
-    conversationId: String,
     isAdmin: Boolean,
     rows: List<Automation>,
     loading: Boolean,
+    busy: Boolean,
+    loadError: String?,
+    onRetry: () -> Unit,
+    onToggle: suspend (Automation, Boolean) -> Result<Unit>,
+    onDelete: suspend (Automation) -> Result<Unit>,
     onOpenCreate: () -> Unit,
     onOpenEdit: (Automation) -> Unit,
-    onRowsChanged: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var busyRowId by remember { mutableStateOf<String?>(null) }
@@ -2317,34 +2360,16 @@ private fun InfoAutomationsSection(
         }
     }
 
-    fun toggle(row: Automation, enabled: Boolean) {
-        if (busyRowId != null) return
-        busyRowId = row.id
-        busyKind = "toggle"
+    fun change(row: Automation, kind: String, operation: suspend () -> Result<Unit>) {
+        if (busyRowId != null || busy) return
+        busyRowId = row.id; busyKind = kind; errorText = ""
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setAutomationEnabled(row.id, enabled) }.getOrElse { Result.failure(it) }
-            }
-            busyRowId = null
-            busyKind = ""
-            res.onFailure { errorText = it.message ?: "Could not update the automation" }
-            onRowsChanged()
-        }
-    }
-
-    fun remove(row: Automation) {
-        if (busyRowId != null) return
-        busyRowId = row.id
-        busyKind = "delete"
-        scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.deleteAutomation(row.id) }.getOrElse { Result.failure(it) }
-            }
-            busyRowId = null
-            busyKind = ""
-            res.onSuccess { errorText = "" }
-                .onFailure { errorText = it.message ?: "Could not delete the automation" }
-            onRowsChanged()
+            try {
+                operation().getOrThrow()
+                currentCoroutineContext().ensureActive()
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { errorText = error.message ?: "Could not change the automation"
+            } finally { busyRowId = null; busyKind = "" }
         }
     }
 
@@ -2356,6 +2381,10 @@ private fun InfoAutomationsSection(
                         InfoSkeleton(heightDp = 48)
                         InfoSkeleton(widthFraction = 0.8f, heightDp = 48)
                     }
+                }
+                loadError != null -> Column(Modifier.padding(12.dp)) {
+                    Text(loadError, color = InfoInk.Rose, fontSize = 12.sp)
+                    Text("Try again", color = MirrorArt.Accent2, modifier = Modifier.clickable(onClick = onRetry).padding(8.dp))
                 }
                 rows.isEmpty() -> {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 16.dp)) {
@@ -2395,7 +2424,7 @@ private fun InfoAutomationsSection(
                                     .size(32.dp)
                                     .clip(CircleShape)
                                     .background(MirrorArt.White7)
-                                    .clickable(interactionSource = addInteraction, indication = null, onClick = onOpenCreate),
+                                    .clickable(interactionSource = addInteraction, indication = null, onClick = { if (!busy && busyRowId == null) onOpenCreate() }),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 MirrorLucideIcon("LPlus", tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
@@ -2410,11 +2439,11 @@ private fun InfoAutomationsSection(
                                 InfoAutomationRow(
                                     row = row,
                                     isAdmin = isAdmin,
-                                    busy = busyRowId != null,
+                                    busy = busyRowId != null || busy,
                                     deletePending = busyRowId == row.id && busyKind == "delete",
-                                    onToggle = { toggle(row, it) },
-                                    onDelete = { remove(row) },
-                                    onEdit = { onOpenEdit(row) },
+                                    onToggle = { enabled -> change(row, "toggle") { onToggle(row, enabled) } },
+                                    onDelete = { change(row, "delete") { onDelete(row) } },
+                                    onEdit = { if (!busy && busyRowId == null) onOpenEdit(row) },
                                 )
                             }
                         }
@@ -2424,7 +2453,7 @@ private fun InfoAutomationsSection(
                                     .fillMaxWidth()
                                     .padding(top = 4.dp)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .clickable(onClick = onOpenCreate)
+                                    .clickable(onClick = { if (!busy && busyRowId == null) onOpenCreate() })
                                     .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -2575,8 +2604,7 @@ private fun InfoAutomationRow(
 /** "New automation" glass bottom sheet (web AutomationsCreateSheet). */
 @Composable
 private fun InfoAutomationCreateSheet(
-    repository: PulseRepository,
-    conversationId: String,
+    submit: suspend (String, String) -> Result<Automation>,
     onDismiss: () -> Unit,
     onCreated: () -> Unit,
 ) {
@@ -2592,25 +2620,22 @@ private fun InfoAutomationCreateSheet(
     val replyInvalid = trimmedReply.isEmpty() || trimmedReply.length > 500
     val valid = !triggerInvalid && !replyInvalid
 
-    fun submit() {
+    fun send() {
         if (!valid || pending) return
         pending = true
         errorText = ""
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.createAutomation(conversationId, trimmedTrigger, trimmedReply) }
-                    .getOrElse { Result.failure(it) }
-            }
-            pending = false
-            res.onSuccess {
+            try {
+                submit(trimmedTrigger, trimmedReply).getOrThrow()
+                currentCoroutineContext().ensureActive()
                 onCreated()
-            }.onFailure {
-                errorText = it.message ?: "Could not create the automation"
-            }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { errorText = error.message ?: "Could not save the automation"
+            } finally { pending = false }
         }
     }
 
-    InfoSheetPanel(onDismiss = onDismiss) {
+    InfoSheetPanel(onDismiss = { if (!pending) onDismiss() }) {
         InfoSheetHeader(
             icon = "LBot",
             title = "New automation",
@@ -2620,7 +2645,7 @@ private fun InfoAutomationCreateSheet(
         InfoFormLabel("Trigger keyword", "${trimmedTrigger.length}/40")
         InfoInputField(
             value = trigger,
-            onValueChange = { if (it.length <= 48) trigger = it },
+            onValueChange = { if (!pending && it.length <= 40) trigger = it },
             placeholder = "e.g. pricing",
             invalid = trigger.isNotEmpty() && triggerInvalid,
             singleLine = true,
@@ -2642,7 +2667,7 @@ private fun InfoAutomationCreateSheet(
         InfoFormLabel("Reply", "${trimmedReply.length}/500")
         InfoInputField(
             value = reply,
-            onValueChange = { if (it.length <= 508) reply = it },
+            onValueChange = { if (!pending && it.length <= 500) reply = it },
             placeholder = "Sent as a normal message when the keyword appears",
             invalid = reply.isNotEmpty() && replyInvalid,
             singleLine = false,
@@ -2677,7 +2702,7 @@ private fun InfoAutomationCreateSheet(
             icon = "LZap",
             enabled = valid && !pending,
             pending = pending,
-            onClick = ::submit,
+            onClick = ::send,
         )
     }
 }
@@ -2715,7 +2740,7 @@ private fun InfoSolidButton(
 /** "Edit trigger" sheet (web AutomationsEditSheet - only the keyword moves). */
 @Composable
 private fun InfoAutomationEditSheet(
-    repository: PulseRepository,
+    submit: suspend (String) -> Result<Automation>,
     automation: Automation,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
@@ -2730,25 +2755,22 @@ private fun InfoAutomationEditSheet(
     val unchanged = trimmedTrigger == automation.trigger
     val valid = !triggerInvalid && !unchanged
 
-    fun submit() {
+    fun send() {
         if (!valid || pending) return
         pending = true
         errorText = ""
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setAutomationTrigger(automation.id, trimmedTrigger) }
-                    .getOrElse { Result.failure(it) }
-            }
-            pending = false
-            res.onSuccess {
+            try {
+                submit(trimmedTrigger).getOrThrow()
+                currentCoroutineContext().ensureActive()
                 onSaved()
-            }.onFailure {
-                errorText = it.message ?: "Could not rename the trigger"
-            }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { errorText = error.message ?: "Could not save the automation"
+            } finally { pending = false }
         }
     }
 
-    InfoSheetPanel(onDismiss = onDismiss) {
+    InfoSheetPanel(onDismiss = { if (!pending) onDismiss() }) {
         InfoSheetHeader(
             icon = "LPencilLine",
             title = "Edit trigger",
@@ -2784,7 +2806,7 @@ private fun InfoAutomationEditSheet(
         InfoFormLabel("Trigger keyword", "${trimmedTrigger.length}/40")
         InfoInputField(
             value = trigger,
-            onValueChange = { if (it.length <= 48) trigger = it },
+            onValueChange = { if (!pending && it.length <= 40) trigger = it },
             placeholder = "e.g. pricing",
             invalid = trigger.isNotEmpty() && triggerInvalid,
             singleLine = true,
@@ -2819,7 +2841,7 @@ private fun InfoAutomationEditSheet(
             icon = "LCheck",
             enabled = valid && !pending,
             pending = pending,
-            onClick = ::submit,
+            onClick = ::send,
         )
     }
 }

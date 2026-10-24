@@ -1,6 +1,7 @@
 // /api/users/[id] - fetch one user (session validation), edit profile
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { Prisma } from '../../../../../prisma/generated-client'
 import {
   mapUser,
   normalizeColor,
@@ -11,8 +12,9 @@ import {
   ABOUT_MAX,
   USER_NAME_MAX,
 } from '@/lib/serializers'
-import { DEFAULT_PREFERENCES, mergePrefs } from '@/lib/prefs-defaults'
+import { privacyPreferenceEnabled } from '@/lib/privacy-preferences'
 import { STATUS_ICON_IDS } from '@/lib/icon-ids'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,7 +35,18 @@ export async function GET(_req: Request, { params }: RouteCtx) {
 /** PATCH /api/users/[id] { name?, about?, color? } → { user: AppUser } | 400 | 404 */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
+  const denied = await requireActionOwner(req, id, 'profile')
+  if (denied) return denied
   const body = await safeJson(req)
+  // A malformed value is not an instruction to clear a field. In particular,
+  // strField(false/object) must not silently erase a photo, handle or bio.
+  const nullable = new Set(['username', 'avatar', 'coverImage', 'statusEmoji', 'statusText'])
+  for (const field of ['name', 'username', 'about', 'color', 'avatar', 'coverImage', 'statusEmoji', 'statusText']) {
+    const value = body[field]
+    if (value !== undefined && typeof value !== 'string' && !(value === null && nullable.has(field))) {
+      return NextResponse.json({ error: `${field} must be text${nullable.has(field) ? ' or null to clear' : ''}.` }, { status: 400 })
+    }
+  }
 
   const data: {
     name?: string
@@ -88,9 +101,9 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
   if (body.about !== undefined) {
     const about = strField(body.about)
-    if (!about || about.length > ABOUT_MAX) {
+    if (about.length > ABOUT_MAX) {
       return NextResponse.json(
-        { error: `About must be 1–${ABOUT_MAX} characters.` },
+        { error: `About must be ${ABOUT_MAX} characters or fewer.` },
         { status: 400 },
       )
     }
@@ -157,16 +170,20 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
   // R46 - any successful profile touch counts as "last active", UNLESS the
   // user hides their last seen (then the stamp freezes - enforced privacy).
-  let prefs = DEFAULT_PREFERENCES
-  try {
-    prefs = mergePrefs(existing.preferences ? JSON.parse(existing.preferences) : null)
-  } catch {
-    // malformed → defaults
-  }
-  if (prefs.lastSeenVisible !== false) {
+  if (privacyPreferenceEnabled(existing.preferences, 'lastSeenVisible')) {
     data.lastSeenAt = new Date()
   }
 
-  const user = await db.user.update({ where: { id }, data })
-  return NextResponse.json({ user: mapUser(user) })
+  try {
+    const user = await db.user.update({ where: { id }, data })
+    return NextResponse.json({ user: mapUser(user) })
+  } catch (error) {
+    // Availability checks are advisory. Two owners can pass the check before
+    // either write commits; the unique index is the final authority.
+    if (data.username && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json({ error: `@${data.username} was just taken.`, code: 'username_taken',
+        suggestion: await suggestUsername(data.username) }, { status: 409 })
+    }
+    throw error
+  }
 }

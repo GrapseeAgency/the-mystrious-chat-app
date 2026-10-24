@@ -73,9 +73,9 @@ private const val WEBHOOK_NAME_MAX = 32
 internal fun AutomationsSection(
     isAdmin: Boolean,
     state: GroupInfoViewModel.AutomationsUi,
-    onCreate: (trigger: String, reply: String) -> Unit,
+    onCreate: (trigger: String, reply: String, confirmed: () -> Unit) -> Unit,
     onToggle: (Automation) -> Unit,
-    onRename: (id: String, trigger: String) -> Unit,
+    onRename: (id: String, trigger: String, confirmed: () -> Unit) -> Unit,
     onDelete: (id: String) -> Unit,
     onLoad: () -> Unit,
 ) {
@@ -106,6 +106,10 @@ internal fun AutomationsSection(
                         Text("Loading automations…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                state.loadError != null -> Column {
+                    Text(state.loadError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = onLoad) { Text("Try again") }
+                }
                 state.rows.isEmpty() -> Text(
                     if (isAdmin) {
                         "No automations yet - create one to auto-answer a keyword."
@@ -121,7 +125,7 @@ internal fun AutomationsSection(
                         AutomationRow(
                             row = row,
                             isAdmin = isAdmin,
-                            busy = row.id in state.busyIds,
+                            busy = state.busyIds.isNotEmpty() || state.creating,
                             onToggle = { onToggle(row) },
                             onRename = { renameTarget = row },
                             onDelete = { deleteTarget = row },
@@ -134,7 +138,7 @@ internal fun AutomationsSection(
             }
 
             if (isAdmin) {
-                TextButton(onClick = { onLoad(); createOpen = true }, modifier = Modifier.padding(top = 2.dp)) {
+                TextButton(onClick = { createOpen = true }, enabled = !state.loading && state.loadError == null && !state.creating && state.busyIds.isEmpty(), modifier = Modifier.padding(top = 2.dp)) {
                     Icon(PulseIcons.Plus, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Create automation", fontSize = 12.sp)
@@ -148,19 +152,17 @@ internal fun AutomationsSection(
             creating = state.creating,
             onDismiss = { createOpen = false },
             onCreate = { trigger, reply ->
-                createOpen = false
-                onCreate(trigger, reply)
+                onCreate(trigger, reply) { createOpen = false }
             },
         )
     }
     renameTarget?.let { row ->
         AutomationRenameSheet(
             row = row,
-            busy = row.id in state.busyIds,
+            busy = state.busyIds.isNotEmpty() || state.creating,
             onDismiss = { renameTarget = null },
             onRename = { trigger ->
-                renameTarget = null
-                onRename(row.id, trigger)
+                onRename(row.id, trigger) { renameTarget = null }
             },
         )
     }
@@ -256,9 +258,9 @@ private fun AutomationCreateSheet(
     val trimmedReply = reply.trim()
     val triggerInvalid = trimmedTrigger.isNotEmpty() && (trimmedTrigger.length < TRIGGER_MIN || trimmedTrigger.length > TRIGGER_MAX)
     val replyInvalid = trimmedReply.isEmpty() || trimmedReply.length > REPLY_MAX
-    val valid = !triggerInvalid && !replyInvalid
+    val valid = trimmedTrigger.length in TRIGGER_MIN..TRIGGER_MAX && !replyInvalid
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    ModalBottomSheet(onDismissRequest = { if (!creating) onDismiss() }, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("New automation", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text(
@@ -268,6 +270,7 @@ private fun AutomationCreateSheet(
                 modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
             )
             OutlinedTextField(
+                enabled = !creating,
                 value = trigger,
                 onValueChange = { if (it.length <= TRIGGER_MAX) trigger = it },
                 placeholder = { Text("Trigger phrase - e.g. “hours”") },
@@ -286,6 +289,7 @@ private fun AutomationCreateSheet(
             )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
+                enabled = !creating,
                 value = reply,
                 onValueChange = { if (it.length <= REPLY_MAX) reply = it },
                 placeholder = { Text("Reply - e.g. “We're open 9am–5pm Mon–Fri.”") },
@@ -318,7 +322,7 @@ private fun AutomationRenameSheet(
     val unchanged = trimmed == row.trigger
     val invalid = trimmed.length < TRIGGER_MIN || trimmed.length > TRIGGER_MAX
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("Edit trigger", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text(
@@ -328,6 +332,7 @@ private fun AutomationRenameSheet(
                 modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
             )
             OutlinedTextField(
+                enabled = !busy,
                 value = trigger,
                 onValueChange = { if (it.length <= TRIGGER_MAX) trigger = it },
                 singleLine = true,
@@ -352,11 +357,15 @@ private fun AutomationRenameSheet(
 internal fun WebhooksSection(
     isAdmin: Boolean,
     state: GroupInfoViewModel.WebhooksUi,
-    onCreate: (name: String) -> Unit,
+    onCreate: (name: String, confirmed: () -> Unit) -> Unit,
     onDelete: (token: String) -> Unit,
     onLoad: () -> Unit,
     onNotice: (String, Boolean) -> Unit,
 ) {
+    if (!isAdmin) {
+        Text("Webhook credentials are available to admins only.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
     var createOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Webhook?>(null) }
     val clipboard = LocalClipboardManager.current
@@ -377,6 +386,10 @@ internal fun WebhooksSection(
                         Spacer(Modifier.width(8.dp))
                         Text("Loading webhooks…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+                state.loadError != null -> Column {
+                    Text(state.loadError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = onLoad) { Text("Try again") }
                 }
                 state.rows.isEmpty() -> Text(
                     if (isAdmin) {
@@ -401,14 +414,14 @@ internal fun WebhooksSection(
                                 clipboard.setText(AnnotatedString(fullUrl))
                                 onNotice("Webhook URL copied", false)
                             },
-                            onDelete = { deleteTarget = webhook },
+                            onDelete = { if (!state.busy && !state.loading) deleteTarget = webhook },
                         )
                     }
                 }
             }
 
             if (isAdmin) {
-                TextButton(onClick = { onLoad(); createOpen = true }, modifier = Modifier.padding(top = 2.dp)) {
+                TextButton(onClick = { createOpen = true }, enabled = !state.loading && state.loadError == null && !state.busy, modifier = Modifier.padding(top = 2.dp)) {
                     Icon(PulseIcons.Plus, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Create webhook", fontSize = 12.sp)
@@ -422,8 +435,7 @@ internal fun WebhooksSection(
             creating = state.creating,
             onDismiss = { createOpen = false },
             onCreate = { name ->
-                createOpen = false
-                onCreate(name)
+                onCreate(name) { createOpen = false }
             },
         )
     }
@@ -512,7 +524,7 @@ private fun WebhookCreateSheet(
     val trimmed = name.trim()
     val valid = trimmed.isNotEmpty() && trimmed.length <= WEBHOOK_NAME_MAX
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    ModalBottomSheet(onDismissRequest = { if (!creating) onDismiss() }, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Text("Create webhook", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text(
@@ -522,6 +534,7 @@ private fun WebhookCreateSheet(
                 modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
             )
             OutlinedTextField(
+                enabled = !creating,
                 value = name,
                 onValueChange = { if (it.length <= WEBHOOK_NAME_MAX) name = it },
                 placeholder = { Text("e.g. Deploys · CI · Weather") },

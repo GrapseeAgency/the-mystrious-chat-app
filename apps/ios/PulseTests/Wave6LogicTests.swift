@@ -159,8 +159,8 @@ final class Wave6LogicTests: XCTestCase {
         )
         // Nothing checked → empty array (PUT clears the folder).
         XCTAssertEqual(FolderMembership.orderedSelection(checked: [], listOrder: order), [])
-        // Checked ids absent from the list never leak into the payload.
-        XCTAssertEqual(FolderMembership.orderedSelection(checked: ["ghost"], listOrder: order), [])
+        // A filtered/archived existing member must not be silently removed.
+        XCTAssertEqual(FolderMembership.orderedSelection(checked: ["archived"], listOrder: order), ["archived"])
     }
 
     // two-tap destructive confirm (2600 ms window)

@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/games/[id]/join - claim the open O seat (Task R23-b)
 //
 //   POST body { userId }
@@ -119,6 +120,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'game')
+  if (denied) return denied
 
   try {
     const fresh = await joinGame(db, id, userId)

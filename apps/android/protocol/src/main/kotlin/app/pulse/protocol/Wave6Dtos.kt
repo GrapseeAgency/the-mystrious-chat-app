@@ -172,6 +172,7 @@ data class ChannelsPageDto(
 data class ChannelCreatedDto(
     val channel: ChannelDto? = null,
     val conversationId: String? = null,
+    val conversation: ConversationSummaryDto? = null,
 )
 
 /** POST /api/channels/[id]/subscribe { userId } → { already, memberCount }. */

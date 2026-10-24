@@ -33,4 +33,10 @@ class GameRequestCancellationTest {
         assertTrue(job.isCancelled)
         assertFalse(published)
     }
+    @Test fun `private access refusal is preserved for retiring the board rather than hidden as offline`() = runTest {
+        val denial = app.pulse.domain.sync.PrivateGameUnavailableException("Membership revoked")
+        val result = gameRequest<Int> { throw denial }
+        assertTrue(result.exceptionOrNull() === denial)
+    }
+
 }

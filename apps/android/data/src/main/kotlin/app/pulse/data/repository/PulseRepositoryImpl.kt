@@ -2,6 +2,7 @@ package app.pulse.data.repository
 
 import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withSavedMessageExpiry
+import app.pulse.domain.sync.messageExpiryEpochMs
 import app.pulse.domain.sync.withMessageExpiry
 
 import app.pulse.protocol.objectPayloadText
@@ -87,6 +88,7 @@ import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.FlushOutboxUseCase
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.PulseWave8Logic
+import app.pulse.protocol.settingsFields
 import app.pulse.protocol.WirePulsePrefs
 import app.pulse.protocol.CallAnswerDto
 import app.pulse.protocol.AiRecapDto
@@ -181,6 +183,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.emitAll
 import app.pulse.domain.sync.withSearchHitExpiry
@@ -257,6 +260,8 @@ class PulseRepositoryImpl constructor(
     @Volatile override var viewerId: String? = null
         private set
 
+    private val conversationSnapshots = ConversationSnapshotFence()
+
     @Volatile private var attachmentSession = java.util.UUID.randomUUID().toString()
     @Volatile private var pumpStarted = false
 
@@ -266,6 +271,7 @@ class PulseRepositoryImpl constructor(
     override fun stop() {
         attachmentSession = java.util.UUID.randomUUID().toString()
         viewerId = null
+        conversationSnapshots.clear()
         socket.disconnect()
         scope.coroutineContext.cancelChildren()
         pumpStarted = false
@@ -293,7 +299,7 @@ class PulseRepositoryImpl constructor(
             launch { runCatching { ensureDemoSeeded(userId) } }
             launch { fetchSettings() }
             launch { refreshConversations() }
-            launch { runCatching { if (outboxDao.count() > 0) flushOutbox() } }
+            launch { runCatching { flushOutbox() } }
             launch { runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() } }
         }
     }
@@ -304,11 +310,21 @@ class PulseRepositoryImpl constructor(
      * store junk-proof even when a proxy mangles the envelope. Failure is a
      * no-op (offline-first: the local blob stays authoritative).
      */
+    private val settingsReadSequence = java.util.concurrent.atomic.AtomicLong()
     private suspend fun fetchSettings() {
         val id = viewerId ?: return
-        when (val r = api.settings(id)) {
+        val epoch = attachmentSession
+        val readSequence = settingsReadSequence.incrementAndGet()
+        val readTicket = prefsLocalStore.settingsReadTicket()
+        if (viewerId != id || attachmentSession != epoch) return
+        val response = api.settings(id)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != id || attachmentSession != epoch) return
+        when (val r = response) {
             is PulseResult.Success -> {
-                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }
+                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it, readTicket) {
+                    viewerId == id && attachmentSession == epoch && settingsReadSequence.get() == readSequence
+                } }
             }
             is PulseResult.Failure -> Log.i(TAG, "settings fetch skipped: ${r.kind}")
         }
@@ -324,20 +340,44 @@ class PulseRepositoryImpl constructor(
         prefsLocalStore.setConvTheme(conversationId, theme)
     }
 
-    override suspend fun updatePulsePrefs(patch: WirePulsePrefs): Result<Unit> {
-        // Optimistic FIRST - the toggle lands in the UI instantly.
-        prefsLocalStore.applyLocal(patch)
+    private val settingsWrites = SettingsWriteQueue(scope)
+    override fun observePendingSettings(): Flow<Boolean> = prefsLocalStore.hasPendingSettings
+    override suspend fun retryPendingSettings(): Result<Unit> = submitSettings(null)
+    override suspend fun updatePulsePrefs(patch: WirePulsePrefs): Result<Unit> = submitSettings(patch)
+
+    private suspend fun submitSettings(patch: WirePulsePrefs?): Result<Unit> {
         val id = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
-        return when (val r = api.updateSettings(id, patch)) {
-            is PulseResult.Success -> {
-                // the server response is the authoritative clamp - re-anchor
-                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }
-                Result.success(Unit)
-            }
-            is PulseResult.Failure ->
-                // honest offline parity: the LOCAL change stays, the caller hints
-                Result.failure(IllegalStateException(r.message ?: "Couldn't reach the Pulse server"))
-        }
+        val epoch = attachmentSession
+        fun owns() = viewerId == id && attachmentSession == epoch
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        // Preparation and HTTP have separate ordered lanes. New local choices
+        // are durable immediately, even while an earlier request is offline.
+        return settingsWrites.submit(
+            prepare = {
+                if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+                try {
+                    if (patch == null) prefsLocalStore.pendingSettingsTicket()
+                    else prefsLocalStore.stageSettings(patch, ::owns)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                    throw app.pulse.domain.repository.SettingsPersistenceFailure(error)
+                }
+            },
+            send = { ticket ->
+                if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+                val sent = prefsLocalStore.currentSettingsPatch(ticket)
+                if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+                if (sent.settingsFields().isEmpty()) Result.success(Unit) // superseded before dispatch
+                else when (val response = api.updateSettings(id, sent)) {
+                    is PulseResult.Success -> {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        val confirmed = response.value.preferences ?: error("The server did not confirm these settings")
+                        prefsLocalStore.acknowledgeSettings(ticket, sent, confirmed, ::owns)
+                        Result.success(Unit)
+                    }
+                    is PulseResult.Failure -> Result.failure(IllegalStateException(response.message ?: "Settings were not confirmed"))
+                }
+            },
+        ).await()
     }
 
     override suspend fun login(name: String): Result<User> =
@@ -367,6 +407,16 @@ class PulseRepositoryImpl constructor(
             if (temp.authorId != owner) return@withTransaction
             outboxDao.deleteByClientId(clientId)
             messageDao.deleteById(temp.id)
+        }
+    }
+
+    override suspend fun discardOutboxEntryIfUnchanged(entry: OutboxEntry): Boolean {
+        val owner = viewerId ?: return false
+        return database.withTransaction {
+            val removed = outboxDao.discardOwnedSnapshot(owner, entry.conversationId, entry.clientId, entry.createdAt, entry.failureReason)
+            if (removed == 0) return@withTransaction false
+            messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+            true
         }
     }
 
@@ -459,13 +509,17 @@ class PulseRepositoryImpl constructor(
                     is PulseSocketClient.Signal.PresenceSnapshot -> onlineIds.value = signal.onlineUserIds.toSet()
                     is PulseSocketClient.Signal.MessageEnvelope -> onMessageEnvelope(signal)
                     is PulseSocketClient.Signal.Read -> {
+                        conversationSnapshots.invalidate(signal.conversationId)
                         eventsBus.tryEmit(PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.lastReadAt))
                         scheduleConversationsRefresh()
                     }
                     is PulseSocketClient.Signal.Typing -> eventsBus.tryEmit(
                         PulseEvent.Typing(signal.conversationId, signal.userId, signal.userName, signal.isTyping),
                     )
-                    is PulseSocketClient.Signal.ConversationUpdated -> scheduleConversationsRefresh()
+                    is PulseSocketClient.Signal.ConversationUpdated -> {
+                        conversationSnapshots.invalidate(signal.conversationId)
+                        scheduleConversationsRefresh()
+                    }
                     is PulseSocketClient.Signal.VoiceRoster -> eventsBus.tryEmit(
                         PulseEvent.VoiceRoster(
                             VoiceRosterPayload(conversationId = signal.conversationId, roster = signal.roster),
@@ -518,6 +572,7 @@ class PulseRepositoryImpl constructor(
                         PulseEvent.GroupCallSignal(
                             app.pulse.domain.model.GroupCallSignalData(
                                 event = app.pulse.protocol.GroupCallEvents.ENDED,
+                                joinAttemptId = signal.payload.joinAttemptId,
                                 conversationId = signal.payload.conversationId,
                                 callId = signal.payload.callId,
                                 reason = signal.payload.reason,
@@ -528,6 +583,7 @@ class PulseRepositoryImpl constructor(
                         PulseEvent.GroupCallSignal(
                             app.pulse.domain.model.GroupCallSignalData(
                                 event = app.pulse.protocol.GroupCallEvents.FULL,
+                                joinAttemptId = signal.payload.joinAttemptId,
                                 conversationId = signal.payload.conversationId,
                                 callId = signal.payload.callId,
                                 max = signal.payload.max,
@@ -613,6 +669,8 @@ class PulseRepositoryImpl constructor(
 
     private fun GroupCallRingPayload.toDomainRingSignal() = app.pulse.domain.model.GroupCallSignalData(
         event = app.pulse.protocol.GroupCallEvents.RING,
+        callId = callId,
+        expiresAt = expiresAt,
         conversationId = conversationId,
         kind = app.pulse.domain.model.CallKind.of(kind),
         title = title,
@@ -633,6 +691,7 @@ class PulseRepositoryImpl constructor(
 
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
         val dto = signal.dto ?: return
+        if (dto.conversationId != signal.conversationId) return
         val message = messageCacheMutex.withLock {
             val message = dto.toDomain()
             messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
@@ -641,12 +700,8 @@ class PulseRepositoryImpl constructor(
             messageCacheChanges.value = messageEventClock.get()
             checkNotNull(messageDao.byId(message.id)).toDomain()
         }
-        if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
-            eventsBus.tryEmit(
-                PulseEvent.MessageDeleted(signal.conversationId, message.id),
-            )
-        } else {
-            eventsBus.tryEmit(PulseEvent.MessageReceived(signal.conversationId, message))
+        app.pulse.domain.sync.messageEnvelopeEvent(signal.event, signal.conversationId, message)?.let {
+            eventsBus.tryEmit(it)
         }
         scheduleConversationsRefresh()
     }
@@ -663,16 +718,28 @@ class PulseRepositoryImpl constructor(
         return rows.mapNotNull { stored[it.id]?.toDomain() }
     }
 
-    private var refreshScheduled = false
+    private val refreshScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** Debounced inbox refetch - keeps previews/unreads honest after live hits. */
+    /** A background cache failure must not crash the app after an acknowledged action. */
     private fun scheduleConversationsRefresh() {
-        if (refreshScheduled) return
-        refreshScheduled = true
-        scope.launch {
-            delay(500)
-            refreshScheduled = false
-            if (isActive) refreshConversations()
+        if (!refreshScheduled.compareAndSet(false, true)) return
+        val awaitingDelay = java.util.concurrent.atomic.AtomicBoolean(true)
+        val job = scope.launch {
+            try {
+                delay(500)
+                awaitingDelay.set(false)
+                refreshScheduled.set(false)
+                if (isActive) refreshConversations()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Inbox refresh remains unconfirmed", error)
+            }
+        }
+        job.invokeOnCompletion {
+            // Also runs when cancellation prevents the coroutine body from starting.
+            // A completed old request must not clear a newer debounce slot.
+            if (awaitingDelay.compareAndSet(true, false)) refreshScheduled.set(false)
         }
     }
 
@@ -704,23 +771,113 @@ class PulseRepositoryImpl constructor(
 
     private val inboxRefreshVersion = java.util.concurrent.atomic.AtomicLong()
 
-    private suspend fun cacheConversation(dto: ConversationSummaryDto): Conversation = database.withTransaction {
-        inboxRefreshVersion.incrementAndGet() // pre-mutation list responses cannot erase a created/updated room
-        val previous = conversationDao.byId(dto.id)?.toDomain()
-        dto.toDomain(viewerId, previous).also { conversationDao.upsertAll(listOf(ConversationEntity.from(it))) }
+    private class SupersededConversationSnapshot : Exception()
+
+    private fun requireConversationOwner(owner: String, epoch: String) {
+        if (viewerId != owner || attachmentSession != epoch) {
+            throw kotlinx.coroutines.CancellationException("Conversation response belongs to a retired account session")
+        }
+    }
+
+    private suspend fun cacheConversation(
+        dto: ConversationSummaryDto, owner: String, epoch: String,
+        read: ConversationSnapshotFence.Read? = null,
+    ): Conversation {
+        fun requireSnapshot() {
+            requireConversationOwner(owner, epoch)
+            if (read != null && !conversationSnapshots.isCurrent(read)) throw SupersededConversationSnapshot()
+        }
+        val cached = database.withTransaction {
+            requireSnapshot()
+            kotlin.coroutines.coroutineContext.ensureActive()
+            if (read == null) conversationSnapshots.invalidate(dto.id)
+            inboxRefreshVersion.incrementAndGet()
+            val previous = conversationDao.byId(dto.id)?.toDomain()
+            requireSnapshot()
+            val mapped = dto.toDomain(owner, previous)
+            conversationDao.upsertAll(listOf(ConversationEntity.from(mapped)))
+            requireSnapshot() // retirement/supersession during storage => roll back
+            kotlin.coroutines.coroutineContext.ensureActive()
+            mapped
+        }
+        requireSnapshot()
+        return cached
+    }
+
+    /** Re-read once if a local mutation/relay event retired an in-flight snapshot.
+     * Do not turn an old pre-join 404 or pre-leave success into current room truth. */
+    private suspend fun <T> readConversationSnapshot(
+        room: String, project: (ConversationSummaryDto, String) -> Result<T>,
+    ): Result<Pair<T, Conversation>> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        repeat(2) {
+            requireConversationOwner(owner, epoch)
+            val read = conversationSnapshots.beginRead(room)
+            val response = api.conversationDetail(room, owner)
+            requireConversationOwner(owner, epoch)
+            if (!conversationSnapshots.isCurrent(read)) return@repeat
+            when (response) {
+                is PulseResult.Failure -> return Result.failure(apiExceptionOf(response))
+                is PulseResult.Success -> {
+                    val dto = response.value
+                    if (dto.id != room || dto.members.none { it.id == owner }) {
+                        return Result.failure(PulseApiException("SERVER", "Room response did not confirm your membership"))
+                    }
+                    val value = project(dto, owner).getOrElse { return Result.failure(it) }
+                    try {
+                        val cached = cacheConversation(dto, owner, epoch, read)
+                        return Result.success(value to cached)
+                    } catch (_: SupersededConversationSnapshot) {
+                        // Rollback happened inside Room; retry with the current generation.
+                    }
+                }
+            }
+        }
+        return Result.failure(PulseApiException("SERVER", "Room settings changed while loading. Refresh and try again."))
+    }
+
+    private suspend fun <T> withRoomMutation(
+        room: String, action: suspend (String, String) -> Result<T>,
+    ): Result<T> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return conversationActionLocks.computeIfAbsent(room) { Mutex() }.withLock {
+            requireConversationOwner(owner, epoch)
+            conversationSnapshots.invalidate(room)
+            inboxRefreshVersion.incrementAndGet()
+            try {
+                val result = action(owner, epoch)
+                requireConversationOwner(owner, epoch)
+                result
+            } finally {
+                if (viewerId == owner && attachmentSession == epoch) {
+                    conversationSnapshots.invalidate(room)
+                    inboxRefreshVersion.incrementAndGet()
+                    scheduleConversationsRefresh() // lost replies may still follow committed writes
+                }
+            }
+        }
     }
 
     override suspend fun refreshConversations(): Result<Unit> {
         val version = inboxRefreshVersion.incrementAndGet()
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
         return when (val r = api.conversations(owner)) {
             is PulseResult.Success -> {
-                database.withTransaction {
-                    if (version == inboxRefreshVersion.get() && owner == viewerId) {
+                try {
+                    database.withTransaction {
+                        requireConversationOwner(owner, epoch)
+                        if (version != inboxRefreshVersion.get()) return@withTransaction
                         val rows = r.value.conversations.map { ConversationEntity.from(it.toDomain(owner)) }
                         conversationDao.clearServerSnapshot(app.pulse.domain.model.PulseDemo.CONVERSATION_ID)
                         conversationDao.upsertAll(rows)
+                        requireConversationOwner(owner, epoch)
+                        if (version != inboxRefreshVersion.get()) throw SupersededConversationSnapshot()
                     }
+                } catch (_: SupersededConversationSnapshot) {
+                    // A newer read or mutation owns the inbox; the old transaction rolled back.
                 }
                 Result.success(Unit)
             }
@@ -995,14 +1152,51 @@ class PulseRepositoryImpl constructor(
     override suspend fun createDm(otherUserId: String): Result<Conversation> = createConversation(listOf(otherUserId), isGroup = false, name = null)
     override suspend fun createGroup(name: String, memberIds: List<String>): Result<Conversation> = createConversation(memberIds, isGroup = true, name = name)
 
-    private suspend fun createConversation(memberIds: List<String>, isGroup: Boolean, name: String?): Result<Conversation> =
-        when (val r = api.createConversation(viewerId ?: "", memberIds, isGroup, name)) {
-            is PulseResult.Success -> {
-                cacheConversation(r.value)
-                Result.success(r.value.toDomain(viewerId))
-            }
+    private suspend fun createConversation(memberIds: List<String>, isGroup: Boolean, name: String?): Result<Conversation> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        val members = (memberIds + owner).distinct().sorted()
+        val normalizedName = name?.trim()?.ifBlank { "Group of ${members.size}" }
+        val intent = kotlinx.serialization.json.JsonArray((listOf(owner, "conversation-group", normalizedName.orEmpty()) + members).map { JsonPrimitive(it) }).toString()
+        if (isGroup) return persistentConversationCreation(intent, owner, epoch,
+            send = { api.createConversation(owner, members, true, normalizedName, it) },
+            accept = { cacheConversation(it, owner, epoch) })
+        return when (val r = api.createConversation(owner, memberIds, false, name)) {
+            is PulseResult.Success -> Result.success(cacheConversation(r.value, owner, epoch))
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
+
+    /** Account/gateway-scoped journal survives cancellation/restart. Clear only
+     * after a matching server receipt and the local room have both been accepted. */
+    private suspend fun <T, R> persistentConversationCreation(intent: String, owner: String, epoch: String,
+        send: suspend (String) -> PulseResult<T>, accept: suspend (T) -> R): Result<R> {
+        return try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireConversationOwner(owner, epoch)
+            val id = prefsLocalStore.beginRoomCreation(intent)
+            requireConversationOwner(owner, epoch)
+            when (val result = send(id)) {
+                is PulseResult.Success -> {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    val accepted = accept(result.value)
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    prefsLocalStore.finishRoomCreation(intent, id)
+                    scheduleConversationsRefresh()
+                    Result.success(accepted)
+                }
+                is PulseResult.Failure -> {
+                    if (result.status == 410 && result.code == "creation_gone" && result.receiptClientId == id) {
+                        requireConversationOwner(owner, epoch)
+                        prefsLocalStore.finishRoomCreation(intent, id)
+                    }
+                    Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+    }
 
     override suspend fun me(): User? = null // no /me route on the wire yet - viewer lives in prefs
 
@@ -1014,7 +1208,31 @@ class PulseRepositoryImpl constructor(
         parentId: String?,
         topicId: String?,
         draftToken: app.pulse.domain.model.ComposerDraftToken?,
+    ): Result<SendReceipt> = sendTextMessage(conversationId, body, replyToId, parentId, topicId, draftToken)
+
+    override suspend fun sendNotificationReply(conversationId: String, body: String,
+        owner: app.pulse.domain.sync.NotificationReplyOwner): Result<SendReceipt> {
+        val text = body.trim()
+        if (text.isEmpty() || text.length > app.pulse.domain.usecase.SendMessageUseCase.MAX_LENGTH) {
+            return Result.failure(IllegalArgumentException("Reply must contain 1–2000 characters; nothing was sent"))
+        }
+        return try {
+            sendTextMessage(conversationId, text, null, null, null, null, owner)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    private suspend fun sendTextMessage(conversationId: String, body: String, replyToId: String?,
+        parentId: String?, topicId: String?, draftToken: app.pulse.domain.model.ComposerDraftToken?,
+        notificationOwner: app.pulse.domain.sync.NotificationReplyOwner? = null,
     ): Result<SendReceipt> {
+        if (notificationOwner != null && !notificationOwner.matches(viewerId, attachmentSessionKey())) {
+            return Result.failure(IllegalStateException("The notification account changed; nothing was queued"))
+        }
+
         // Demo companion room: fully on-device. No gateway round-trip, no
         // outbox - the bubble settles instantly and Nova replies locally.
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
@@ -1024,7 +1242,7 @@ class PulseRepositoryImpl constructor(
         // keystroke-to-send beat, not after the round-trip. The same clientId
         // then either reconciles with the real row, rides the outbox, or is
         // retracted on a definitive failure.
-        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
+        val owner = notificationOwner?.userId ?: viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
         if (draftToken != null && !draftToken.owns(conversationId, owner, parentId)) {
             return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
         }
@@ -1035,7 +1253,7 @@ class PulseRepositoryImpl constructor(
             id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
             conversationId = conversationId,
             authorId = owner,
-            authorName = viewerId ?: "",
+            authorName = owner,
             kind = Message.Kind.TEXT,
             body = body,
             createdAt = nowIso,
@@ -1044,6 +1262,9 @@ class PulseRepositoryImpl constructor(
             topicId = if (parentId == null) topicId else null,
         )
         persistComposerSend(draftToken) {
+            check(notificationOwner == null || notificationOwner.matches(viewerId, attachmentSessionKey())) {
+                "The notification account changed; nothing was queued"
+            }
             check(parentId == null || !threadIsDenied(parentId)) { "This thread is unavailable. Your draft is still saved." }
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(
@@ -1350,7 +1571,8 @@ class PulseRepositoryImpl constructor(
                 conversationId = conversationId, authorId = owner, authorName = owner, kind = kindOf(draft.kind),
                 body = caption, createdAt = java.time.Instant.now().toString(), durationMs = draft.durationMs,
                 fileName = draft.fileName.takeIf { draft.kind == "file" }, fileSize = draft.fileSize.takeIf { draft.kind == "file" },
-                viewOnce = viewOnce, topicId = topicId)
+                viewOnce = viewOnce, topicId = topicId, replyToId = draft.replyToId,
+                anon = draft.anon, anonAlias = if (draft.anon) app.pulse.protocol.IncognitoAlias.aliasFor(owner, conversationId) else null)
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = selectionId,
                 content = caption, kind = draft.kind, createdAt = temp.createdAt, uploadKey = record.fileKey))
@@ -1361,6 +1583,59 @@ class PulseRepositoryImpl constructor(
         }
         scope.launch {
             try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Attachment remains queued", error); scheduleSelfHeal() }
+        }
+        Result.success(message)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> =
+        queuePreparedAttachment(app.pulse.domain.model.AttachmentDraft(clientId, conversationId, "image", dataUrl), sessionKey)
+
+    override suspend fun queuePreparedAttachment(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Message> = try {
+        val clientId = draft.selectionId
+        val conversationId = draft.conversationId
+        val owner = requireAttachmentSession(sessionKey)
+        val files = attachmentFiles() // Capture the original account's directory before suspending.
+        val validated = withContext(Dispatchers.IO) {
+            app.pulse.data.local.AttachmentValidation.validated(draft.copy(caption = draft.caption.trim()))
+        }
+        val key = withContext(Dispatchers.IO) { files.put(clientId, validated.dataUrl) }
+        val message = database.withTransaction {
+            requireAttachmentSession(sessionKey)
+            val existing = outboxDao.byClientId(clientId)
+            val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+            if (existing != null) {
+                check(existing.conversationId == conversationId && existing.kind == validated.kind && existing.content == validated.caption &&
+                    echo != null && echo.authorId == owner && echo.conversationId == conversationId &&
+                    echo.topicId == validated.topicId && echo.replyToId == validated.replyToId &&
+                    echo.viewOnce == validated.viewOnce && echo.toDomain().anon == validated.anon &&
+                    echo.fileName == validated.fileName.takeIf { validated.kind == "file" } &&
+                    echo.fileSize == validated.fileSize.takeIf { validated.kind == "file" } && echo.durationMs == validated.durationMs &&
+                    (existing.uploadKey == null || existing.uploadKey == key)) { "This attachment was already queued with different details. Check the chat." }
+                check(existing.failureReason == null) { "This attachment is already in the chat and needs attention there" }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                requireAttachmentSession(sessionKey)
+                return@withTransaction checkNotNull(echo).toDomain()
+            }
+            val temp = Message(id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
+                conversationId = conversationId, authorId = owner, authorName = owner, kind = kindOf(validated.kind),
+                body = validated.caption, createdAt = java.time.Instant.now().toString(),
+                fileName = validated.fileName.takeIf { validated.kind == "file" },
+                fileSize = validated.fileSize.takeIf { validated.kind == "file" }, durationMs = validated.durationMs,
+                topicId = validated.topicId, replyToId = validated.replyToId, viewOnce = validated.viewOnce,
+                anon = validated.anon, anonAlias = if (validated.anon) app.pulse.protocol.IncognitoAlias.aliasFor(owner, conversationId) else null)
+            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+            outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = clientId,
+                content = validated.caption, kind = validated.kind, createdAt = temp.createdAt, uploadKey = key))
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireAttachmentSession(sessionKey)
+            temp
+        }
+        // Do not touch attachmentDraftDao: an existing room composer draft is unrelated.
+        eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
+        scope.launch {
+            try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                Log.w(TAG, "Prepared attachment remains queued", error); scheduleSelfHeal()
+            }
         }
         Result.success(message)
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
@@ -1442,36 +1717,96 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun editMessage(messageId: String, content: String): Result<Message> =
-        when (val r = api.editMessage(messageId, viewerId ?: "", content)) {
-            is PulseResult.Success -> {
-                val message = upsertMessage(r.value.toDomain())
-                Result.success(message)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        mutateOwnedMessage(messageId, app.pulse.domain.sync.MessageMutationKind.EDIT, content)
 
-    override suspend fun toggleMessagePin(messageId: String): Result<Message> =
-        when (val r = api.toggleMessagePin(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                val message = upsertMessage(r.value.toDomain())
-                Result.success(message)
+    override suspend fun pinMessage(messageId: String): Result<Message> =
+        mutateOwnedMessage(messageId, app.pulse.domain.sync.MessageMutationKind.PIN)
+
+    private val messageActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private suspend fun mutateOwnedMessage(messageId: String, kind: app.pulse.domain.sync.MessageMutationKind,
+        content: String? = null): Result<Message> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!messageActions.add(messageId)) return Result.failure(IllegalStateException("This message is still updating."))
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val requested = messageDao.byId(messageId)?.toDomain()
+                ?: return Result.failure(IllegalStateException("Refresh this message before changing it."))
+            requireConversationOwner(owner, epoch)
+            check(!messageId.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) { "Wait for this message to finish sending." }
+            if (kind != app.pulse.domain.sync.MessageMutationKind.PIN) {
+                check(requested.authorId == owner) { "Only the sender can change this message." }
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+            val watermark = messageEventClock.get()
+            val response = when (kind) {
+                app.pulse.domain.sync.MessageMutationKind.EDIT -> api.editMessage(messageId, owner, checkNotNull(content))
+                app.pulse.domain.sync.MessageMutationKind.PIN -> api.pinMessage(messageId, owner)
+                app.pulse.domain.sync.MessageMutationKind.DELETE -> api.deleteMessage(messageId, owner)
+            }
+            requireConversationOwner(owner, epoch)
+            val incoming = when (response) {
+                is PulseResult.Failure -> return Result.failure(apiExceptionOf(response))
+                is PulseResult.Success -> response.value.toDomain()
+            }
+            app.pulse.domain.sync.validateMessageMutationReceipt(requested, incoming, owner, kind, content)
+            val retained = messageCacheMutex.withLock {
+                database.withTransaction {
+                    requireConversationOwner(owner, epoch)
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val current = messageDao.byId(messageId)?.toDomain()
+                    check(current == null || current.conversationId == requested.conversationId) { "The message changed conversations." }
+                    val accepted = app.pulse.domain.sync.mergeMessageMutationReceipt(current, incoming, kind,
+                        (messageEventRevisions[messageId] ?: 0L) > watermark)
+                    messageDao.upsertAll(listOf(MessageEntity.from(accepted, reactionsJsonOf(accepted))))
+                    requireConversationOwner(owner, epoch)
+                    checkNotNull(messageDao.byId(messageId)).toDomain()
+                }.also {
+                    messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
+                    messageCacheChanges.value = messageEventClock.get()
+                }
+            }
+            requireConversationOwner(owner, epoch)
+            return Result.success(retained)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            return Result.failure(error)
+        } finally { messageActions.remove(messageId) }
+    }
 
     private val savedOperations = Mutex()
 
-    override suspend fun toggleMessageSave(messageId: String): Result<Boolean> = savedOperations.withLock {
-        when (val r = api.toggleMessageSave(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                if (!r.value.saved) savedDao.deleteById(messageId)
-                else messageDao.byId(messageId)?.let { row ->
-                    savedDao.upsertAll(listOf(SavedMessageEntity(messageId, row.conversationId, java.time.OffsetDateTime.now().toString())))
+    override suspend fun setMessageSaved(messageId: String, saved: Boolean): Result<Boolean> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            savedOperations.withLock {
+                requireConversationOwner(owner, epoch)
+                kotlin.coroutines.coroutineContext.ensureActive()
+                if (saved) {
+                    val current = messageDao.byId(messageId)?.toDomain()
+                    check(current != null && savedMessageVisible(current) && !messageId.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) {
+                        "Refresh this message before saving it."
+                    }
                 }
-                Result.success(r.value.saved)
+                val response = api.setMessageSaved(messageId, owner, saved)
+                requireConversationOwner(owner, epoch)
+                when (response) {
+                    is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+                    is PulseResult.Success -> database.withTransaction {
+                        requireConversationOwner(owner, epoch)
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        if (!saved) savedDao.deleteById(messageId)
+                        else {
+                            val current = checkNotNull(messageDao.byId(messageId)) { "Saved message is no longer cached. Refresh the library." }
+                            // Do not rewrite message content from the tapped snapshot.
+                            savedDao.upsertAll(listOf(SavedMessageEntity(messageId, current.conversationId, checkNotNull(response.value.savedAt))))
+                        }
+                        requireConversationOwner(owner, epoch)
+                        Result.success(saved)
+                    }
+                }
             }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
     }
 
     private val pinRefreshLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
@@ -1497,21 +1832,36 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun unpinMessage(messageId: String): Result<Unit> {
-        val watermark = messageEventClock.get()
-        return when (val response = api.unpinMessage(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                messageCacheMutex.withLock {
-                    // A later relayed re-pin wins over this operation's late ACK.
-                    if ((messageEventRevisions[messageId] ?: 0L) <= watermark) {
-                        messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
-                        messageDao.byId(messageId)?.let { messageDao.upsertAll(listOf(it.copy(pinnedAt = null))) }
-                        messageCacheChanges.value = messageEventClock.get()
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!messageActions.add(messageId)) return Result.failure(IllegalStateException("This message is still updating."))
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            requireConversationOwner(owner, epoch)
+            val watermark = messageEventClock.get()
+            val response = api.unpinMessage(messageId, owner)
+            requireConversationOwner(owner, epoch)
+            when (response) {
+                is PulseResult.Failure -> return Result.failure(apiExceptionOf(response))
+                is PulseResult.Success -> messageCacheMutex.withLock {
+                    database.withTransaction {
+                        requireConversationOwner(owner, epoch)
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        // A later relayed re-pin wins over this operation's late ACK.
+                        if ((messageEventRevisions[messageId] ?: 0L) <= watermark) {
+                            messageDao.byId(messageId)?.let { messageDao.upsertAll(listOf(it.copy(pinnedAt = null))) }
+                        }
+                        requireConversationOwner(owner, epoch)
                     }
+                    messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
+                    messageCacheChanges.value = messageEventClock.get()
                 }
-                Result.success(Unit)
             }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
-        }
+            requireConversationOwner(owner, epoch)
+            return Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            return Result.failure(error)
+        } finally { messageActions.remove(messageId) }
     }
 
     override fun observeFailedThreadReplies(conversationId: String, rootId: String): Flow<List<OutboxEntry>> {
@@ -1577,22 +1927,38 @@ class PulseRepositoryImpl constructor(
     private suspend fun threadIsDenied(rootId: String): Boolean = rootId in deniedThreads.value ||
         wave7Dao.get(app.pulse.domain.sync.threadDenialKey(rootId)) != null
 
+    override suspend fun cachedThreadTarget(roomId: String, rootId: String, targetId: String): Pair<Message, Message>? =
+        messageCacheMutex.withLock {
+            database.withTransaction {
+                if (viewerId == null || threadIsDenied(rootId)) return@withTransaction null
+                val rows = messageDao.cachedThreadTargetRows(roomId, rootId, targetId).map { it.toDomain() }
+                app.pulse.domain.sync.cachedThreadTarget(rows.firstOrNull { it.id == rootId },
+                    rows.firstOrNull { it.id == targetId }, roomId, rootId, targetId, denied = false)
+            }
+        }
+
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
-        val ticket = messageCacheMutex.withLock { threadValidationFence.begin(rootId) }
+        val owner = viewerId ?: throw kotlinx.coroutines.CancellationException("No active account")
+        val epoch = attachmentSession
+        val ticket = messageCacheMutex.withLock { requireConversationOwner(owner, epoch); threadValidationFence.begin(rootId) }
         val watermark = messageEventClock.get()
         try {
-            val page = when (val r = api.thread(rootId, viewerId ?: "")) {
+            requireConversationOwner(owner, epoch)
+            val page = when (val r = api.thread(rootId, owner)) {
                 is PulseResult.Success -> r.value
                 is PulseResult.Failure -> throw apiExceptionOf(r)
             }
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireConversationOwner(owner, epoch)
             return messageCacheMutex.withLock {
+                requireConversationOwner(owner, epoch)
                 if (!threadValidationFence.isCurrent(rootId, ticket)) throw PulseApiException("CONFLICT", "A newer thread check superseded this one. Try again.", 409)
                 val parent = page.parent?.toDomain() ?: throw IllegalStateException("Thread parent missing")
                 if (parent.id != rootId || parent.threadRootId != null) throw IllegalStateException("Unexpected thread parent")
                 val known = messageDao.byId(rootId)
                 check(known == null || known.conversationId == parent.conversationId) { "Unexpected thread room" }
                 val accepted = database.withTransaction {
+                    requireConversationOwner(owner, epoch)
                     val raw = listOf(parent) + page.replies.map { it.toDomain() }.filter {
                         it.threadRootId == rootId && it.conversationId == parent.conversationId
                     }
@@ -1602,6 +1968,7 @@ class PulseRepositoryImpl constructor(
                         throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
                     }
                     wave7Dao.delete(app.pulse.domain.sync.threadDenialKey(rootId))
+                    requireConversationOwner(owner, epoch)
                     checkNotNull(currentParent) to merged.filter { it.threadRootId == rootId }
                 }
                 deniedThreads.value = deniedThreads.value - rootId
@@ -1614,7 +1981,7 @@ class PulseRepositoryImpl constructor(
                 // Navigation cancellation must not forget an explicit refusal already received.
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     messageCacheMutex.withLock {
-                        if (threadValidationFence.isCurrent(rootId, ticket)) {
+                        if (viewerId == owner && attachmentSession == epoch && threadValidationFence.isCurrent(rootId, ticket)) {
                             deniedThreads.value = deniedThreads.value + rootId
                             try {
                                 wave7Dao.upsert(Wave7CacheEntity(app.pulse.domain.sync.threadDenialKey(rootId), "denied", System.currentTimeMillis()))
@@ -1682,99 +2049,45 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    /**
-     * Forward = re-POST the SAME body into the target conversation (no wire
-     * endpoint - spec §1.1). Media is forwarded by reusing the stored paths;
-     * the wire kind maps back through the whitelist (text|image|audio|sticker|
-     * location|file). REM-A F-MS-10: a NETWORK-class failure on a PLAIN TEXT
-     * forward rides the existing outbox (kind "text") instead of dying -
-     * media stays online-only per spec §1.2.
-     */
+    /** All forward kinds enter the same durable queue BEFORE any network request. */
     override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
-        try {
-            if (source.threadRootId?.let { threadIsDenied(it) } == true) {
-                return Result.failure(IllegalStateException("This thread is unavailable. Nothing was forwarded."))
-            }
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            return Result.failure(error)
-        }
-        if (source.viewOnce || source.isDeleted || source.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
-            return Result.failure(IllegalStateException("This message can't be forwarded."))
-        }
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
         val clientId = java.util.UUID.randomUUID().toString()
-        val textOnly = source.kind == Message.Kind.TEXT &&
-            source.imagePath == null && source.audioPath == null && source.filePath == null
-        return when (
-            val r = api.sendMessage(
-                conversationId = targetConversationId,
-                senderId = viewerId ?: "",
-                content = source.body,
-                clientId = clientId,
-                imagePath = source.imagePath,
-                audioPath = source.audioPath,
-                durationMs = source.durationMs,
-                filePath = source.filePath,
-                fileName = source.fileName,
-                fileSize = source.fileSize,
-                kind = wireKindOf(source.kind),
-                // R1-W2F (F-MD-07) - location pins keep their {lat,lng,label}
-                // payload when forwarded, so the target room renders a REAL pin.
-                payload = source.payload?.let { raw ->
-                    runCatching { PulseJson.parseToJsonElement(raw) }.getOrNull()
-                        as? kotlinx.serialization.json.JsonObject
-                },
-            )
-        ) {
-            is PulseResult.Success -> {
-                val message = r.value.messageOrThrow()
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                scheduleConversationsRefresh()
-                Result.success(message)
-            }
-            is PulseResult.Failure -> {
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && textOnly && !viewerId.isNullOrBlank()) {
-                    val nowIso = java.time.OffsetDateTime.now()
-                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    val temp = Message(
-                        id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
-                        conversationId = targetConversationId,
-                        authorId = viewerId ?: "",
-                        authorName = viewerId ?: "",
-                        kind = Message.Kind.TEXT,
-                        body = source.body,
-                        createdAt = nowIso,
-                    )
-                    messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(payloadJson = source.payload)))
-                    outboxDao.insert(
-                        OutboxEntity(
-                            conversationId = targetConversationId,
-                            clientId = clientId,
-                            content = source.body,
-                            kind = "text",
-                            createdAt = nowIso,
-                        ),
-                    )
-                                eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
-                    return Result.success(temp)
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val temp = database.withTransaction {
+                requireConversationOwner(owner, epoch)
+                val current = messageDao.byId(source.id)?.toDomain()
+                    ?: throw IllegalStateException("Refresh the original message before forwarding it.")
+                check(current.conversationId == source.conversationId) { "The source conversation changed." }
+                current.threadRootId?.let { rootId ->
+                    check(!threadIsDenied(rootId) && app.pulse.domain.sync.threadRootAvailable(
+                        messageDao.byId(rootId)?.toDomain(), current.conversationId, rootId)) { "This thread is unavailable. Nothing was forwarded." }
                 }
-                Result.failure(apiExceptionOf(r))
+                val sourceRoom = conversationDao.byId(current.conversationId)?.toDomain()
+                val targetRoom = conversationDao.byId(targetConversationId)?.toDomain()
+                check(sourceRoom?.memberIds?.contains(owner) == true && targetRoom?.memberIds?.contains(owner) == true) {
+                    "Refresh the source and destination chats before forwarding."
+                }
+                val plan = ForwardMessagePlan.create(current, targetConversationId, owner, clientId, System.currentTimeMillis())
+                messageDao.upsertAll(listOf(MessageEntity.from(plan.message)))
+                outboxDao.insert(OutboxEntity(conversationId = targetConversationId, clientId = clientId,
+                    content = plan.message.body, kind = plan.kind, createdAt = plan.message.createdAt, wirePayload = plan.message.payload))
+                requireConversationOwner(owner, epoch)
+                kotlin.coroutines.coroutineContext.ensureActive()
+                plan.message
             }
-        }
-    }
-
-    /** Domain kind → wire kind (whitelist text|image|audio|sticker|location|file). */
-    private fun wireKindOf(kind: Message.Kind): String? = when (kind) {
-        Message.Kind.TEXT -> "text"
-        Message.Kind.IMAGE -> "image"
-        Message.Kind.VOICE -> "audio"
-        Message.Kind.FILE -> "file"
-        // R1-W2F (F-MD-07) - pins re-POST with their wire kind + payload.
-        Message.Kind.LOCATION -> "location"
-        // VIDEO/POLL/RED_PACKET/SYSTEM are outside the send whitelist - omit
-        // and let the server default to text (media fields still ride along).
-        else -> null
+            // The account-owned dispatcher survives closing this picker. Its saved
+            // clientId/media/payload remain identical after lost replies or restart.
+            eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
+            scope.launch {
+                try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                    Log.w(TAG, "Forward remains queued", error); scheduleSelfHeal()
+                }
+            }
+            return Result.success(temp)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(error) }
     }
 
     override suspend fun setServerDraft(conversationId: String, draft: String) {
@@ -1795,49 +2108,67 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun conversationDetail(conversationId: String): Result<Conversation> =
-        when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                val conversation = cacheConversation(r.value)
-                Result.success(conversation)
-            }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        readConversationSnapshot(conversationId) { _, _ -> Result.success(Unit) }.map { it.second }
 
     // REM-A group governance + scheduling (web group-info-sheet parity)
 
     /** Live group meta - ALSO upserts the Room conversation cache (rename TTL etc. flow into the list). */
-    override suspend fun groupMeta(conversationId: String): Result<GroupMeta> =
-        when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                val dto = r.value
-                cacheConversation(dto)
-                Result.success(
-                    GroupMeta(
-                        myRole = dto.members.firstOrNull { it.id == viewerId }?.role,
-                        isGroup = dto.isGroup,
-                        ttlSeconds = dto.ttlSeconds ?: 0,
-                        broadcastMode = dto.broadcastMode == true,
-                        slowModeSeconds = dto.slowModeSeconds ?: 0,
-                        screenPrivacy = dto.screenPrivacy == true,
-                        myScreenPrivacy = dto.myScreenPrivacy == true,
-                        inviteCode = dto.inviteCode,
-                        // R6 - M5: the server computes dmBlocked for DM details
-                        // only (src/lib/serializers.ts buildConversationDetail).
-                        dmBlocked = dto.dmBlocked == true,
-                        // R70 - the web room-info page's live detail fields.
-                        description = dto.description,
-                        photo = dto.photo,
-                        myMutedUntilIso = dto.mutedUntil,
-                        myStreakCount = streakCountOf(dto.myStreak),
-                        myStreakBest = streakBestOf(dto.myStreak),
-                        deadStreakCount = streakCountOf(dto.deadStreak),
-                        lostStreakCount = streakCountOf(dto.lostStreak),
-                        lostStreakBest = streakBestOf(dto.lostStreak),
-                    ),
-                )
+    override suspend fun groupMeta(conversationId: String): Result<GroupMeta> {
+        return try {
+            val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+            val epoch = attachmentSession
+            val privacyRead = prefsLocalStore.roomPrivacy.readTicket(conversationId)
+            requireConversationOwner(owner, epoch)
+            val result = readConversationSnapshot(conversationId) { dto, owner ->
+                val ttl = dto.ttlSeconds
+                val slow = dto.slowModeSeconds
+                val broadcast = dto.broadcastMode
+                val roomPrivacy = dto.screenPrivacy
+                val personalPrivacy = dto.myScreenPrivacy
+                if (dto.id != conversationId || dto.members.none { it.id == owner } ||
+                    ttl == null || slow == null || broadcast == null || roomPrivacy == null || personalPrivacy == null ||
+                    ttl !in listOf(0, 86_400, 604_800, 2_592_000) || slow !in listOf(0, 5, 10, 30, 60, 300)) {
+                    Result.failure(PulseApiException("SERVER", "Room settings were incomplete. Refresh before changing them."))
+                } else {
+                    Result.success(
+                        GroupMeta(
+                            myRole = dto.members.firstOrNull { it.id == owner }?.role,
+                            isGroup = dto.isGroup,
+                            ttlSeconds = ttl,
+                            broadcastMode = broadcast,
+                            slowModeSeconds = slow,
+                            screenPrivacy = roomPrivacy,
+                            myScreenPrivacy = personalPrivacy,
+                            inviteCode = dto.inviteCode,
+                            // R6 - M5: the server computes dmBlocked for DM details
+                            // only (src/lib/serializers.ts buildConversationDetail).
+                            dmBlocked = dto.dmBlocked == true,
+                            // R70 - the web room-info page's live detail fields.
+                            description = dto.description,
+                            photo = dto.photo,
+                            myMutedUntilIso = dto.mutedUntil,
+                            myStreakCount = streakCountOf(dto.myStreak),
+                            myStreakBest = streakBestOf(dto.myStreak),
+                            deadStreakCount = streakCountOf(dto.deadStreak),
+                            lostStreakCount = streakCountOf(dto.lostStreak),
+                            lostStreakBest = streakBestOf(dto.lostStreak),
+                        ),
+                    )
+                }
+            }.map { it.first }
+
+            result.map { meta ->
+                prefsLocalStore.roomPrivacy.mergeSnapshot(privacyRead, meta.myScreenPrivacy) {
+                    viewerId == owner && attachmentSession == epoch
+                }
+                val local = prefsLocalStore.roomPrivacy.observe(conversationId).first()
+                requireConversationOwner(owner, epoch)
+                meta.copy(myScreenPrivacy = local.on ?: true)
             }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            Result.failure(error)
         }
+    }
 
     /** PATCH /api/conversations/{id} - every success carries the updated detail; refresh the cache. */
     private suspend fun patchGroupMeta(
@@ -1845,14 +2176,16 @@ class PulseRepositoryImpl constructor(
         name: String? = null,
         broadcast: Boolean? = null,
         screenPrivacy: Boolean? = null,
-    ): Result<Unit> =
-        when (val r = api.patchConversation(conversationId, viewerId ?: "", name = name, broadcast = broadcast, screenPrivacy = screenPrivacy)) {
+    ): Result<Unit> = withRoomMutation(conversationId) { owner, epoch ->
+        when (val r = api.patchConversation(conversationId, owner, name = name, broadcast = broadcast, screenPrivacy = screenPrivacy)) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
+                requireConversationOwner(owner, epoch)
+                cacheConversation(r.value, owner, epoch)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     override suspend fun renameGroup(conversationId: String, name: String): Result<Unit> =
         patchGroupMeta(conversationId, name = name)
@@ -1865,68 +2198,76 @@ class PulseRepositoryImpl constructor(
 
     // R2-A - round-2 parity (automations · webhooks · recap · privacy · photo)
 
-    override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> =
-        when (val r = api.setMyScreenPrivacy(conversationId, viewerId ?: "", on)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+    private val roomPrivacyWrites = SettingsWriteQueue(scope)
+    override fun observePersonalScreenPrivacy(conversationId: String) = prefsLocalStore.roomPrivacy.observe(conversationId)
+    override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> = writePersonalPrivacy(conversationId, on)
+    override suspend fun retryPersonalScreenPrivacy(conversationId: String): Result<Unit> = writePersonalPrivacy(conversationId, null)
 
-    override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> =
-        when (val r = api.patchConversation(conversationId, viewerId ?: "", photo = normalizeUploadPath(photoPath))) {
+    private suspend fun writePersonalPrivacy(room: String, on: Boolean?): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        fun owns() = viewerId == owner && attachmentSession == epoch
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        return roomPrivacyWrites.submit(
+            prepare = {
+                requireConversationOwner(owner, epoch)
+                conversationSnapshots.invalidate(room)
+                if (on == null) prefsLocalStore.roomPrivacy.pending(room)
+                else prefsLocalStore.roomPrivacy.stage(room, on, ::owns)
+            },
+            send = { ticket ->
+                requireConversationOwner(owner, epoch)
+                if (ticket == null || !prefsLocalStore.roomPrivacy.current(ticket)) Result.success(Unit)
+                else withRoomMutation(room) { _, _ ->
+                    requireConversationOwner(owner, epoch)
+                    if (!prefsLocalStore.roomPrivacy.current(ticket)) Result.success(Unit)
+                    else when (val response = api.setMyScreenPrivacy(room, owner, ticket.on)) {
+                        is PulseResult.Success -> {
+                            requireConversationOwner(owner, epoch)
+                            prefsLocalStore.roomPrivacy.acknowledge(ticket, ticket.on, ::owns)
+                            Result.success(Unit)
+                        }
+                        is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+                    }
+                }
+            },
+        ).await()
+    }
+
+    override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> = withRoomMutation(conversationId) { owner, epoch ->
+        when (val r = api.patchConversation(conversationId, owner, photo = normalizeUploadPath(photoPath))) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
+                requireConversationOwner(owner, epoch)
+                cacheConversation(r.value, owner, epoch)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     override suspend fun automations(conversationId: String): Result<List<Automation>> =
-        when (val r = api.automations(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.automations.map { it.toDomain() })
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.automations(conversationId, it) }.map { page -> page.automations.map { it.toDomain() } }
 
     override suspend fun createAutomation(conversationId: String, trigger: String, reply: String): Result<Automation> =
-        when (val r = api.createAutomation(conversationId, viewerId ?: "", trigger, reply)) {
-            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.createAutomation(conversationId, it, trigger, reply) }.map { it.automation.toDomain() }
 
     override suspend fun setAutomationEnabled(automationId: String, enabled: Boolean): Result<Automation> =
-        when (val r = api.patchAutomation(automationId, viewerId ?: "", enabled = enabled, trigger = null)) {
-            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.patchAutomation(automationId, it, enabled = enabled, trigger = null) }.map { it.automation.toDomain() }
 
     override suspend fun setAutomationTrigger(automationId: String, trigger: String): Result<Automation> =
-        when (val r = api.patchAutomation(automationId, viewerId ?: "", enabled = null, trigger = trigger)) {
-            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.patchAutomation(automationId, it, enabled = null, trigger = trigger) }.map { it.automation.toDomain() }
 
     override suspend fun deleteAutomation(automationId: String): Result<Unit> =
-        when (val r = api.deleteAutomation(automationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.deleteAutomation(automationId, it) }.map { Unit }
 
     override suspend fun webhooks(conversationId: String): Result<List<Webhook>> =
-        when (val r = api.webhooks(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.webhooks.map { it.toDomain() })
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.webhooks(conversationId, it) }.map { page -> page.webhooks.map { it.toDomain() } }
 
     override suspend fun createWebhook(conversationId: String, name: String): Result<Webhook> =
-        when (val r = api.createWebhook(conversationId, name, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.toDomain())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.createWebhook(conversationId, name, it) }.map { it.toDomain() }
 
     override suspend fun deleteWebhook(token: String): Result<Unit> =
-        when (val r = api.deleteWebhook(token, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.deleteWebhook(token, it) }.map { Unit }
 
     override suspend fun aiRecap(conversationId: String): Result<AiRecapDto> =
         when (val r = api.aiRecap(viewerId ?: "", conversationId)) {
@@ -1958,75 +2299,122 @@ class PulseRepositoryImpl constructor(
         createdBy = createdBy,
     )
 
-    override suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<List<String>> =
-        when (val r = api.addMembers(conversationId, viewerId ?: "", userIds)) {
+    override suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<List<String>> = withRoomMutation(conversationId) { owner, _ ->
+        when (val r = api.addMembers(conversationId, owner, userIds)) {
             is PulseResult.Success -> Result.success(r.value.added)
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
-    override suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean): Result<Unit> =
-        when (val r = api.promoteDemote(conversationId, viewerId ?: "", userId, promote)) {
+    override suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean): Result<Unit> = withRoomMutation(conversationId) { owner, epoch ->
+        when (val r = api.promoteDemote(conversationId, owner, userId, promote)) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
+                requireConversationOwner(owner, epoch)
+                cacheConversation(r.value, owner, epoch)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
-    override suspend fun kickMember(conversationId: String, userId: String): Result<Unit> =
-        when (val r = api.kickMember(conversationId, viewerId ?: "", userId)) {
-            is PulseResult.Success -> Result.success(Unit)
+    override suspend fun kickMember(conversationId: String, userId: String): Result<Unit> = withRoomMutation(conversationId) { owner, epoch ->
+        when (val r = api.kickMember(conversationId, owner, userId)) {
+            is PulseResult.Success -> {
+                mutateConversation(conversationId, checkOwner = { requireConversationOwner(owner, epoch) }) { current ->
+                    val members = current.members.filterNot { it.id == userId }
+                    current.copy(members = members, memberIds = members.map { it.id }, memberNames = members.map { it.name })
+                }
+                Result.success(Unit)
+            }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
-    override suspend fun leaveGroup(conversationId: String): Result<GroupLeave> =
-        when (val r = api.leaveGroup(conversationId, viewerId ?: "")) {
+    override suspend fun leaveGroup(conversationId: String): Result<GroupLeave> = withRoomMutation(conversationId) { owner, epoch ->
+        when (val r = api.leaveGroup(conversationId, owner)) {
             is PulseResult.Success -> {
+                requireConversationOwner(owner, epoch)
                 // Departure = the row leaves the chats list (server truth).
-                conversationDao.delete(conversationId)
+                database.withTransaction {
+                    requireConversationOwner(owner, epoch)
+                    inboxRefreshVersion.incrementAndGet()
+                    conversationDao.delete(conversationId)
+                    requireConversationOwner(owner, epoch)
+                }
                 Result.success(GroupLeave(r.value.remainingMembers, r.value.promotedUserId))
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
-    override suspend fun createGroupInvite(conversationId: String, regenerate: Boolean): Result<String> =
-        when (val r = api.createInvite(conversationId, viewerId ?: "", regenerate)) {
+    override suspend fun createGroupInvite(conversationId: String, regenerate: Boolean): Result<String> = withRoomMutation(conversationId) { owner, _ ->
+        when (val r = api.createInvite(conversationId, owner, regenerate)) {
             is PulseResult.Success -> Result.success(r.value.inviteCode)
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
-    override suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int): Result<Int> =
-        when (val r = api.setDisappearingTtl(conversationId, viewerId ?: "", ttlSeconds)) {
+    override suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int): Result<Int> = withRoomMutation(conversationId) { owner, epoch ->
+        when (val r = api.setDisappearingTtl(conversationId, owner, ttlSeconds)) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
-                Result.success(r.value.ttlSeconds ?: ttlSeconds)
+                requireConversationOwner(owner, epoch)
+                val applied = r.value.ttlSeconds
+                if (r.value.id != conversationId || applied == null) {
+                    Result.failure(IllegalStateException("Disappearing-message setting was not confirmed"))
+                } else {
+                    cacheConversation(r.value, owner, epoch)
+                    Result.success(applied)
+                }
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
-    override suspend fun setSlowMode(conversationId: String, seconds: Int): Result<Int> =
-        when (val r = api.setSlowMode(conversationId, viewerId ?: "", seconds)) {
+    override suspend fun setSlowMode(conversationId: String, seconds: Int): Result<Int> = withRoomMutation(conversationId) { owner, _ ->
+        when (val r = api.setSlowMode(conversationId, owner, seconds)) {
             is PulseResult.Success -> Result.success(r.value.slowModeSeconds)
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     override suspend fun scheduledMessages(conversationId: String): Result<List<ScheduledItem>> =
-        when (val r = api.scheduledMessages(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.items.map { it.toDomainScheduled() })
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest(denyScheduledRead = true) { api.scheduledMessages(conversationId, it) }.map { page -> page.items.map { it.toDomainScheduled() } }
 
-    override suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem> =
-        when (val r = api.scheduleMessage(conversationId, viewerId ?: "", content, scheduledAtIso)) {
-            is PulseResult.Success -> Result.success(r.value.toDomainScheduled())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+    override suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            requireConversationOwner(owner, epoch)
+            val intent = scheduledCreationIntent(owner, conversationId, content, scheduledAtIso)
+            val id = prefsLocalStore.beginRoomCreation(intent)
+            requireConversationOwner(owner, epoch)
+            when (val result = api.scheduleMessage(conversationId, owner, content, scheduledAtIso, id)) {
+                is PulseResult.Success -> {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    Result.success(result.value.toDomainScheduled().copy(creationClientId = id))
+                }
+                is PulseResult.Failure -> Result.failure(IllegalStateException(result.message ?: "Schedule was not confirmed. Retry the same details."))
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { Result.failure(error) }
+    }
+
+    override suspend fun acknowledgeScheduledCreation(item: ScheduledItem): Result<Unit> {
+        val id = item.creationClientId ?: return Result.success(Unit)
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireConversationOwner(owner, epoch)
+            prefsLocalStore.finishRoomCreation(scheduledCreationIntent(owner, item.conversationId, item.content, item.scheduledAtIso), id)
+            Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { Result.failure(error) }
+    }
 
     override suspend fun cancelScheduled(scheduledId: String): Result<Unit> =
-        when (val r = api.cancelScheduled(scheduledId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.cancelScheduled(scheduledId, it) }.map { Unit }
 
     // offline outbox engine (Wave 0 - web pulse-outbox parity)
 
@@ -2163,7 +2551,9 @@ class PulseRepositoryImpl constructor(
      * self-heal). The drain policy itself is FlushOutboxUseCase - single
      * source of truth, unit-tested at the domain layer.
      */
-    override suspend fun flushOutbox(): FlushReport = dispatchGate.serialized {
+    override suspend fun flushOutbox(): FlushReport = dispatchGate.serialized(
+        onFailure = { if (viewerId != null) scheduleSelfHeal() },
+    ) {
         if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
             return@serialized FlushReport(sent = 0, dropped = 0, pending = pendingOutboxCount())
         }
@@ -2298,17 +2688,38 @@ class PulseRepositoryImpl constructor(
         acknowledgeRead(conversationId, messageId)
 
     private suspend fun acknowledgeRead(conversationId: String, messageId: String?): Result<Unit> {
-        if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
-            mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
-            return Result.success(Unit)
+        return try {
+            if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
+                mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
+                return Result.success(Unit)
+            }
+            val owner = viewerId ?: return Result.failure(IllegalStateException("The account is no longer active"))
+            val epoch = attachmentSession
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val anchor = if (messageId == null) null else messageDao.byId(messageId)?.toDomain()
+            requireConversationOwner(owner, epoch)
+            if (messageId != null && (anchor == null || anchor.conversationId != conversationId || anchor.isDeleted ||
+                    anchor.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) ||
+                    anchor.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                return Result.failure(PulseApiException("VALIDATION", "The displayed read boundary is no longer available.", 400))
+            }
+            conversationSnapshots.invalidate(conversationId)
+            val result = try {
+                when (val response = api.markRead(conversationId, owner, messageId, anchor?.createdAt)) {
+                    is PulseResult.Success -> Result.success(Unit)
+                    is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+                }
+            } finally {
+                if (viewerId == owner && attachmentSession == epoch) conversationSnapshots.invalidate(conversationId)
+            }
+            requireConversationOwner(owner, epoch)
+            // Do not zero newer arrivals or roll an entire stale conversation back
+            // over messages/pins received while the read request was in flight.
+            if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
+            result
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            Result.failure(error)
         }
-        val owner = viewerId ?: return Result.failure(IllegalStateException("The account is no longer active"))
-        val result = api.postAction("/api/conversations/$conversationId/read",
-            PulseApi.jsonOf("userId" to owner, "messageId" to messageId)).toResult()
-        // Do not zero newer arrivals or roll an entire stale conversation back
-        // over messages/pins received while the read request was in flight.
-        if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
-        return result
     }
 
     override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {
@@ -2324,18 +2735,41 @@ class PulseRepositoryImpl constructor(
 
     private val reactionActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    override suspend fun react(messageId: String, emoji: String): Result<Unit> {
+    override suspend fun react(messageId: String, emoji: String, present: Boolean): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
         if (!reactionActions.add(messageId)) return Result.failure(IllegalStateException("A reaction is still updating."))
         try {
+            kotlin.coroutines.coroutineContext.ensureActive()
             val current = messageDao.byId(messageId)?.toDomain()
-            if (current != null && (current.isDeleted || current.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                ?: return Result.failure(IllegalStateException("Refresh this message before reacting."))
+            requireConversationOwner(owner, epoch)
+            if (current.isDeleted || current.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) ||
+                current.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
                 return Result.failure(IllegalStateException("This message is no longer available."))
             }
-            // Do not leave an invented optimistic chip after rejection/offline failure.
-            // Apply the returned row; an old message may be outside any room refresh page.
-            return when (val result = api.react(messageId, viewerId ?: "", emoji)) {
-                is PulseResult.Success -> { upsertMessage(result.value.toDomain()); Result.success(Unit) }
-                is PulseResult.Failure -> Result.failure(apiExceptionOf(result))
+            val watermark = messageEventClock.get()
+            return when (val result = api.react(messageId, owner, emoji, present)) {
+                is PulseResult.Success -> {
+                    val message = result.value.toDomain()
+                    require(message.id == messageId && message.conversationId == current.conversationId) { "Reaction returned an unrelated message" }
+                    messageCacheMutex.withLock {
+                        database.withTransaction {
+                            requireConversationOwner(owner, epoch)
+                            kotlin.coroutines.coroutineContext.ensureActive()
+                            // A newer relayed mutation wins over this late full-row ACK.
+                            if ((messageEventRevisions[messageId] ?: 0L) <= watermark) {
+                                messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
+                                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                            }
+                            requireConversationOwner(owner, epoch)
+                        }
+                        messageCacheChanges.value = messageEventClock.get()
+                    }
+                    requireConversationOwner(owner, epoch)
+                    Result.success(Unit)
+                }
+                is PulseResult.Failure -> { requireConversationOwner(owner, epoch); Result.failure(apiExceptionOf(result)) }
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -2348,70 +2782,70 @@ class PulseRepositoryImpl constructor(
      * Optimistic local mutation of one cached conversation row - the flag flips
      * instantly and the server call + refresh reconcile the truth afterwards.
      */
-    private suspend fun mutateConversation(id: String, transform: (Conversation) -> Conversation) {
+    private suspend fun mutateConversation(
+        id: String, checkOwner: () -> Unit = {}, transform: (Conversation) -> Conversation,
+    ) {
         database.withTransaction {
+            checkOwner()
             val row = conversationDao.byId(id) ?: return@withTransaction
+            checkOwner()
             inboxRefreshVersion.incrementAndGet()
             conversationDao.upsertAll(listOf(ConversationEntity.from(transform(row.toDomain()))))
+            checkOwner()
         }
     }
 
-    override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> {
-        mutateConversation(conversationId) { it.copy(isPinned = pinned) }
-        val result = api.patchAction(
-            "/api/conversations/$conversationId/pin",
-            PulseApi.jsonOf("userId" to (viewerId ?: "")),
-        ).toResult()
-        refreshConversations() // server toggles - reconcile from truth either way
-        return result
+    private val conversationActionLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+
+    /** Serialize this device's intents per room. Failed/offline requests must not
+     * persist optimistic pin/archive/mute/unread flags as confirmed local truth.
+     */
+    private suspend fun confirmedConversationChange(
+        id: String,
+        request: suspend (String) -> Result<Unit>,
+        apply: (Conversation) -> Conversation,
+    ): Result<Unit> = withRoomMutation(id) { owner, epoch ->
+        app.pulse.domain.sync.confirmedAction(request = { request(owner) }) {
+            mutateConversation(id, checkOwner = { requireConversationOwner(owner, epoch) }, transform = apply)
+        }
     }
+
+    private suspend fun confirmedPreferenceChange(
+        id: String,
+        request: suspend (String) -> PulseResult<PulseApi.ConversationPreferenceAcknowledgement>,
+        apply: (Conversation, PulseApi.ConversationPreferenceAcknowledgement) -> Conversation,
+    ): Result<Unit> = withRoomMutation(id) { owner, epoch ->
+        when (val receipt = request(owner)) {
+            is PulseResult.Success -> {
+                requireConversationOwner(owner, epoch)
+                mutateConversation(id, checkOwner = { requireConversationOwner(owner, epoch) }) { apply(it, receipt.value) }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(receipt))
+        }
+    }
+    override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> =
+        confirmedPreferenceChange(conversationId, request = { api.setConversationPinned(conversationId, it, pinned) },
+            apply = { row, receipt -> row.copy(isPinned = receipt.timestamp != null) })
 
     override suspend fun setMuted(conversationId: String, muted: Boolean): Result<Unit> =
         setMutedUntil(conversationId, if (muted) "8h" else null)
 
-    override suspend fun setMutedUntil(conversationId: String, until: String?): Result<Unit> {
-        val epoch = when (until) {
-            null -> 0L
-            "8h" -> System.currentTimeMillis() + 8 * 60 * 60 * 1000L
-            "1w" -> System.currentTimeMillis() + 7 * 24 * 60 * 60 * 1000L
-            "always" -> System.currentTimeMillis() + 50L * 365 * 24 * 60 * 60 * 1000L
-            else -> 0L
-        }
-        mutateConversation(conversationId) {
-            it.copy(mutedUntilEpoch = epoch, isMuted = epoch > System.currentTimeMillis())
-        }
-        val body = kotlinx.serialization.json.buildJsonObject {
-            // Explicit JsonPrimitive/JsonNull - JsonObjectBuilder.put has no
-            // String overload at the resolved serialization version.
-            put("userId", kotlinx.serialization.json.JsonPrimitive(viewerId ?: ""))
-            put("until", until?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
-        }
-        val result = api.patchAction("/api/conversations/$conversationId/mute", body).toResult()
-        refreshConversations()
-        return result
-    }
+    override suspend fun setMutedUntil(conversationId: String, until: String?): Result<Unit> =
+        confirmedPreferenceChange(conversationId, request = { api.setConversationMuted(conversationId, it, until) },
+            apply = { row, receipt ->
+                val deadline = receipt.epochMillis ?: 0L
+                row.copy(mutedUntilEpoch = deadline, isMuted = deadline > System.currentTimeMillis())
+            })
 
-    override suspend fun archive(conversationId: String, archived: Boolean): Result<Unit> {
-        mutateConversation(conversationId) { it.copy(isArchived = archived) }
-        val result = api.patchAction(
-            "/api/conversations/$conversationId/archive",
-            PulseApi.jsonOf("userId" to (viewerId ?: ""), "archived" to archived),
-        ).toResult()
-        refreshConversations()
-        return result
-    }
+    override suspend fun archive(conversationId: String, archived: Boolean): Result<Unit> =
+        confirmedPreferenceChange(conversationId, request = { api.setConversationArchived(conversationId, it, archived) },
+            apply = { row, receipt -> row.copy(isArchived = receipt.timestamp != null) })
 
-    override suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit> {
-        mutateConversation(conversationId) { it.copy(myManualUnread = on) }
-        val result = api.patchAction(
-            "/api/conversations/$conversationId/mark-unread",
-            PulseApi.jsonOf("userId" to (viewerId ?: ""), "on" to on),
-        ).toResult()
-        if (result.isFailure) {
-            mutateConversation(conversationId) { it.copy(myManualUnread = !on) }
-        }
-        return result
-    }
+    override suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit> =
+        confirmedConversationChange(conversationId, request = { owner ->
+            api.markUnread(conversationId, owner, on).toResult()
+        }, apply = { it.copy(myManualUnread = on) })
 
     // Wave 6 route fixes (audit A): block carries the ACTOR in the body, and
     // unblock is DELETE /block?userId= - POST /unblock does NOT exist on the
@@ -2436,53 +2870,53 @@ class PulseRepositoryImpl constructor(
 
     // N10 home-page era
 
-    override suspend fun createSelfChat(): Result<Conversation> =
-        when (val r = api.createSelfChat(viewerId ?: "")) {
+    override suspend fun createSelfChat(): Result<Conversation> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.createSelfChat(owner)) {
             is PulseResult.Success -> {
-                val conversation = cacheConversation(r.value)
+                val conversation = cacheConversation(r.value, owner, epoch)
                 Result.success(conversation)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
 
     private fun isoToEpochMs(iso: String?): Long? = iso?.takeIf { it.isNotBlank() }?.let {
         runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
     }
 
+    private val storySnapshots = StorySnapshotCache(
+        read = { key -> storyDao.get(key)?.let { PulseJson.decodeFromString(StoriesPageDto.serializer(), it.groupsJson) } },
+        write = { key, page -> storyDao.upsert(StoryCacheEntity(key, PulseJson.encodeToString(StoriesPageDto.serializer(), page), System.currentTimeMillis())) },
+        erase = { key -> storyDao.delete(key) },
+    )
+
     override suspend fun stories(): Result<List<StoryGroup>> {
-        val key = "stories:" + (viewerId ?: "")
-        val nowMs = System.currentTimeMillis()
-        return when (val r = api.stories(viewerId ?: "")) {
-            is PulseResult.Success -> {
-                // Offline cache: persist the CANONICAL wire page (pre-mapping)
-                // so a cached replay walks the exact same mapper - including
-                // the D2 expiry filter - as a live fetch.
-                runCatching {
-                    storyDao.upsert(
-                        StoryCacheEntity(
-                            key = key,
-                            groupsJson = PulseJson.encodeToString(StoriesPageDto.serializer(), r.value),
-                            updatedAt = nowMs,
-                        ),
-                    )
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        val ticket = storySnapshots.begin("stories:$owner")
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Story account changed")
+        val result = ownedAccountRequest(typedFailure = true) { api.stories(it) }
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Story account changed")
+        return try {
+            val failure = result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException
+            val page = when {
+                result.isSuccess -> storySnapshots.accept(ticket, result.getOrThrow())
+                failure?.kind in setOf("AUTH", "FORBIDDEN", "NOT_FOUND") -> {
+                    try { storySnapshots.deny(ticket) }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                    } catch (_: Exception) { /* In-memory denial still prevents cache reuse. */ }
+                    return Result.failure(failure!!)
                 }
-                Result.success(r.value.toDomainGroups(nowMs))
+                else -> storySnapshots.cached(ticket)
             }
-            is PulseResult.Failure -> {
-                val cached = runCatching { storyDao.get(key) }.getOrNull()
-                val page = cached?.let {
-                    runCatching {
-                        PulseJson.decodeFromString(StoriesPageDto.serializer(), it.groupsJson)
-                    }.getOrNull()
-                }
-                if (page != null) {
-                    Result.success(page.toDomainGroups(nowMs))
-                } else {
-                    // Honest error only when there is nothing cached to serve.
-                    Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-                }
-            }
-        }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Story account changed")
+            page?.let { Result.success(it.toDomainGroups(System.currentTimeMillis())) }
+                ?: Result.failure(result.exceptionOrNull() ?: IllegalStateException("A newer story snapshot replaced this response"))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (failure: Exception) { Result.failure(failure) }
     }
 
     override suspend fun createStory(caption: String, background: String?, imagePath: String?): Result<StoryItem> =
@@ -2499,33 +2933,34 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun markStoryViewed(storyId: String): Result<Int> =
-        when (val r = api.markStoryViewed(storyId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.viewCount)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun markStoryViewed(storyId: String): Result<Int> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val result = ownedAccountRequest(typedFailure = true) { api.markStoryViewed(storyId, it) }.map { it.viewCount }
+        result.getOrNull()?.let { count ->
+            try { storySnapshots.viewed("stories:$owner", storyId, count) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                android.util.Log.w("PulseStories", "Confirmed view could not be persisted in the story cache")
+            }
         }
+        return result
+    }
 
     override suspend fun storyViewers(storyId: String): Result<List<StoryViewer>> =
-        when (val r = api.storyViewers(storyId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(
-                r.value.viewers.map {
-                    StoryViewer(
-                        userId = it.userId,
-                        name = it.name,
-                        username = it.username,
-                        color = it.color,
-                        viewedAtIso = it.viewedAt,
-                    )
-                },
-            )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        ownedAccountRequest(typedFailure = true) { api.storyViewers(storyId, it) }.map { page ->
+            page.viewers.map { StoryViewer(it.userId, it.name, it.username, it.color, it.viewedAt) }
         }
 
-    override suspend fun deleteStory(storyId: String): Result<Unit> =
-        when (val r = api.deleteStory(storyId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun deleteStory(storyId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val result = ownedAccountRequest(typedFailure = true) { api.deleteStory(storyId, it) }
+        if (result.isSuccess) {
+            try { storySnapshots.remove("stories:$owner", storyId) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                // The server deletion is confirmed. Keep the in-memory tombstone and
+                // avoid reporting a false server failure if local persistence is unavailable.
+                android.util.Log.w("PulseStories", "Confirmed deletion could not be persisted in the story cache")
+            }
         }
+        return result.map { Unit }
+    }
 
     /** Wire DTO → domain story (NO expiry filtering here - filter lives in [toDomainGroups]/the machine). */
     private fun StoryItemDto.toStoryItem(): StoryItem? {
@@ -2565,16 +3000,8 @@ class PulseRepositoryImpl constructor(
         )
     }
 
-    override suspend fun folders(): Result<List<FolderSummary>> = when (val r = api.folders(viewerId ?: "")) {
-        is PulseResult.Success -> Result.success(
-            r.value.folders.map { f ->
-                // R18 icon-id contract - normalize on read (stale emoji to the
-                // default) so the domain layer only ever carries registry ids.
-                FolderSummary(id = f.id, name = f.name, emoji = folderIconId(f.emoji), conversationIds = f.conversationIds)
-            },
-        )
-        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-    }
+    override suspend fun folders(): Result<List<FolderSummary>> =
+        ownedAccountRequest { api.folders(it) }.map { page -> page.folders.map { it.toFolderSummary() } }
 
     override suspend fun mentions(): Result<List<MentionItem>> = when (val r = api.mentions(viewerId ?: "")) {
         is PulseResult.Success -> Result.success(
@@ -2610,7 +3037,7 @@ class PulseRepositoryImpl constructor(
                         imageOnly = hit.imagePath != null && hit.content.isBlank(),
                         isFile = hit.filePath != null,
                         fileName = hit.fileName,
-                        expiresAtEpochMs = hit.expiresAt?.let { PulseTime.epochMs(it) },
+                        expiresAtEpochMs = messageExpiryEpochMs(hit.expiresAt),
                         viewOnce = hit.viewOnce,
                     )
                 },
@@ -2632,61 +3059,108 @@ class PulseRepositoryImpl constructor(
         }.withSearchHitExpiry().map { Result.success(it) })
     }
 
-    override suspend fun fullHistory(conversationId: String): Result<List<Message>> =
-        when (val r = api.messages(conversationId, 500)) {
-            is PulseResult.Success -> Result.success(r.value.messages.map { it.toDomain() })
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    private val historyActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    override suspend fun fullHistory(conversationId: String): Result<List<Message>> = withContext(Dispatchers.IO) {
+        val owner = viewerId ?: return@withContext Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        try {
+            val rows = app.pulse.data.remote.CompleteHistory.load(conversationId) { cursor ->
+                requireConversationOwner(owner, epoch)
+                val response = api.messages(conversationId, limit = 200,
+                    syncFrom = if (cursor == null) app.pulse.data.remote.CompleteHistory.START else null, syncCursor = cursor)
+                requireConversationOwner(owner, epoch)
+                when (response) {
+                    is PulseResult.Success -> response.value
+                    is PulseResult.Failure -> throw apiExceptionOf(response)
+                }
+            }
+            requireConversationOwner(owner, epoch)
+            Result.success(rows.map { it.toDomain() })
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+    }
 
     override suspend fun deleteMessage(messageId: String): Result<Unit> =
-        when (val r = api.deleteMessage(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                // R2-C item 2 - the tombstone echoes back with its ORIGINAL
-                // createdAt, so a since= delta refetch can never re-fetch it:
-                // upsert the deleted row here (server truth) so "Message
-                // deleted" renders immediately (the VM's refetch then rides
-                // the delta path for anything genuinely newer).
-                upsertMessage(r.value.toDomain())
-                Result.success(Unit)
-            }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        mutateOwnedMessage(messageId, app.pulse.domain.sync.MessageMutationKind.DELETE).map { Unit }
 
     override suspend fun exportChat(conversationId: String): Result<String> = withContext(Dispatchers.IO) {
-        runCatching {
-            val history = fullHistory(conversationId).getOrThrow()
+        val owner = viewerId ?: return@withContext Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!historyActions.add(conversationId)) return@withContext Result.failure(IllegalStateException("An export or clear is already running for this chat."))
+        var output: File? = null
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val history = fullHistory(conversationId).getOrThrow().filter {
+                it.expiresAtEpochMs?.let { expires -> expires <= System.currentTimeMillis() } != true
+            }
+            requireConversationOwner(owner, epoch)
             val dir = File(context.cacheDir, "exports").apply { mkdirs() }
-            val fileName = "pulse-${conversationId.take(12)}-${java.time.LocalDate.now()}.txt"
-            File(dir, fileName).writeText(
-                buildString {
-                    appendLine("Pulse - exported chat")
-                    appendLine("Conversation: $conversationId")
-                    appendLine("Messages: ${history.size}")
-                    appendLine("Exported: ${java.time.LocalDateTime.now()}")
-                    appendLine()
-                    for (m in history) {
-                        val body = if (m.isDeleted) "(message deleted)" else m.body
-                        appendLine("[${PulseTime.clock(m.createdAt)}] ${m.authorName}: $body")
-                    }
-                },
-            )
-            fileName
-        }
+            val fileName = "pulse-${java.util.UUID.randomUUID()}.txt"
+            val file = File(dir, fileName)
+            output = file
+            file.bufferedWriter().use { writer ->
+                writer.appendLine("Pulse - exported chat")
+                writer.appendLine("Conversation: $conversationId")
+                writer.appendLine("Messages: ${history.size}")
+                writer.appendLine("Exported: ${java.time.LocalDateTime.now()}")
+                writer.appendLine()
+                for (m in history) {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    val body = when { m.isDeleted -> "(message deleted)"; m.viewOnce -> "(view-once message)"; else -> m.body }
+                    val name = if (m.anon) m.anonAlias ?: "Anonymous" else m.authorName
+                    writer.appendLine("[${PulseTime.clock(m.createdAt)}] $name: $body")
+                }
+            }
+            requireConversationOwner(owner, epoch)
+            kotlin.coroutines.coroutineContext.ensureActive()
+            Result.success(fileName)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            output?.delete(); throw cancelled
+        } catch (error: Exception) { output?.delete(); Result.failure(error) } finally { historyActions.remove(conversationId) }
     }
 
     override suspend fun clearMyMessages(conversationId: String): Result<Int> {
-        val history = fullHistory(conversationId).getOrElse { return Result.failure(it) }
-        val mine = history.filter { it.authorId == viewerId && !it.isDeleted }
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!historyActions.add(conversationId)) return Result.failure(IllegalStateException("An export or clear is already running for this chat."))
         var cleared = 0
-        for (message in mine) {
-            when (val response = api.deleteMessage(message.id, viewerId ?: "")) {
-                is PulseResult.Success -> { upsertMessage(response.value.toDomain()); cleared += 1 }
-                is PulseResult.Failure -> Unit // Failed rows remain intact and retryable.
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val history = fullHistory(conversationId).getOrThrow()
+            requireConversationOwner(owner, epoch)
+            val mine = history.filter { it.authorId == owner && !it.isDeleted }
+            for (message in mine) {
+                kotlin.coroutines.coroutineContext.ensureActive()
+                requireConversationOwner(owner, epoch)
+                val response = api.deleteMessage(message.id, owner)
+                requireConversationOwner(owner, epoch)
+                when (response) {
+                    is PulseResult.Success -> {
+                        val tombstone = response.value.toDomain()
+                        check(tombstone.id == message.id && tombstone.conversationId == conversationId &&
+                            tombstone.authorId == owner && tombstone.isDeleted) { "Message deletion was not confirmed." }
+                        messageCacheMutex.withLock {
+                            database.withTransaction {
+                                requireConversationOwner(owner, epoch)
+                                messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
+                                messageDao.upsertAll(listOf(MessageEntity.from(tombstone, reactionsJsonOf(tombstone))))
+                                requireConversationOwner(owner, epoch)
+                            }
+                            messageCacheChanges.value = messageEventClock.get()
+                        }
+                        cleared += 1
+                    }
+                    is PulseResult.Failure -> throw apiExceptionOf(response)
+                }
             }
+            return Result.success(cleared)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            return Result.failure(IllegalStateException("Confirmed $cleared deletions before stopping. ${error.message ?: "Remaining deletions were not confirmed. Retry to reconcile."}", error))
+        } finally {
+            historyActions.remove(conversationId)
+            if (viewerId == owner && attachmentSession == epoch) scheduleConversationsRefresh()
         }
-        if (mine.isNotEmpty() && cleared == 0) return Result.failure(IllegalStateException("No messages could be deleted. Try again."))
-        scheduleConversationsRefresh()
-        return Result.success(cleared)
     }
 
     private fun <T> PulseResult<T>.toResult(): Result<T> = when (this) {
@@ -2796,23 +3270,52 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun votePoll(pollId: String, optionId: String): Result<Message> =
-        when (val r = api.votePoll(pollId, viewerId ?: "", optionId)) {
-            is PulseResult.Success -> {
-                val message = upsertMessage(r.value.toDomain())
-                Result.success(message)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    private val pollActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    override suspend fun closePoll(pollId: String): Result<Message> =
-        when (val r = api.closePoll(pollId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                val message = upsertMessage(r.value.toDomain())
-                Result.success(message)
+    override suspend fun votePoll(pollId: String, optionId: String): Result<Message> = mutateOwnedPoll(pollId, optionId)
+    override suspend fun closePoll(pollId: String): Result<Message> = mutateOwnedPoll(pollId, null)
+
+    private suspend fun mutateOwnedPoll(pollId: String, optionId: String?): Result<Message> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!pollActions.add(pollId)) return Result.failure(IllegalStateException("This poll is still updating."))
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            requireConversationOwner(owner, epoch)
+            val watermark = messageEventClock.get()
+            val response = if (optionId == null) api.closePoll(pollId, owner) else api.votePoll(pollId, owner, optionId)
+            requireConversationOwner(owner, epoch)
+            val incoming = when (response) {
+                is PulseResult.Failure -> return Result.failure(apiExceptionOf(response))
+                is PulseResult.Success -> response.value.toDomain()
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+            val poll = checkNotNull(incoming.poll) { "Poll response is missing." }
+            check(!incoming.isDeleted && poll.id == pollId &&
+                (if (optionId == null) poll.closed && incoming.authorId == owner else poll.pickFor(owner) == optionId)) {
+                "The poll update was not confirmed."
+            }
+            val retained = messageCacheMutex.withLock {
+                database.withTransaction {
+                    requireConversationOwner(owner, epoch)
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val current = messageDao.byId(incoming.id)?.toDomain()
+                    check(current == null || current.conversationId == incoming.conversationId) { "Poll returned an unrelated message." }
+                    val newer = (messageEventRevisions[incoming.id] ?: 0L) > watermark
+                    val accepted = if (newer && current != null) {
+                        // A confirmed close may freeze only the poll field without
+                        // rolling a newer edit/reaction back to this HTTP snapshot.
+                        if (incoming.poll?.closed == true && !current.isDeleted) current.copy(poll = incoming.poll) else current
+                    } else incoming
+                    messageDao.upsertAll(listOf(MessageEntity.from(accepted, reactionsJsonOf(accepted))))
+                    messageEventRevisions[incoming.id] = messageEventClock.incrementAndGet()
+                    requireConversationOwner(owner, epoch)
+                    checkNotNull(messageDao.byId(incoming.id)).toDomain()
+                }.also { messageCacheChanges.value = messageEventClock.get() }
+            }
+            requireConversationOwner(owner, epoch)
+            return Result.success(retained)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(error) } finally { pollActions.remove(pollId) }
+    }
 
     override suspend fun unfurlMessage(messageId: String) {
         // Fire-and-forget (spec §1 row 8): absent preview / failures are
@@ -2823,41 +3326,43 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> = savedOperations.withLock {
-        val watermark = messageEventClock.get()
-        when (val r = api.savedList(viewerId ?: "")) {
-            is PulseResult.Success -> messageCacheMutex.withLock {
-                database.withTransaction {
-                    // One commit: message versions + exact index, including an empty list.
-                    // An older GET cannot overwrite a socket/local edit or deletion.
-                    cacheFetchedMessagesLocked(r.value.items.map { it.message.toDomain() }, watermark)
-                    savedDao.clear()
-                    savedDao.upsertAll(r.value.items.map { it.toSavedEntity() })
-                    Result.success(savedDao.library().map { it.toDomain() }.filter { savedMessageVisible(it.message) })
+    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            savedOperations.withLock {
+                requireConversationOwner(owner, epoch)
+                kotlin.coroutines.coroutineContext.ensureActive()
+                val watermark = messageEventClock.get()
+                val response = api.savedList(owner)
+                requireConversationOwner(owner, epoch)
+                when (response) {
+                    is PulseResult.Success -> messageCacheMutex.withLock {
+                        database.withTransaction {
+                            requireConversationOwner(owner, epoch)
+                            kotlin.coroutines.coroutineContext.ensureActive()
+                            cacheFetchedMessagesLocked(response.value.items.map { it.message.toDomain() }, watermark)
+                            savedDao.clear()
+                            savedDao.upsertAll(response.value.items.map { it.toSavedEntity() })
+                            requireConversationOwner(owner, epoch)
+                            Result.success(savedDao.library().map { it.toDomain() }.filter { savedMessageVisible(it.message) })
+                        }
+                    }
+                    is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
                 }
             }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
     }
 
-    private fun savedMessageVisible(message: Message): Boolean = !message.isDeleted &&
-        (message.expiresAtEpochMs?.let { it > System.currentTimeMillis() } != false)
+    private fun savedMessageVisible(message: Message): Boolean = !message.isDeleted && !message.viewOnce &&
+        message.threadRootId?.let { it in deniedThreads.value } != true && (message.expiresAtEpochMs?.let { it > System.currentTimeMillis() } != false)
 
-    override fun observeSavedLibrary(): Flow<List<SavedItem>> = savedDao.observeLibrary()
-        .map { rows -> rows.map { it.toDomain() } }.withSavedMessageExpiry()
+    override fun observeSavedLibrary(): Flow<List<SavedItem>> = kotlinx.coroutines.flow.combine(
+        savedDao.observeLibrary(), deniedThreads,
+    ) { rows, denied -> rows.map { it.toDomain() }.filter { it.message.threadRootId?.let(denied::contains) != true } }
+        .withSavedMessageExpiry()
 
-    override suspend fun unsaveMessage(messageId: String): Result<Boolean> = savedOperations.withLock {
-        when (val r = api.unsaveMessage(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                if (r.value.saved) Result.failure(IllegalStateException("Message was not removed from saved"))
-                else {
-                    savedDao.deleteById(messageId)
-                    Result.success(false)
-                }
-            }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
-    }
+    override suspend fun unsaveMessage(messageId: String): Result<Boolean> = setMessageSaved(messageId, false)
 
     override suspend fun refreshTopics(conversationId: String): Result<Unit> =
         when (val r = api.topics(conversationId, viewerId ?: "")) {
@@ -2927,13 +3432,8 @@ class PulseRepositoryImpl constructor(
         return postCallLog(payload)
     }
 
-    override suspend fun quickPhrases(): List<Pair<String, String>> {
-        val id = viewerId ?: return emptyList()
-        return when (val r = api.quickPhrases(id)) {
-            is PulseResult.Success -> r.value
-            is PulseResult.Failure -> emptyList()
-        }
-    }
+    override suspend fun quickPhrases(): List<Pair<String, String>> =
+        ownedAccountRequest { api.quickPhrases(it) }.getOrThrow()
 
     override suspend fun flushCallLogQueue(): Result<Int> {
         val rows = callLogDao.queued(MAX_CALL_LOG_QUEUE)
@@ -2971,6 +3471,7 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun emitCall(signal: CallSignalOut) {
+        check(viewerId != null && signal.from == viewerId && socket.isJoined) { "Realtime is not ready for this call." }
         when (signal.event) {
             app.pulse.protocol.SocketEvents.CALL_OFFER -> socket.emitCallOffer(
                 CallOfferDto(
@@ -3014,6 +3515,8 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {
+        val sender = if (signal.event == app.pulse.protocol.GroupCallEvents.JOIN) signal.user?.id else signal.from
+        check(viewerId != null && sender == viewerId && socket.isJoined) { "Realtime is not ready for this group call." }
         when (signal.event) {
             app.pulse.protocol.GroupCallEvents.JOIN -> socket.emitGroupCallJoin(
                 signal.conversationId,
@@ -3024,6 +3527,8 @@ class PulseRepositoryImpl constructor(
                     color = signal.user?.color ?: "emerald",
                     avatar = signal.user?.avatar,
                 ),
+                expectedCallId = signal.expectedCallId,
+                joinAttemptId = signal.joinAttemptId,
             )
             app.pulse.protocol.GroupCallEvents.OFFER -> socket.emitGroupCallOffer(
                 GroupCallOfferDto(
@@ -3044,20 +3549,21 @@ class PulseRepositoryImpl constructor(
                     candidate = signal.candidate ?: "", sdpMid = signal.sdpMid, sdpMLineIndex = signal.sdpMLineIndex,
                 ),
             )
-            app.pulse.protocol.GroupCallEvents.LEAVE -> socket.emitGroupCallLeave(signal.conversationId, signal.from)
+            app.pulse.protocol.GroupCallEvents.LEAVE -> socket.emitGroupCallLeave(signal.conversationId, signal.from, signal.callId.takeIf { it.isNotBlank() }, signal.joinAttemptId)
         }
     }
 
-    override suspend fun postGroupCallRing(conversationId: String, kind: CallKind): Result<Unit> {
+    override suspend fun postGroupCallRing(conversationId: String, kind: CallKind, callId: String): Result<Unit> {
         val id = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
-        return when (val r = api.postGroupCallRing(conversationId, id, kind.wire)) {
+        return when (val r = api.postGroupCallRing(conversationId, id, kind.wire, callId)) {
             is PulseResult.Success -> Result.success(Unit)
             is PulseResult.Failure -> Result.failure(IllegalStateException(r.message ?: "Could not ring other members"))
         }
     }
 
     override suspend fun probeGroupCallState(conversationId: String): Result<GroupCallProbe?> {
-        return when (val r = api.groupCallState(conversationId)) {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
+        return when (val r = api.groupCallState(conversationId, owner)) {
             is PulseResult.Success -> Result.success(
                 GroupCallProbe(
                     callId = r.value.callId.takeIf { it.isNotBlank() },
@@ -3089,6 +3595,7 @@ class PulseRepositoryImpl constructor(
     // engines re-join on the next connect); these NEVER throw.
 
     override suspend fun emitVoiceJoin(conversationId: String, user: PulseVoiceUser) {
+        if (user.id != viewerId) return
         socket.emitVoiceJoin(conversationId, user)
     }
 
@@ -3097,34 +3604,42 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun emitVoicePtt(conversationId: String, userId: String, on: Boolean) {
+        if (userId != viewerId) return
         socket.emitVoicePtt(conversationId, userId, on)
     }
 
     override suspend fun emitVoiceChunk(conversationId: String, userId: String, seq: Long, data: String) {
+        if (userId != viewerId) return
         socket.emitVoiceChunk(conversationId, userId, seq, data)
     }
 
     override suspend fun emitVoiceTranscript(conversationId: String, userId: String, text: String) {
+        if (userId != viewerId) return
         socket.emitVoiceTranscript(conversationId, userId, text)
     }
 
     override suspend fun emitStageJoin(conversationId: String, user: PulseVoiceUser, asHost: Boolean) {
+        if (user.id != viewerId) return
         socket.emitStageJoin(conversationId, user, asHost)
     }
 
     override suspend fun emitStageHand(conversationId: String, userId: String, raised: Boolean) {
+        if (userId != viewerId) return
         socket.emitStageHand(conversationId, userId, raised)
     }
 
     override suspend fun emitStageApprove(conversationId: String, byUserId: String, targetUserId: String) {
+        if (byUserId != viewerId) return
         socket.emitStageApprove(conversationId, byUserId, targetUserId)
     }
 
     override suspend fun emitStageMute(conversationId: String, byUserId: String, targetUserId: String) {
+        if (byUserId != viewerId) return
         socket.emitStageMute(conversationId, byUserId, targetUserId)
     }
 
     override suspend fun emitStageEnd(conversationId: String, byUserId: String) {
+        if (byUserId != viewerId) return
         socket.emitStageEnd(conversationId, byUserId)
     }
 
@@ -3133,6 +3648,7 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun emitSpaceJoin(conversationId: String, user: PulseVoiceUser) {
+        if (user.id != viewerId) return
         socket.emitSpaceJoin(conversationId, user)
     }
 
@@ -3208,29 +3724,36 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun kanbanBoard(conversationId: String): Result<KanbanPageDto> =
-        when (val r = api.kanbanBoard(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    private suspend fun <T> ownedAccountRequest(denyGameRead: Boolean = false, denyScheduledRead: Boolean = false, typedFailure: Boolean = false, operation: suspend (String) -> PulseResult<T>): Result<T> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val result = operation(owner)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Account changed")
+        return when (result) {
+            is PulseResult.Success -> Result.success(result.value)
+            is PulseResult.Failure -> Result.failure(
+                if (denyGameRead && result.kind in setOf(PulseResult.Failure.Kind.AUTH, PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND))
+                    app.pulse.domain.sync.PrivateGameUnavailableException(result.message ?: "Private game is no longer available.")
+                else if (denyScheduledRead && result.kind in setOf(PulseResult.Failure.Kind.AUTH, PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND))
+                    app.pulse.domain.sync.PrivateScheduleUnavailableException(result.message ?: "Scheduled messages are no longer available.")
+                else if (typedFailure) app.pulse.domain.model.PulseApiException(result.kind.name, result.message, result.status, result.retryAfter)
+                else IllegalStateException("${result.kind}: ${result.message}"))
         }
+    }
+
+    override suspend fun kanbanBoard(conversationId: String): Result<KanbanPageDto> =
+        ownedAccountRequest { api.kanbanBoard(conversationId, it) }
 
     override suspend fun createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?): Result<KanbanCardDto> =
-        when (val r = api.createKanbanCard(conversationId, viewerId ?: "", title, column, assigneeId, messageId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.createKanbanCard(conversationId, it, title, column, assigneeId, messageId) }
 
     override suspend fun updateKanbanCard(cardId: String, title: String?, column: String?, assigneeId: String?, clearAssignee: Boolean, position: Long?): Result<KanbanCardDto> =
-        when (val r = api.updateKanbanCard(cardId, viewerId ?: "", title, column, assigneeId, clearAssignee, position)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.updateKanbanCard(cardId, it, title, column, assigneeId, clearAssignee, position) }
 
     override suspend fun deleteKanbanCard(cardId: String): Result<Unit> =
-        when (val r = api.deleteKanbanCard(cardId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.deleteKanbanCard(cardId, it) }.map { Unit }
 
     override suspend fun events(conversationId: String): Result<EventsPageDto> =
         when (val r = api.events(conversationId, viewerId ?: "")) {
@@ -3318,32 +3841,18 @@ class PulseRepositoryImpl constructor(
     // R1-W2A - quick phrases (F-MS-29)
 
     override suspend fun phrases(): Result<List<QuickPhrase>> =
-        when (val r = api.phrases(viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(
-                r.value.phrases
-                    .map { QuickPhrase(id = it.id, text = it.text, position = it.position) }
-                    .sortedBy { it.position },
-            )
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        ownedAccountRequest { api.phrases(it) }.map { page ->
+            page.phrases.map { QuickPhrase(id = it.id, text = it.text, position = it.position) }.sortedBy { it.position }
         }
 
     override suspend fun addPhrase(text: String): Result<QuickPhrase> =
-        when (val r = api.createPhrase(viewerId ?: "", text)) {
-            is PulseResult.Success -> Result.success(
-                QuickPhrase(
-                    id = r.value.phrase?.id.orEmpty(),
-                    text = r.value.phrase?.text.orEmpty().ifBlank { text },
-                    position = r.value.phrase?.position ?: 0,
-                ),
-            )
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        ownedAccountRequest { api.createPhrase(it, text) }.map { receipt ->
+            val phrase = requireNotNull(receipt.phrase)
+            QuickPhrase(id = phrase.id, text = phrase.text, position = phrase.position)
         }
 
     override suspend fun deletePhrase(phraseId: String): Result<Unit> =
-        when (val r = api.deletePhrase(viewerId ?: "", phraseId)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.deletePhrase(it, phraseId) }.map { Unit }
 
     override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))
@@ -3387,28 +3896,16 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun games(conversationId: String): Result<GamesPageDto> =
-        when (val r = api.games(conversationId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(denyGameRead = true) { api.games(conversationId, it) }
 
     override suspend fun game(matchId: String): Result<GameDetailDto> =
-        when (val r = api.game(matchId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(denyGameRead = true) { api.game(matchId, it) }
 
     override suspend fun gameMove(matchId: String, cell: Int): Result<GameDetailDto> =
-        when (val r = api.gameMove(matchId, viewerId ?: "", cell)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.gameMove(matchId, it, cell) }
 
     override suspend fun joinGame(matchId: String): Result<GameDetailDto> =
-        when (val r = api.joinGame(matchId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.joinGame(matchId, it) }
 
     override suspend fun createTournament(conversationId: String, name: String): Result<TournamentCreateResultDto> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))
@@ -3418,28 +3915,16 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun tournaments(conversationId: String): Result<TournamentsPageDto> =
-        when (val r = api.tournaments(conversationId, viewerId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(denyGameRead = true) { api.tournaments(conversationId, it) }
 
     override suspend fun tournament(tournamentId: String): Result<TournamentSummaryDto> =
-        when (val r = api.tournament(tournamentId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(denyGameRead = true) { api.tournament(tournamentId, it) }
 
     override suspend fun finishTournament(tournamentId: String): Result<TournamentSummaryDto> =
-        when (val r = api.finishTournament(tournamentId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.finishTournament(tournamentId, it) }
 
     override suspend fun joinTournament(tournamentId: String): Result<TournamentJoinResultDto> =
-        when (val r = api.joinTournament(tournamentId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.joinTournament(tournamentId, it) }
 
     override suspend fun leaderboard(conversationId: String?): Result<LeaderboardPageDto> =
         when (val r = api.leaderboard(conversationId, viewerId)) {
@@ -3447,16 +3932,40 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun wallet(): Result<WalletPageDto> =
-        when (val r = api.wallet(viewerId ?: "")) {
+    private val walletSnapshotRequests = kotlinx.coroutines.sync.Mutex()
+    private val personalTaskRequests = kotlinx.coroutines.sync.Mutex()
+
+    private suspend fun <T> ownedHubSnapshot(prefix: String, serializer: kotlinx.serialization.KSerializer<T>,
+        fetch: suspend (String) -> PulseResult<T>): Result<T> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        val result = fetch(owner)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Hub account changed")
+        return when (result) {
             is PulseResult.Success -> {
-                runCatching {
-                    cachePut(walletKey(), PulseJson.encodeToString(WalletPageDto.serializer(), r.value))
-                }
-                Result.success(r.value)
+                try {
+                    database.withTransaction {
+                        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Hub account changed")
+                        wave7Dao.upsert(Wave7CacheEntity("$prefix:$owner", PulseJson.encodeToString(serializer, result.value), System.currentTimeMillis()))
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (_: Exception) { /* A verified read can still be shown without offline caching. */ }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Hub account changed")
+                Result.success(result.value)
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
         }
+    }
+
+    override suspend fun wallet(): Result<WalletPageDto> {
+        val epoch = attachmentSession
+        return walletSnapshotRequests.withLock {
+            if (attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Wallet account changed")
+            ownedHubSnapshot("hub:wallet", WalletPageDto.serializer()) { api.wallet(it) }
+        }
+    }
 
     override suspend fun checkinWallet(): Result<CheckinWalletResultDto> =
         when (val r = api.checkinWallet(viewerId ?: "")) {
@@ -3500,88 +4009,64 @@ class PulseRepositoryImpl constructor(
         return walletMutation(intent) { id -> api.swap(owner, direction, amount, id) }
     }
 
-    override suspend fun hubTasks(): Result<HubTasksPageDto> =
-        when (val r = api.hubTasks(viewerId ?: "")) {
-            is PulseResult.Success -> {
-                runCatching {
-                    cachePut("hub:tasks:${viewerId ?: "anon"}", PulseJson.encodeToString(HubTasksPageDto.serializer(), r.value))
-                }
-                Result.success(r.value)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun hubTasks(): Result<HubTasksPageDto> {
+        val epoch = attachmentSession
+        return personalTaskRequests.withLock {
+            if (attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Tasks account changed")
+            ownedHubSnapshot("hub:tasks:v2", HubTasksPageDto.serializer()) { api.hubTasks(it) }
         }
+    }
+
+    private suspend fun <T> personalTaskMutation(send: suspend (String) -> PulseResult<T>): Result<T> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return personalTaskRequests.withLock {
+            try {
+                if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Tasks account changed")
+                // Retire the old snapshot BEFORE an uncertain network outcome;
+                // no stale completed/deleted task may reappear from it on restart.
+                wave7Dao.delete("hub:tasks:v2:$owner")
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Tasks account changed")
+                ownedAccountRequest { send(owner) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { Result.failure(error) }
+        }
+    }
 
     override suspend fun createHubTask(title: String, status: String?): Result<HubTaskDto> =
-        when (val r = api.createHubTask(viewerId ?: "", title, status)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
+        personalTaskMutation { api.createHubTask(it, title, status) }
     override suspend fun updateHubTask(taskId: String, title: String?, status: String?): Result<HubTaskDto> =
-        when (val r = api.updateHubTask(taskId, viewerId ?: "", title, status)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
+        personalTaskMutation { api.updateHubTask(taskId, it, title, status) }
     override suspend fun deleteHubTask(taskId: String): Result<Unit> =
-        when (val r = api.deleteHubTask(taskId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        personalTaskMutation { api.deleteHubTask(taskId, it) }.map { Unit }
 
-    override suspend fun market(): Result<MarketPageDto> =
-        when (val r = api.market(viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun market(): Result<MarketPageDto> = ownedAccountRequest { api.market(it) }
 
     override suspend fun createListing(title: String, description: String?, price: Long): Result<MarketListingDto> =
-        when (val r = api.createListing(viewerId ?: "", title, description, price)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.createListing(it, title, description, price) }
 
     override suspend fun buyListing(listingId: String): Result<MarketBuyResultDto> =
-        when (val r = api.buyListing(listingId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.buyListing(listingId, it) }
 
-    override suspend fun hubLogs(limit: Int, kind: String?): Result<HubLogsPageDto> =
-        when (val r = api.hubLogs(limit, kind)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun hubLogs(limit: Int, kind: String?): Result<HubLogsPageDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val response = api.hubLogs(owner, limit, kind)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Activity account changed")
+        return when (response) {
+            is PulseResult.Success -> Result.success(response.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${response.kind}: ${response.message}"))
         }
+    }
 
-    override suspend fun appInstallState(appId: String): Result<AppInstallStateDto> =
-        when (val r = api.appInstallState(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
-    override suspend fun installApp(appId: String): Result<AppInstallResultDto> =
-        when (val r = api.installApp(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
-    override suspend fun uninstallApp(appId: String): Result<AppInstallResultDto> =
-        when (val r = api.uninstallApp(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
-    override suspend fun appCommunity(appId: String): Result<AppCommunityDto> =
-        when (val r = api.appCommunity(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
-    override suspend fun joinAppCommunity(appId: String): Result<AppCommunityDto> =
-        when (val r = api.joinAppCommunity(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun appInstallState(appId: String): Result<AppInstallStateDto> = ownedAccountRequest { api.appInstallState(appId, it) }
+    override suspend fun installApp(appId: String): Result<AppInstallResultDto> = ownedAccountRequest { api.installApp(appId, it) }
+    override suspend fun uninstallApp(appId: String): Result<AppInstallResultDto> = ownedAccountRequest { api.uninstallApp(appId, it) }
+    override suspend fun appCommunity(appId: String): Result<AppCommunityDto> = ownedAccountRequest { api.appCommunity(appId, it) }
+    override suspend fun joinAppCommunity(appId: String): Result<AppCommunityDto> = ownedAccountRequest { api.joinAppCommunity(appId, it) }
 
     // Wave 7 read-through snapshot cache (story_cache precedent): network
     // success overwrites the blob, network failure serves the last good page.
@@ -3593,20 +4078,24 @@ class PulseRepositoryImpl constructor(
     private suspend fun cacheGet(key: String): String? =
         runCatching { wave7Dao.get(key)?.json }.getOrNull()
 
-    /** Snapshot key for the hub wallet (per viewer). */
-    private fun walletKey() = "hub:wallet:${viewerId ?: "anon"}"
-
     /** Read the cached wallet page without hitting the network. */
-    override suspend fun cachedWallet(): WalletPageDto? =
-        cacheGet(walletKey())?.let { blob ->
-            runCatching { PulseJson.decodeFromString(WalletPageDto.serializer(), blob) }.getOrNull()
-        }
+    override suspend fun cachedWallet(): WalletPageDto? {
+        val owner = viewerId ?: return null
+        val epoch = attachmentSession
+        val page = cacheGet("hub:wallet:$owner")?.let { runCatching { PulseJson.decodeFromString(WalletPageDto.serializer(), it) }.getOrNull() }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        return page?.takeIf { viewerId == owner && attachmentSession == epoch && it.wallet.userId == owner }
+    }
 
-    /** Read cached hub tasks without hitting the network. */
-    override suspend fun cachedHubTasks(): HubTasksPageDto? =
-        cacheGet("hub:tasks:${viewerId ?: "anon"}")?.let { blob ->
-            runCatching { PulseJson.decodeFromString(HubTasksPageDto.serializer(), blob) }.getOrNull()
+    override suspend fun cachedHubTasks(): HubTasksPageDto? {
+        val owner = viewerId ?: return null
+        val epoch = attachmentSession
+        return personalTaskRequests.withLock {
+            val page = cacheGet("hub:tasks:v2:$owner")?.let { runCatching { PulseJson.decodeFromString(HubTasksPageDto.serializer(), it) }.getOrNull() }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            page?.takeIf { viewerId == owner && attachmentSession == epoch && it.userId == owner && it.tasks.all { row -> row.ownerId == owner } }
         }
+    }
 
     /** Read cached reminders (due badge survives cold start). */
     override suspend fun cachedReminders(): RemindersPageDto? =
@@ -3623,6 +4112,9 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun patchProfile(patch: ProfilePatch): Result<UserProfile> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         val body = buildJsonObject {
             patch.name?.let { put("name", it) }
             patch.about?.let { put("about", it) }
@@ -3637,8 +4129,12 @@ class PulseRepositoryImpl constructor(
             // username is "explicit key" on the wire: null = untouched, "" = clear.
             patch.username?.let { put("username", it) }
         }
-        return when (val r = api.patchUser(viewerId ?: "", body)) {
-            is PulseResult.Success -> Result.success(r.value.toUserProfile())
+        val response = api.patchUser(owner, body)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Profile account changed")
+        return when (val r = response) {
+            is PulseResult.Success -> if (r.value.id == owner) Result.success(r.value.toUserProfile())
+                else Result.failure(IllegalStateException("Profile response did not match this account"))
             is PulseResult.Failure -> Result.failure(
                 OnboardingError.of(r).takeIf { r.status == 400 || r.status == 409 }
                     ?: IllegalStateException("${r.kind}: ${r.message}"),
@@ -3729,17 +4225,18 @@ class PulseRepositoryImpl constructor(
                     alreadyMember = r.value.alreadyMember,
                 ),
             )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
     override suspend fun joinInvite(code: String): Result<InviteJoinOutcome> =
         when (val r = api.inviteJoin(code, viewerId ?: "")) {
             is PulseResult.Success -> {
-                // The relay bumps every participant's list - refresh ours now.
-                runCatching { refreshConversations() }
-                Result.success(InviteJoinOutcome(r.value.conversationId, r.value.alreadyMember))
+                // Joining is acknowledged independently of a slower/failing inbox refresh.
+                scheduleConversationsRefresh()
+                if (r.value.conversationId.isBlank()) Result.failure(IllegalStateException("Couldn't identify the joined chat. Check Chats before retrying."))
+                else Result.success(InviteJoinOutcome(r.value.conversationId, r.value.alreadyMember))
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
     override suspend fun channels(mineOnly: Boolean): Result<List<Channel>> =
@@ -3748,61 +4245,56 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun createChannel(name: String, description: String?, photo: String?): Result<Channel> =
-        when (val r = api.createChannel(viewerId ?: "", name, description, photo)) {
-            is PulseResult.Success -> {
-                val channel = r.value.channel?.toChannel()
-                if (channel == null) {
-                    Result.failure(IllegalStateException("VALIDATION: channel missing in 201 body"))
-                } else {
-                    runCatching { refreshConversations() }
-                    Result.success(channel)
-                }
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun createChannel(name: String, description: String?, photo: String?): Result<Channel> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        val normalizedName = name.trim(); val detail = description.orEmpty().trim(); val image = photo?.trim()?.ifBlank { null }
+        val intent = kotlinx.serialization.json.JsonArray(listOf(owner, "conversation-channel", normalizedName, detail, image.orEmpty()).map { JsonPrimitive(it) }).toString()
+        return persistentConversationCreation(intent, owner, epoch,
+            send = { api.createChannel(owner, normalizedName, detail, image, it) },
+            accept = {
+                cacheConversation(requireNotNull(it.conversation), owner, epoch)
+                requireNotNull(it.channel).toChannel()
+            })
+    }
 
-    override suspend fun subscribeChannel(channelId: String): Result<Boolean> =
-        when (val r = api.subscribeChannel(channelId, viewerId ?: "")) {
+    override suspend fun subscribeChannel(channelId: String): Result<Boolean> = withRoomMutation(channelId) { owner, epoch ->
+        when (val r = api.subscribeChannel(channelId, owner)) {
             is PulseResult.Success -> {
-                runCatching { refreshConversations() }
+                requireConversationOwner(owner, epoch)
                 Result.success(r.value.already)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
 
-    override suspend fun unsubscribeChannel(channelId: String): Result<Unit> =
-        when (val r = api.unsubscribeChannel(channelId, viewerId ?: "")) {
+    override suspend fun unsubscribeChannel(channelId: String): Result<Unit> = withRoomMutation(channelId) { owner, epoch ->
+        when (val r = api.unsubscribeChannel(channelId, owner)) {
             is PulseResult.Success -> {
-                runCatching { refreshConversations() }
+                requireConversationOwner(owner, epoch)
+                database.withTransaction {
+                    requireConversationOwner(owner, epoch)
+                    inboxRefreshVersion.incrementAndGet()
+                    conversationDao.delete(channelId)
+                    requireConversationOwner(owner, epoch)
+                }
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
 
     override suspend fun createFolder(name: String, emoji: String): Result<FolderSummary> =
-        when (val r = api.createFolder(viewerId ?: "", name, emoji)) {
-            is PulseResult.Success -> Result.success(r.value.toFolderSummary())
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.createFolder(it, name, emoji) }.map { it.toFolderSummary() }
 
     override suspend fun updateFolder(folderId: String, name: String?, emoji: String?, position: Int?): Result<Unit> =
-        when (val r = api.patchFolder(folderId, name, emoji, position)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.patchFolder(folderId, name, emoji, position, it) }.map { Unit }
 
     override suspend fun deleteFolder(folderId: String): Result<Unit> =
-        when (val r = api.deleteFolder(folderId)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.deleteFolder(folderId, it) }.map { Unit }
 
     override suspend fun setFolderConversations(folderId: String, conversationIds: List<String>): Result<Unit> =
-        when (val r = api.setFolderConversations(folderId, conversationIds)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.setFolderConversations(folderId, conversationIds, it) }.map { Unit }
 
     /** POST one terminal call-log row; network-class failures enqueue the EXACT payload. */
     private suspend fun postCallLog(payload: kotlinx.serialization.json.JsonObject): Result<Unit> =
@@ -3885,16 +4377,16 @@ fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? =
         kind = kind,
         title = title,
         avatar = photo ?: others.firstOrNull()?.avatar,
-        lastMessagePreview = if (last == null) null else collapsed,
-        lastMessageAuthorName = last?.sender?.name,
+        lastMessagePreview = if (last == null) null else if (last.viewOnce == true) "View-once message" else collapsed,
+        lastMessageAuthorName = last?.toDomain()?.displayAuthorName,
         lastMessageKind = last?.kind,
         // Web row stamp prefers the last message's time, falling back to updatedAt.
         lastActivityAt = last?.createdAt ?: updatedAt,
         unreadCount = unreadCount ?: 0,
-        lastMessageExpiresAtEpochMs = PulseTime.epochMs(last?.expiresAt).takeIf { it > 0 },
+        lastMessageExpiresAtEpochMs = messageExpiryEpochMs(last?.expiresAt),
         unreadExpirations = unreadExpirations.mapNotNull {
-            val deadline = PulseTime.epochMs(it.expiresAt)
-            if (deadline > 0 && it.count > 0) app.pulse.domain.model.UnreadExpiration(deadline, it.count) else null
+            val deadline = messageExpiryEpochMs(it.expiresAt) ?: Long.MIN_VALUE
+            if (it.count > 0) app.pulse.domain.model.UnreadExpiration(deadline, it.count) else null
         },
         isPinned = !pinnedAt.isNullOrBlank(),
         // Mute truth = the window is in the future, not merely non-null (spec §7.4).
@@ -3909,7 +4401,7 @@ fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? =
         myManualUnread = myManualUnread == true,
         streakAtRiskCount = streakCountOf(deadStreak),
         streakLost = streakCountOf(lostStreak) > 0,
-        lastMessageMine = last != null && last.senderId == viewerId,
+        lastMessageMine = last?.toDomain()?.isOutgoingFor(viewerId) == true,
         lastMessageDeleted = last?.deletedAt != null,
         lastMessageIsReply = last?.replyTo != null || last?.parentId != null,
         lastMessageIsImage = isImage,
@@ -4037,7 +4529,8 @@ fun ChatMessageDto.toDomain(): Message = Message(
         ids.map { Reaction(emoji = e, userId = it) }
     }.flatten(),
     replyToBody = replyTo?.content,
-    replyToAuthor = replyTo?.sender?.name,
+    replyToAuthor = replyTo?.senderName,
+    quoteBounds = replyTo?.privacyBounds(),
     senderColor = sender?.color,
     viaAutomation = viaAutomation == true,
     durationMs = durationMs,
@@ -4063,7 +4556,7 @@ fun ChatMessageDto.toDomain(): Message = Message(
     // the deterministic alias, and the purge deadline (ISO → epoch ms).
     anon = anon == true,
     anonAlias = anonAlias,
-    expiresAtEpochMs = PulseTime.epochMs(expiresAt).takeIf { it > 0L },
+    expiresAtEpochMs = messageExpiryEpochMs(expiresAt),
 )
 
 // Wave 2 wire → domain mappers (saved library + topics)
@@ -4168,3 +4661,12 @@ private fun CallLogItemDto.toDomain(): CallLogEntry = CallLogEntry(
     outgoing = outgoing,
     peer = peer?.let { CallPeer(id = it.id, name = it.name, color = it.color, avatar = it.avatar) },
 )
+
+internal fun app.pulse.protocol.ReplySnippetDto.privacyBounds(): app.pulse.domain.model.QuoteBounds {
+    val raw = expiresAt
+    val expiry = (raw as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+        ?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+    val complete = quoteVersion == 1 && deleted != null && viewOnce != null &&
+        (raw == kotlinx.serialization.json.JsonNull || expiry != null)
+    return app.pulse.domain.model.QuoteBounds(if (complete) 1 else 0, expiry, deleted == true, viewOnce == true)
+}

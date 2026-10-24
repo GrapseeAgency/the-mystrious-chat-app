@@ -1,117 +1,44 @@
-// /api/folders/[id] - single folder mutations (Task R24-a)
-//
-// Contracts:
-//   PATCH  { name?, emoji?, position? }
-//          → only provided fields change. name trimmed 1..24
-//            (400 otherwise); emoji trimmed 1..16 (400 otherwise);
-//            position non-negative integer. → 200 { folder } ·
-//            404 unknown folder.
-//   DELETE → removes the folder; FolderConversation entries cascade
-//            (schema onDelete: Cascade - the chats themselves are
-//            NOT touched, only membership rows). → 200 { ok: true }
-//            · 404 unknown folder.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
 import { folderIconId } from '@/lib/icon-ids'
-import type { FolderSummary } from '@/lib/types'
-
+import { withFolderOwner, FolderError, folderErrorResponse, folderHeaders, folderInclude, folderWire, folderScope, folderName } from '@/lib/folder-operation'
 export const dynamic = 'force-dynamic'
+interface RouteCtx { params: Promise<{ id: string }> }
 
-interface RouteCtx {
-  params: Promise<{ id: string }>
-}
-
-const NAME_MIN = 1
-const NAME_MAX = 24
-
-const FOLDER_FULL_INCLUDE = {
-  entries: {
-    orderBy: { position: 'asc' as const },
-    select: { conversationId: true },
-  },
-} as const
-
-/** Folder row (+ordered entries) → wire DTO matching FolderSummary. */
-function serializeFolder(row: {
-  id: string
-  name: string
-  emoji: string
-  position: number
-  entries: Array<{ conversationId: string }>
-}): FolderSummary {
-  return {
-    id: row.id,
-    name: row.name,
-    emoji: row.emoji,
-    position: row.position,
-    conversationIds: row.entries.map((e) => e.conversationId),
-  }
-}
-
-/**
- * PATCH /api/folders/[id] - rename / re-emoji / reorder.
- * Fields are optional; only the provided ones change.
- */
 export async function PATCH(req: Request, { params }: RouteCtx) {
-  const { id } = await params
-  const body = await safeJson(req)
-
-  const folder = await db.folder.findUnique({ where: { id }, select: { id: true } })
-  if (!folder) {
-    return NextResponse.json({ error: 'Folder not found.' }, { status: 404 })
-  }
-
-  const data: { name?: string; emoji?: string; position?: number } = {}
-
-  if (body.name !== undefined) {
-    const name = strField(body.name)
-    if (name.length < NAME_MIN || name.length > NAME_MAX) {
-      return NextResponse.json(
-        { error: `Folder name must be ${NAME_MIN}-${NAME_MAX} characters.` },
-        { status: 400 },
-      )
-    }
-    data.name = name
-  }
-
-  if (body.emoji !== undefined) {
-    data.emoji = folderIconId(strField(body.emoji))
-  }
-
-  if (body.position !== undefined) {
-    const raw = typeof body.position === 'number' ? body.position : Number(body.position)
-    if (!Number.isInteger(raw) || raw < 0) {
-      return NextResponse.json(
-        { error: 'position must be a non-negative integer.' },
-        { status: 400 },
-      )
-    }
-    data.position = raw
-  }
-
-  const updated = await db.folder.update({
-    where: { id },
-    data,
-    include: FOLDER_FULL_INCLUDE,
-  })
-
-  return NextResponse.json({ folder: serializeFolder(updated) })
+  try {
+    const { id } = await params
+    const body = await safeJson(req)
+    const result = await withFolderOwner(db, req, { folderId: id }, async (tx, owner) => {
+      const data: { name?: string; emoji?: string } = {}
+      if (body.name !== undefined) data.name = folderName(body.name)
+      if (body.emoji !== undefined) data.emoji = folderIconId(strField(body.emoji))
+      if (body.position !== undefined) {
+        const position = body.position
+        if (typeof position !== 'number' || !Number.isSafeInteger(position) || position < 0) {
+          throw new FolderError(400, 'position must be a non-negative integer.')
+        }
+        const ordered = await tx.folder.findMany({ where: { userId: owner }, orderBy: [{ position: 'asc' }, { id: 'asc' }], select: { id: true } })
+        if (position >= ordered.length) throw new FolderError(400, 'position is outside the folder list.')
+        const remaining = ordered.filter(row => row.id !== id)
+        remaining.splice(position, 0, { id })
+        // A move is one atomic operation, not two independent swaps that can fail halfway.
+        for (const [index, row] of remaining.entries()) await tx.folder.update({ where: { id: row.id }, data: { position: index } })
+      }
+      const updated = await tx.folder.update({ where: { id }, data, include: folderInclude(owner) })
+      return { ...folderScope(owner), folder: folderWire(updated) }
+    })
+    return NextResponse.json(result, { headers: folderHeaders })
+  } catch (error) { return folderErrorResponse(error) }
 }
-
-/**
- * DELETE /api/folders/[id] - cascades FolderConversation entries via
- * the schema-level onDelete: Cascade. Conversations survive.
- */
-export async function DELETE(_req: Request, { params }: RouteCtx) {
-  const { id } = await params
-
-  const folder = await db.folder.findUnique({ where: { id }, select: { id: true } })
-  if (!folder) {
-    return NextResponse.json({ error: 'Folder not found.' }, { status: 404 })
-  }
-
-  await db.folder.delete({ where: { id } })
-
-  return NextResponse.json({ ok: true })
+export async function DELETE(req: Request, { params }: RouteCtx) {
+  try {
+    const { id } = await params
+    const result = await withFolderOwner(db, req, { folderId: id }, async (tx, owner) => {
+      await tx.folder.delete({ where: { id } })
+      return { ...folderScope(owner), folderId: id, deleted: true, ok: true }
+    })
+    return NextResponse.json(result, { headers: folderHeaders })
+  } catch (error) { return folderErrorResponse(error) }
 }

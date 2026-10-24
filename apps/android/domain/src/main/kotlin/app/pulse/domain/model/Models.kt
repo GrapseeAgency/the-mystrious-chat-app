@@ -422,6 +422,7 @@ data class ScheduledItem(
     val scheduledAtIso: String,
     val cancelledAtIso: String? = null,
     val cancelledReason: String? = null,
+    val creationClientId: String? = null,
 )
 
 /**
@@ -485,6 +486,15 @@ class PulseApiException(
     val retryAfter: Int? = null,
 ) : IllegalStateException(message ?: "Request failed")
 
+/** Stored separately from caller-writable rich payloads. */
+@Serializable
+data class QuoteBounds(
+    val version: Int = 0,
+    val expiresAtEpochMs: Long? = null,
+    val deleted: Boolean = false,
+    val viewOnce: Boolean = false,
+)
+
 /** A message - mirrors web `MessageDTO`. */
 @Serializable
 data class Message(
@@ -505,6 +515,7 @@ data class Message(
     /** Denormalized for rendering without a join. */
     val replyToBody: String? = null,
     val replyToAuthor: String? = null,
+    val quoteBounds: QuoteBounds? = null,
     val senderColor: String? = null,
     val viaAutomation: Boolean = false,
     val durationMs: Long? = null,
@@ -544,6 +555,10 @@ data class Message(
     enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, STICKER, LOCATION, SYSTEM }
 
     val isDeleted: Boolean get() = deletedAt != null
+    /** Attention/unread classification, never an ownership/permission check. */
+    fun isOutgoingFor(viewerId: String?): Boolean = !viewerId.isNullOrBlank() && authorId == viewerId && !viaAutomation
+    val displayAuthorName: String get() = if (anon) anonAlias?.takeIf { it.isNotBlank() } ?: "Anonymous" else integrationLabel ?: authorName
+    val integrationLabel: String? get() = app.pulse.domain.sync.MessageOrigin.label(payload, viaAutomation, isDeleted)
 }
 
 /**

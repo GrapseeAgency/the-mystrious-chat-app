@@ -242,7 +242,7 @@ public struct PulsePrefsValues: Equatable, Sendable {
 /// chats-list filter (All / Unread / Groups - persisted like the web).
 /// Wave 8 - adds the server-synced PulsePrefs blob (bubble radius, density,
 /// wallpaper, notification + privacy toggles, reduced motion) with
-/// optimistic local-first writes and a fire-and-forget PATCH funnel, plus
+/// optimistic local-first writes and a journaled, ordered PATCH funnel, plus
 /// the LOCAL-only quiet-hours window and haptics master toggle (web
 /// pulse.settings.v1 parity).
 @MainActor
@@ -320,13 +320,21 @@ public final class PulsePrefs: ObservableObject {
     /// Every server-backed toggle calls this after the optimistic local
     /// write. The session PATCHes { userId, preferences } and reports the
     /// verdict back via `notePatchSettled`.
-    public var patchRemote: ((WirePulsePrefs) -> Void)?
+    public var patchRemote: ((PulseSettingsTicket) -> Void)?
+    public var patchScreenPrivacy: ((PulseScreenPrivacyTicket) -> Void)?
+    @Published public private(set) var screenPrivacyPending: Set<String> = []
+    @Published public private(set) var screenPrivacyNotes: [String: String] = [:]
+    @Published public private(set) var screenPrivacyReadError: String?
+    private var screenPrivacyActivation = UUID()
+    private var localPreferenceRevision: UInt64 = 0
+    private var settingsReadTicket = UUID()
+    private var loadedSettingsOwner: String?
+    private var restoringSettings = false
     /// 401 rotation rejections funnel to the session layer (token clear +
     /// re-login surface).
     public var authRejectionHandler: ((String?) -> Void)?
-    /// Honest offline hint for the settings surface: PATCH failures keep
-    /// the local value and surface the note ("server value wins" applies
-    /// only to FETCH results).
+    /// Honest retained-intent notice. Neither an unrelated PATCH nor an old
+    /// GET is allowed to claim all settings have been confirmed.
     @Published public private(set) var lastSyncNote: String?
 
     public init(defaults: UserDefaults = .standard) {
@@ -368,6 +376,8 @@ public final class PulsePrefs: ObservableObject {
         navStyle = PulseNavStyle.parse(defaults.string(forKey: Self.navStyleKey))
         // R10-b - biometric app lock (local-only device security).
         appLockEnabled = defaults.bool(forKey: Self.appLockEnabledKey)
+        restoreSettings(owner: settingsOwnerKey)
+        notePatchSettled(successful: true, note: nil)
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
     }
 
@@ -437,6 +447,10 @@ public final class PulsePrefs: ObservableObject {
 
     public func setViewer(_ viewer: PulseViewer?) {
         let previousId = self.viewer?.id
+        let nextOwner = Self.settingsOwnerKey(for: viewer?.id, gateway: PulseEndpoints.gatewayURL)
+        // Restore BEFORE publishing the replacement viewer; a synchronous
+        // observer must never connect it with the previous account's policy.
+        if loadedSettingsOwner != nextOwner { restoreSettings(owner: nextOwner) }
         self.viewer = viewer
         if let viewer {
             if let data = try? JSONEncoder().encode(viewer) {
@@ -445,6 +459,7 @@ public final class PulsePrefs: ObservableObject {
         } else {
             defaults.removeObject(forKey: Self.viewerKey)
         }
+        notePatchSettled(successful: true, note: nil)
         // Wave 0 - secure mirror (viewer.identity + token slot for later).
         // Best effort: UserDefaults stays the source of truth.
         PulseKeychain.shared.saveViewer(viewer)
@@ -518,6 +533,7 @@ public final class PulsePrefs: ObservableObject {
     /// wallpaper so tint-only rooms stay deterministic. Optimistic local
     /// write + full-map PATCH through the settings funnel.
     public func setConvTheme(conversationId: String, wallpaper: PulseWallpaper?, tint: String?) {
+        refreshSettingsOwner()
         var map = convThemes ?? [:]
         var entry = map[conversationId] ?? WireConvTheme(wallpaper: self.wallpaper.rawValue, tint: nil)
         if let wallpaper { entry.wallpaper = wallpaper.rawValue }
@@ -533,6 +549,7 @@ public final class PulsePrefs: ObservableObject {
 
     /// Web clearConvTheme parity - the room falls back to the global default.
     public func clearConvTheme(conversationId: String) {
+        refreshSettingsOwner()
         var map = convThemes ?? [:]
         guard map[conversationId] != nil else { return }
         map[conversationId] = nil
@@ -549,27 +566,88 @@ public final class PulsePrefs: ObservableObject {
 
     // R2-B R42 - personal screen-security veil
 
-    /// Instant local write-through for MY veil on one conversation; the
-    /// server mirror PATCH runs from the caller (GroupInfoView) and the
-    /// verdict lands via adoptServerScreenPrivacy.
+    private var screenPrivacyJournal: PulseScreenPrivacyJournal { PulseScreenPrivacyJournal(defaults: defaults) }
+
+    /// The scoped value and retry ticket commit before transport is scheduled.
     public func setScreenPrivacy(conversationId: String, on: Bool) {
-        var map = screenPrivacy
-        map[conversationId] = on
-        storeScreenPrivacy(map)
+        refreshSettingsOwner()
+        guard let owner = settingsOwnerKey else { return }
+        do {
+            let ticket = try screenPrivacyJournal.stage(owner: owner, room: conversationId, on: on)
+            refreshScreenPrivacy(owner: owner)
+            screenPrivacyNotes[conversationId] = nil
+            patchScreenPrivacy?(ticket)
+        } catch {
+            screenPrivacy[conversationId] = true
+            screenPrivacyNotes[conversationId] = "Screen security could not be saved. Protection is kept on; choose the setting again."
+        }
     }
-
-    /// Server truth landed (detail fetch or PATCH echo): the server value
-    /// wins for that conversation - the same shallow-merge contract as every
-    /// other server-backed blob field.
-    public func adoptServerScreenPrivacy(conversationId: String, on: Bool) {
-        guard screenPrivacy[conversationId] != on else { return }
-        setScreenPrivacy(conversationId: conversationId, on: on)
+    public func retryScreenPrivacy(conversationId: String) {
+        refreshSettingsOwner()
+        guard let owner = settingsOwnerKey else { return }
+        do {
+            if let ticket = try screenPrivacyJournal.pending(owner: owner, room: conversationId) { patchScreenPrivacy?(ticket) }
+        } catch {
+            refreshScreenPrivacy(owner: owner)
+            screenPrivacyNotes[conversationId] = "Saved screen-security choices could not be read. Nothing was discarded."
+        }
     }
-
-    private func storeScreenPrivacy(_ map: [String: Bool]) {
-        screenPrivacy = map
-        if let data = try? JSONEncoder().encode(map) {
-            defaults.set(data, forKey: Self.screenPrivacyKey)
+    public func reloadScreenPrivacy() {
+        refreshSettingsOwner()
+        guard let owner = settingsOwnerKey else { return }
+        refreshScreenPrivacy(owner: owner)
+        if screenPrivacyReadError == nil { screenPrivacyNotes = [:] }
+    }
+    func screenPrivacyRead(conversationId: String) -> PulseScreenPrivacyRead? {
+        refreshSettingsOwner()
+        guard let owner = settingsOwnerKey else { return nil }
+        do {
+            return PulseScreenPrivacyRead(owner: owner, room: conversationId,
+                revision: try screenPrivacyJournal.entries(owner: owner)[conversationId]?.revision, activation: screenPrivacyActivation)
+        } catch {
+            refreshScreenPrivacy(owner: owner)
+            return nil
+        }
+    }
+    func adoptServerScreenPrivacy(_ read: PulseScreenPrivacyRead, on: Bool) {
+        guard settingsOwnerKey == read.owner, loadedSettingsOwner == read.owner, screenPrivacyActivation == read.activation else { return }
+        do {
+            try screenPrivacyJournal.mergeSnapshot(read, on: on)
+            refreshScreenPrivacy(owner: read.owner)
+        } catch {
+            refreshScreenPrivacy(owner: read.owner)
+            screenPrivacyNotes[read.room] = "Saved screen-security choices could not be refreshed. Nothing was discarded."
+        }
+    }
+    func currentScreenPrivacy(_ ticket: PulseScreenPrivacyTicket, api: PulseAPIClient) throws -> Bool {
+        guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner,
+              Self.settingsOwnerKey(for: api.userId, gateway: api.baseURL) == ticket.owner else { throw CancellationError() }
+        do { return try screenPrivacyJournal.current(ticket) }
+        catch { refreshScreenPrivacy(owner: ticket.owner); throw error }
+    }
+    func acknowledgeScreenPrivacy(_ ticket: PulseScreenPrivacyTicket, on: Bool) throws {
+        guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner else { throw CancellationError() }
+        do { try screenPrivacyJournal.acknowledge(ticket, on: on) }
+        catch { refreshScreenPrivacy(owner: ticket.owner); throw error }
+        refreshScreenPrivacy(owner: ticket.owner)
+        if !screenPrivacyPending.contains(ticket.room) { screenPrivacyNotes[ticket.room] = nil }
+    }
+    func noteScreenPrivacyFailure(_ ticket: PulseScreenPrivacyTicket) {
+        guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner,
+              (try? screenPrivacyJournal.current(ticket)) == true else { return }
+        screenPrivacyNotes[ticket.room] = "Saved on this device; server confirmation is pending. Retry when connected."
+    }
+    private func refreshScreenPrivacy(owner: String) {
+        do {
+            let entries = try screenPrivacyJournal.entries(owner: owner)
+            screenPrivacyReadError = nil
+            screenPrivacy = entries.mapValues(\.on)
+            screenPrivacyPending = Set(entries.filter { $0.value.pending != nil }.keys)
+        } catch {
+            // Empty means unknown, and the room policy keeps the cover engaged.
+            screenPrivacy = [:]
+            screenPrivacyPending = []
+            screenPrivacyReadError = "Saved screen-security choices could not be read. Protection remains on."
         }
     }
 
@@ -580,60 +658,70 @@ public final class PulsePrefs: ObservableObject {
     // Wave 8 - server-synced setters (optimistic local first)
 
     public func setBubbleRadius(_ value: PulseBubbleRadius) {
+        refreshSettingsOwner()
         bubbleRadius = value
         defaults.set(value.rawValue, forKey: Self.bubbleRadiusKey)
         patch { $0.bubbleRadius = value.rawValue }
     }
 
     public func setDensity(_ value: PulseDensity) {
+        refreshSettingsOwner()
         density = value
         defaults.set(value.rawValue, forKey: Self.densityKey)
         patch { $0.density = value.rawValue }
     }
 
     public func setWallpaper(_ value: PulseWallpaper) {
+        refreshSettingsOwner()
         wallpaper = value
         defaults.set(value.rawValue, forKey: Self.wallpaperKey)
         patch { $0.wallpaper = value.rawValue }
     }
 
     public func setNotifPreviews(_ enabled: Bool) {
+        refreshSettingsOwner()
         notifPreviews = enabled
         defaults.set(enabled, forKey: Self.notifPreviewsKey)
         patch { $0.notifPreviews = enabled }
     }
 
     public func setNotifSound(_ enabled: Bool) {
+        refreshSettingsOwner()
         notifSound = enabled
         defaults.set(enabled, forKey: Self.notifSoundKey)
         patch { $0.notifSound = enabled }
     }
 
     public func setNotifVibrate(_ enabled: Bool) {
+        refreshSettingsOwner()
         notifVibrate = enabled
         defaults.set(enabled, forKey: Self.notifVibrateKey)
         patch { $0.notifVibrate = enabled }
     }
 
     public func setLastSeenVisible(_ enabled: Bool) {
+        refreshSettingsOwner()
         lastSeenVisible = enabled
         defaults.set(enabled, forKey: Self.lastSeenVisibleKey)
         patch { $0.lastSeenVisible = enabled }
     }
 
     public func setReadReceipts(_ enabled: Bool) {
+        refreshSettingsOwner()
         readReceipts = enabled
         defaults.set(enabled, forKey: Self.readReceiptsKey)
         patch { $0.readReceipts = enabled }
     }
 
     public func setTypingVisible(_ enabled: Bool) {
+        refreshSettingsOwner()
         typingVisible = enabled
         defaults.set(enabled, forKey: Self.typingVisibleKey)
         patch { $0.typingVisible = enabled }
     }
 
     public func setReducedMotion(_ enabled: Bool) {
+        refreshSettingsOwner()
         reducedMotion = enabled
         defaults.set(enabled, forKey: Self.reducedMotionKey)
         Self.applyHapticGate(enabled: hapticsOn, quietNow: isQuietHoursNow)
@@ -689,21 +777,30 @@ public final class PulsePrefs: ObservableObject {
 
     // Wave 8 - server sync
 
-    /// GET /api/settings - the SERVER value wins (web mergePrefs parity:
-    /// defaults → stored blob). Local values act as the base; every server
-    /// field that decoded real value clamps over it. Offline-first: a
-    /// failed fetch keeps the local state untouched.
-    public func syncFromServer(api: PulseAPIClient) async {
+    /// Merge an owned GET only if its read generation is current. Pending
+    /// field intent overlays the snapshot; a failed fetch keeps this owner's
+    /// cache, never another account's global defaults.
+    public func syncFromServer(api: PulseAPIClient, isCurrent: () -> Bool) async {
+        refreshSettingsOwner()
+        guard isCurrent(), viewer?.id == api.userId,
+              PulseWalletOperations.gatewayKey(api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL) else { return }
+        let ticket = UUID(), revision = localPreferenceRevision
+        settingsReadTicket = ticket
+        func ownsRead() -> Bool {
+            !Task.isCancelled && isCurrent() && settingsReadTicket == ticket && viewer?.id == api.userId &&
+                PulseWalletOperations.gatewayKey(api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL)
+        }
         do {
             let server = try await api.settings()
-            applyServer(server)
+            guard ownsRead(), localPreferenceRevision == revision else { return }
+            guard let owner = settingsOwnerKey else { return }
+            try settingsJournal.applySnapshot(server, owner: owner, apply: applyServer)
+            notePatchSettled(successful: true, note: nil)
         } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
-            // Present-but-invalid token - the session layer clears it and
-            // surfaces re-login (server contract, Wave 8).
+            guard ownsRead() else { return }
             authRejectionHandler?(failure.message)
         } catch {
-            // Offline / unknown user (local_ ids) - local values stay
-            // authoritative. Honest, by design.
+            // Offline reads keep the current owner's local values unchanged.
         }
     }
 
@@ -741,21 +838,103 @@ public final class PulsePrefs: ObservableObject {
                 defaults.set(data, forKey: Self.convThemesKey)
             }
         }
+        persistSettingsSnapshot()
     }
 
-    /// PATCH verdict from the session funnel: success clears the hint,
-    /// failure keeps the local value + surfaces the honest offline note.
+    private var settingsJournal: PulseSettingsJournal { PulseSettingsJournal(defaults: defaults) }
+    private static func settingsOwnerKey(for id: String?, gateway: URL) -> String? {
+        guard let id, !id.isEmpty,
+              let data = try? JSONEncoder().encode([PulseWalletOperations.gatewayKey(gateway), id]) else { return nil }
+        return data.base64EncodedString()
+    }
+    private var settingsOwnerKey: String? { Self.settingsOwnerKey(for: viewer?.id, gateway: PulseEndpoints.gatewayURL) }
+
+    /// Account/gateway cache activation is synchronous, before network dispatch.
+    func refreshSettingsOwner() {
+        let owner = settingsOwnerKey
+        guard loadedSettingsOwner != owner else { return }
+        restoreSettings(owner: owner)
+        notePatchSettled(successful: true, note: nil)
+    }
+    private func restoreSettings(owner: String?) {
+        restoringSettings = true
+        defer { restoringSettings = false }
+        loadedSettingsOwner = owner
+        localPreferenceRevision &+= 1
+        settingsReadTicket = UUID()
+        // Legacy global keys have no trustworthy account provenance. Do not
+        // adopt their opt-ins, room wallpaper maps, or personal screen veils.
+        applyServer(WirePulsePrefs(bubbleRadius: "lg", density: "cozy", wallpaper: "none",
+            notifPreviews: false, notifSound: true, notifVibrate: false,
+            lastSeenVisible: false, readReceipts: false, typingVisible: false,
+            reducedMotion: false, convThemes: [:]))
+        screenPrivacy = [:]
+        screenPrivacyPending = []
+        screenPrivacyNotes = [:]
+        screenPrivacyReadError = nil
+        screenPrivacyActivation = UUID()
+        guard let owner else { return }
+        if let data = defaults.data(forKey: "pulse.settings.values.v1." + owner),
+           let snapshot = try? JSONDecoder().decode(WirePulsePrefs.self, from: data) { applyServer(snapshot) }
+        refreshScreenPrivacy(owner: owner)
+        do { applyServer(try settingsJournal.pendingTicket(owner: owner).patch) }
+        catch {
+            // An unreadable journal may contain a privacy refusal. Never let a
+            // cached opt-in outrank that unknown pending intent.
+            applyServer(WirePulsePrefs(notifPreviews: false, lastSeenVisible: false, readReceipts: false, typingVisible: false))
+        }
+    }
+    private func persistSettingsSnapshot() {
+        guard !restoringSettings, let owner = settingsOwnerKey, owner == loadedSettingsOwner else { return }
+        let snapshot = WirePulsePrefs(bubbleRadius: bubbleRadius.rawValue, density: density.rawValue,
+            wallpaper: wallpaper.rawValue, notifPreviews: notifPreviews, notifSound: notifSound,
+            notifVibrate: notifVibrate, lastSeenVisible: lastSeenVisible, readReceipts: readReceipts,
+            typingVisible: typingVisible, reducedMotion: reducedMotion, convThemes: convThemes)
+        if let data = try? JSONEncoder().encode(snapshot) { defaults.set(data, forKey: "pulse.settings.values.v1." + owner) }
+    }
+    func currentSettingsPatch(_ ticket: PulseSettingsTicket) throws -> WirePulsePrefs {
+        guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner else { throw CancellationError() }
+        return try settingsJournal.current(ticket)
+    }
+    func currentSettingsPatch(_ ticket: PulseSettingsTicket, api: PulseAPIClient) throws -> WirePulsePrefs {
+        // The prefs scope can change before the session has rebuilt its client.
+        // Never send new-gateway intent through an old captured API instance.
+        guard Self.settingsOwnerKey(for: api.userId, gateway: api.baseURL) == ticket.owner else { throw CancellationError() }
+        return try currentSettingsPatch(ticket)
+    }
+    func acknowledgeSettings(_ ticket: PulseSettingsTicket, sent: WirePulsePrefs, server: WirePulsePrefs) throws {
+        guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner else { throw CancellationError() }
+        try settingsJournal.acknowledge(ticket, sent: sent, server: server, apply: applyServer)
+        localPreferenceRevision &+= 1 // an older GET must not undo this confirmation
+        notePatchSettled(successful: true, note: nil)
+    }
+    public func retryPendingSettings() {
+        refreshSettingsOwner()
+        guard let owner = settingsOwnerKey else { return }
+        do {
+            let ticket = try settingsJournal.pendingTicket(owner: owner)
+            guard !ticket.fields.isEmpty else { return }
+            patchRemote?(ticket)
+        } catch { lastSyncNote = "Pending settings could not be read. Nothing was discarded." }
+    }
+    /// A successful unrelated request must not erase the remaining failure hint.
     public func notePatchSettled(successful: Bool, note: String?) {
-        lastSyncNote = successful ? nil : (note ?? "Saved on this device - the server didn't answer.")
+        guard let owner = settingsOwnerKey else { lastSyncNote = nil; return }
+        do {
+            lastSyncNote = try settingsJournal.hasPending(owner: owner)
+                ? (note ?? "Changes saved on this device still need server confirmation. Tap Retry.") : nil
+        } catch { lastSyncNote = "Pending settings could not be read. Nothing was discarded." }
     }
-
-    /// Optimistic write funnel: the local field is ALREADY updated; this
-    /// hands the single-field patch to the session's PATCH sender.
     private func patch(_ configure: (inout WirePulsePrefs) -> Void) {
-        guard let patchRemote else { return }
-        var wire = WirePulsePrefs()
-        configure(&wire)
-        patchRemote(wire)
+        localPreferenceRevision &+= 1
+        var wire = WirePulsePrefs(); configure(&wire)
+        persistSettingsSnapshot()
+        guard let owner = settingsOwnerKey else { return }
+        do {
+            let ticket = try settingsJournal.stage(wire, owner: owner)
+            notePatchSettled(successful: false, note: nil)
+            patchRemote?(ticket)
+        } catch { lastSyncNote = "These settings could not be queued. Please retry; existing pending changes were kept." }
     }
 
     // plumbing
@@ -781,5 +960,36 @@ public final class PulsePrefs: ObservableObject {
     private static func readScreenPrivacy(_ defaults: UserDefaults) -> [String: Bool] {
         guard let data = defaults.data(forKey: screenPrivacyKey) else { return [:] }
         return (try? JSONDecoder().decode([String: Bool].self, from: data)) ?? [:]
+    }
+}
+
+
+extension PulsePrefs {
+    // The old pulse.viewer.profile dictionary has no account/gateway provenance.
+    // Never claim it belongs to whoever happens to open the next profile editor.
+    private var viewerProfileKey: String? {
+        guard let id = viewer?.id, !id.isEmpty,
+              let identity = try? JSONEncoder().encode([PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL), id]) else { return nil }
+        return "pulse.viewer.profile.v2." + identity.base64EncodedString()
+    }
+    private var extraProfile: [String: String] {
+        guard let key = viewerProfileKey, let data = defaults.data(forKey: key),
+              let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return map
+    }
+    var viewerAbout: String? { extraProfile["about"] }
+    var viewerStatusEmoji: String? { extraProfile["statusEmoji"] }
+    var viewerStatusText: String? { extraProfile["statusText"] }
+
+    func setViewerProfile(about: String?, statusEmoji: String?, statusText: String?) {
+        guard let key = viewerProfileKey else { return }
+        var map: [String: String] = [:]
+        if let about { map["about"] = about }
+        if let statusEmoji { map["statusEmoji"] = statusEmoji }
+        if let statusText { map["statusText"] = statusText }
+        guard let data = try? JSONEncoder().encode(map) else { return }
+        defaults.set(data, forKey: key)
+        defaults.removeObject(forKey: "pulse.viewer.profile")
+        objectWillChange.send()
     }
 }

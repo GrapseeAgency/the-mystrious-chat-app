@@ -129,6 +129,7 @@ fun SettingsRootScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val prefsOffline by viewModel.prefsOffline.collectAsStateWithLifecycle()
+    val prefsLocalFailure by viewModel.prefsLocalFailure.collectAsStateWithLifecycle()
     // R15 - web root-row live hints (settings-screen.tsx:1875-1885): every
     // section row shows its LIVE state line instead of the static caption.
     val viewerName by viewModel.viewerName.collectAsStateWithLifecycle()
@@ -215,12 +216,14 @@ fun SettingsRootScreen(
         ) {
             if (prefsOffline) {
                 Text(
-                    "Offline - changes stay on this device until Pulse reconnects.",
+                    "Some settings still need server confirmation. Retry sends the retained changes.",
                     color = Color.White.copy(alpha = 0.5f),
                     fontSize = 12.sp,
                     modifier = Modifier.padding(vertical = 6.dp),
                 )
             }
+            if (prefsLocalFailure) Text("A setting could not be saved on this device. Choose that setting again.")
+            if (prefsOffline) TextButton(onClick = viewModel::retryPreferences) { Text("Retry settings") }
             GROUPS.forEach { (label, ids) ->
                 Text(
                     label,

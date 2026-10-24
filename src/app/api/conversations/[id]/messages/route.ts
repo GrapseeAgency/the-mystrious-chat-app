@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
 import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
+import { createAutomationReply } from '@/lib/automation-delivery'
 import { threadRootAvailable } from '@/lib/message-visibility'
 import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, messagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
 import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
@@ -28,6 +29,7 @@ import { XP_DAILY_CAP, XP_PER_MESSAGE } from '@/lib/xp'
 import { nativeBlockFromPayload } from '@/lib/native-bridge'
 import { maybeAiReply } from '@/lib/ai-bot'
 import { botWillRespond, maybeBotReply } from '@/lib/bot-engine'
+import { deliverMessageNotification } from '@/lib/message-notification'
 import { fanoutPush } from '@/lib/push/transport'
 
 export const dynamic = 'force-dynamic'
@@ -317,6 +319,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
       return NextResponse.json({ error: 'payload must be an object.' }, { status: 400 })
     }
     const p = body.payload as Record<string, unknown>
+    if (['bot', 'webhook', 'webhookName', 'webhookColor'].some(key => Object.hasOwn(p, key))) {
+      return NextResponse.json({ error: 'Integration origin metadata is reserved for server-generated messages.' }, { status: 400 })
+    }
     if (kind === 'sticker') {
       const emoji = strField(p.emoji)
       if (!emoji || emoji.length > 12) {
@@ -673,80 +678,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
     native: nativeBlockFromPayload(mapped.payload),
   })
 
-  // Remote push (registry-gated): members whose apps are closed hear about
-  // the message via Web Push / FCM / APNs. Fire-and-forget - never fails or
-  // slows the send. Per-RECEIVER privacy: muted members get nothing, and a
-  // receiver with notifPreviews off gets a generic body, never the content.
-  void (async () => {
-    try {
-      const now = new Date()
-      const [memberRows, mutedRows, senderRow, convRow] = await Promise.all([
-        db.user.findMany({
-          where: { id: { in: recipients } },
-          select: { id: true, preferences: true },
-        }),
-        db.conversationParticipant.findMany({
-          where: { conversationId: id, mutedUntil: { gt: now } },
-          select: { userId: true },
-        }),
-        db.user.findUnique({ where: { id: senderId }, select: { name: true } }),
-        db.conversation.findUnique({ where: { id }, select: { isGroup: true, name: true } }),
-      ])
-      const mutedIds = new Set(mutedRows.map((row) => row.userId))
-      const pushTargets = recipients.filter((memberId) => !mutedIds.has(memberId))
-      if (pushTargets.length === 0) return
-      const senderName = senderRow?.name ?? 'Someone'
-      const isGroupConv = convRow?.isGroup ?? false
-      const groupName = convRow?.name ?? ''
-      // Per-kind preview line (never the full rich payload - honest snippets).
-      const previewBase =
-        kind === 'text'
-          ? content.trim().slice(0, 140)
-          : kind === 'image'
-            ? 'Photo'
-            : kind === 'audio'
-              ? 'Voice message'
-              : kind === 'sticker'
-                ? `Sticker ${(() => {
-                    try {
-                      const p = payload ? (JSON.parse(payload) as { emoji?: string }) : null
-                      return p?.emoji ?? ''
-                    } catch {
-                      return ''
-                    }
-                  })()}`.trim()
-                : kind === 'file'
-                  ? 'Document'
-                  : 'Location'
-      const prefsByUser = new Map<string, boolean>()
-      for (const row of memberRows) {
-        let previews = true
-        try {
-          const parsed = row.preferences ? (JSON.parse(row.preferences) as { notifPreviews?: unknown }) : null
-          if (parsed && typeof parsed.notifPreviews === 'boolean') previews = parsed.notifPreviews
-        } catch {
-          // unparsable prefs fall back to default (previews on)
-        }
-        prefsByUser.set(row.id, previews)
-      }
-      const title = isGroupConv && groupName ? `${senderName} · ${groupName}` : senderName
-      await fanoutPush(pushTargets, {
-        kind: 'message',
-        title,
-        body: isGroupConv ? `${senderName}: ${previewBase}` : previewBase,
-        conversationId: id,
-        messageId: message.id,
-      }, {
-        bodyFor: (userId) => {
-          const previews = prefsByUser.get(userId) ?? true
-          const generic = 'New message'
-          return previews ? (isGroupConv ? `${senderName}: ${previewBase}` : previewBase) : generic
-        },
-      })
-    } catch {
-      // push must never surface as a send failure
-    }
-  })()
+  // Current message privacy, membership, block and mute policy are re-read
+  // together. Push remains best-effort and never changes committed acceptance.
+  void deliverMessageNotification(db, fanoutPush, message.id).catch(() => {})
 
   // Pulse AI companion: fire-and-forget evaluation (DMs + @mentions in groups).
   // Stands down when the deterministic bot engine owns this message, so a
@@ -761,7 +695,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   // and never re-enter this route, so the engine can never chain. A failure
   // here must never fail the human send (same principle as XP accounting).
   if (message.deletedAt === null) {
-    await maybeAutomationReply(id, content)
+    await maybeAutomationReply(id, message.id, content)
   }
 
   // R31-a: gaming-grade daily XP cap - every real send earns XP_PER_MESSAGE
@@ -829,95 +763,21 @@ export async function POST(req: Request, { params }: RouteCtx) {
   )
 }
 
-// R39: keyword-triggered auto-replies (ManyChat/Landbot family) 
-
-/** Escape a trigger for literal regex use (no special-char surprises). */
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/**
- * Match `trigger` as a STANDALONE phrase inside `content`: case-insensitive,
- * with letter/digit lookaround boundaries so "price" never matches inside
- * "pricing" or "compare prices" - but "price" matches in "what's the price?".
- */
-function triggerMatches(trigger: string, content: string): boolean {
-  const escaped = escapeRegex(trigger.trim())
-  if (escaped.length === 0) return false
-  return new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'i').test(content)
-}
-
-/**
- * Fire the FIRST enabled automation whose trigger matches the human message.
- * The reply is a real Message row authored by the rule's creator with
- * viaAutomation=true, riding the same pipeline as webhook messages (updatedAt
- * bump, archive unpin, notifySocket to the other members). Best-effort by
- * contract: any failure is logged and swallowed - a broken automation must
- * never fail a human send. Disabled rules, non-matching content and rules in
- * conversations without any rows are all silent no-ops.
- */
-async function maybeAutomationReply(conversationId: string, content: string): Promise<void> {
+/** Best effort after the human send has committed. A notification failure
+ * cannot undo a committed automation or prevent its hit from being counted. */
+async function maybeAutomationReply(conversationId: string, sourceId: string, content: string): Promise<void> {
   try {
-    const rules = await db.automation.findMany({
-      where: { conversationId, enabled: true },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, trigger: true, reply: true, createdById: true },
-    })
-    const rule = rules.find((r) => triggerMatches(r.trigger, content))
-    if (!rule) return
-
-    const now = new Date()
-    const conv = await db.conversation.findUnique({
-      where: { id: conversationId },
-      select: { ttlSeconds: true },
-    })
-    const expiresAt =
-      conv && conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
-
-    const created = await db.$transaction(async (tx) => {
-      const msg = await tx.message.create({
-        data: {
-          conversationId,
-          senderId: rule.createdById,
-          content: rule.reply,
-          kind: 'text',
-          viaAutomation: true,
-          ...(expiresAt ? { expiresAt } : {}),
-        },
-        include: MESSAGE_FULL_INCLUDE,
-      })
-      await tx.conversation.update({ where: { id: conversationId }, data: { updatedAt: now } })
-      await tx.conversationParticipant.updateMany({
-        where: {
-          conversationId,
-          userId: { not: rule.createdById },
-          archivedAt: { not: null },
-        },
-        data: { archivedAt: null },
-      })
-      return msg
-    })
-
-    // Unlike an interactive send (sender handles self via the POST response),
-    // an automation reply is machine-sent on the creator's behalf - NO member
-    // has a response carrying it, so EVERY participant (author included)
-    // receives the realtime event. Same notify/emit shape as the webhook path.
+    const created = await db.$transaction(
+      tx => createAutomationReply(tx, conversationId, sourceId, content),
+      { isolationLevel: 'Serializable' },
+    )
+    if (!created) return
     const recipients = await memberIdsOf(conversationId)
     await notifySocket('message:new', recipients, {
-      type: 'message:new',
-      message: mapMessage(created),
-      recipientIds: recipients,
-      conversationId,
-      native: nativeBlockFromPayload(created.payload),
-    })
-
-    // Atomic counters - updateMany keeps the bump single-statement.
-    await db.automation.updateMany({
-      where: { id: rule.id },
-      data: { hits: { increment: 1 }, lastFiredAt: now },
+      type: 'message:new', message: mapMessage(created), recipientIds: recipients,
+      conversationId, native: nativeBlockFromPayload(created.payload),
     })
   } catch (error) {
-    // Automation accounting must never fail a send.
     console.error('[automations] auto-reply failed:', error)
   }
 }

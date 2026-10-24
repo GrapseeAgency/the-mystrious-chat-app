@@ -128,10 +128,13 @@ class ChatRoomViewModel @Inject constructor(
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            app.pulse.protocol.PulseWave8Logic.DEFAULTS,
+            app.pulse.protocol.PulseWave8Logic.PRIVATE_DEFAULTS,
         )
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
+
+    val personalScreenPrivacy = repo.observePersonalScreenPrivacy(conversationId)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.domain.model.PersonalScreenPrivacy())
 
     // ── R1-W2I - PiP pane (F-PI-01..03), web usePipChat legacy contract ──
 
@@ -178,6 +181,17 @@ class ChatRoomViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    private val missedArrivals = app.pulse.domain.sync.MissedMessageArrivals()
+    private val _missedCount = MutableStateFlow(0)
+    val missedCount: StateFlow<Int> = _missedCount.asStateFlow()
+
+    fun setReadingTail(value: Boolean) {
+        missedArrivals.configure(conversationId, repo.viewerId, _activeTopicId.value)
+        missedArrivals.setReadingTail(value)
+        _missedCount.value = missedArrivals.count
+    }
+
 
     /** Composer restore seed - local draft table first, server myDraft fallback. */
     private val _initialDraft = MutableStateFlow<String?>(null)
@@ -309,41 +323,81 @@ class ChatRoomViewModel @Inject constructor(
     private val _scheduledLoading = MutableStateFlow(false)
     val scheduledLoading: StateFlow<Boolean> = _scheduledLoading.asStateFlow()
 
+    private val _scheduledBusy = MutableStateFlow(false)
+    val scheduledBusy: StateFlow<Boolean> = _scheduledBusy.asStateFlow()
+    private val _scheduledError = MutableStateFlow<String?>(null)
+    val scheduledError: StateFlow<String?> = _scheduledError.asStateFlow()
+    private var scheduledRevision = 0L
+
     fun loadScheduled() {
+        if (_scheduledBusy.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        val ticket = ++scheduledRevision
+        _scheduledLoading.value = true
         viewModelScope.launch {
-            _scheduledLoading.value = true
-            _scheduled.value = runCatching { repo.scheduledMessages(conversationId).getOrDefault(emptyList()) }
-                .getOrDefault(emptyList())
-            _scheduledLoading.value = false
+            try {
+                val rows = repo.scheduledMessages(conversationId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch && ticket == scheduledRevision) {
+                    _scheduled.value = rows; _scheduledError.value = null
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch && ticket == scheduledRevision) {
+                    if (error is app.pulse.domain.sync.PrivateScheduleUnavailableException) _scheduled.value = emptyList()
+                    _scheduledError.value = error.message ?: "Couldn't load scheduled messages"
+                }
+            } finally {
+                if (repo.attachmentSessionKey() == epoch && ticket == scheduledRevision) _scheduledLoading.value = false
+            }
         }
     }
 
-    /** POST the pending row, then refresh the manager list (web parity toast). */
-    fun scheduleSend(content: String, scheduledAtIso: String) {
+    fun scheduleSend(content: String, scheduledAtIso: String, confirmed: () -> Unit = {}) {
+        if (_scheduledBusy.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        _scheduledBusy.value = true; scheduledRevision++; _scheduledLoading.value = false
         viewModelScope.launch {
-            repo.scheduleMessage(conversationId, content, scheduledAtIso)
-                .onSuccess { item ->
-                    notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)} - it sends itself")
-                    loadScheduled()
-                }
-                .onFailure { notify(failureNotice(it), isError = true) }
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val item = repo.scheduleMessage(conversationId, content, scheduledAtIso).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                _scheduled.value = (_scheduled.value.filterNot { it.id == item.id } + item).sortedBy { it.scheduledAtIso }
+                confirmed()
+                repo.acknowledgeScheduledCreation(item).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)}")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) notify(failureNotice(error), isError = true)
+            } finally { if (repo.attachmentSessionKey() == epoch) _scheduledBusy.value = false }
         }
     }
 
     fun cancelScheduled(scheduledId: String) {
+        if (_scheduledBusy.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        _scheduledBusy.value = true; scheduledRevision++; _scheduledLoading.value = false
         viewModelScope.launch {
-            runCatching { repo.cancelScheduled(scheduledId) }
-                .onSuccess {
-                    notify("Scheduled message cancelled")
-                    loadScheduled()
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                repo.cancelScheduled(scheduledId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                _scheduled.value = _scheduled.value.filterNot { it.id == scheduledId }
+                notify("Scheduled message cancelled")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) {
+                    _scheduledError.value = error.message ?: "Couldn't cancel the scheduled message"
+                    notify(_scheduledError.value.orEmpty(), isError = true)
                 }
-                .onFailure { notify("Couldn't cancel the scheduled message", isError = true) }
+            } finally { if (repo.attachmentSessionKey() == epoch) _scheduledBusy.value = false }
         }
     }
 
     private fun formatScheduleStamp(iso: String): String = runCatching {
-        val zoned = java.time.OffsetDateTime.parse(iso)
-        java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm").format(zoned)
+        java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm")
+            .format(java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault()))
     }.getOrDefault(iso)
 
     // ── R3-B item 4 - F-MS-17 incognito arming (GROUPS only, session-scoped) ──
@@ -446,6 +500,9 @@ class ChatRoomViewModel @Inject constructor(
             // and emits at TTL deadlines even without any network activity.
             roomRows.collect { current ->
                 val now = System.currentTimeMillis()
+                missedArrivals.configure(conversationId, repo.viewerId, _activeTopicId.value)
+                missedArrivals.observe(current, now)
+                _missedCount.value = missedArrivals.count
                 _state.value = _state.value.copy(
                     pins = app.pulse.domain.sync.reconcileMessageSelection(_state.value.pins, current, now) { it.pinnedAt != null },
                     searchResults = app.pulse.domain.sync.reconcileMessageSelection(_state.value.searchResults, current, now) {
@@ -521,6 +578,9 @@ class ChatRoomViewModel @Inject constructor(
                         }
                     }
                     is PulseEvent.MessageReceived -> if (event.conversationId == conversationId) {
+                        missedArrivals.configure(conversationId, repo.viewerId, _activeTopicId.value)
+                        missedArrivals.receive(event.message, System.currentTimeMillis())
+                        _missedCount.value = missedArrivals.count
                         // D29/F-MS-23 - incoming effect payloads fire the
                         // app-wide burst (web triggerEffectFor parity:
                         // confetti→confetti · sparkles→stars · lasers/echo→burst).
@@ -549,20 +609,18 @@ class ChatRoomViewModel @Inject constructor(
         val anchor = readingAnchor ?: return
         readJob?.cancel()
         readJob = viewModelScope.launch {
-            delay(600)
-            repeat(3) { attempt ->
-                if (readingAnchor != anchor) return@launch
-                if (safelySend { repo.markReadThrough(conversationId, anchor) }.isSuccess) return@launch
-                delay(1_500L * (attempt + 1))
-            }
+            app.pulse.domain.sync.acknowledgeVisibleRead(
+                isCurrent = { readingAnchor == anchor },
+                send = { safelySend { repo.markReadThrough(conversationId, anchor) } },
+            )
         }
     }
 
     // ── drafts (Wave 0 core) + typing ───────────────────────────
 
     fun onDraftChanged(text: String) {
-        if (_state.value.editing != null) return // composer is editing a row, not drafting
         composerRevision++
+        if (_state.value.editing != null) return // Track newer edit text, but do not persist it as a draft.
         repo.stageDraft(conversationId, text) // reserve/write locally before the debounce
         val draftToken = repo.captureDraftToken(conversationId)
         val userName = viewerName()
@@ -789,24 +847,39 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     /** PATCH edit - online-only by design (spec row 4); failure is an honest toast. */
+    private var replyBeforeEdit: Message? = null
+    private var editGeneration = 0L
+    private var editSendPending = false
     private fun sendEdit(messageId: String, content: String) {
+        if (editSendPending) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        val ticket = editGeneration
+        val revision = composerRevision
+        editSendPending = true
         viewModelScope.launch {
-            repo.editMessage(messageId, content.trim())
-                .onSuccess {
-                    _state.value = _state.value.copy(editing = null)
-                }
-                .onFailure { failure ->
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                repo.editMessage(messageId, content.trim()).getOrThrow()
+                if (repo.attachmentSessionKey() == epoch && editGeneration == ticket && composerRevision == revision &&
+                    _state.value.editing?.id == messageId) cancelEdit()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (repo.attachmentSessionKey() == epoch && editGeneration == ticket) {
                     notify(failure.message ?: "Couldn't update the message", isError = true)
                 }
+            } finally { editSendPending = false }
         }
     }
 
     fun beginEdit(message: Message) {
+        if (_state.value.editing == null) replyBeforeEdit = _state.value.replyTo
+        editGeneration++
         _state.value = _state.value.copy(editing = message, replyTo = null)
     }
 
     fun cancelEdit() {
-        _state.value = _state.value.copy(editing = null)
+        editGeneration++
+        _state.value = _state.value.copy(editing = null, replyTo = replyBeforeEdit)
+        replyBeforeEdit = null
     }
 
     // ── pin / save / delete / forward ───────────────────────────
@@ -828,62 +901,81 @@ class ChatRoomViewModel @Inject constructor(
 
     private val pinActions = mutableSetOf<String>()
     fun toggleMessagePin(messageId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
         if (!pinActions.add(messageId)) return
         val selected = messages.value.firstOrNull { it.id == messageId } ?: _state.value.pins.firstOrNull { it.id == messageId }
         viewModelScope.launch {
             try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
                 if (selected?.pinnedAt != null) {
                     repo.unpinMessage(messageId)
-                        .onSuccess { notify("Message unpinned"); loadPins() }
-                        .onFailure { notify("Couldn't remove the pin", isError = true) }
+                        .onSuccess { if (repo.attachmentSessionKey() == epoch) { notify("Message unpinned"); loadPins() } }
+                        .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't remove the pin", isError = true) }
                 } else {
-                    repo.toggleMessagePin(messageId)
-                        .onSuccess { notify(if (it.pinnedAt != null) "Message pinned" else "Message unpinned"); loadPins() }
-                        .onFailure { notify("Couldn't update the pin", isError = true) }
+                    repo.pinMessage(messageId)
+                        .onSuccess { if (repo.attachmentSessionKey() == epoch) { notify(if (it.pinnedAt != null) "Message pinned" else "Message unpinned"); loadPins() } }
+                        .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't update the pin", isError = true) }
                 }
             } finally { pinActions.remove(messageId) }
         }
     }
 
-    fun toggleMessageSave(messageId: String) {
+    fun saveMessage(messageId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
-            repo.toggleMessageSave(messageId)
-                .onSuccess { saved -> notify(if (saved) "Saved to library" else "Removed from library") }
-                .onFailure { notify("Couldn't save the message", isError = true) }
+            if (repo.attachmentSessionKey() != epoch) return@launch
+            owned.setMessageSaved(messageId, true)
+                .onSuccess { if (repo.attachmentSessionKey() == epoch) notify("Saved to library") }
+                .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't save the message", isError = true) }
         }
     }
 
     fun deleteMessage(messageId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
         viewModelScope.launch {
+            if (repo.attachmentSessionKey() != epoch) return@launch
             repo.deleteMessage(messageId)
                 .onSuccess {
+                    if (repo.attachmentSessionKey() != epoch) return@onSuccess
                     notify("Message deleted")
                     // The tombstone row arrives from the server truth - refetch
                     // the window so "Message deleted" renders immediately.
                     runCatching { repo.refreshMessages(conversationId) }
                 }
-                .onFailure { notify("Couldn't delete the message", isError = true) }
+                .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't delete the message", isError = true) }
         }
     }
 
-    fun forwardTo(source: Message, targetIds: List<String>) {
-        if (targetIds.isEmpty()) return
-        viewModelScope.launch {
-            var done = 0
-            for (target in targetIds) {
-                if (runCatching { repo.forwardMessage(target, source) }.isSuccess) done += 1
-            }
-            if (done == 0) {
-                notify("Couldn't forward - check your connection", isError = true)
-            } else {
-                notify("Forwarded to $done ${if (done == 1) "chat" else "chats"}")
+    suspend fun forwardTo(source: Message, targetIds: List<String>, expectedOwner: String?): Map<String, String> {
+        val bound = repo.boundToCurrentAccount()
+        val owner = bound.viewerId
+        val epoch = bound.attachmentSessionKey()
+        if (owner == null || owner != expectedOwner) throw kotlinx.coroutines.CancellationException("Forward account changed")
+        val failed = linkedMapOf<String, String>()
+        val targets = targetIds.distinct()
+        for (target in targets) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (bound.viewerId != owner || bound.attachmentSessionKey() != epoch) throw kotlinx.coroutines.CancellationException("Forward account changed")
+            try {
+                bound.forwardMessage(target, source).getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                failed[target] = error.message ?: "Forward wasn't queued."
             }
         }
+        val queued = targets.size - failed.size
+        if (queued > 0) notify("Forward queued for $queued ${if (queued == 1) "chat" else "chats"}")
+        return failed
     }
 
-    fun react(messageId: String, emoji: String) {
+    fun react(message: Message, emoji: String) {
+        val owner = repo.viewerId ?: return
+        val epoch = repo.attachmentSessionKey()
+        val reaction = app.pulse.protocol.reactionId(emoji)
+        val present = message.reactions.none { it.userId == owner && app.pulse.protocol.reactionId(it.emoji) == reaction }
         viewModelScope.launch {
-            repo.react(messageId, emoji).onFailure { notify(it.message ?: "Couldn't update reaction", isError = true) }
+            if (repo.viewerId != owner || repo.attachmentSessionKey() != epoch) return@launch
+            repo.react(message.id, reaction, present).onFailure { notify(it.message ?: "Couldn't update reaction", isError = true) }
         }
     }
 
@@ -1003,7 +1095,7 @@ class ChatRoomViewModel @Inject constructor(
                     val rootId = target.threadRootId
                     if (rootId == null) flash(target.id)
                     else {
-                        val (root, replies) = repo.loadThread(rootId)
+                        val (root, replies) = app.pulse.domain.sync.resolveThreadJump(repo, conversationId, rootId, target.id)
                         kotlinx.coroutines.currentCoroutineContext().ensureActive()
                         if (!app.pulse.domain.sync.threadRootAvailable(root, conversationId, rootId) ||
                             app.pulse.domain.sync.threadReplyTargetIndex(replies, root, target.id) == null) {
@@ -1430,19 +1522,25 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    /** Single-choice, NO revote once picked (web parity, spec §1 row 3). */
+    /** Explicit single-choice selection; server owns open/closed availability. */
     fun votePoll(pollId: String, optionId: String) {
+        val owner = repo.viewerId
+        val epoch = repo.attachmentSessionKey()
         viewModelScope.launch {
+            if (owner == null || repo.viewerId != owner || repo.attachmentSessionKey() != epoch) return@launch
             repo.votePoll(pollId, optionId)
-                .onFailure { notify("Couldn't record your vote", isError = true) }
+                .onFailure { notify(it.message ?: "Couldn't record your vote", isError = true) }
         }
     }
 
     fun closePoll(pollId: String) {
+        val owner = repo.viewerId
+        val epoch = repo.attachmentSessionKey()
         viewModelScope.launch {
+            if (owner == null || repo.viewerId != owner || repo.attachmentSessionKey() != epoch) return@launch
             repo.closePoll(pollId)
                 .onSuccess { notify("Voting closed - results are final") }
-                .onFailure { notify("Couldn't close the poll", isError = true) }
+                .onFailure { notify(it.message ?: "Couldn't close the poll", isError = true) }
         }
     }
 
@@ -1575,16 +1673,14 @@ class ChatRoomViewModel @Inject constructor(
             .onSuccess { tournamentOpen = false; notify(if (it.replayed) "Recovered the previous tournament" else "Tournament \"$name\" started") }
             .onFailure { notify(it.message ?: "Could not start the tournament", isError = true) }.isSuccess
 
-    fun createKanbanCard(title: String, column: String, assigneeId: String?) {
-        viewModelScope.launch {
-            repo.createKanbanCard(conversationId, title.trim(), column, assigneeId, kanbanSourceMessage)
-                .onSuccess {
-                    kanbanSourceMessage = null
-                    kanbanSourceTitle = null
-                    notify("Task \"${it.title}\" added to the board")
-                }
-                .onFailure { notify(it.message ?: "Could not add the card", isError = true) }
+    suspend fun createKanbanCard(title: String, column: String, assigneeId: String?): Boolean {
+        val source = kanbanSourceMessage
+        val accepted = confirmedRoomAction("board:create:$conversationId") { owned ->
+            val card = owned.createKanbanCard(conversationId, title.trim(), column, assigneeId, source).getOrThrow()
+            "Task added to the board: ${card.title}"
         }
+        if (accepted && kanbanSourceMessage == source) { kanbanSourceMessage = null; kanbanSourceTitle = null }
+        return accepted
     }
 
     /** Message long-press → "Add to board" (web parity: message→card title cap 80). */
@@ -1607,22 +1703,23 @@ class ChatRoomViewModel @Inject constructor(
 
     fun convertMessageToTask(messageId: String) {
         if (_taskPending.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        _taskPending.value = true
         viewModelScope.launch {
-            _taskPending.value = true
             try {
-                repo.createKanbanCard(conversationId, null, null, null, messageId)
-                    .onSuccess { notify("Task created from message") }
-                    .onFailure { notify("Could not create the task", isError = true) }
-            } finally {
-                _taskPending.value = false
-            }
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                confirmedRoomAction("board:source:$messageId") { owned ->
+                    owned.createKanbanCard(conversationId, null, null, null, messageId).getOrThrow()
+                    "Task created from message"
+                }
+            } finally { _taskPending.value = false }
         }
     }
 
     // suspend fetchers used by the in-bubble cards (polling parity)
 
     suspend fun gameDetail(matchId: String): GameDetailDto? =
-        gameRequest { repo.game(matchId).getOrThrow() }.getOrNull()
+        repo.boundToCurrentAccount().game(matchId).getOrThrow()
 
     suspend fun gameMove(matchId: String, cell: Int): GameDetailDto? =
         gameRequest { repo.gameMove(matchId, cell).getOrThrow() }
@@ -1645,7 +1742,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     suspend fun tournamentDetail(tournamentId: String): TournamentSummaryDto? =
-        gameRequest { repo.tournament(tournamentId).getOrThrow() }.getOrNull()
+        repo.boundToCurrentAccount().tournament(tournamentId).getOrThrow()
 
     suspend fun joinTournament(tournamentId: String): Boolean =
         gameRequest { repo.joinTournament(tournamentId).getOrThrow() }
@@ -1686,21 +1783,26 @@ class ChatRoomViewModel @Inject constructor(
     fun roomMembers(): List<Pair<String, String>> =
         conversation.value?.members?.map { it.id to it.name } ?: emptyList()
 
-    suspend fun kanbanBoard(conversationId: String): KanbanPageDto? =
-        runCatching { repo.kanbanBoard(conversationId).getOrNull() }.getOrNull()
-
-    fun moveKanbanCard(cardId: String, column: String, position: Long?) {
-        viewModelScope.launch {
-            repo.updateKanbanCard(cardId, null, column, null, false, position)
-                .onFailure { notify(it.message ?: "Couldn't move the card", isError = true) }
-        }
+    suspend fun kanbanBoard(conversationId: String): KanbanPageDto? {
+        val epoch = repo.attachmentSessionKey() ?: return null
+        val owned = repo.boundToCurrentAccount()
+        return try {
+            val page = owned.kanbanBoard(conversationId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() == epoch) page else null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) { null }
     }
 
-    fun deleteKanbanCard(cardId: String) {
-        viewModelScope.launch {
-            repo.deleteKanbanCard(cardId)
-                .onFailure { notify(it.message ?: "Couldn't delete the card", isError = true) }
+    suspend fun moveKanbanCard(cardId: String, column: String, position: Long?): Boolean =
+        confirmedRoomAction("board:$cardId") { owned ->
+            owned.updateKanbanCard(cardId, null, column, null, false, position).getOrThrow()
+            null
         }
+
+    suspend fun deleteKanbanCard(cardId: String): Boolean = confirmedRoomAction("board:$cardId") { owned ->
+        owned.deleteKanbanCard(cardId).getOrThrow()
+        "Task deleted."
     }
 
     suspend fun whiteboard(conversationId: String, since: Long?): WhiteboardPageDto? =
@@ -1758,47 +1860,60 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    suspend fun events(conversationId: String): List<GroupEventDto>? =
-        runCatching { repo.events(conversationId).getOrNull()?.events }.getOrNull()
+    suspend fun events(conversationId: String): List<GroupEventDto>? {
+        val epoch = repo.attachmentSessionKey() ?: return null
+        val owned = repo.boundToCurrentAccount()
+        return try {
+            val page = owned.events(conversationId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() == epoch) page.events else null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) { null }
+    }
 
-    fun createEvent(title: String, startsAtIso: String, description: String?, location: String?) {
-        viewModelScope.launch {
-            repo.createEvent(conversationId, title, startsAtIso, description, location)
-                .onSuccess {
-                    eventsOpen = false
-                    notify("Event scheduled - see you there")
-                }
-                .onFailure { notify(it.message ?: "Could not schedule the event.", isError = true) }
+    private val roomResourceActions = mutableSetOf<Pair<String, String>>()
+    private suspend fun confirmedRoomAction(key: String, operation: suspend (PulseRepository) -> String?): Boolean {
+        val epoch = repo.attachmentSessionKey() ?: return false
+        val owned = repo.boundToCurrentAccount()
+        val ticket = epoch to key
+        if (!roomResourceActions.add(ticket)) return false
+        return try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val success = operation(owned)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() != epoch) return false
+            success?.let { notify(it) }
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) {
+            if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not update this item.", isError = true)
+            false
+        } finally { roomResourceActions.remove(ticket) }
+    }
+
+    suspend fun createEvent(title: String, startsAtIso: String, description: String?, location: String?): Boolean =
+        confirmedRoomAction("create:$conversationId") { owned ->
+            owned.createEvent(conversationId, title, startsAtIso, description, location).getOrThrow()
+            "Event scheduled - see you there"
+        }
+
+    suspend fun rsvp(eventId: String, status: String): Boolean = confirmedRoomAction(eventId) { owned ->
+        owned.rsvpEvent(eventId, status).getOrThrow()
+        null
+    }
+
+    suspend fun checkin(eventId: String): Boolean = confirmedRoomAction(eventId) { owned ->
+        val receipt = owned.checkinEvent(eventId).getOrThrow()
+        when {
+            receipt.alreadyCheckedIn -> "Already checked in."
+            receipt.xpAwarded -> "Checked in - see you there · +15 XP"
+            else -> "Checked in - see you there"
         }
     }
 
-    fun rsvp(eventId: String, status: String) {
-        viewModelScope.launch {
-            repo.rsvpEvent(eventId, status)
-                .onFailure { notify(it.message ?: "RSVP failed - try again.", isError = true) }
-        }
-    }
-
-    fun checkin(eventId: String) {
-        viewModelScope.launch {
-            repo.checkinEvent(eventId)
-                .onSuccess {
-                    when {
-                        it.alreadyCheckedIn -> notify("Already checked in.")
-                        it.xpAwarded -> notify("Checked in - see you there · +15 XP")
-                        else -> notify("Checked in - see you there")
-                    }
-                }
-                .onFailure { notify(it.message ?: "Check-in failed - try again.", isError = true) }
-        }
-    }
-
-    fun deleteEvent(eventId: String) {
-        viewModelScope.launch {
-            repo.deleteEvent(eventId)
-                .onSuccess { notify("Event deleted.") }
-                .onFailure { notify(it.message ?: "Could not delete the event.", isError = true) }
-        }
+    suspend fun deleteEvent(eventId: String): Boolean = confirmedRoomAction(eventId) { owned ->
+        owned.deleteEvent(eventId).getOrThrow()
+        "Event deleted."
     }
 
     suspend fun reminders(): RemindersPageDto? =
@@ -1841,38 +1956,62 @@ class ChatRoomViewModel @Inject constructor(
     fun openPhrases() { phrasesOpen = true }
     fun closePhrases() { phrasesOpen = false }
 
-    /** Rail rows refresh on room open and after every add/delete. */
+    private var phraseReadRevision = 0L
+    private var phraseReadJob: kotlinx.coroutines.Job? = null
+
+    /** Failed refreshes preserve confirmed chips; pre-mutation reads cannot undo writes. */
     fun loadPhrases() {
-        viewModelScope.launch {
-            val fetched: Result<List<QuickPhrase>> = repo.phrases()
-            _phrases.value = fetched.getOrElse { emptyList() }
+        if (_phrasesBusy.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owner = repo.viewerId ?: return
+        val target = repo.boundToCurrentAccount()
+        if (target.viewerId != owner) return
+        val ticket = ++phraseReadRevision
+        phraseReadJob?.cancel()
+        phraseReadJob = viewModelScope.launch {
+            try {
+                if (repo.attachmentSessionKey() != epoch || repo.viewerId != owner) return@launch
+                val fetched = target.phrases().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch && ticket == phraseReadRevision) _phrases.value = fetched
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch && ticket == phraseReadRevision) notify(error.message ?: "Couldn't refresh quick phrases", isError = true)
+            }
         }
     }
 
-    fun addPhrase(text: String) {
+    fun addPhrase(text: String, confirmed: () -> Unit = {}) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || _phrasesBusy.value) return
-        _phrasesBusy.value = true
+        val epoch = repo.attachmentSessionKey() ?: return
+        if (trimmed.isEmpty() || trimmed.length > 120 || _phrasesBusy.value) return
+        _phrasesBusy.value = true; phraseReadRevision++; phraseReadJob?.cancel()
         viewModelScope.launch {
-            val outcome: Result<QuickPhrase> = repo.addPhrase(trimmed)
-            outcome
-                .onSuccess { phrase ->
-                    // Append at the end (server assigns position); keep the rail honest.
-                    _phrases.value = _phrases.value + phrase
-                }
-                .onFailure { notify(it.message ?: "Couldn't add the phrase", isError = true) }
-            _phrasesBusy.value = false
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val phrase = repo.addPhrase(trimmed).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                _phrases.value = _phrases.value.filterNot { it.id == phrase.id } + phrase
+                confirmed()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Couldn't add the phrase", isError = true)
+            } finally { if (repo.attachmentSessionKey() == epoch) _phrasesBusy.value = false }
         }
     }
 
     fun deletePhrase(phraseId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
         if (_phrasesBusy.value) return
-        _phrasesBusy.value = true
+        _phrasesBusy.value = true; phraseReadRevision++; phraseReadJob?.cancel()
         viewModelScope.launch {
-            runCatching { repo.deletePhrase(phraseId) }
-                .onSuccess { _phrases.value = _phrases.value.filterNot { it.id == phraseId } }
-                .onFailure { notify(it.message ?: "Couldn't delete the phrase", isError = true) }
-            _phrasesBusy.value = false
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                repo.deletePhrase(phraseId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch) _phrases.value = _phrases.value.filterNot { it.id == phraseId }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Couldn't delete the phrase", isError = true)
+            } finally { if (repo.attachmentSessionKey() == epoch) _phrasesBusy.value = false }
         }
     }
 

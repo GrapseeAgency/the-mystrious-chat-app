@@ -22,6 +22,29 @@ class SavedLibraryObservationTest {
     private fun message(id: String) = Message(id = id, conversationId = "room", authorId = "peer", authorName = "Peer",
         kind = Message.Kind.TEXT, body = "original", createdAt = "2026-10-20T00:00:00Z")
 
+    @Test fun savedRepliesRespectKnownAncestorsDenialAndPreviewDeadline() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
+        try {
+            val reply = message("reply").copy(threadRootId = "root")
+            db.messageDao().upsertAll(listOf(MessageEntity.from(reply)))
+            db.savedDao().upsertAll(listOf(SavedMessageEntity(reply.id, "room", reply.createdAt)))
+            assertEquals(1, db.savedDao().library().size) // absence offline is not a revocation
+            val parent = message("root").copy(expiresAtEpochMs = 5000L)
+            db.messageDao().upsertAll(listOf(MessageEntity.from(parent)))
+            assertEquals(5000L, db.savedDao().library().single().toDomain().message.expiresAtEpochMs)
+            assertNull(db.messageDao().byId(reply.id)?.toDomain()?.expiresAtEpochMs) // projection never rewrites canonical expiry
+            db.wave7Dao().upsert(Wave7CacheEntity(app.pulse.domain.sync.threadDenialKey("root"), "denied", 0))
+            assertTrue(db.savedDao().library().isEmpty())
+            db.wave7Dao().delete(app.pulse.domain.sync.threadDenialKey("root"))
+            db.messageDao().upsertAll(listOf(MessageEntity.from(parent.copy(deletedAt = "now"))))
+            assertTrue(db.savedDao().library().isEmpty())
+            val once = message("once").copy(viewOnce = true)
+            db.messageDao().upsertAll(listOf(MessageEntity.from(once)))
+            db.savedDao().upsertAll(listOf(SavedMessageEntity(once.id, "room", once.createdAt)))
+            assertTrue(db.savedDao().library().isEmpty())
+        } finally { db.close() }
+    }
+
     @Test fun messageOnlyEditsAndDeletesInvalidateSavedJoinAndReplacementRollsBack() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
         val updates = Channel<List<SavedLibraryRow>>(Channel.UNLIMITED)

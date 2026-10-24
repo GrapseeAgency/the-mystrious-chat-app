@@ -2,6 +2,41 @@ import XCTest
 @testable import Pulse
 
 final class ReadVisibilityTests: XCTestCase {
+    func testThreadLeaseIgnoresUnderlyingRoomAndRestoresEitherDismissalOrder() {
+        var surfaces = PulseReadSurfaces()
+        surfaces.setPrimary(roomId: "room", messageId: "river")
+        let thread = surfaces.begin(roomId: "room")
+        XCTAssertNil(surfaces.boundary)
+        surfaces.setOverlay(thread, messageId: "reply")
+        surfaces.setPrimary(roomId: "room", messageId: nil) // obscured room refresh
+        XCTAssertEqual(surfaces.boundary?.messageId, "reply")
+        surfaces.setPrimary(roomId: "room", messageId: "river-restored") // parent dismisses first
+        XCTAssertEqual(surfaces.boundary?.messageId, "reply")
+        XCTAssertTrue(surfaces.end(thread))
+        XCTAssertEqual(surfaces.boundary?.messageId, "river-restored")
+        let second = surfaces.begin(roomId: "room")
+        surfaces.setPrimary(roomId: "room", messageId: nil)
+        surfaces.end(second) // sheet disappears first
+        XCTAssertNil(surfaces.boundary)
+        surfaces.setPrimary(roomId: "room", messageId: "river-again")
+        XCTAssertEqual(surfaces.boundary?.messageId, "river-again")
+    }
+
+    func testRetiredThreadCannotClearReplacementOrSurviveRoomReset() {
+        var surfaces = PulseReadSurfaces()
+        let first = surfaces.begin(roomId: "room")
+        let second = surfaces.begin(roomId: "room")
+        surfaces.setOverlay(second, messageId: "new-reply")
+        surfaces.setOverlay(first, messageId: "old-reply")
+        XCTAssertFalse(surfaces.end(first))
+        XCTAssertEqual(surfaces.boundary?.messageId, "new-reply")
+        surfaces.reset()
+        surfaces.setPrimary(roomId: "other", messageId: "other-message")
+        surfaces.setOverlay(second, messageId: "late-reply")
+        XCTAssertFalse(surfaces.end(second))
+        XCTAssertEqual(surfaces.boundary?.roomId, "other")
+    }
+
     func testPrefetchedClippedAndZeroSizeRowsCannotBeRead() {
         let frames = [
             "visible": CGRect(x: 0, y: 50, width: 100, height: 100),
@@ -66,4 +101,33 @@ final class ReadVisibilityTests: XCTestCase {
         XCTAssertNil(gate.begin(roomId: "room", now: 2.99))
         XCTAssertNotNil(gate.begin(roomId: "room", now: 3))
     }
+
+    func testVisibleReadOutageBackoffDoesNotExhaustAndHonorsServerDelay() throws {
+        let offline = URLError(.notConnectedToInternet)
+        XCTAssertEqual((1...9).map { PulseVisibleReadRetry.delay(after: offline, failures: $0)! },
+            [1.5, 3, 6, 12, 24, 48, 60, 60, 60])
+        let throttled = PulseAPIClient.Failure(kind: .rateLimited, message: nil, status: 429, retryAfter: 120)
+        XCTAssertEqual(PulseVisibleReadRetry.delay(after: throttled, failures: 1), 120)
+        for status in [408, 409, 425, 429, 500, 503] {
+            XCTAssertNotNil(PulseVisibleReadRetry.delay(after: PulseAPIClient.Failure(kind: .unknown, message: nil, status: status), failures: 8))
+        }
+        for status in [400, 401, 403, 404, 410, 422] {
+            XCTAssertNil(PulseVisibleReadRetry.delay(after: PulseAPIClient.Failure(kind: .unknown, message: nil, status: status), failures: 1))
+        }
+        XCTAssertNil(PulseVisibleReadRetry.delay(after: CancellationError(), failures: 1))
+        XCTAssertNil(PulseVisibleReadRetry.delay(after: URLError(.cancelled), failures: 1))
+    }
+
+    func testRefusedBoundaryStaysBlockedUntilFreshVisibility() throws {
+        var gate = PulseReadReceiptGate()
+        gate.setBoundary(roomId: "room", messageId: "shown", now: 0)
+        let request = try XCTUnwrap(gate.begin(roomId: "room", now: 1))
+        gate.finish(request, succeeded: false)
+        gate.deferAttempt(until: .infinity)
+        XCTAssertNil(gate.begin(roomId: "room", now: 1000))
+        gate.setBoundary(roomId: "room", messageId: "other", now: 1000)
+        XCTAssertNil(gate.begin(roomId: "room", now: 1000.1))
+        XCTAssertNotNil(gate.begin(roomId: "room", now: 1001))
+    }
+
 }

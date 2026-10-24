@@ -828,3 +828,23 @@ model WalletOperation {
 
   @@id([userId, clientId])
 }
+
+// Durable group/channel creation identity, retained after removal/departure.
+model ConversationCreationOperation {
+  userId         String
+  clientId       String
+  requestHash    String
+  conversationId String
+
+  @@id([userId, clientId])
+}
+
+// Scheduled-send creation receipt, retained after cancellation/delivery/room removal.
+model ScheduledCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  scheduledId String
+
+  @@id([userId, clientId])
+}

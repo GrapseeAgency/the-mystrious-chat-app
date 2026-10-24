@@ -185,121 +185,142 @@ final class HubViewModel: ObservableObject {
 
     // MARK: tasks
 
-    /// R1-W2B D39 - read-through snapshot cache (Android cachedHubTasks
-    /// parity, PulseRepositoryImpl.kt:2340 + HubScreen.kt:240): the hub
-    /// renders INSTANTLY from the wave7Cache blob ("hub:tasks:<viewerId>")
-    /// before the network refresh; a successful fetch overwrites the blob
-    /// (server truth wins), a failure keeps the cached page visible.
+    @Published private(set) var taskBusy = false
+    private var taskRevision = 0
+
     func loadTasks() {
+        guard !taskBusy, let owner = session.viewer?.id, let client = api else { return }
+        taskRevision += 1
+        let ticket = taskRevision, epoch = session.sessionGeneration, store = session.store
+        let key = "hub:tasks:v2:\(owner)"
         Task { @MainActor in
-            let cacheKey = "hub:tasks:\(session.viewer?.id ?? "anon")"
-            if tasks.isEmpty, let store = session.store,
-               let blob = try? store.loadWave7Cache(key: cacheKey),
-               let data = blob.json.data(using: .utf8),
-               let cached = try? JSONDecoder().decode(WireHubTasksPage.self, from: data),
-               !cached.tasks.isEmpty {
-                tasks = cached.tasks
-            }
-            guard let api = api else { return }
+            guard session.sessionGeneration == epoch, taskRevision == ticket, !taskBusy else { return }
+            if tasks.isEmpty, let blob = try? store?.loadWave7Cache(key: key), let data = blob.json.data(using: .utf8),
+               let cached = try? JSONDecoder().decode(WireHubTasksPage.self, from: data), cached.userId == owner,
+               cached.tasks.allSatisfy({ $0.ownerId == owner }) { tasks = cached.tasks }
             do {
-                let page = try await api.hubTasks()
+                let page = try await client.hubTasks()
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, taskRevision == ticket, !taskBusy else { return }
                 tasks = page.tasks
-                if let store = session.store,
-                   let data = try? JSONEncoder().encode(page),
-                   let json = String(data: data, encoding: .utf8) {
-                    try? store.saveWave7Cache(
-                        key: cacheKey,
-                        json: json,
-                        updatedAt: Int64(Date().timeIntervalSince1970 * 1000),
-                    )
+                if let data = try? JSONEncoder().encode(page), let json = String(data: data, encoding: .utf8) {
+                    try? store?.saveWave7Cache(key: key, json: json, updatedAt: Int64(Date().timeIntervalSince1970 * 1000))
                 }
-            } catch {
-                // Offline - the cached rail stays; a cold empty start gets
-                // the honest note instead of a silent blank column.
-                if tasks.isEmpty { toast(describe(error), isError: true) }
+            } catch is CancellationError { }
+            catch {
+                if session.sessionGeneration == epoch, taskRevision == ticket { toast(describe(error), isError: true) }
             }
         }
     }
 
-    func createTask(_ title: String) {
+    private func taskAction(_ operation: @escaping (PulseAPIClient) async throws -> Void, completed: @escaping (Bool) -> Void = { _ in }) {
+        guard !taskBusy, session.ready, let owner = session.viewer?.id, let store = session.store, let client = api else { completed(false); return }
+        let epoch = session.sessionGeneration
+        taskBusy = true; taskRevision += 1
         Task { @MainActor in
-            guard let api = api else { return }
+            var accepted = false
             do {
-                _ = try await api.createHubTask(title: title, status: "todo")
-                loadTasks()
-                toast("Task added")
-            } catch {
-                toast(describe(error), isError: true)
-            }
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                try store.deleteWave7Cache(key: "hub:tasks:v2:\(owner)")
+                try await operation(client)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                accepted = true
+            } catch is CancellationError { }
+            catch { if session.sessionGeneration == epoch { toast(describe(error), isError: true) } }
+            guard session.sessionGeneration == epoch else { return }
+            taskBusy = false; taskRevision += 1
+            completed(accepted)
+            loadTasks()
         }
     }
 
+    func createTask(_ title: String, completed: @escaping (Bool) -> Void) {
+        taskAction({ api in _ = try await api.createHubTask(title: title, status: "todo") }, completed: { accepted in
+            if accepted { self.toast("Task added") }
+            completed(accepted)
+        })
+    }
     func moveTask(_ task: WireHubTask, to status: String) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                _ = try await api.updateHubTask(task.id, title: nil, status: status)
-                loadTasks()
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+        taskAction({ api in _ = try await api.updateHubTask(task.id, title: nil, status: status) })
     }
-
     func deleteTask(_ task: WireHubTask) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                try await api.deleteHubTask(task.id)
-                loadTasks()
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+        taskAction({ api in try await api.deleteHubTask(task.id) })
     }
 
     // MARK: market
 
+    @Published private(set) var marketBusy = false
+    @Published private(set) var marketLoaded = false
+    @Published private(set) var marketLoading = false
+    @Published private(set) var marketError: String?
+    @Published private(set) var marketActionError: String?
+    private var marketOwner: String?
+
     func loadMarket() {
+        if marketOwner != viewerId {
+            listings = []; marketLoaded = false; marketOwner = viewerId
+            marketError = "Account changed. Refresh the market."; marketActionError = nil; marketRequest = UUID()
+        }
+        guard !marketBusy else { return }
+        guard let client = api else { marketError = "No gateway configured."; return }
         let ticket = UUID()
         marketRequest = ticket
+        marketLoading = true; marketError = nil
         let epoch = session.sessionGeneration
         Task { @MainActor in
-            guard let api = api else { return }
+            guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
+            defer { if marketRequest == ticket, session.sessionGeneration == epoch { marketLoading = false } }
             do {
-                let fresh = try await api.market().listings
-                guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
-                listings = fresh
+                let fresh = try await client.market().listings
+                guard !Task.isCancelled, marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                listings = fresh; marketLoaded = true
             } catch {
-                guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
-                toast(describe(error), isError: true) // keep the last real list
+                guard !Task.isCancelled, marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                marketError = describe(error)
             }
         }
     }
 
-    func createListing(_ title: String, price: Int) {
+    private func marketAction<T: Sendable>(spendsMoney: Bool = false, operation: @escaping (PulseAPIClient) async throws -> T,
+                                 accepted: @escaping (T) -> Void, completion: @escaping (Bool) -> Void = { _ in }) {
+        guard !marketBusy, !walletMutationBusy, let client = api else { completion(false); return }
+        let epoch = session.sessionGeneration
+        marketBusy = true; marketRequest = UUID(); marketLoading = false; marketActionError = nil
+        if spendsMoney { walletMutationBusy = true; walletRequest = UUID() }
         Task { @MainActor in
-            guard let api = api else { return }
+            var confirmed = false
             do {
-                let listing = try await api.createListing(title: title, description: nil, price: price)
-                loadMarket()
-                toast("Listed \"\(listing.title ?? title)\" for \(price) PC")
+                defer { marketBusy = false; marketRequest = UUID(); if spendsMoney { walletMutationBusy = false } }
+                guard session.sessionGeneration == epoch else { return }
+                try Task.checkCancellation()
+                let value = try await operation(client)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                accepted(value); confirmed = true
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                marketActionError = describe(error)
                 toast(describe(error), isError: true)
             }
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            completion(confirmed); loadMarket(); if spendsMoney { loadWallet() }
         }
+    }
+
+    func createListing(_ title: String, price: Int, completion: @escaping (Bool) -> Void) {
+        marketAction(operation: { client in
+            try await client.createListing(title: title, description: nil, price: price)
+        }, accepted: { row in
+            self.listings = [row] + self.listings.filter { $0.id != row.id }; self.marketLoaded = true
+            self.toast("Listed \"\(row.title ?? title)\" for \(price) PC")
+        }, completion: completion)
     }
 
     func buy(_ listing: WireMarketListing) {
-        guard let api else { return }
-        performWalletMutation(operation: {
-            _ = try await api.buyListing(listing.id)
-            return "Bought \"\(listing.title ?? "")\""
-        }, completion: { result in
-            switch result {
-            case .success(let message): self.toast(message); self.loadWallet(); self.loadMarket()
-            case .failure(let error): self.toast(self.describe(error), isError: true)
-            }
+        marketAction(spendsMoney: true, operation: { client in try await client.buyListing(listing.id) }, accepted: { _ in
+            self.listings.removeAll { $0.id == listing.id }
+            self.toast("Bought \"\(listing.title ?? "")\"")
         })
     }
 
@@ -308,15 +329,17 @@ final class HubViewModel: ObservableObject {
     func loadLogs() {
         let ticket = UUID()
         logsRequest = ticket
-        let epoch = session.sessionGeneration
+        let epoch = session.sessionGeneration, client = api
+        let owner = session.viewer?.id
+        logs = owner.map { id in logs.filter { $0.user?.id == id } } ?? []
         Task { @MainActor in
-            guard let api = api else { return }
+            guard logsRequest == ticket, session.sessionGeneration == epoch, let api = client else { return }
             do {
                 let fresh = try await api.hubLogs(limit: 80, kind: nil).logs
-                guard logsRequest == ticket, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, logsRequest == ticket, session.sessionGeneration == epoch else { return }
                 logs = fresh
             } catch {
-                guard logsRequest == ticket, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, logsRequest == ticket, session.sessionGeneration == epoch else { return }
                 toast(describe(error), isError: true) // keep the last real list
             }
         }
@@ -324,84 +347,110 @@ final class HubViewModel: ObservableObject {
 
     // MARK: apps
 
-    func loadInstallState(appId: String) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                installs[appId] = try await api.appInstallState(appId: appId)
-                installStateFailed.remove(appId)
-            } catch {
-                // Honest failure - the sheet shows "Connection stats
-                // unavailable" + Retry instead of a fake zero.
-                installStateFailed.insert(appId)
-            }
+    @Published private(set) var appBusy: Set<String> = []
+    @Published private(set) var appErrors: [String: String] = [:]
+    private var appTickets: [String: UUID] = [:]
+    @Published private(set) var appsLoading = false
+    private var appsOwner: UUID?
+    private func prepareApps() {
+        if appsOwner != session.sessionGeneration {
+            installs = [:]; communities = [:]; installStateFailed = []; communityFailed = []
+            appErrors = [:]; appTickets = [:]; appsLoading = false; appsOwner = session.sessionGeneration
         }
     }
-
-    /// R5-A Item 3 - community state for the detail sheet's Community tab
-    /// (member count badge, roster, joined pill). Failures are marked so the
-    /// tab can honestly offer a retry.
+    private func fetchInstall(_ appId: String, client: PulseAPIClient, epoch: UUID) async {
+        let key = "install:" + appId
+        guard session.sessionGeneration == epoch, !appBusy.contains(key) else { return }
+        let ticket = UUID(); appTickets[key] = ticket
+        do {
+            let row = try await client.appInstallState(appId: appId)
+            guard !Task.isCancelled, session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
+            installs[appId] = row; installStateFailed.remove(appId)
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
+            installStateFailed.insert(appId)
+        }
+    }
+    func loadInstallState(appId: String) {
+        prepareApps()
+        guard let client = api else { installStateFailed.insert(appId); return }
+        let epoch = session.sessionGeneration
+        Task { @MainActor in await fetchInstall(appId, client: client, epoch: epoch) }
+    }
     func loadAppCommunity(appId: String) {
+        prepareApps()
+        let key = "community:" + appId
+        guard !appBusy.contains(key), let client = api else { return }
+        let epoch = session.sessionGeneration, ticket = UUID(); appTickets[key] = ticket
         Task { @MainActor in
-            guard let api = api else { return }
+            guard session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
             do {
-                communities[appId] = try await api.appCommunity(appId: appId)
-                communityFailed.remove(appId)
+                let row = try await client.appCommunity(appId: appId)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
+                communities[appId] = row; communityFailed.remove(appId)
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
                 communityFailed.insert(appId)
             }
         }
     }
-
-    func toggleInstall(_ app: HubCatalogApp) {
-        let appId = String(app.n)
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                let connected = installs[appId]?.installed == true
-                let result = connected ? try await api.uninstallApp(appId: appId) : try await api.installApp(appId: appId)
-                toast((result.installed ?? false) ? "Connected to \(app.name)" : "Disconnected from \(app.name)")
-                loadInstallState(appId: appId)
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
-    }
-
-    func joinCommunity(_ app: HubCatalogApp, completion: @escaping (WireConversationSummary) -> Void) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                let result = try await api.joinAppCommunity(appId: String(app.n))
-                if let conversation = result.conversation {
-                    toast("Welcome to the \(app.name) community")
-                    completion(conversation)
-                } else {
-                    toast("Community unavailable", isError: true)
-                }
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
-    }
-
-    /// F-HB-10 - My apps fan-out (web hub-data.tsx:61,107 parity).
-    func loadMyApps(_ catalog: HubCatalog) {
-        let ticket = UUID()
-        appsRequest = ticket
+    private func appAction<T: Sendable>(_ key: String, operation: @escaping (PulseAPIClient) async throws -> T,
+                                        accepted: @escaping (T) -> Void, refresh: @escaping () -> Void) {
+        prepareApps()
+        guard !appBusy.contains(key), let client = api else { return }
         let epoch = session.sessionGeneration
+        appBusy.insert(key); appTickets[key] = UUID(); appErrors[key] = nil
         Task { @MainActor in
-            guard let api = api else { return }
+            do {
+                defer { appBusy.remove(key) }
+                guard session.sessionGeneration == epoch else { return }
+                try Task.checkCancellation()
+                let row = try await operation(client)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                accepted(row)
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                appErrors[key] = describe(error)
+            }
+            if !Task.isCancelled, session.sessionGeneration == epoch { refresh() }
+        }
+    }
+    func toggleInstall(_ app: HubCatalogApp) {
+        prepareApps()
+        let id = String(app.n)
+        guard let state = installs[id], !installStateFailed.contains(id) else { loadInstallState(appId: id); return }
+        let disconnect = state.installed == true
+        appAction("install:" + id, operation: { client in
+            if disconnect { return try await client.uninstallApp(appId: id) }
+            return try await client.installApp(appId: id)
+        }, accepted: { row in
+            self.installs[id] = WireAppInstallState(appVersion: row.appVersion, appId: row.appId, userId: row.userId,
+                installed: row.installed, status: row.status, installedAt: row.installedAt, installs: row.installs, installers: row.installers)
+            self.toast(disconnect ? "Disconnected from \(app.name)" : "Connected to \(app.name)")
+        }, refresh: { self.loadInstallState(appId: id) })
+    }
+    func joinCommunity(_ app: HubCatalogApp, completion: @escaping (WireConversationSummary) -> Void) {
+        let id = String(app.n)
+        appAction("community:" + id, operation: { client in try await client.joinAppCommunity(appId: id) }, accepted: { row in
+            guard row.joined == true, let conversation = row.conversation else { return }
+            self.communities[id] = row; self.communityFailed.remove(id)
+            completion(conversation)
+        }, refresh: { self.loadAppCommunity(appId: id) })
+    }
+    func loadMyApps(_ catalog: HubCatalog) {
+        prepareApps()
+        guard !appsLoading, let client = api else { return }
+        let ticket = UUID(), epoch = session.sessionGeneration; appsRequest = ticket
+        appsLoading = true
+        Task { @MainActor in
+            defer { if appsRequest == ticket, session.sessionGeneration == epoch { appsLoading = false } }
             for app in catalog.apps {
                 guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
-                let appId = String(app.n)
-                if let state = try? await api.appInstallState(appId: appId) {
-                    guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
-                    installs[appId] = state
-                }
+                await fetchInstall(String(app.n), client: client, epoch: epoch)
             }
         }
     }
+
 }
 
 private enum HubSurface: String, Identifiable {
@@ -599,11 +648,11 @@ struct HubView: View {
                     vm.loadLogs()
                 }
         case .apps:
-            HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: false) { app in
+            HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: false, loading: vm.appsLoading, failedReads: vm.installStateFailed, onRetry: { vm.loadMyApps(catalog) }) { app in
                 expandedApp = app
             }
         case .myApps:
-            HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: true) { app in
+            HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: true, loading: vm.appsLoading, failedReads: vm.installStateFailed, onRetry: { vm.loadMyApps(catalog) }) { app in
                 expandedApp = app
             }
         }
@@ -752,7 +801,10 @@ private struct HubTasksSheet: View {
                 TextField("Task (1–120)", text: $title)
                 Button("Add task") {
                     let trimmed = title.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty { vm.createTask(trimmed); title = "" }
+                    if !trimmed.isEmpty {
+                        let submitted = title
+                        vm.createTask(trimmed) { accepted in if accepted && title == submitted { title = "" } }
+                    }
                 }
             }
             ForEach(["doing", "todo", "done"], id: \.self) { col in
@@ -782,6 +834,7 @@ private struct HubTasksSheet: View {
                 }
             }
         }
+        .disabled(vm.taskBusy)
         .navigationTitle("Tasks")
         .navigationBarTitleDisplayMode(.inline)
         .task { vm.loadTasks() }
@@ -803,27 +856,38 @@ private struct HubMarketSheet: View {
     @State private var price = ""
     @State private var creating = false
     @State private var confirmBuy: String?
+    @State private var validationError: String?
 
     var body: some View {
         List {
             Section {
                 Button(creating ? "Close" : "+ List") { creating.toggle() }
                 if creating {
+                    if let error = validationError { Text(error).foregroundStyle(.red) }
                     TextField("Title (1–80)", text: $title)
                     TextField("Price PC", text: $price)
                         .keyboardType(.numberPad)
                     Button("Post listing") {
                         let t = title.trimmingCharacters(in: .whitespaces)
                         let p = Int(price) ?? 0
-                        guard !t.isEmpty else { vm.toast("Title must be 1–80 characters.", isError: true); return }
-                        guard p >= 1, p <= 100_000 else { vm.toast("Price must be a positive whole number (max 100,000 PC).", isError: true); return }
-                        vm.createListing(t, price: p)
-                        title = ""; price = ""; creating = false
+                        guard !t.isEmpty, t.utf16.count <= 80 else { validationError = "Title must be 1–80 characters."; return }
+                        guard p >= 1, p <= 100_000 else { validationError = "Price must be a positive whole number (max 100,000 PC)."; return }
+                        validationError = nil
+                        let sentTitle = title, sentPrice = price
+                        vm.createListing(t, price: p) { accepted in
+                            if accepted, title == sentTitle, price == sentPrice { title = ""; price = ""; creating = false }
+                        }
                     }
                 }
             }
             Section("Listings") {
-                if vm.listings.isEmpty {
+                if let error = vm.marketActionError { Text(error).foregroundStyle(.red) }
+                if vm.marketLoading { Text("Refreshing market…").foregroundStyle(.secondary) }
+                if let error = vm.marketError {
+                    Text(error).foregroundStyle(.secondary)
+                    Button("Retry") { vm.loadMarket() }.disabled(vm.marketLoading)
+                }
+                if vm.marketLoaded && vm.listings.isEmpty {
                     Text("Nothing on the market yet.").foregroundStyle(.secondary)
                 }
                 ForEach(vm.listings, id: \.id) { listing in
@@ -857,9 +921,11 @@ private struct HubMarketSheet: View {
                 }
             }
         }
+        .disabled(vm.marketBusy || vm.walletMutationBusy)
+        .interactiveDismissDisabled(vm.marketBusy)
         .navigationTitle("Market")
         .navigationBarTitleDisplayMode(.inline)
-        .task { vm.loadMarket() }
+        .task(id: vm.viewerId) { vm.loadMarket() }
     }
 }
 
@@ -893,11 +959,17 @@ private struct HubAppsList: View {
     let catalog: HubCatalog
     let installs: [String: WireAppInstallState]
     let myAppsOnly: Bool
+    let loading: Bool
+    let failedReads: Set<String>
+    let onRetry: () -> Void
     let onExpand: (HubCatalogApp) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var category: String?
 
+    private var verified: Bool {
+        catalog.apps.allSatisfy { installs[String($0.n)] != nil && !failedReads.contains(String($0.n)) }
+    }
     private var visible: [HubCatalogApp] {
         catalog.apps
             .filter { !myAppsOnly || (installs[String($0.n)]?.installed == true) }
@@ -921,7 +993,12 @@ private struct HubAppsList: View {
                 }
             }
             Section(myAppsOnly ? "Installed & connected apps" : "\(catalog.apps.count) apps · \(catalog.categories.count) categories - browsable offline") {
-                if visible.isEmpty {
+                if loading { Text("Checking connections…").foregroundStyle(.secondary) }
+                if !loading && !verified {
+                    Text("Connections could not all be verified. Previously confirmed apps are kept.").foregroundStyle(.secondary)
+                    Button("Retry") { onRetry() }
+                }
+                if visible.isEmpty && (!myAppsOnly || (verified && !loading)) {
                     Text(myAppsOnly ? "No apps connected yet - open Mini apps to connect." : "No apps match.")
                         .foregroundStyle(.secondary)
                 }
@@ -934,7 +1011,7 @@ private struct HubAppsList: View {
                             .background(PulseTheme.emberGlowBottom, in: Circle())
                         VStack(alignment: .leading, spacing: 1) {
                             Text(app.name).font(.subheadline)
-                            Text("\(installs[String(app.n)]?.installs ?? 0) connected")
+                            Text(installs[String(app.n)].flatMap { $0.installs }.map { "\($0) connected" } ?? "Connection count unavailable")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -1008,6 +1085,9 @@ private struct HubAppDetailSheet: View {
                 tabBar
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
+                        if let error = vm.appErrors["install:" + appId] ?? vm.appErrors["community:" + appId] {
+                            Text(error).foregroundStyle(.red)
+                        }
                         switch tab {
                         case .overview: overviewPanel
                         case .community: communityPanel
@@ -1018,6 +1098,7 @@ private struct HubAppDetailSheet: View {
                     .padding(.bottom, 28)
                 }
             }
+            .disabled(vm.appBusy.contains("install:" + appId) || vm.appBusy.contains("community:" + appId))
             .background(Color(.systemBackground))
             .navigationTitle(currentApp.name)
             .navigationBarTitleDisplayMode(.inline)
@@ -1025,7 +1106,7 @@ private struct HubAppDetailSheet: View {
             // Load (and re-load on related-app swaps) the install state +
             // community state for the current app (web useAppInstallStatus /
             // useAppCommunity parity).
-            .task(id: currentApp.n) {
+            .task(id: "\(vm.viewerId ?? ""):\(currentApp.n)") {
                 vm.loadInstallState(appId: appId)
                 vm.loadAppCommunity(appId: appId)
             }

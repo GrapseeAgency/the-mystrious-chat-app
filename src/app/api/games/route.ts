@@ -1,3 +1,5 @@
+import { readRoomGame, gameReadErrorResponse, gameReadHeaders } from '@/lib/game-read'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/games - in-chat game matches (R23-b wave, tic-tac-toe first)
 //
 // A match lives in the chat as a REAL Message row (kind: "game",
@@ -104,6 +106,8 @@ export async function POST(req: Request) {
   if (!userId || !conversationId) {
     return NextResponse.json({ error: 'userId and conversationId are required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'game')
+  if (denied) return denied
 
   const game = strField(body.game) || 'tictactoe'
   if (!(GAMES as readonly string[]).includes(game)) {
@@ -142,7 +146,7 @@ export async function POST(req: Request) {
 
 /**
  * GET /api/games?conversationId= - recent matches for a room (newest first).
- * Read-only mirror of the messages GET policy (no membership gate on reads).
+ * Private snapshot, bound to the verified viewer and current room membership.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -150,22 +154,28 @@ export async function GET(req: Request) {
   if (!conversationId) {
     return NextResponse.json({ error: 'conversationId is required.' }, { status: 400 })
   }
-  const conv = await db.conversation.findUnique({
-    where: { id: conversationId },
-    select: { id: true },
-  })
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
+  const userId = url.searchParams.get('userId')?.trim() ?? ''
+  if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, userId, 'game read')
+  if (denied) return denied
+  try { return await readRoomGame(db, userId, { conversationId }, async (tx, conversationId) => {
+    const conv = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    })
+    if (!conv) {
+      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    }
 
-  const rows = await db.gameMatch.findMany({
-    where: { conversationId },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: MATCHES_LIST_LIMIT,
-  })
+    const rows = await tx.gameMatch.findMany({
+      where: { conversationId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: MATCHES_LIST_LIMIT,
+    })
 
-  return NextResponse.json(
-    { matches: rows.map(serializeMatch) },
-    { headers: { 'Cache-Control': 'no-store' } },
-  )
+    return NextResponse.json(
+      { gameReadVersion: 1, userId, conversationId, matches: rows.map(serializeMatch) },
+      { headers: gameReadHeaders },
+    )
+  }) } catch (error) { return gameReadErrorResponse(error) }
 }

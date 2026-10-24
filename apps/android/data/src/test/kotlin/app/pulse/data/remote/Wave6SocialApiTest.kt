@@ -191,8 +191,8 @@ class Wave6SocialApiTest {
     @Test
     fun `folder membership full replace is a PUT with the ordered array`() = runTest {
         configured()
-        response = """{"ok":true}"""
-        val r = api().setFolderConversations("f1", listOf("c2", "c1"))
+        response = """{"folderVersion":1,"userId":"me","folder":{"id":"f1","name":"Work","emoji":"folder","position":0,"conversationIds":["c2","c1"]}}"""
+        val r = api().setFolderConversations("f1", listOf("c2", "c1"), "me")
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Put, lastMethod)
         assertEquals("https://gw.example/api/folders/f1/conversations", lastUrl)

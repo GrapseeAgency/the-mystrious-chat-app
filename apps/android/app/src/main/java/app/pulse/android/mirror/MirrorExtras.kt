@@ -1,5 +1,6 @@
 package app.pulse.android.mirror
 
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import app.pulse.feature.stories.ComposerState
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -44,6 +47,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.pulse.feature.stories.StoryViewerInput
 import app.pulse.feature.stories.StoryViewerStateMachine
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -104,6 +108,13 @@ internal fun MirrorNewChatSheet(
     onDismiss: () -> Unit,
     onOpened: (String) -> Unit,
 ) {
+    val actionRepository = repository.boundToCurrentAccount()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var directoryError by remember { mutableStateOf<String?>(null) }
+    var directoryRetry by remember { mutableStateOf(0) }
+    var directoryLoading by remember { mutableStateOf(false) }
+    var directoryTicket by remember { mutableStateOf(0L) }
+    var actionError by remember { mutableStateOf<String?>(null) }
     var users by remember { mutableStateOf<List<User>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf<String?>(null) }
@@ -115,12 +126,21 @@ internal fun MirrorNewChatSheet(
     var channelDesc by remember { mutableStateOf("") }
     var channelError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        users = repository.users("").getOrDefault(emptyList())
-    }
-    LaunchedEffect(query) {
-        delay(250)
-        users = repository.users(query).getOrDefault(emptyList())
+    LaunchedEffect(actionRepository, query, directoryRetry) {
+        directoryTicket++
+        val ticket = directoryTicket
+        directoryLoading = true
+        directoryError = null
+        try {
+            delay(250)
+            app.pulse.domain.sync.confirmedAction({ actionRepository.users(query) }) { loaded ->
+                if (ticket == directoryTicket) users = loaded.filter { it.id != actionRepository.viewerId }
+            }.getOrThrow()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (ticket == directoryTicket) directoryError = "People couldn't be loaded. Tap to retry."
+        } finally { if (ticket == directoryTicket) directoryLoading = false }
     }
 
     MirrorSheet(title = if (mode == "dm") "New chat" else "New channel", onDismiss = onDismiss) {
@@ -136,7 +156,7 @@ internal fun MirrorNewChatSheet(
                         .clip(CircleShape)
                         .background(if (mode == value) MirrorArt.ChipActive else MirrorArt.White7)
                         .border(1.dp, if (mode == value) MirrorArt.Hairline else Color.Transparent, CircleShape)
-                        .mirrorPressClick(onClick = { mode = value })
+                        .mirrorPressClick(onClick = { if (busy == null) mode = value })
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 ) {
                     Text(
@@ -201,22 +221,18 @@ internal fun MirrorNewChatSheet(
                                 channelError = "Give the channel a name"
                             } else {
                                 busy = "channel"
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    val outcome = runCatching {
-                                        val channel = repository.createChannel(
-                                            channelName.trim(),
-                                            channelDesc.trim().ifBlank { null },
-                                            null,
-                                        ).getOrThrow()
-                                        // the creator auto-subscribes server-side; refresh the directory
-                                        runCatching { repository.channels(mineOnly = false) }
-                                        channel
-                                    }
-                                    CoroutineScope(Dispatchers.Main).launch {
-                                        busy = null
-                                        outcome.onSuccess { channel -> onOpened(channel.id) }
-                                            .onFailure { channelError = "Could not create the channel" }
-                                    }
+                                val name = channelName.trim()
+                                val description = channelDesc.trim().ifBlank { null }
+                                actionScope.launch {
+                                    try {
+                                        app.pulse.domain.sync.confirmedAction({ actionRepository.createChannel(name, description, null) }) {
+                                            onOpened(it.id)
+                                        }.getOrThrow()
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: Exception) {
+                                        channelError = failure.message ?: "Couldn't confirm channel creation. Check Channels before retrying."
+                                    } finally { busy = null }
                                 }
                             }
                         })
@@ -256,7 +272,11 @@ internal fun MirrorNewChatSheet(
             }
         }
         Spacer(Modifier.height(8.dp))
-        if (users.isEmpty()) {
+        if (directoryLoading) Text("Loading people…", color = MirrorArt.TextSoft, fontSize = 12.sp)
+        directoryError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp,
+            modifier = Modifier.clickable { directoryRetry++ }.padding(8.dp)) }
+        actionError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(8.dp)) }
+        if (users.isEmpty() && !directoryLoading && directoryError == null) {
             MirrorEmptyState("No people found", "Invite someone to Pulse and they will appear here.")
         }
         Column(
@@ -272,10 +292,15 @@ internal fun MirrorNewChatSheet(
                             .clip(RoundedCornerShape(14.dp))
                             .clickable(enabled = busy == null) {
                                 busy = user.id
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    val convo = repository.createDm(user.id).getOrNull()
-                                    busy = null
-                                    if (convo != null) onOpened(convo.id)
+                                actionError = null
+                                actionScope.launch {
+                                    try {
+                                        app.pulse.domain.sync.confirmedAction({ actionRepository.createDm(user.id) }) { onOpened(it.id) }.getOrThrow()
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: Exception) {
+                                        actionError = failure.message ?: "Couldn't open this chat. Try again."
+                                    } finally { busy = null }
                                 }
                             }
                             .padding(horizontal = 4.dp, vertical = 8.dp),
@@ -466,7 +491,26 @@ internal fun MirrorStoryViewer(
     repository: PulseRepository,
     onDismiss: () -> Unit,
     playbackEnabled: Boolean = true,
+    onDeleted: (String) -> Unit = {},
 ) {
+    val owner = repository.attachmentSessionKey()
+    androidx.compose.runtime.key(owner, group.user?.id) {
+        MirrorOwnedStoryViewer(group, repository, onDismiss, playbackEnabled, onDeleted)
+    }
+}
+
+@Composable
+private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepository, onDismiss: () -> Unit, playbackEnabled: Boolean, onDeleted: (String) -> Unit) {
+    val owner = remember { repository.attachmentSessionKey() }
+    val account = remember { repository.boundToCurrentAccount() }
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var confirmDelete by remember { mutableStateOf<String?>(null) }
+    var viewersFor by remember { mutableStateOf<String?>(null) }
+    var deleting by remember { mutableStateOf(false) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    var deletedIds by remember { mutableStateOf(emptySet<String>()) }
+    val visibleGroup = group.copy(stories = group.stories.filterNot { it.id in deletedIds })
+    val canPlay = playbackEnabled && confirmDelete == null && viewersFor == null && !deleting && actionError == null
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val machine = remember(group.user?.id) { StoryViewerStateMachine(group.user?.id) }
     val state by machine.state.collectAsStateWithLifecycle()
@@ -474,23 +518,26 @@ internal fun MirrorStoryViewer(
     val stories = state.flat.map { it.story }
     val story = state.current?.story
 
-    LaunchedEffect(machine, group) {
-        machine.on(StoryViewerInput.GroupsUpdated(listOf(group), System.currentTimeMillis()))
+    LaunchedEffect(machine, visibleGroup) {
+        machine.on(StoryViewerInput.GroupsUpdated(listOf(visibleGroup), System.currentTimeMillis()))
     }
-    LaunchedEffect(machine, lifecycle, playbackEnabled, group) {
+    // Expiry continues while a modal pauses playback; privacy deadlines are not playback time.
+    LaunchedEffect(machine, lifecycle, visibleGroup) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                machine.on(StoryViewerInput.GroupsUpdated(listOf(visibleGroup), System.currentTimeMillis()))
+                delay(1_000)
+            }
+        }
+    }
+    LaunchedEffect(machine, lifecycle, canPlay, visibleGroup) {
         machine.on(StoryViewerInput.PlaybackBlocked(true, SystemClock.elapsedRealtime()))
-        if (!playbackEnabled) return@LaunchedEffect
+        if (!canPlay) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             machine.on(StoryViewerInput.PlaybackBlocked(false, SystemClock.elapsedRealtime()))
             try {
-                var lastExpiryCheck = 0L
                 while (isActive) {
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - lastExpiryCheck >= 1_000) {
-                        machine.on(StoryViewerInput.GroupsUpdated(listOf(group), System.currentTimeMillis()))
-                        lastExpiryCheck = now
-                    }
-                    machine.on(StoryViewerInput.Tick(now))
+                    machine.on(StoryViewerInput.Tick(SystemClock.elapsedRealtime()))
                     delay(16)
                 }
             } finally {
@@ -499,15 +546,23 @@ internal fun MirrorStoryViewer(
         }
     }
     // A slow/failed view receipt must not freeze playback. Only mark while actually visible.
-    LaunchedEffect(machine, state.pendingMark, playbackEnabled, lifecycle) {
+    LaunchedEffect(machine, state.pendingMark, canPlay, lifecycle) {
         val mark = state.pendingMark ?: return@LaunchedEffect
-        if (!playbackEnabled) return@LaunchedEffect
+        if (!canPlay) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            repository.markStoryViewed(mark.storyId).fold(
+            if (owner == null || repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+            val result = account.markStoryViewed(mark.storyId)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+            result.fold(
                 onSuccess = { machine.on(StoryViewerInput.ViewMarkOk(mark.storyId, it)) },
                 onFailure = { machine.on(StoryViewerInput.ViewMarkFailed(mark.storyId)) },
             )
         }
+    }
+    LaunchedEffect(story?.id) {
+        if (confirmDelete != story?.id) confirmDelete = null
+        if (viewersFor != null && visibleGroup.stories.none { it.id == viewersFor }) viewersFor = null
     }
     LaunchedEffect(state.dismissed) { if (state.dismissed) onDismiss() }
     Box(
@@ -516,8 +571,7 @@ internal fun MirrorStoryViewer(
             .background(
                 if (story?.imagePath != null) SolidColor(Color(0xFF17110C))
                 else Brush.verticalGradient(MirrorArt.avatarGradient(story?.background ?: "emerald")),
-            )
-            .clickable(onClick = onDismiss),
+            ),
     ) {
         if (story?.imagePath != null) {
             coil.compose.AsyncImage(
@@ -533,13 +587,13 @@ internal fun MirrorStoryViewer(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { machine.on(StoryViewerInput.TapPrev) },
+                    .clickable(enabled = canPlay) { machine.on(StoryViewerInput.TapPrev) },
             )
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { machine.on(StoryViewerInput.TapNext) },
+                    .clickable(enabled = canPlay) { machine.on(StoryViewerInput.TapNext) },
             )
         }
         // progress bars - one segment per story, the ACTIVE one fills with
@@ -597,6 +651,12 @@ internal fun MirrorStoryViewer(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
+            if (group.mine && group.user?.id == account.viewerId && story != null) {
+                Text("Viewers", color = MirrorArt.Text, fontSize = 12.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !deleting) { viewersFor = story.id }.padding(8.dp))
+                Text("Delete", color = MirrorArt.Accent, fontSize = 12.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !deleting) { confirmDelete = story.id }.padding(8.dp))
+            }
             Box(
                 Modifier
                     .size(36.dp)
@@ -625,92 +685,206 @@ internal fun MirrorStoryViewer(
             )
         }
     }
+    if (confirmDelete != null) {
+        val target = confirmDelete!!
+        MirrorSheet(title = "Delete this status?", onDismiss = { if (!deleting) confirmDelete = null }) {
+            Text("This removes the status for everyone. It stays here unless deletion is confirmed.", color = MirrorArt.Dim, fontSize = 13.sp)
+            Text(if (deleting) "Deleting…" else "Delete status", color = MirrorArt.Accent,
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !deleting) {
+                    deleting = true; actionError = null
+                    actionScope.launch {
+                        try {
+                            if (owner == null || repository.attachmentSessionKey() != owner) return@launch
+                            account.deleteStory(target).getOrThrow()
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            if (repository.attachmentSessionKey() != owner) return@launch
+                            deletedIds = deletedIds + target
+                            confirmDelete = null
+                            onDeleted(target)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                        } catch (failure: Exception) {
+                            if (repository.attachmentSessionKey() == owner) {
+                                confirmDelete = null
+                                actionError = failure.message ?: "Deletion wasn't confirmed. Your status has not been removed from this viewer."
+                            }
+                        } finally { if (repository.attachmentSessionKey() == owner) deleting = false }
+                    }
+                }.padding(vertical = 16.dp))
+        }
+    }
+    if (actionError != null) MirrorSheet(title = "Status action", onDismiss = { actionError = null }) {
+        Text(actionError.orEmpty(), color = MirrorArt.Text, fontSize = 13.sp)
+    }
+    viewersFor?.let { id ->
+        androidx.compose.runtime.key(owner, id) {
+            MirrorStoryViewersSheet(id, account, repository, owner) { viewersFor = null }
+        }
+    }
+
 }
 
-/** Text story composer: background palette + caption + real createStory. */
+/** Owner-only list: empty, unavailable and offline are deliberately distinct. */
+@Composable
+private fun MirrorStoryViewersSheet(storyId: String, account: PulseRepository, repository: PulseRepository, owner: String?, onDismiss: () -> Unit) {
+    var viewers by remember { mutableStateOf<List<app.pulse.domain.model.StoryViewer>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(storyId, owner, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                if (owner == null || repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                val result = account.storyViewers(storyId)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                loading = false
+                result.fold(onSuccess = { viewers = it; error = null }, onFailure = { failure ->
+                    val kind = (failure as? app.pulse.domain.model.PulseApiException)?.kind
+                    if (kind in setOf("AUTH", "FORBIDDEN", "NOT_FOUND")) viewers = emptyList()
+                    error = failure.message ?: "Viewers could not be loaded. Reconnect to retry."
+                })
+                delay(5_000)
+            }
+        }
+    }
+    MirrorSheet(title = "Viewers", onDismiss = onDismiss) {
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+            if (loading) item { Text("Loading viewers…", color = MirrorArt.Dim) }
+            error?.let { message -> item { Text(message, color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp)) } }
+            if (!loading && error == null && viewers.isEmpty()) item { Text("No views yet", color = MirrorArt.Dim) }
+            items(viewers, key = { it.userId }) { viewer ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(viewer.name, color = MirrorArt.Text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    viewer.username?.let { Text("@$it", color = MirrorArt.Dim, fontSize = 12.sp) }
+                }
+            }
+        }
+    }
+}
+
+/** Mounted text/photo composer using the shared bounded preparation and state policy. */
 @Composable
 internal fun MirrorStoryComposer(
     repository: PulseRepository,
     onDismiss: () -> Unit,
     onPosted: () -> Unit,
 ) {
-    var caption by remember { mutableStateOf("") }
-    var background by remember { mutableStateOf("emerald") }
-    var posting by remember { mutableStateOf(false) }
-    val palette = listOf("emerald", "rose", "amber", "violet", "teal", "orange", "pink", "cyan")
+    val owner = repository.attachmentSessionKey()
+    androidx.compose.runtime.key(owner) {
+        MirrorOwnedStoryComposer(repository, onDismiss, onPosted)
+    }
+}
 
-    MirrorSheet(title = "New status", onDismiss = onDismiss) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(Brush.verticalGradient(MirrorArt.avatarGradient(background))),
-            contentAlignment = Alignment.Center,
-        ) {
-            BasicTextField(
-                value = caption,
-                onValueChange = { if (it.length <= 160) caption = it },
-                textStyle = TextStyle(
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                ),
-                cursorBrush = SolidColor(Color.White),
-                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
-            )
-            if (caption.isBlank()) {
-                Text(
-                    "Type your status",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+@Composable
+private fun MirrorOwnedStoryComposer(repository: PulseRepository, onDismiss: () -> Unit, onPosted: () -> Unit) {
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    val owner = remember { repository.attachmentSessionKey() }
+    val account = remember { repository.boundToCurrentAccount() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var cs by remember { mutableStateOf(ComposerState()) }
+    var preview by remember { mutableStateOf<ByteArray?>(null) }
+    var photoJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var pickerOwner by remember { mutableStateOf<String?>(null) }
+    fun ownsDraft() = owner != null && repository.attachmentSessionKey() == owner
+    fun cancelPhoto() {
+        pickerOwner = null
+        photoJob?.cancel(); photoJob = null
+        cs = cs.withUploading(false)
+    }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        val requestedOwner = pickerOwner
+        pickerOwner = null
+        if (uri != null && requestedOwner == owner && ownsDraft() && !cs.posting && cs.mode == ComposerState.Mode.PHOTO) {
+            photoJob?.cancel()
+            cs = cs.withUploading(true).copy(error = null)
+            photoJob = actionScope.launch {
+                try {
+                    val dataUrl = app.pulse.feature.stories.StoryMedia.imageToDataUrl(context, uri).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!ownsDraft()) return@launch
+                    val path = account.uploadMedia(dataUrl).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!ownsDraft()) return@launch
+                    // Preview the exact compressed upload, not a mutable/provider URI read again.
+                    preview = android.util.Base64.decode(dataUrl.substringAfter(','), android.util.Base64.DEFAULT)
+                    cs = cs.withImage(path).withUploading(false)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (failure: Exception) {
+                    if (ownsDraft()) cs = cs.withUploading(false).withError("Couldn't prepare or upload that photo. Your previous photo and caption are kept.")
+                }
             }
         }
-        Spacer(Modifier.height(14.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        ) {
-            for (key in palette) {
-                Box(
-                    Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .then(
-                            if (background == key) Modifier.border(2.dp, MirrorArt.Text, CircleShape)
-                            else Modifier,
-                        )
-                        .background(Brush.verticalGradient(MirrorArt.avatarGradient(key)))
-                        .clickable { background = key },
-                )
+    }
+    MirrorSheet(title = "New status", onDismiss = { cancelPhoto(); onDismiss() }) {
+        MirrorSheetScroll {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Text", color = if (cs.mode == ComposerState.Mode.TEXT) MirrorArt.Accent else MirrorArt.Dim,
+                    modifier = Modifier.clickable(enabled = !cs.posting) { cancelPhoto(); cs = cs.withMode(ComposerState.Mode.TEXT) }.padding(vertical = 8.dp))
+                Text(if (cs.imagePath == null) "Choose photo" else "Change photo", color = if (cs.mode == ComposerState.Mode.PHOTO) MirrorArt.Accent else MirrorArt.Dim,
+                    modifier = Modifier.clickable(enabled = !cs.posting) {
+                        cs = cs.withMode(ComposerState.Mode.PHOTO)
+                        pickerOwner = owner
+                        try { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                        catch (_: Exception) { pickerOwner = null; cs = cs.withError("The photo picker couldn't open. Try again.") }
+                    }.padding(vertical = 8.dp))
+                if (cs.imagePath != null || cs.uploading) Text("Remove photo", color = MirrorArt.Dim,
+                    modifier = Modifier.clickable(enabled = !cs.posting) { cancelPhoto(); preview = null; cs = cs.withImage(null) }.padding(vertical = 8.dp))
             }
-        }
-        Spacer(Modifier.height(16.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (caption.isBlank() || posting) MirrorArt.Chip else MirrorArt.Accent)
-                .clickable(enabled = caption.isNotBlank() && !posting) {
-                    posting = true
-                    CoroutineScope(Dispatchers.IO).launch {
-                        runCatching { repository.createStory(caption, background, null) }
-                        posting = false
-                        onPosted()
+            Box(Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(18.dp))
+                .background(if (cs.mode == ComposerState.Mode.TEXT) Brush.verticalGradient(MirrorArt.avatarGradient(cs.background)) else SolidColor(MirrorArt.Chip)),
+                contentAlignment = Alignment.Center) {
+                if (cs.mode == ComposerState.Mode.PHOTO) {
+                    preview?.let { bytes -> coil.compose.AsyncImage(model = bytes, contentDescription = "Selected status photo",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+                    if (cs.uploading) Text("Preparing and uploading…", color = Color.White,
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(10.dp))
+                    else if (preview == null) Text("Choose a photo to share", color = MirrorArt.Dim)
+                } else {
+                    BasicTextField(value = cs.caption, onValueChange = { if (!cs.posting) cs = cs.withCaption(it) }, enabled = !cs.posting,
+                        textStyle = TextStyle(color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
+                        cursorBrush = SolidColor(Color.White), modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth())
+                    if (cs.caption.isEmpty()) Text("Type your status", color = Color.White.copy(alpha = 0.7f), fontSize = 18.sp)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (cs.mode == ComposerState.Mode.PHOTO) {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MirrorArt.Chip).padding(12.dp)) {
+                    BasicTextField(value = cs.caption, onValueChange = { if (!cs.posting) cs = cs.withCaption(it) }, enabled = !cs.posting,
+                        textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp), cursorBrush = SolidColor(MirrorArt.Accent), modifier = Modifier.fillMaxWidth())
+                    if (cs.caption.isEmpty()) Text("Add a caption (optional)", color = MirrorArt.Dim, fontSize = 14.sp)
+                }
+            } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                for (key in ComposerState.BACKGROUNDS) Box(Modifier.size(30.dp).clip(CircleShape)
+                    .then(if (cs.background == key) Modifier.border(2.dp, MirrorArt.Text, CircleShape) else Modifier)
+                    .background(Brush.verticalGradient(MirrorArt.avatarGradient(key)))
+                    .clickable(enabled = !cs.posting) { cs = cs.withBackground(key) })
+            }
+            Text("${cs.caption.length}/${ComposerState.CAPTION_MAX}", color = MirrorArt.Dim, fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.End).padding(top = 6.dp))
+            cs.error?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp)) }
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(14.dp))
+                .background(if (cs.canPost) MirrorArt.Accent else MirrorArt.Chip)
+                .clickable(enabled = cs.canPost && ownsDraft()) {
+                    val submitted = cs
+                    cs = cs.withPosting(true).copy(error = null)
+                    actionScope.launch {
+                        try {
+                            if (!ownsDraft()) return@launch
+                            account.createStory(submitted.caption,
+                                if (submitted.mode == ComposerState.Mode.TEXT) submitted.background else null,
+                                if (submitted.mode == ComposerState.Mode.PHOTO) submitted.imagePath else null).getOrThrow()
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            if (ownsDraft()) onPosted()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                        } catch (failure: Exception) {
+                            if (ownsDraft()) cs = cs.withError(failure.message ?: "Couldn't share your status. Your draft is kept.")
+                        } finally { if (ownsDraft()) cs = cs.withPosting(false) }
                     }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                if (posting) "Sharing…" else "Share status",
-                color = if (caption.isBlank() || posting) MirrorArt.Dim else MirrorArt.OnBubbleOut,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+                }, contentAlignment = Alignment.Center) {
+                Text(if (cs.posting) "Sharing…" else "Share status", color = if (cs.canPost) MirrorArt.OnBubbleOut else MirrorArt.Dim,
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
@@ -793,6 +967,7 @@ internal fun MirrorSheet(
             onDismiss()
         }
     }
+    androidx.activity.compose.BackHandler { leaving = true }
     val scrimAlpha = androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (leaving) 0f else 0.4f,
         animationSpec = androidx.compose.animation.core.tween(170),
@@ -803,9 +978,9 @@ internal fun MirrorSheet(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = scrimAlpha.value.coerceIn(0f, 0.66f)))
-            .clickable(onClick = { leaving = true }),
+            .background(Color.Black.copy(alpha = scrimAlpha.value.coerceIn(0f, 0.66f))),
     ) {
+        Box(Modifier.matchParentSize().clickable { leaving = true })
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -819,9 +994,9 @@ internal fun MirrorSheet(
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(Color(0xF21C1610))
                 .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .clickable(enabled = false) {}
                 .padding(16.dp)
                 .navigationBarsPadding()
+                .imePadding()
                 // web drag-to-dismiss: pull down past the threshold releases the
                 // sheet, a short drag springs back (stories-sheet.tsx elastic 0.65)
                 .draggable(
@@ -911,14 +1086,26 @@ internal fun MirrorGroupSheet(
     onOpened: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val actionRepository = remember(repository, repository.viewerId) { repository.boundToCurrentAccount() }
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var directoryError by remember { mutableStateOf<String?>(null) }
+    var directoryLoading by remember { mutableStateOf(false) }
+    var directoryRetry by remember { mutableStateOf(0) }
     var name by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var users by remember { mutableStateOf<List<User>>(emptyList()) }
     val picked = remember { mutableStateOf(setOf<String>()) }
     var creating by remember { mutableStateOf(false) }
-    LaunchedEffect(query) {
-        delay(180)
-        users = repository.users(query.trim()).getOrDefault(emptyList())
+    LaunchedEffect(actionRepository, query, directoryRetry) {
+        directoryLoading = true
+        directoryError = null
+        try {
+            delay(180)
+            app.pulse.domain.sync.confirmedAction({ actionRepository.users(query.trim()) }) { loaded ->
+                users = loaded.filter { it.id != actionRepository.viewerId }
+            }.getOrThrow()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) { directoryError = "People couldn't be loaded. Tap to retry." } finally { directoryLoading = false }
     }
     MirrorSheet(title = "New group", onDismiss = onDismiss) {
         MirrorSheetSearch(query, "Search people…", onQuery = { query = it })
@@ -936,6 +1123,7 @@ internal fun MirrorGroupSheet(
             BasicTextField(
                 value = name,
                 onValueChange = { name = it },
+                readOnly = creating,
                 singleLine = true,
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp),
                 cursorBrush = SolidColor(MirrorArt.Accent),
@@ -947,6 +1135,10 @@ internal fun MirrorGroupSheet(
             )
         }
         Spacer(Modifier.height(10.dp))
+        if (directoryLoading) Text("Loading people…", color = MirrorArt.TextSoft, fontSize = 12.sp)
+        directoryError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp,
+            modifier = Modifier.clickable { directoryRetry++ }.padding(8.dp)) }
+        errorText?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(8.dp)) }
         MirrorSheetScroll {
             for (user in users) {
                 val checked = user.id in picked.value
@@ -954,7 +1146,7 @@ internal fun MirrorGroupSheet(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable {
+                        .clickable(enabled = !creating) {
                             picked.value = if (checked) picked.value - user.id else picked.value + user.id
                         }
                         .padding(horizontal = 4.dp, vertical = 6.dp),
@@ -995,10 +1187,17 @@ internal fun MirrorGroupSheet(
                 .background(if (canCreate) MirrorArt.Accent else MirrorArt.White7)
                 .clickable(enabled = canCreate) {
                     creating = true
-                    CoroutineScope(Dispatchers.IO).launch {
-                        repository.createGroup(name.trim(), picked.value.toList()).onSuccess { convo ->
-                            kotlinx.coroutines.withContext(Dispatchers.Main) { onOpened(convo.id) }
-                        }
+                    errorText = null
+                    val submittedName = name.trim()
+                    val submittedMembers = picked.value.toList()
+                    actionScope.launch {
+                        try {
+                            app.pulse.domain.sync.confirmedAction({ actionRepository.createGroup(submittedName, submittedMembers) }) {
+                                onOpened(it.id)
+                            }.getOrThrow()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                            errorText = failure.message ?: "Couldn't confirm creation. Retry the same name and people to recover the same group."
+                        } finally { creating = false }
                     }
                 },
             contentAlignment = Alignment.Center,
@@ -1020,6 +1219,8 @@ internal fun MirrorJoinSheet(
     onOpened: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    val actionRepository = remember(repository) { repository.boundToCurrentAccount() }
     var code by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -1036,6 +1237,7 @@ internal fun MirrorJoinSheet(
         ) {
             BasicTextField(
                 value = code,
+                enabled = !busy,
                 onValueChange = { code = it },
                 singleLine = true,
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 15.sp),
@@ -1059,20 +1261,26 @@ internal fun MirrorJoinSheet(
                 .clip(CircleShape)
                 .background(if (code.isNotBlank() && !busy) MirrorArt.Accent else MirrorArt.White7)
                 .clickable(enabled = code.isNotBlank() && !busy) {
-                    busy = true
-                    error = ""
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val clean = code.trim().substringAfterLast('/').trim()
-                        repository.joinInvite(clean)
-                            .onSuccess { outcome ->
-                                kotlinx.coroutines.withContext(Dispatchers.Main) { onOpened(outcome.conversationId) }
-                            }
-                            .onFailure {
-                                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                    error = it.message ?: "That code did not work"
-                                    busy = false
+                    val clean = app.pulse.core.link.PulseDeepLink.inviteCode(code)
+                    if (clean == null) {
+                        error = "Paste a valid invite code or invite link"
+                    } else {
+                        val target = actionRepository
+                        val owner = target.viewerId
+                        busy = true
+                        error = ""
+                        actionScope.launch {
+                            try {
+                                if (owner.isNullOrBlank() || target.viewerId != owner) return@launch
+                                app.pulse.domain.sync.confirmedAction({ target.joinInvite(clean) }) { outcome ->
+                                    if (target.viewerId == owner) onOpened(outcome.conversationId)
                                 }
-                            }
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                error = failure.message ?: "Couldn't join. Check the connection and try again."
+                            } finally { busy = false }
+                        }
                     }
                 },
             contentAlignment = Alignment.Center,
@@ -1105,6 +1313,20 @@ internal fun MirrorFoldersSheet(
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, repository.viewerId) {
+        MirrorOwnedFoldersSheet(repository, conversations, activeFolderId, onPick, onChanged, onDismiss)
+    }
+}
+
+@Composable
+private fun MirrorOwnedFoldersSheet(
+    repository: PulseRepository,
+    conversations: List<Conversation>,
+    activeFolderId: String?,
+    onPick: (String?) -> Unit,
+    onChanged: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     // R72 - the web FoldersSheet parity (folders-sheet.tsx): create with the
     // 8-icon registry, rename, delete (2-tap, chats stay), membership editor
     // (FULL ordered PUT replace) - every action on the real /api/folders wire.
@@ -1114,20 +1336,42 @@ internal fun MirrorFoldersSheet(
     var createOpen by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var newIcon by remember { mutableStateOf("folder") }
+    var notice by remember { mutableStateOf("") }
     var createBusy by remember { mutableStateOf(false) }
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    val owner = repository.viewerId
+    var readRevision by remember { mutableStateOf(0) }
+    fun mutate(action: suspend () -> Unit, confirmed: () -> Unit) {
+        if (createBusy || owner.isNullOrBlank() || repository.viewerId != owner) return
+        createBusy = true; readRevision++
+        actionScope.launch {
+            try {
+                if (repository.viewerId != owner) return@launch
+                action()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.viewerId != owner) return@launch
+                confirmed(); reloadKey++; onChanged()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { if (repository.viewerId == owner) notice = error.message ?: "Could not save the folder" }
+            finally { if (repository.viewerId == owner) createBusy = false }
+        }
+    }
     var renamingId by remember { mutableStateOf<String?>(null) }
     var renameDraft by remember { mutableStateOf("") }
     var confirmDeleteId by remember { mutableStateOf<String?>(null) }
     var editingFolder by remember { mutableStateOf<FolderSummary?>(null) }
-    var notice by remember { mutableStateOf("") }
 
-    LaunchedEffect(reloadKey) {
+    LaunchedEffect(repository, owner, reloadKey) {
+        val ticket = readRevision
         loadFailed = false
-        val page = runCatching { repository.folders().getOrThrow() }.getOrNull()
-        if (page == null) {
-            loadFailed = true
-        } else {
-            folders = page
+        try {
+            val page = repository.folders().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.viewerId == owner && ticket == readRevision) folders = page
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            if (repository.viewerId == owner && ticket == readRevision) {
+                loadFailed = true
+                notice = "Could not refresh folders - tap to retry"
+            }
         }
     }
 
@@ -1137,7 +1381,7 @@ internal fun MirrorFoldersSheet(
                 // membership editor - checkbox list of every conversation,
                 // Save runs the FULL replace PUT the web uses
                 val folder = editingFolder!!
-                val selected = remember(folder.id) { folder.conversationIds.toMutableSet() }
+                var selected by remember(folder.id) { mutableStateOf(folder.conversationIds.toSet()) }
                 Text(
                     "Chats in \u201C${folder.name}\u201D",
                     color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold,
@@ -1150,8 +1394,8 @@ internal fun MirrorFoldersSheet(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(if (checked) MirrorArt.ChipActive else Color.Transparent)
-                            .clickable {
-                                if (checked) selected.remove(convo.id) else selected.add(convo.id)
+                            .clickable(enabled = !createBusy) {
+                                selected = if (checked) selected - convo.id else selected + convo.id
                             }
                             .padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1168,7 +1412,7 @@ internal fun MirrorFoldersSheet(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(MirrorArt.White7)
-                            .clickable { editingFolder = null }
+                            .clickable(enabled = !createBusy) { editingFolder = null }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                     )
                     Text(
@@ -1177,21 +1421,11 @@ internal fun MirrorFoldersSheet(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(MirrorArt.Accent)
-                            .clickable {
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    val ok = runCatching {
-                                        repository.setFolderConversations(folder.id, selected.toList()).getOrThrow()
-                                    }.isSuccess
-                                    kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                        if (ok) {
-                                            editingFolder = null
-                                            notice = "Folder chats saved"
-                                            reloadKey++
-                                            onChanged()
-                                        } else {
-                                            notice = "Could not save the folder chats"
-                                        }
-                                    }
+                            .clickable(enabled = !createBusy) {
+                                val payload = selected.toList()
+                                mutate({ repository.setFolderConversations(folder.id, payload).getOrThrow() }) {
+                                    folders = folders?.map { if (it.id == folder.id) it.copy(conversationIds = payload) else it }
+                                    editingFolder = null; notice = "Folder chats saved"
                                 }
                             }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1203,7 +1437,7 @@ internal fun MirrorFoldersSheet(
                     Text(
                         "Could not load folders - tap to retry",
                         color = MirrorArt.Red, fontSize = 12.sp,
-                        modifier = Modifier.fillMaxWidth().clickable { reloadKey++ }.padding(vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !createBusy) { reloadKey++ }.padding(vertical = 12.dp),
                         textAlign = TextAlign.Center,
                     )
                 } else {
@@ -1227,7 +1461,7 @@ internal fun MirrorFoldersSheet(
                     ) {
                         BasicTextField(
                             value = renameDraft,
-                            onValueChange = { if (it.length <= 24) renameDraft = it },
+                            onValueChange = { if (!createBusy && it.length <= 24) renameDraft = it },
                             singleLine = true,
                             textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                             cursorBrush = SolidColor(MirrorArt.Accent2),
@@ -1242,21 +1476,11 @@ internal fun MirrorFoldersSheet(
                             color = MirrorArt.Accent2, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable(enabled = renameDraft.isNotBlank()) {
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        val ok = runCatching {
-                                            repository.updateFolder(folder.id, renameDraft.trim(), null, null).getOrThrow()
-                                        }.isSuccess
-                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                            if (ok) {
-                                                renamingId = null
-                                                notice = "Renamed to \u201C${renameDraft.trim()}\u201D"
-                                                reloadKey++
-                                                onChanged()
-                                            } else {
-                                                notice = "Could not rename the folder"
-                                            }
-                                        }
+                                .clickable(enabled = renameDraft.isNotBlank() && !createBusy) {
+                                    val name = renameDraft.trim()
+                                    mutate({ repository.updateFolder(folder.id, name, null, null).getOrThrow() }) {
+                                        folders = folders?.map { if (it.id == folder.id) it.copy(name = name) else it }
+                                        renamingId = null; notice = "Folder renamed"
                                     }
                                 }
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -1268,7 +1492,7 @@ internal fun MirrorFoldersSheet(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (active) MirrorArt.ChipActive else Color.Transparent)
-                            .clickable { onPick(if (active) null else folder.id) }
+                            .clickable(enabled = !createBusy) { onPick(if (active) null else folder.id) }
                             .padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1281,7 +1505,7 @@ internal fun MirrorFoldersSheet(
                             Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .clickable { renamingId = folder.id; renameDraft = folder.name },
+                                .clickable(enabled = !createBusy) { renamingId = folder.id; renameDraft = folder.name },
                             contentAlignment = Alignment.Center,
                         ) {
                             MirrorLucideIcon("LPenLine", tint = MirrorArt.Faint, modifier = Modifier.size(14.dp))
@@ -1290,7 +1514,7 @@ internal fun MirrorFoldersSheet(
                             Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .clickable { editingFolder = folder },
+                                .clickable(enabled = !createBusy) { editingFolder = folder },
                             contentAlignment = Alignment.Center,
                         ) {
                             MirrorLucideIcon("LUsers", tint = MirrorArt.Faint, modifier = Modifier.size(14.dp))
@@ -1300,20 +1524,12 @@ internal fun MirrorFoldersSheet(
                                 .size(28.dp)
                                 .clip(CircleShape)
                                 .background(if (confirmDeleteId == folder.id) MirrorArt.Red else Color.Transparent)
-                                .clickable {
+                                .clickable(enabled = !createBusy) {
                                     if (confirmDeleteId == folder.id) {
                                         confirmDeleteId = null
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            val ok = runCatching { repository.deleteFolder(folder.id).getOrThrow() }.isSuccess
-                                            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                                if (ok) {
-                                                    notice = "Folder deleted - chats stay in your list"
-                                                    reloadKey++
-                                                    onChanged()
-                                                } else {
-                                                    notice = "Could not delete the folder"
-                                                }
-                                            }
+                                        mutate({ repository.deleteFolder(folder.id).getOrThrow() }) {
+                                            folders = folders?.filterNot { it.id == folder.id }
+                                            notice = "Folder deleted - chats stay in your list"
                                         }
                                     } else {
                                         confirmDeleteId = folder.id
@@ -1334,7 +1550,7 @@ internal fun MirrorFoldersSheet(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(MirrorArt.White7)
-                        .clickable { createOpen = true }
+                        .clickable(enabled = !createBusy) { createOpen = true }
                         .padding(horizontal = 8.dp, vertical = 10.dp),
                     textAlign = TextAlign.Center,
                 )
@@ -1348,7 +1564,7 @@ internal fun MirrorFoldersSheet(
                 ) {
                     BasicTextField(
                         value = newName,
-                        onValueChange = { if (it.length <= 24) newName = it },
+                        onValueChange = { if (!createBusy && it.length <= 24) newName = it },
                         singleLine = true,
                         textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                         cursorBrush = SolidColor(MirrorArt.Accent2),
@@ -1381,7 +1597,7 @@ internal fun MirrorFoldersSheet(
                                     .size(30.dp)
                                     .clip(CircleShape)
                                     .background(if (active) MirrorArt.Accent else MirrorArt.White10)
-                                    .clickable { newIcon = icon },
+                                    .clickable(enabled = !createBusy) { newIcon = icon },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 MirrorLucideIcon(folderGlyphName(icon) ?: "LFolder", tint = if (active) Color.White else MirrorArt.TextSoft, modifier = Modifier.size(15.dp))
@@ -1394,7 +1610,7 @@ internal fun MirrorFoldersSheet(
                             color = MirrorArt.Dim, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { createOpen = false; newName = "" }
+                                .clickable(enabled = !createBusy) { createOpen = false; newName = "" }
                                 .padding(horizontal = 14.dp, vertical = 8.dp),
                         )
                         Text(
@@ -1405,24 +1621,11 @@ internal fun MirrorFoldersSheet(
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (newName.isNotBlank() && !createBusy) MirrorArt.Accent else MirrorArt.White10)
                                 .clickable(enabled = newName.isNotBlank() && !createBusy) {
-                                    createBusy = true
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        val created = runCatching {
-                                            repository.createFolder(newName.trim(), newIcon).getOrThrow()
-                                        }.getOrNull()
-                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                            createBusy = false
-                                            if (created != null) {
-                                                notice = "Folder \u201C${created.name}\u201D created"
-                                                newName = ""
-                                                newIcon = "folder"
-                                                createOpen = false
-                                                reloadKey++
-                                                onChanged()
-                                            } else {
-                                                notice = "Could not create the folder"
-                                            }
-                                        }
+                                    val name = newName.trim(); val icon = newIcon
+                                    var created: FolderSummary? = null
+                                    mutate({ created = repository.createFolder(name, icon).getOrThrow() }) {
+                                        folders = (folders ?: emptyList()) + requireNotNull(created)
+                                        notice = "Folder created"; newName = ""; newIcon = "folder"; createOpen = false
                                     }
                                 }
                                 .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1431,7 +1634,7 @@ internal fun MirrorFoldersSheet(
                 }
             }
             if (notice.isNotEmpty()) {
-                Text(notice, color = MirrorArt.Dim, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+                Text(notice, color = MirrorArt.Dim, fontSize = 12.sp, modifier = Modifier.clickable(enabled = loadFailed && !createBusy) { reloadKey++ }.padding(8.dp))
             }
             }
         }
@@ -1471,13 +1674,24 @@ internal fun MirrorRowOptionsSheet(
     var muteStrip by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
-    fun act(work: suspend () -> Unit) {
-        CoroutineScope(Dispatchers.IO).launch {
-            runCatching { work() }
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                onChanged()
-                onDismiss()
-            }
+    val exportContext = androidx.compose.ui.platform.LocalContext.current
+    val actionRepository = repository.boundToCurrentAccount()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var busy by remember(conversationId, actionRepository) { mutableStateOf(false) }
+    fun act(close: Boolean = true, work: suspend () -> Result<*>) {
+        if (busy) return
+        busy = true
+        note = ""
+        actionScope.launch {
+            try {
+                app.pulse.domain.sync.confirmedAction(request = work) { value ->
+                    if (close) { onChanged(); onDismiss() } else note = "Saved as $value"
+                }.getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                note = failure.message ?: "Couldn't confirm this change. Try again."
+            } finally { busy = false }
         }
     }
     MirrorSheet(title = title, onDismiss = onDismiss) {
@@ -1506,7 +1720,7 @@ internal fun MirrorRowOptionsSheet(
                                             // old ISO timestamps were a silent 400 and the
                                             // mute never landed (same bug R70 fixed in the
                                             // room kebab strip).
-                                            repository.setMutedUntil(
+                                            actionRepository.setMutedUntil(
                                                 conversationId,
                                                 when (choice) {
                                                     "8h" -> "8h"
@@ -1558,7 +1772,7 @@ internal fun MirrorRowOptionsSheet(
                                 .background(MirrorArt.Red)
                                 .clickable {
                                     act {
-                                        repository.clearMyMessages(conversationId)
+                                        actionRepository.clearMyMessages(conversationId)
                                     }
                                 },
                             contentAlignment = Alignment.Center,
@@ -1569,31 +1783,35 @@ internal fun MirrorRowOptionsSheet(
                 }
                 else -> {
                     MirrorOptionRow("LPin", if (pinned) "Unpin from top" else "Pin to top") {
-                        act { repository.togglePin(conversationId, !pinned) }
+                        act { actionRepository.togglePin(conversationId, !pinned) }
                     }
                     MirrorOptionRow("LArchive", if (archived) "Unarchive chat" else "Archive chat") {
-                        act { repository.archive(conversationId, !archived) }
+                        act { actionRepository.archive(conversationId, !archived) }
                     }
                     MirrorOptionRow(if (manualUnread) "LMailOpen" else "LMail", if (manualUnread) "Mark as read" else "Mark as unread") {
-                        act { repository.markUnread(conversationId, !manualUnread) }
+                        act { actionRepository.markUnread(conversationId, !manualUnread) }
                     }
                     MirrorOptionRow("LBellOff", "Mute notifications") { muteStrip = true }
                     // Export runs WITHOUT closing the sheet - the saved file
                     // name lands in the note row (web downloadTranscript feel).
                     MirrorOptionRow("LDownload", "Export chat (.txt)") {
-                        CoroutineScope(Dispatchers.IO).launch {
-                            repository.exportChat(conversationId).onSuccess { file ->
-                                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                    note = "Saved as $file"
-                                }
-                            }
+                        val owner = actionRepository.viewerId
+                        val epoch = actionRepository.attachmentSessionKey()
+                        act(close = false) {
+                            val fileName = actionRepository.exportChat(conversationId).getOrThrow()
+                            if (!kotlin.coroutines.coroutineContext.isActive || actionRepository.viewerId != owner ||
+                                actionRepository.attachmentSessionKey() != epoch) throw kotlinx.coroutines.CancellationException("Export owner changed")
+                            val file = java.io.File(java.io.File(exportContext.cacheDir, "exports"), fileName)
+                            exportContext.startActivity(app.pulse.feature.chat.MediaSupport.buildShareIntent(exportContext, file.absolutePath, "text/plain", null))
+                            Result.success(fileName)
                         }
                     }
                     MirrorOptionRow("LEraser", "Clear chat…") { confirmClear = true }
-                    if (note.isNotEmpty()) {
-                        Text(note, color = MirrorArt.Accent2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-                    }
                 }
+            }
+            if (busy) Text("Updating…", color = MirrorArt.TextSoft, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+            if (note.isNotEmpty()) {
+                Text(note, color = MirrorArt.Accent2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
             }
         }
     }

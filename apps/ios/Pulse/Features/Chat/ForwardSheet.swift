@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// Wave 1 forward - the web ForwardSheet outcome: no forward endpoint exists,
-/// so the client re-POSTs the source body (content + stored media paths,
-/// kind included) to each selected conversation (spec §1.1 "Forward").
-/// Multi-select with a local filter; the toast reports the honest count.
+/// Owned multi-target forwarding. Local acceptance means queued, not delivered;
+/// the durable outbox sends the complete content/media/payload envelope.
 struct ForwardSheet: View {
     let source: WireChatMessage
     @ObservedObject var session: PulseSession
@@ -16,12 +14,17 @@ struct ForwardSheet: View {
     @State private var query = ""
     @State private var phase: Phase = .loading
     @State private var sending = false
+    @State private var errorText: String?
+    @State private var ownerEpoch: UUID?
+    @State private var loadRevision = UUID()
+    @State private var reloadToken = UUID()
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 searchField
+                if let errorText { Text(errorText).font(.caption).foregroundStyle(.red).padding(.horizontal, 14) }
                 content
             }
             .background(PulseTheme.pageWash.ignoresSafeArea())
@@ -50,7 +53,11 @@ struct ForwardSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await load() }
+        .task(id: reloadToken) {
+            if ownerEpoch == nil { ownerEpoch = session.sessionGeneration }
+            await load()
+        }
+        .onChange(of: session.sessionGeneration) { _ in dismiss() }
     }
 
     // content
@@ -93,7 +100,7 @@ struct ForwardSheet: View {
                 Text(message)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Button("Retry") { Task { await load() } }
+                Button("Retry") { reloadToken = UUID() }
                     .font(.footnote.weight(.semibold))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -186,100 +193,62 @@ struct ForwardSheet: View {
         return "Direct message"
     }
 
-    private func load() async {
-        phase = conversations.isEmpty ? .loading : phase
-        do {
-            conversations = try await session.api.conversations()
-            phase = .loaded
-        } catch {
-            if conversations.isEmpty {
-                phase = .failed(RoomViewModel.describe(error))
-            } else {
-                phase = .loaded
+    @MainActor private func load() async {
+        guard !Task.isCancelled, let owner = session.viewer?.id, ownerEpoch == session.sessionGeneration else { return }
+        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        loadRevision = ticket
+        if conversations.isEmpty, let cached = try? session.store?.cachedConversations() {
+            conversations = cached.compactMap { row in
+                guard let raw = row.wireJson?.data(using: .utf8), let wire = try? JSONDecoder().decode(WireConversationSummary.self, from: raw),
+                      wire.members.contains(where: { $0.id == owner }) else { return nil }
+                return wire
             }
+        }
+        phase = conversations.isEmpty ? .loading : .loaded
+        do {
+            let rows = try await api.conversations()
+            try Task.checkCancellation()
+            guard !Task.isCancelled, session.sessionGeneration == epoch, loadRevision == ticket else { return }
+            conversations = rows.filter { $0.members.contains(where: { $0.id == owner }) }
+            selected.formIntersection(Set(conversations.map(\.id)))
+            phase = .loaded
+        } catch is CancellationError { return } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, loadRevision == ticket else { return }
+            if conversations.isEmpty { phase = .failed(RoomViewModel.describe(error)) }
+            else { phase = .loaded; errorText = "Showing saved chats. Forwards will remain queued until delivery is confirmed." }
         }
     }
 
-    /// Re-POST the source body per target (client-side forward - there is NO
-    /// forward endpoint). Media rides the STORED paths (no re-upload); each
-    /// target is independent - one failure never blocks the rest.
-    /// R1-W2B D28 - a target that fails with a NETWORK-class error queues
-    /// into the outbox (spec F-MS-10 offline column: "queued if offline";
-    /// web pulse-outbox semantics: network failures retry on the next flush
-    /// trigger, 4xx can never succeed and are honestly counted). Queued
-    /// forwards re-POST through PulseOutboxEngine with the stored kind +
-    /// media paths (PulseOutboxForward), so delivery completes when the
-    /// connection returns.
-    private func send() {
-        guard !sending, !selected.isEmpty else { return }
+    /// Commit each independent target before reporting it queued. Failed targets
+    /// remain selected; retries never resend targets already accepted into storage.
+    @MainActor private func send() {
+        guard !sending, !selected.isEmpty, ownerEpoch == session.sessionGeneration,
+              session.ready, let viewer = session.viewer, let store = session.store else { return }
         if let rootId = source.parentId, session.threadAccessDenied(rootId: rootId) {
-            session.toasts.show("This thread is unavailable. Nothing was forwarded.")
+            errorText = "This thread is unavailable. Nothing was forwarded."
             return
         }
-        guard source.viewOnce != true, source.deletedAt == nil, PulseRemediationLogic.isAlive(source.expiresAt) else {
-            session.toasts.show("This message can't be forwarded.")
-            return
+        let targets = conversations.filter { selected.contains($0.id) && $0.members.contains(where: { $0.id == viewer.id }) }
+        guard !targets.isEmpty else { errorText = "Reload the destination chats before forwarding."; return }
+        sending = true; errorText = nil
+        defer { sending = false }
+        var queued = 0
+        var failure: String?
+        // No suspension between owner validation and these local commits. Only the
+        // account-owned outbox performs HTTP and it keeps each operation's identity.
+        for target in targets {
+            do {
+                _ = try PulseForwardDelivery.enqueue(source: source, targetId: target.id, viewer: viewer, store: store)
+                selected.remove(target.id)
+                queued += 1
+            } catch { failure = RoomViewModel.describe(error) }
         }
-        sending = true
-        let targets = conversations.filter { selected.contains($0.id) }
-        let forward = PulseOutboxForward(
-            kind: source.kind,
-            imagePath: source.imagePath,
-            audioPath: source.audioPath,
-            durationMs: source.durationMs,
-            filePath: source.filePath,
-            fileName: source.fileName,
-            fileSize: source.fileSize,
-        )
-        Task {
-            defer { sending = false }
-            var delivered = 0
-            var queued = 0
-            for target in targets {
-                let clientId = UUID().uuidString
-                do {
-                    _ = try await session.api.sendMessage(
-                        conversationId: target.id,
-                        clientId: clientId,
-                        content: source.content,
-                        imagePath: source.imagePath,
-                        audioPath: source.audioPath,
-                        durationMs: source.durationMs,
-                        filePath: source.filePath,
-                        fileName: source.fileName,
-                        fileSize: source.fileSize,
-                        kind: source.kind,
-                    )
-                    delivered += 1
-                } catch {
-                    if PulseOutboxEngine.isDroppable(error) {
-                        // 4xx - retrying could never succeed (block, gone
-                        // room, bad upload path). Honest count, no queue lie.
-                        continue
-                    }
-                    // Network-class - queue the exact forward body; the
-                    // engine flushes it on reconnect/foreground/heal.
-                    if session.enqueueOutbox(
-                        conversationId: target.id,
-                        clientId: clientId,
-                        content: source.content,
-                        kind: forward.kind ?? "text",
-                        payloadJson: PulseOutboxForward.encode(forward),
-                    ) { queued += 1 }
-                }
-            }
-            if delivered > 0 || queued > 0 {
-                var note = delivered > 0 ? "Forwarded to \(delivered) chat\(delivered == 1 ? "" : "s")" : ""
-                if queued > 0 {
-                    if !note.isEmpty { note += " · " }
-                    note += "\(queued) queued for when you're back online"
-                }
-                session.toasts.show(note.isEmpty ? "Forward queued" : note)
-                dismiss()
-                onFinished()
-            } else {
-                session.toasts.show("Forward failed - check your connection")
-            }
+        if queued > 0 {
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+            session.toasts.show("Forward queued for \(queued) chat\(queued == 1 ? "" : "s")")
         }
+        if selected.isEmpty { dismiss(); onFinished() }
+        else { errorText = "\(selected.count) weren't queued. \(failure ?? "Reload the destination chats and retry.")" }
     }
 }

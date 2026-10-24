@@ -230,6 +230,12 @@ fun ChatsScreen(
     var focused by remember { mutableStateOf(false) }
     var selectMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(emptySet<String>()) }
+    var selectionEpoch by remember { mutableStateOf(0L) }
+    fun finishSelection(attempted: Set<String>, failed: List<String>, epoch: Long) {
+        if (selectionEpoch != epoch) return
+        selectedIds = remainingBatchSelection(selectedIds, attempted, failed)
+        if (selectedIds.isEmpty()) selectMode = false
+    }
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
     var activeFolderId by remember { mutableStateOf<String?>(null) }
     var foldersSheet by remember { mutableStateOf(false) }
@@ -302,6 +308,7 @@ fun ChatsScreen(
     }
     LaunchedEffect(search, selectMode) {
         if (search && selectMode) {
+            selectionEpoch++
             selectMode = false
             selectedIds = emptySet()
         }
@@ -463,7 +470,7 @@ fun ChatsScreen(
                         onClearRecents = { viewModel.clearSpotlightRecents() },
                         onPress = { conv ->
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
-                            openConversation(viewModel, conv, onOpenRoom)
+                            openConversation(conv, onOpenRoom)
                         },
                         onOpenHit = { hit ->
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
@@ -518,9 +525,10 @@ ConversationRowItem(
                                         selected = conv.id in selectedIds,
                                         entranceIndex = null,
                                         inArchived = false,
-                                        onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                        onPress = { openConversation(conv, onOpenRoom) },
                                         onLongPress = {
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            selectionEpoch++
                                             selectMode = true
                                             selectedIds = setOf(conv.id)
                                         },
@@ -545,9 +553,10 @@ ConversationRowItem(
                                     selected = conv.id in selectedIds,
                                     entranceIndex = null,
                                     inArchived = false,
-                                    onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                    onPress = { openConversation(conv, onOpenRoom) },
                                     onLongPress = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        selectionEpoch++
                                         selectMode = true
                                         selectedIds = setOf(conv.id)
                                     },
@@ -603,22 +612,19 @@ ConversationRowItem(
                 count = selectedIds.size,
                 dark = dark,
                 onArchive = {
-                    viewModel.batchArchive(selectedIds.toList(), archived = true)
-                    selectMode = false
-                    selectedIds = emptySet()
+                    val attempted = selectedIds; val epoch = selectionEpoch
+                    viewModel.batchArchive(attempted.toList(), archived = true) { failed -> finishSelection(attempted, failed, epoch) }
                 },
-                onMute8h = { viewModel.batchMute8h(selectedIds.toList()) },
+                onMute8h = {
+                    val attempted = selectedIds; val epoch = selectionEpoch
+                    viewModel.batchMute8h(attempted.toList()) { failed -> finishSelection(attempted, failed, epoch) }
+                },
                 onMarkRead = {
-                    viewModel.batchMarkRead(selectedIds.toList()) { failed ->
-                        if (failed.isEmpty()) {
-                            selectMode = false
-                            selectedIds = emptySet()
-                        } else {
-                            selectedIds = selectedIds - failed.toSet()
-                        }
-                    }
+                    val attempted = selectedIds; val epoch = selectionEpoch
+                    viewModel.batchMarkRead(attempted.toList()) { failed -> finishSelection(attempted, failed, epoch) }
                 },
                 onExit = {
+                    selectionEpoch++
                     selectMode = false
                     selectedIds = emptySet()
                 },
@@ -670,9 +676,8 @@ ConversationRowItem(
     }
 }
 
-/** Freeze "where was I" semantics live in the room; the list just marks read + opens. */
-private fun openConversation(viewModel: ChatsViewModel, conv: Conversation, onOpenRoom: (String, String?) -> Unit) {
-    viewModel.markRead(conv.id)
+/** Navigation is not attention. Only the room's visible viewport may acknowledge Seen. */
+private fun openConversation(conv: Conversation, onOpenRoom: (String, String?) -> Unit) {
     onOpenRoom(conv.id, null)
 }
 
@@ -801,7 +806,7 @@ ConversationRowItem(
                                     selected = false,
                                     entranceIndex = null,
                                     inArchived = true,
-                                    onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                    onPress = { openConversation(conv, onOpenRoom) },
                                     onLongPress = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         actionTarget = conv

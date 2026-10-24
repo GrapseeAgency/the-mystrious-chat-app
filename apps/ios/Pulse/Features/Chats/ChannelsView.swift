@@ -30,6 +30,15 @@ struct ChannelsView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var photoPath: String?
     @State private var photoBusy = false
+    @State private var mounted = false
+    @State private var ownerEpoch: UUID?
+    @State private var initialLoad: Task<Void, Never>?
+    @State private var loadError: String?
+    @State private var loadTicket = UUID()
+    @State private var actionTicket = UUID()
+    @State private var actionTask: Task<Void, Never>?
+    @State private var photoTicket = UUID()
+    @State private var photoTask: Task<Void, Never>?
 
     private enum Mode { case directory, create }
 
@@ -57,7 +66,7 @@ struct ChannelsView: View {
                     if mode == .create {
                         Button("Back") {
                             PulseHaptics.tap()
-                            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
+                            leaveCreateMode()
                         }
                     }
                 }
@@ -65,7 +74,7 @@ struct ChannelsView: View {
                     if mode == .create {
                         Button("Cancel") {
                             PulseHaptics.tap()
-                            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
+                            leaveCreateMode()
                         }
                     } else {
                         Button {
@@ -75,17 +84,32 @@ struct ChannelsView: View {
                             Image(systemName: "plus")
                         }
                         .accessibilityLabel("New channel")
+                        .disabled(actionTask != nil)
                     }
                 }
             }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await reload() }
+        .onAppear {
+            mounted = true
+            if ownerEpoch != session.sessionGeneration {
+                channels = []; optimistic = [:]; name = ""; descriptionText = ""; photoPath = nil; mode = .directory
+            }
+            ownerEpoch = session.sessionGeneration
+            initialLoad = Task { await reload() }
+        }
+        .onDisappear { mounted = false; cancelWork() }
+        .onChange(of: session.sessionGeneration) { _, _ in mounted = false; cancelWork(); dismiss() }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             photoItem = nil
-            Task { await uploadPhoto(item) }
+            guard mode == .create, busyId != "creating" else { return }
+            photoTask?.cancel()
+            let ticket = UUID()
+            photoTicket = ticket
+            photoBusy = true
+            photoTask = Task { await uploadPhoto(item, ticket: ticket) }
         }
     }
 
@@ -107,12 +131,17 @@ struct ChannelsView: View {
             .foregroundStyle(PulseTheme.textSecondary)
             .padding(.bottom, 2)
 
+        if let loadError {
+            Text(loadError).font(.footnote).foregroundStyle(PulseTheme.textSecondary)
+            Button("Retry loading channels") { beginAction { await reload() } }
+                .disabled(actionTask != nil)
+        }
         if loading && channels.isEmpty {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(PulseTheme.glassFill)
                 .frame(height: 120)
                 .frame(maxWidth: .infinity)
-        } else if resolved.isEmpty {
+        } else if resolved.isEmpty && loadError == nil {
             VStack(spacing: 8) {
                 Image(systemName: "dot.radiowaves.left.and.right")
                     .font(.system(size: 26, weight: .light))
@@ -129,7 +158,7 @@ struct ChannelsView: View {
             .padding(.vertical, 26)
             .frame(maxWidth: .infinity)
             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
-        } else {
+        } else if !resolved.isEmpty {
             if !subscribed.isEmpty {
                 sectionHeader("Subscribed", count: subscribed.count)
                 ForEach(subscribed, id: \.id) { channel in
@@ -222,7 +251,7 @@ struct ChannelsView: View {
                 .accessibilityLabel("Open \(channel.name ?? "channel")")
             } else {
                 Button {
-                    Task { await subscribe(channel) }
+                    beginAction { await subscribe(channel) }
                 } label: {
                     if busy {
                         ProgressView().controlSize(.small)
@@ -248,18 +277,19 @@ struct ChannelsView: View {
                     Label("Open", systemImage: "arrow.right.circle")
                 }
                 Button(role: .destructive) {
-                    Task { await leave(channel) }
+                    beginAction { await leave(channel) }
                 } label: {
                     Label("Leave channel", systemImage: "person.badge.minus")
                 }
             } else {
                 Button {
-                    Task { await subscribe(channel) }
+                    beginAction { await subscribe(channel) }
                 } label: {
                     Label("Subscribe", systemImage: "dot.radiowaves.left.and.right")
                 }
             }
         }
+        .disabled(actionTask != nil)
     }
 
     // R1-W2G - copy pinned in PulseChannelDirectory.subscriberCount.
@@ -311,7 +341,7 @@ struct ChannelsView: View {
                 .font(.system(size: 10.5))
                 .foregroundStyle(PulseTheme.textTertiary)
             Button {
-                Task { await create() }
+                beginAction { await create() }
             } label: {
                 Group {
                     if busyId == "creating" {
@@ -326,7 +356,7 @@ struct ChannelsView: View {
                 .foregroundStyle(.white)
             }
             .buttonStyle(PulseButtonStyle())
-            .disabled(busyId == "creating" || photoBusy)
+            .disabled(actionTask != nil || photoBusy)
             Text("You become the channel's admin - only admins post, everyone else reads along.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(PulseTheme.textSecondary)
@@ -334,6 +364,7 @@ struct ChannelsView: View {
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+        .disabled(busyId == "creating")
     }
 
     private var photoTile: some View {
@@ -361,119 +392,190 @@ struct ChannelsView: View {
 
     // actions
 
-    private func reload() async {
-        if let fresh = try? await session.api.channels(mineOnly: false) {
-            channels = fresh
-            optimistic = [:]
-        }
-        loading = false
+    private func owns(_ epoch: UUID) -> Bool {
+        mounted && ownerEpoch == epoch && !Task.isCancelled && session.sessionGeneration == epoch
     }
 
-    /// Subscribe - OPTIMISTIC (isSubscribed flips, memberCount +1), settle
-    /// confirms with the verbatim toasts, failure rolls the snapshot back.
+    private func beginAction(_ action: @escaping @MainActor () async -> Void) {
+        let epoch = session.sessionGeneration
+        guard owns(epoch), actionTask == nil else { return }
+        let ticket = UUID()
+        actionTicket = ticket
+        loadTicket = UUID() // an older list response cannot undo this action
+        loading = false
+        actionTask = Task { @MainActor in
+            defer {
+                if actionTicket == ticket { actionTask = nil; busyId = nil }
+            }
+            guard owns(epoch) else { return }
+            await action()
+        }
+    }
+
+    private func cancelWork() {
+        actionTicket = UUID(); loadTicket = UUID(); photoTicket = UUID()
+        initialLoad?.cancel(); initialLoad = nil
+        actionTask?.cancel(); actionTask = nil
+        photoTask?.cancel(); photoTask = nil
+        busyId = nil; photoBusy = false
+    }
+
+    private func leaveCreateMode() {
+        let uncertain = busyId == "creating"
+        cancelWork()
+        withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
+        if uncertain { session.toasts.show("Creation may still finish. Check Channels before creating again.") }
+        beginAction { await reload() }
+    }
+
+    private func reload() async {
+        guard owns(session.sessionGeneration) else { return }
+        let api = session.api, epoch = session.sessionGeneration, ticket = UUID()
+        loadTicket = ticket
+        loading = true
+        loadError = nil
+        defer { if owns(epoch), loadTicket == ticket { loading = false } }
+        do {
+            let fresh = try await api.channels(mineOnly: false)
+            guard owns(epoch), loadTicket == ticket else { return }
+            channels = fresh
+            optimistic = [:]
+        } catch {
+            guard owns(epoch), loadTicket == ticket else { return }
+            loadError = "Couldn't refresh channels. Any displayed channels are the last loaded list."
+        }
+    }
+
     private func subscribe(_ channel: WireChannelSummary) async {
-        guard busyId == nil else { return }
+        guard busyId == nil, owns(session.sessionGeneration) else { return }
+        let api = session.api, epoch = session.sessionGeneration
         busyId = channel.id
         let snapshot = optimistic[channel.id] ?? channel
         let optimisticCopy = snapshot.with(subscribed: true, memberCount: (snapshot.memberCount ?? 0) + 1)
         optimistic[channel.id] = optimisticCopy
-        defer { busyId = nil }
         do {
-            let result = try await session.api.subscribeChannel(channel.id)
+            let result = try await api.subscribeChannel(channel.id)
+            guard owns(epoch) else { return }
+            optimistic[channel.id] = optimisticCopy.with(memberCount: result.memberCount)
             PulseHaptics.success()
             session.toasts.show(result.already == true ? "Already subscribed" : "Subscribed")
-            if let count = result.memberCount {
-                optimistic[channel.id] = optimisticCopy.with(memberCount: count)
-            }
+            session.noteInboxChanged()
             await reload()
         } catch {
+            guard owns(epoch) else { return }
             optimistic[channel.id] = snapshot
-            session.toasts.show("Could not subscribe - try again")
+            session.toasts.show(ChatsViewModel.describe(error))
         }
     }
 
-    /// Unsubscribe - the server owns the last-admin rule and answers 403
-    /// with the verbatim succession copy; the toast carries it untouched.
     private func leave(_ channel: WireChannelSummary) async {
-        guard busyId == nil else { return }
+        guard busyId == nil, owns(session.sessionGeneration) else { return }
+        let api = session.api, epoch = session.sessionGeneration
         busyId = channel.id
-        defer { busyId = nil }
         do {
-            _ = try await session.api.unsubscribeChannel(channel.id)
+            let result = try await api.unsubscribeChannel(channel.id)
+            guard owns(epoch) else { return }
+            guard result.ok == true else { throw PulseAPIClient.Failure(kind: .validation, message: "The channel did not confirm leaving.") }
+            optimistic[channel.id] = channel.with(subscribed: false, memberCount: result.memberCount)
             PulseHaptics.success()
             session.toasts.show("You left \(channel.name ?? "the channel")")
+            session.noteInboxChanged()
             await reload()
-        } catch let failure as PulseAPIClient.Failure {
-            session.toasts.show(failure.message ?? "Could not leave the channel")
         } catch {
-            session.toasts.show("Could not leave the channel")
+            guard owns(epoch) else { return }
+            session.toasts.show(ChatsViewModel.describe(error))
         }
     }
 
     private func open(_ channel: WireChannelSummary) {
-        guard let conversationId = channel.conversationId else {
+        guard let conversationId = PulseChannelDirectory.roomId(channel) else {
             session.toasts.show("That channel isn't available right now")
             return
         }
-        PulseHaptics.tap()
-        dismiss()
-        Task {
-            if let conv = try? await session.api.conversationDetail(id: conversationId, userId: session.api.userId) {
+        beginAction {
+            session.noteRoomNavigationIntent()
+            let api = session.api, epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration
+            busyId = channel.id
+            do {
+                let conv = try await PulseConversationNavigation.conversation(id: conversationId, cached: []) {
+                    try await api.conversationDetail(id: conversationId, userId: api.userId)
+                }
+                guard owns(epoch), session.roomNavigationGeneration == navigation else { return }
                 onOpenConversation(conv)
-            } else {
-                session.toasts.show("That channel isn't available right now")
+                dismiss()
+            } catch {
+                guard owns(epoch), session.roomNavigationGeneration == navigation else { return }
+                session.toasts.show("Couldn't open this channel. The directory is still here so you can retry.")
             }
         }
     }
 
     private func create() async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        if let error = PulseChannelDraft.nameError(trimmedName) {
-            nameError = error
-            return
-        }
+        if let error = PulseChannelDraft.nameError(trimmedName) { nameError = error; return }
+        guard busyId == nil, !photoBusy, owns(session.sessionGeneration) else { return }
         nameError = nil
-        guard busyId == nil, !photoBusy else { return }
+        session.noteRoomNavigationIntent()
+        let api = session.api, epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration
+        let description = PulseChannelDraft.trimmedDescription(descriptionText), photo = photoPath
         busyId = "creating"
-        defer { busyId = nil }
+        var acknowledged = false
+        defer { if session.sessionGeneration == epoch { session.noteInboxChanged() } }
         do {
-            let channel = try await session.api.createChannel(
-                name: trimmedName,
-                description: PulseChannelDraft.trimmedDescription(descriptionText),
-                photoPath: photoPath,
-            )
+            let channel = try await api.createChannel(name: trimmedName, description: description, photoPath: photo)
+            guard owns(epoch) else { return }
+            guard let conversationId = PulseChannelDirectory.roomId(channel) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Channel response didn't identify its conversation.")
+            }
+            guard let room = channel.creationConversation, let store = session.store else {
+                throw PulseAPIClient.Failure(kind: .server, message: "The channel couldn't be saved locally. Retry the same details.")
+            }
+            try store.upsert(conversations: [room.toDomain()])
+            try await api.acknowledgeChannelCreation(name: trimmedName, description: description, photoPath: photo, receipt: channel)
+            guard owns(epoch) else { return }
+            acknowledged = true
+            channels.removeAll { $0.id == channel.id }
+            channels.insert(channel, at: 0)
+            optimistic.removeValue(forKey: channel.id)
+            name = ""; descriptionText = ""; photoPath = nil
+            photoTicket = UUID(); photoTask?.cancel(); photoTask = nil; photoBusy = false
+            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
             PulseHaptics.success()
             session.toasts.show("Channel “\(channel.name ?? trimmedName)” created")
-            name = ""
-            descriptionText = ""
-            photoPath = nil
-            await reload()
-            withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
-            if let conversationId = channel.conversationId,
-               let conv = try? await session.api.conversationDetail(id: conversationId, userId: session.api.userId) {
-                onOpenConversation(conv)
+            guard session.roomNavigationGeneration == navigation else { return }
+            let conv = try await PulseConversationNavigation.conversation(id: conversationId, cached: [room]) {
+                try await api.conversationDetail(id: conversationId, userId: api.userId)
             }
+            guard owns(epoch), session.roomNavigationGeneration == navigation else { return }
+            onOpenConversation(conv)
+            dismiss()
         } catch {
+            guard owns(epoch), session.roomNavigationGeneration == navigation else { return }
+            session.toasts.show(acknowledged ? "Channel created, but opening failed. Use Open in the directory; don't create it again."
+                : "Couldn't confirm channel creation. Retry the same details to recover the same operation.")
+        }
+    }
+
+    private func uploadPhoto(_ item: PhotosPickerItem, ticket: UUID) async {
+        let api = session.api, epoch = session.sessionGeneration
+        defer { if photoTicket == ticket { photoBusy = false; photoTask = nil } }
+        guard owns(epoch), photoTicket == ticket, mode == .create else { return }
+        do {
+            let photo = try await item.loadTransferable(type: PulsePickedPhoto.self)
+            guard owns(epoch), photoTicket == ticket, mode == .create else { return }
+            guard let photo, let jpeg = PulseAvatarImage.jpegData(from: photo.jpeg) else {
+                session.toasts.show("Couldn't read that image - try another one")
+                return
+            }
+            let path = try await api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
+            guard owns(epoch), photoTicket == ticket, mode == .create else { return }
+            photoPath = path
+        } catch {
+            guard owns(epoch), photoTicket == ticket else { return }
             session.toasts.show(ChatsViewModel.describe(error))
         }
     }
 
-    /// Photo → square ≤512 JPEG q0.85 → /api/uploads (the shared Wave 6
-    /// avatar pipeline, avatar-editor parity).
-    private func uploadPhoto(_ item: PhotosPickerItem) async {
-        guard let raw = try? await item.loadTransferable(type: Data.self),
-              let jpeg = PulseAvatarImage.jpegData(from: raw) else {
-            session.toasts.show("Couldn't read that image - try another one")
-            return
-        }
-        photoBusy = true
-        defer { photoBusy = false }
-        do {
-            photoPath = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
-        } catch {
-            session.toasts.show(ChatsViewModel.describe(error))
-        }
-    }
 }
 
 /// Memberwise re-clone - the wire struct keeps `let` storage (Codable+Sendable

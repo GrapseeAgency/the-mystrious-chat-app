@@ -43,18 +43,12 @@ class ShareInActivity : ComponentActivity() {
             }
         }
 
+        // Only delegated content URIs may cross this exported entry point.
+        stream = stream?.takeIf { it.scheme == "content" && !it.authority.isNullOrBlank() &&
+            intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0 }
         val readable = !text.isNullOrBlank() || stream != null
         if (readable) {
-            val forward = Intent(this, MainActivity::class.java).apply {
-                setAction(ACTION_SHARE_IN)
-                putExtra(EXTRA_SHARE_TEXT, text)
-                putExtra(EXTRA_SHARE_STREAM, stream)
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
-                )
-            }
+            val forward = forwardIntent(this, text, stream)
             startActivity(forward)
         } else {
             Toast.makeText(this, "Nothing here Pulse can share", Toast.LENGTH_SHORT).show()
@@ -64,6 +58,27 @@ class ShareInActivity : ComponentActivity() {
     }
 
     companion object {
+        internal fun forwardIntent(context: android.content.Context, text: String?, stream: Uri?): Intent =
+            Intent(context, MainActivity::class.java).apply {
+                action = ACTION_SHARE_IN
+                putExtra(EXTRA_SHARE_TEXT, text)
+                putExtra(EXTRA_SHARE_STREAM, stream)
+                stream?.let {
+                    clipData = android.content.ClipData.newRawUri("Shared photo", it)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+
+        /** Custom exported launch actions must carry the same delegated URI in ClipData. */
+        internal fun forwardedStream(intent: Intent): Uri? {
+            val raw = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(EXTRA_SHARE_STREAM, Uri::class.java)
+                else { @Suppress("DEPRECATION") (intent.getParcelableExtra(EXTRA_SHARE_STREAM) as? Uri) }
+            return raw?.takeIf { uri -> uri.scheme == "content" && !uri.authority.isNullOrBlank() &&
+                intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0 &&
+                intent.clipData?.let { clip -> (0 until clip.itemCount).any { clip.getItemAt(it).uri == uri } } == true }
+        }
+
         /** MainActivity consumes this action + the two payload extras. */
         const val ACTION_SHARE_IN = "app.pulse.android.action.SHARE_IN"
         const val EXTRA_SHARE_TEXT = "pulse.share_in.text"

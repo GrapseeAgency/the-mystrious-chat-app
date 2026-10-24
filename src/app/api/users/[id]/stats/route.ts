@@ -3,7 +3,7 @@
 // photos shared, chats, groups, days on Pulse.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { DEFAULT_PREFERENCES, mergePrefs } from '@/lib/prefs-defaults'
+import { privacyPreferenceEnabled } from '@/lib/privacy-preferences'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,12 +39,6 @@ export async function GET(_req: Request, { params }: RouteCtx) {
 
   // R46 - honor the last-seen privacy choice here too (profile sheets of
   // users who hide it get null; the UI hides the stamp accordingly).
-  let prefs = DEFAULT_PREFERENCES
-  try {
-    prefs = mergePrefs(user.preferences ? JSON.parse(user.preferences) : null)
-  } catch {
-    // malformed → defaults
-  }
 
   return NextResponse.json({
     stats: {
@@ -56,7 +50,7 @@ export async function GET(_req: Request, { params }: RouteCtx) {
       groups,
       days,
       joinedAt: user.createdAt.toISOString(),
-      lastSeenAt: prefs.lastSeenVisible === false ? null : user.lastSeenAt.toISOString(),
+      lastSeenAt: privacyPreferenceEnabled(user.preferences, 'lastSeenVisible') ? user.lastSeenAt.toISOString() : null,
     },
   })
 }

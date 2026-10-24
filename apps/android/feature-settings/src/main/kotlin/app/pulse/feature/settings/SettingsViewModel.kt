@@ -16,15 +16,20 @@ import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.PulseWave8Logic
 import app.pulse.protocol.WirePulsePrefs
+import app.pulse.protocol.settingsFieldNames
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.IOException
 import java.net.URL
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -62,12 +67,15 @@ class SettingsViewModel @Inject constructor(
     // user preferences blob (server-backed)
 
     val pulsePrefs: StateFlow<WirePulsePrefs> = repo.pulsePrefs
-        .stateIn(viewModelScope, SharingStarted.Eagerly, PulseWave8Logic.DEFAULTS)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, PulseWave8Logic.PRIVATE_DEFAULTS)
 
-    private val _prefsOffline = MutableStateFlow(false)
-
-    /** True when the last PATCH failed - the local change STAYS (honest hint). */
-    val prefsOffline: StateFlow<Boolean> = _prefsOffline.asStateFlow()
+    // Network failures belong to the durable journal, not a sticky view-local
+    // flag: a Retry from another settings surface must clear the same notice.
+    private val unsavedSettingsFields = MutableStateFlow<Set<String>>(emptySet())
+    val prefsLocalFailure: StateFlow<Boolean> = unsavedSettingsFields.map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val prefsOffline: StateFlow<Boolean> = repo.observePendingSettings()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // local-only settings (web pulse.settings.v1 parity)
 
@@ -168,13 +176,35 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    private val footprintLoader = SettingsFootprintLoader(repo, viewModelScope)
+    val footprintStats = footprintLoader.state
+    private var networkRegistration: Pair<ConnectivityManager, ConnectivityManager.NetworkCallback>? = null
+
     init {
         viewModelScope.launch {
-            prefs.viewerId.collect { id ->
-                if (id == null) {
+            var previousOwner: Pair<String?, String?>? = null
+            prefs.viewerId.collectLatest { id ->
+                val target = repo.boundToCurrentAccount()
+                val epoch = target.attachmentSessionKey()
+                val owner = id to epoch
+                if (owner != previousOwner) {
+                    previousOwner = owner
                     _viewerProfile.value = null
-                } else {
-                    _viewerProfile.value = repo.userProfile(id).getOrNull()
+                    footprintLoader.reset()
+                    unsavedSettingsFields.value = emptySet()
+                }
+                if (id == null || target.viewerId != id || epoch == null) {
+                    _viewerProfile.value = null
+                    return@collectLatest
+                }
+                try {
+                    val loaded = target.userProfile(id).getOrThrow()
+                    currentCoroutineContext().ensureActive()
+                    if (target.viewerId == id && target.attachmentSessionKey() == epoch && loaded.id == id) {
+                        _viewerProfile.value = loaded
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) {
+                    // Keep only this owner's last confirmed cached profile, if any.
                 }
             }
         }
@@ -185,22 +215,13 @@ class SettingsViewModel @Inject constructor(
             val request = NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .build()
-            cm.registerNetworkCallback(
-                request,
-                object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) {
-                        refreshDeviceOnline()
-                    }
-
-                    override fun onLost(network: Network) {
-                        refreshDeviceOnline()
-                    }
-
-                    override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                        refreshDeviceOnline()
-                    }
-                },
-            )
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) { refreshDeviceOnline() }
+                override fun onLost(network: Network) { refreshDeviceOnline() }
+                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) { refreshDeviceOnline() }
+            }
+            cm.registerNetworkCallback(request, callback)
+            networkRegistration = cm to callback
         }
     }
 
@@ -237,11 +258,31 @@ class SettingsViewModel @Inject constructor(
         updatePrefs(WirePulsePrefs(fxWebglMode = value))
     }
 
-    private fun updatePrefs(patch: WirePulsePrefs) {
+    fun retryPreferences() = updatePrefs(null)
+
+    private fun updatePrefs(patch: WirePulsePrefs?) {
+        val target = repo.boundToCurrentAccount()
+        val owner = target.viewerId ?: return
+        val epoch = target.attachmentSessionKey() ?: return
+        fun current() = target.viewerId == owner && target.attachmentSessionKey() == epoch
         viewModelScope.launch {
-            repo.updatePulsePrefs(patch)
-                .onSuccess { _prefsOffline.value = false }
-                .onFailure { _prefsOffline.value = true } // local change KEPT
+            try {
+                currentCoroutineContext().ensureActive()
+                if (!current()) return@launch
+                val result = if (patch == null) target.retryPendingSettings() else target.updatePulsePrefs(patch)
+                currentCoroutineContext().ensureActive()
+                if (!current()) return@launch
+                val fields = patch?.settingsFieldNames().orEmpty()
+                unsavedSettingsFields.value = if (result.exceptionOrNull() is app.pulse.domain.repository.SettingsPersistenceFailure) {
+                    unsavedSettingsFields.value + fields
+                } else {
+                    // Local staging succeeded, including when HTTP later failed.
+                    // Unrelated successes cannot erase a failed local choice.
+                    unsavedSettingsFields.value - fields
+                }
+            } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) {
+                if (current()) unsavedSettingsFields.value += patch?.settingsFieldNames().orEmpty()
+            }
         }
     }
 
@@ -427,38 +468,13 @@ class SettingsViewModel @Inject constructor(
     //    :1496-1571) - the SAME repo stats path the user page consumes
     // (GET /api/users/{id}/stats), evaluated for the VIEWER.
 
-    data class FootprintStats(
-        val loading: Boolean = false,
-        val stats: UserStats? = null,
-        /** Honest failure - the UI offers a retry instead of fake zeros. */
-        val error: String? = null,
-    )
+    fun refreshFootprintStats() = footprintLoader.refresh(viewerId.value)
 
-    private val _footprintStats = MutableStateFlow(FootprintStats())
-
-    /** Viewer stats for the footprint tiles: messages/photos/voice/chats/groups/days. */
-    val footprintStats: StateFlow<FootprintStats> = _footprintStats.asStateFlow()
-
-    fun refreshFootprintStats() {
-        val viewer = viewerId.value
-        if (viewer.isNullOrBlank()) {
-            _footprintStats.value = FootprintStats(loading = false, stats = null, error = "Sign in to see your stats.")
-            return
-        }
-        viewModelScope.launch {
-            _footprintStats.value = _footprintStats.value.copy(loading = true, error = null)
-            repo.userStats(viewer).fold(
-                onSuccess = { stats ->
-                    _footprintStats.value = FootprintStats(loading = false, stats = stats, error = null)
-                },
-                onFailure = { t ->
-                    _footprintStats.value = _footprintStats.value.copy(
-                        loading = false,
-                        error = t.message ?: "Couldn't load your stats.",
-                    )
-                },
-            )
-        }
+    override fun onCleared() {
+        footprintLoader.reset()
+        networkRegistration?.let { (manager, callback) -> runCatching { manager.unregisterNetworkCallback(callback) } }
+        networkRegistration = null
+        super.onCleared()
     }
 
     // Real-time & Voice - live probe (timed real GET)

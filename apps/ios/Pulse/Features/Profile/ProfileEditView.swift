@@ -7,8 +7,8 @@ import PhotosUI
 // web placeholder), status glyph picker (the 11 fixed stored values) +
 // status text (48), 8 avatar color swatches, @handle editor (350 ms
 // debounced live check with the verbatim copy), avatar upload
-// (square ≤512 JPEG q0.85 → /api/uploads → PATCH). Save is optimistic
-// with rollback ("Profile updated").
+// (square ≤512 JPEG q0.85 → /api/uploads → PATCH). Only confirmed,
+// current-session responses update the viewer mirror.
 // ─────────────────────────────────────────────────────────────
 
 /// Pure @handle availability state - the verdict derivation is testable
@@ -61,6 +61,7 @@ struct HandleCheckState: Equatable {
     }
 }
 
+@MainActor
 struct ProfileEditView: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
@@ -83,15 +84,21 @@ struct ProfileEditView: View {
     @State private var statusText = ""
     @State private var color = "emerald"
     @State private var loaded = false
+    @State private var loadingProfile = false
+    @State private var profileLoadTask: Task<Void, Never>?
+    @State private var profileLoadId = UUID()
+    @State private var baselineForm = [String](repeating: "", count: 6)
+    @State private var editorOwner: ProfileMutationGate.Owner?
+    @State private var mutationGate = ProfileMutationGate()
+    @State private var operationTask: Task<Void, Never>?
+    @State private var operationId = UUID()
 
     // avatar pipeline
     @State private var photoItem: PhotosPickerItem?
     @State private var avatarUploading = false
     @State private var avatarPreview: UIImage?
 
-    // R50-b - cover pipeline (same upload-then-PATCH contract as the avatar;
-    // the wide render crop happens at draw time, so the square capture reuses
-    // the avatar optimizer honestly).
+    // Cover bytes retain a real 2:1 crop, rather than uploading a square avatar.
     @State private var coverItem: PhotosPickerItem?
     @State private var coverUploading = false
 
@@ -107,11 +114,19 @@ struct ProfileEditView: View {
     var body: some View {
         NavigationStack {
             Form {
-                identitySection
-                statusSection
-                colorSection
-                handleSection
-                saveSection
+                if loaded {
+                    identitySection
+                    statusSection
+                    colorSection
+                    handleSection
+                    saveSection
+                } else {
+                    Section {
+                        if loadingProfile { ProgressView("Loading your profile…") }
+                        if let notice { Text(notice).foregroundStyle(PulseTheme.amber600) }
+                        if !loadingProfile { Button("Retry loading profile", action: seedFromViewer) }
+                    }
+                }
             }
             .navigationTitle("Edit profile")
             .navigationBarTitleDisplayMode(.inline)
@@ -121,15 +136,18 @@ struct ProfileEditView: View {
                 }
             }
             .onAppear(perform: seedFromViewer)
+            .onDisappear(perform: stopOperations)
+            .onChange(of: session.sessionGeneration) { _, _ in stopOperations(); dismiss() }
+            .onChange(of: prefs.viewer?.id) { _, _ in stopOperations(); dismiss() }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 photoItem = nil
-                Task { await uploadAvatar(item) }
+                launchOperation { await uploadAvatar(item) }
             }
             .onChange(of: coverItem) { _, item in
                 guard let item else { return }
                 coverItem = nil
-                Task { await uploadCover(item) }
+                launchOperation { await uploadCover(item) }
             }
         }
         // R17 Neo - sheets at 28pt (web sheet radius parity).
@@ -164,15 +182,16 @@ struct ProfileEditView: View {
                     }
                 }
                 .tint(PulseTheme.accent)
+                .disabled(operationTask != nil)
                 // R14 5-b - the remove branch (web avatar-editor.tsx
                 // runRemovePhoto): shown only while a photo exists, PATCHes
                 // { avatar: "" } - the server nulls the column.
                 if viewer?.avatar != nil {
-                    if avatarUploading {
+                    if operationTask != nil {
                         EmptyView()
                     } else {
                         Button(role: .destructive) {
-                            Task { await removePhoto() }
+                            launchOperation { await removePhoto() }
                         } label: {
                             Text("Remove photo")
                                 .font(.footnote.weight(.semibold))
@@ -192,9 +211,10 @@ struct ProfileEditView: View {
                     }
                 }
                 .tint(PulseTheme.accent)
-                if viewer?.coverImage != nil, !coverUploading {
+                .disabled(operationTask != nil)
+                if viewer?.coverImage != nil, operationTask == nil {
                     Button(role: .destructive) {
-                        Task { await removeCover() }
+                        launchOperation { await removeCover() }
                     } label: {
                         Text("Remove cover")
                             .font(.footnote.weight(.semibold))
@@ -367,7 +387,7 @@ struct ProfileEditView: View {
     private var saveSection: some View {
         Section {
             Button {
-                Task { await save() }
+                launchOperation { await save() }
             } label: {
                 Group {
                     if saving {
@@ -381,36 +401,36 @@ struct ProfileEditView: View {
             }
             .listRowBackground(canSave ? PulseTheme.emerald : PulseTheme.zinc(300))
             .foregroundStyle(.white)
-            .disabled(!canSave || saving)
+            .disabled(!canSave || operationTask != nil)
             if let notice {
                 Text(notice)
                     .font(.footnote)
                     .foregroundStyle(PulseTheme.amber600)
             }
         } footer: {
-            Text("Changes appear everywhere instantly - profile, chats and mentions.")
+            Text("Confirmed changes appear in your profile, chats and mentions.")
         }
     }
 
     // ── derived ──────────────────────────────────────────────
 
     private var nameDirty: Bool {
-        name.trimmingCharacters(in: .whitespaces) != (viewer?.name ?? "")
+        name.trimmingCharacters(in: .whitespaces) != baselineForm[0].trimmingCharacters(in: .whitespaces)
     }
     private var aboutDirty: Bool {
-        about.trimmingCharacters(in: .whitespaces) != (prefs.viewerAbout ?? "")
+        about.trimmingCharacters(in: .whitespaces) != baselineForm[1].trimmingCharacters(in: .whitespaces)
     }
     private var statusDirty: Bool {
-        statusEmoji != (prefs.viewerStatusEmoji ?? "") || statusText != (prefs.viewerStatusText ?? "")
+        statusEmoji != baselineForm[2] || statusText != baselineForm[3]
     }
-    private var colorDirty: Bool { color != (viewer?.color ?? "emerald") }
+    private var colorDirty: Bool { color != baselineForm[4] }
     private var handleDirty: Bool {
-        handleState.value.trimmingCharacters(in: .whitespaces) != (viewer?.username ?? "")
+        handleState.value.trimmingCharacters(in: .whitespaces) != baselineForm[5].trimmingCharacters(in: .whitespaces)
     }
 
     private var canSave: Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmedName.isEmpty, trimmedName.count <= Self.nameMax else { return false }
+        guard !trimmedName.isEmpty, trimmedName.utf16.count <= Self.nameMax else { return false }
         if handleDirty {
             let handle = handleState.value.trimmingCharacters(in: .whitespaces)
             if !handle.isEmpty && !pulseValidHandle(handle) { return false }
@@ -420,15 +440,64 @@ struct ProfileEditView: View {
 
     // ── actions ──────────────────────────────────────────────
 
+    private var currentOwner: ProfileMutationGate.Owner? {
+        guard let id = prefs.viewer?.id, session.viewer?.id == id,
+              PulseWalletOperations.gatewayKey(session.api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL) else { return nil }
+        return .init(userId: id, session: session.sessionGeneration)
+    }
+
     private func seedFromViewer() {
-        guard !loaded, let viewer else { return }
-        loaded = true
-        name = viewer.name
-        about = prefs.viewerAbout ?? ""
-        statusEmoji = prefs.viewerStatusEmoji ?? ""
-        statusText = prefs.viewerStatusText ?? ""
-        color = viewer.color ?? "emerald"
-        handleState.value = viewer.username ?? ""
+        guard let owner = currentOwner, let viewer else { return }
+        if editorOwner == nil { editorOwner = owner }
+        guard editorOwner == owner else { stopOperations(); dismiss(); return }
+        mutationGate.bind(owner)
+        guard !loaded, profileLoadTask == nil else { return }
+        let api = session.api
+        let id = UUID(); profileLoadId = id
+        let oldExtras = [prefs.viewerAbout, prefs.viewerStatusEmoji, prefs.viewerStatusText]
+        loadingProfile = true; notice = nil
+        profileLoadTask = Task { @MainActor in
+            defer { if profileLoadId == id { profileLoadTask = nil; loadingProfile = false } }
+            do {
+                let user = try await api.user(owner.userId)
+                guard !Task.isCancelled, profileLoadId == id, currentOwner == owner, mutationGate.owner == owner else { return }
+                guard user.id == owner.userId else {
+                    throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account.")
+                }
+                adopt(user)
+                baselineForm = formSnapshot
+                loaded = true
+                // Do not roll a locally updated mirror backward when a read was
+                // already in flight. The editor's own baseline stays immutable.
+                if prefs.viewer == viewer { prefs.setViewer(PulseViewer(from: user)) }
+                if [prefs.viewerAbout, prefs.viewerStatusEmoji, prefs.viewerStatusText] == oldExtras {
+                    prefs.setViewerProfile(about: user.about ?? "", statusEmoji: user.statusEmoji ?? "", statusText: user.statusText ?? "")
+                }
+            } catch {
+                guard !Task.isCancelled, profileLoadId == id, currentOwner == owner, mutationGate.owner == owner else { return }
+                notice = ChatsViewModel.describe(error)
+            }
+        }
+    }
+
+    private func launchOperation(_ work: @escaping @MainActor () async -> Void) {
+        guard loaded, operationTask == nil, currentOwner == editorOwner, mutationGate.owner != nil else { return }
+        let id = UUID(); operationId = id
+        operationTask = Task { @MainActor in
+            await work()
+            if operationId == id { operationTask = nil }
+        }
+    }
+    private func stopOperations() {
+        operationId = UUID()
+        profileLoadId = UUID(); profileLoadTask?.cancel(); profileLoadTask = nil; loadingProfile = false
+        operationTask?.cancel(); operationTask = nil
+        handleCheckTask?.cancel(); handleCheckTask = nil
+        mutationGate.invalidate()
+        avatarUploading = false; coverUploading = false; saving = false
+    }
+    private func accepts(_ ticket: ProfileMutationGate.Ticket) -> Bool {
+        !Task.isCancelled && mutationGate.accepts(ticket, current: currentOwner)
     }
 
     /// 350 ms debounced live availability - skipped while re-typing the
@@ -443,9 +512,11 @@ struct ProfileEditView: View {
         handleState.checking = true
         let prefs = self.prefs
         let session = self.session
+        let owner = currentOwner
+        let api = session.api
         handleCheckTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, currentOwner == owner, mutationGate.owner == owner else { return }
             if candidate == (prefs.viewer?.username ?? "") {
                 handleState.checking = false
                 handleState.checkedValue = candidate
@@ -453,11 +524,15 @@ struct ProfileEditView: View {
                 return
             }
             do {
-                let result = try await session.api.checkUsername(candidate)
+                let result = try await api.checkUsername(candidate)
+                guard !Task.isCancelled, currentOwner == owner, mutationGate.owner == owner,
+                      handleState.value.trimmingCharacters(in: .whitespaces) == candidate else { return }
                 handleState.checkedValue = candidate
                 handleState.available = result.available
                 handleState.suggestion = result.suggestion
             } catch {
+                guard !Task.isCancelled, currentOwner == owner, mutationGate.owner == owner,
+                      handleState.value.trimmingCharacters(in: .whitespaces) == candidate else { return }
                 handleState.checkedValue = candidate
                 handleState.available = nil
             }
@@ -465,150 +540,108 @@ struct ProfileEditView: View {
         }
     }
 
-    /// R14 5-b - the remove branch (web avatar-editor.tsx runRemovePhoto
-    /// :141-163): PATCH { avatar: "" } (the server nulls the column) with an
-    /// optimistic viewer mirror + honest rollback on failure.
-    private func removePhoto() async {
-        guard let viewer, !avatarUploading else { return }
-        avatarUploading = true
-        defer { avatarUploading = false }
-        let snapshot = viewer
-        // Optimistic local clear (the viewer mirror drives every surface).
-        prefs.setViewer(PulseViewer(id: viewer.id, name: viewer.name, username: viewer.username, color: viewer.color, avatar: nil, coverImage: viewer.coverImage))
+    private func removePhoto() async { await changeMedia(nil, cover: false) }
+    private func removeCover() async { await changeMedia(nil, cover: true) }
+    private func uploadAvatar(_ item: PhotosPickerItem) async { await changeMedia(item, cover: false) }
+    private func uploadCover(_ item: PhotosPickerItem) async { await changeMedia(item, cover: true) }
+
+    /// Acquire ownership before the first suspension (including the picker
+    /// transfer), and never re-read session.api halfway through the operation.
+    private func changeMedia(_ item: PhotosPickerItem?, cover: Bool) async {
+        guard let ticket = mutationGate.begin(current: currentOwner) else { return }
+        let api = session.api
+        if cover { coverUploading = true } else { avatarUploading = true }
+        defer {
+            if mutationGate.active == ticket {
+                mutationGate.finish(ticket)
+                if cover { coverUploading = false } else { avatarUploading = false }
+            }
+        }
         do {
-            let user = try await session.api.updateProfile(userId: viewer.id, body: ["avatar": ""])
-            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, coverImage: user.coverImage))
-            adopt(user)
+            var path = ""
+            if let item {
+                guard let photo = try await item.loadTransferable(type: PulsePickedPhoto.self) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                guard accepts(ticket) else { return }
+                guard let jpeg = cover ? PulseCoverImage.jpegData(from: photo.jpeg) : PulseAvatarImage.jpegData(from: photo.jpeg) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                let receipt = try await api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
+                path = try PulseAvatarImage.managedPath(receipt)
+                guard accepts(ticket) else { return }
+                guard !path.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+            }
+            guard accepts(ticket) else { return }
+            let user = try await api.updateProfile(userId: ticket.owner.userId, body: [cover ? "coverImage" : "avatar": path])
+            guard accepts(ticket), let current = prefs.viewer else { return }
+            guard user.id == ticket.owner.userId else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account. Refresh before retrying.")
+            }
+            // Media acknowledgement must not adopt the whole returned profile:
+            // that would erase text currently being edited or unrelated fields.
+            prefs.setViewer(PulseViewer(id: current.id, name: current.name, username: current.username,
+                color: current.color, avatar: cover ? current.avatar : user.avatar,
+                coverImage: cover ? user.coverImage : current.coverImage))
             avatarPreview = nil
+            notice = nil
             PulseHaptics.success()
-            session.toasts.show("Profile photo removed")
+            session.toasts.show(cover ? "Cover photo updated" : "Profile photo updated")
         } catch {
-            // Roll back the optimistic mirror; the form keeps its fields.
-            prefs.setViewer(snapshot)
+            guard accepts(ticket) else { return }
             notice = ChatsViewModel.describe(error)
         }
     }
 
-    /// PhotosPicker → square ≤512 JPEG q0.85 → /api/uploads → PATCH avatar.
-    /// Optimistic local preview; failures surface honestly.
-    private func uploadAvatar(_ item: PhotosPickerItem) async {
-        guard let viewer, !avatarUploading else { return }
-        guard let raw = try? await item.loadTransferable(type: Data.self),
-              let jpeg = PulseAvatarImage.jpegData(from: raw) else {
-            notice = "Couldn't read that image - try another one"
-            return
-        }
-        avatarUploading = true
-        defer { avatarUploading = false }
-        do {
-            let path = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
-            let user = try await session.api.updateProfile(userId: viewer.id, body: ["avatar": path])
-            adopt(user)
-            avatarPreview = nil
-            PulseHaptics.success()
-            session.toasts.show("Profile updated")
-        } catch {
-            avatarPreview = nil
-            notice = ChatsViewModel.describe(error)
-        }
-    }
+    private var formSnapshot: [String] { [name, about, statusEmoji, statusText, color, handleState.value] }
 
-    /// R50-b - cover upload: PATCHes { coverImage: path } through the same
-    /// updateProfile endpoint; the optimistic viewer mirror refreshes every
-    /// surface that renders the cover band.
-    private func uploadCover(_ item: PhotosPickerItem) async {
-        guard let viewer, !coverUploading else { return }
-        guard let raw = try? await item.loadTransferable(type: Data.self),
-              let jpeg = PulseAvatarImage.jpegData(from: raw) else {
-            notice = "Couldn't read that image - try another one"
-            return
-        }
-        coverUploading = true
-        defer { coverUploading = false }
-        do {
-            let path = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
-            let user = try await session.api.updateProfile(userId: viewer.id, body: ["coverImage": path])
-            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, coverImage: user.coverImage))
-            adopt(user)
-            PulseHaptics.success()
-            session.toasts.show("Cover photo updated")
-        } catch {
-            notice = ChatsViewModel.describe(error)
-        }
-    }
-
-    /// R50-b - the remove branch: PATCH { coverImage: "" } with optimistic mirror
-    /// + rollback (the removePhoto contract verbatim).
-    private func removeCover() async {
-        guard let viewer, !coverUploading else { return }
-        coverUploading = true
-        defer { coverUploading = false }
-        let snapshot = viewer
-        prefs.setViewer(PulseViewer(id: viewer.id, name: viewer.name, username: viewer.username, color: viewer.color, avatar: viewer.avatar, coverImage: nil))
-        do {
-            let user = try await session.api.updateProfile(userId: viewer.id, body: ["coverImage": ""])
-            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, coverImage: user.coverImage))
-            adopt(user)
-            PulseHaptics.success()
-            session.toasts.show("Cover photo removed")
-        } catch {
-            prefs.setViewer(snapshot)
-            notice = ChatsViewModel.describe(error)
-        }
-    }
-
-    /// Optimistic save - the viewer prefs flip immediately, the PATCH runs,
-    /// and any failure rolls the snapshot back (never a silent lie).
+    /// Apply confirmed fields only. A late failure cannot roll preferences back
+    /// to an earlier account/profile, and edits made while saving stay editable.
     private func save() async {
-        guard let viewer, canSave, !saving else { return }
-        saving = true
-        notice = nil
-        defer { saving = false }
-
-        let snapshot = viewer
+        guard canSave, let ticket = mutationGate.begin(current: currentOwner) else { return }
+        let api = session.api
+        let submitted = formSnapshot
+        saving = true; notice = nil
+        defer { if mutationGate.active == ticket { mutationGate.finish(ticket); saving = false } }
         var body: [String: Any] = [:]
         if nameDirty { body["name"] = name.trimmingCharacters(in: .whitespaces) }
-        let trimmedAbout = about.trimmingCharacters(in: .whitespaces)
-        if !trimmedAbout.isEmpty && aboutDirty { body["about"] = trimmedAbout }
-        if statusDirty {
-            body["statusEmoji"] = statusEmoji
-            body["statusText"] = statusText
-        }
+        if aboutDirty { body["about"] = about.trimmingCharacters(in: .whitespaces) }
+        if statusDirty { body["statusEmoji"] = statusEmoji; body["statusText"] = statusText }
         if colorDirty { body["color"] = color }
         let handle = handleState.value.trimmingCharacters(in: .whitespaces)
-        if handleDirty && !handle.isEmpty { body["username"] = handle }
-
-        // Optimistic apply (name/color/handle are what the prefs carry).
-        var optimistic = PulseViewer(
-            id: viewer.id,
-            name: name.trimmingCharacters(in: .whitespaces).isEmpty ? viewer.name : name.trimmingCharacters(in: .whitespaces),
-            username: handle.isEmpty ? viewer.username : handle,
-            color: color,
-            avatar: viewer.avatar,
-            coverImage: viewer.coverImage,
-        )
-        prefs.setViewer(optimistic)
-
+        if handleDirty { body["username"] = handle }
         do {
-            let user = try await session.api.updateProfile(userId: viewer.id, body: body)
-            optimistic = PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, coverImage: user.coverImage)
-            prefs.setViewer(optimistic)
+            let user = try await api.updateProfile(userId: ticket.owner.userId, body: body)
+            guard accepts(ticket), let current = prefs.viewer else { return }
+            guard user.id == ticket.owner.userId else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account. Refresh before retrying.")
+            }
+            prefs.setViewer(PulseViewer(id: current.id,
+                name: body["name"] == nil ? current.name : user.name,
+                username: body["username"] == nil ? current.username : user.username,
+                color: body["color"] == nil ? current.color : user.color,
+                avatar: current.avatar, coverImage: current.coverImage))
             prefs.setViewerProfile(
-                about: user.about ?? "",
-                statusEmoji: user.statusEmoji ?? "",
-                statusText: user.statusText ?? "",
-            )
-            adopt(user)
+                about: body["about"] == nil ? prefs.viewerAbout : user.about ?? "",
+                statusEmoji: body["statusEmoji"] == nil ? prefs.viewerStatusEmoji : user.statusEmoji ?? "",
+                statusText: body["statusText"] == nil ? prefs.viewerStatusText : user.statusText ?? "")
+            let confirmed = [user.name, user.about ?? "", user.statusEmoji ?? "", user.statusText ?? "", user.color ?? "emerald", user.username ?? ""]
+            let keys = ["name", "about", "statusEmoji", "statusText", "color", "username"]
+            for index in keys.indices where body[keys[index]] != nil { baselineForm[index] = confirmed[index] }
             PulseHaptics.success()
-            session.toasts.show("Profile updated")
-            dismiss()
+            if formSnapshot == submitted {
+                adopt(user)
+                session.toasts.show("Profile updated")
+                dismiss()
+            } else {
+                notice = "Submitted changes saved. Your newer edits are still here."
+            }
         } catch let failure as PulseAPIClient.Failure where failure.status == 409 {
-            // Handle clash between check and save - surface the server suggestion.
-            prefs.setViewer(snapshot)
-            handleState.clashSuggestion = failure.suggestion
+            guard accepts(ticket) else { return }
+            if handleState.value == submitted[5] { handleState.clashSuggestion = failure.suggestion }
             notice = failure.message ?? "That handle was just taken"
         } catch {
-            prefs.setViewer(snapshot)
+            guard accepts(ticket) else { return }
             notice = ChatsViewModel.describe(error)
         }
     }
@@ -626,43 +659,14 @@ struct ProfileEditView: View {
     }
 }
 
-// ── small prefs extensions (Wave 6 additive seam) ─────────────
-
-extension PulsePrefs {
-    /// The full viewer profile fields live on the WIRE user, not the stored
-    /// PulseViewer - mirror them here (UserDefaults-backed JSON on the same
-    /// pulse.viewer payload keys) so the edit form seeds + persists status.
-    var viewerAbout: String? { extraProfile["about"] }
-    var viewerStatusEmoji: String? { extraProfile["statusEmoji"] }
-    var viewerStatusText: String? { extraProfile["statusText"] }
-
-    private var extraProfile: [String: String] {
-        guard let data = UserDefaults.standard.data(forKey: "pulse.viewer.profile"),
-              let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
-        return map
-    }
-
-    func setViewerProfile(about: String?, statusEmoji: String?, statusText: String?) {
-        var map: [String: String] = [:]
-        if let about { map["about"] = about }
-        if let statusEmoji { map["statusEmoji"] = statusEmoji }
-        if let statusText { map["statusText"] = statusText }
-        if let data = try? JSONEncoder().encode(map) {
-            UserDefaults.standard.set(data, forKey: "pulse.viewer.profile")
-        }
-        objectWillChange.send()
-    }
-}
-
 // ── tiny modifiers/helpers ────────────────────────────────────
 
 private extension TextField {
     /// Hard cap while typing (web maxLength parity, no local state echo).
     func maxLength(_ binding: Binding<String>, max: Int) -> some View {
         self.onChange(of: binding.wrappedValue) { _, newValue in
-            if newValue.count > max {
-                binding.wrappedValue = String(newValue.prefix(max))
-            }
+            let clipped = ProfileTextLimit.clip(newValue, maximum: max)
+            if clipped != newValue { binding.wrappedValue = clipped }
         }
     }
 }

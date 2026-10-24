@@ -51,4 +51,16 @@ class AttachmentFilesTest {
         assertTrue(runCatching { AttachmentValidation.validated(draft.copy(caption = "🌿".repeat(1001))) }.isFailure)
     }
 
+    @Test fun `frozen metadata survives validation and local pending reply IDs are refused`() {
+        val draft = AttachmentDraft("attachment-test-0001", "room", "image", "data:image/jpeg;base64,YQ==",
+            caption = "kept", viewOnce = true, topicId = "topic", replyToId = "remote-message", anon = true)
+        val valid = AttachmentValidation.validated(draft)
+        assertEquals(draft.copy(fileSize = 1), valid)
+        val reopened = app.pulse.protocol.PulseJson.decodeFromString(AttachmentDraft.serializer(),
+            app.pulse.protocol.PulseJson.encodeToString(AttachmentDraft.serializer(), valid))
+        assertEquals(valid, reopened)
+        assertTrue(runCatching { AttachmentValidation.validated(draft.copy(replyToId = "local_pending")) }.isFailure)
+        assertTrue(runCatching { AttachmentValidation.validated(draft.copy(replyToId = "")) }.isFailure)
+    }
+
 }

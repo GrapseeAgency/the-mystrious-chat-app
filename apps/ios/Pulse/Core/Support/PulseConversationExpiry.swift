@@ -10,13 +10,13 @@ extension WireConversationSummary {
     /// from the locally cached history window. Manual-unread remains independent.
     public func removingExpiredSummary(at now: Date = Date()) -> WireConversationSummary {
         var copy = self
-        if let raw = lastMessage?.expiresAt, let expiry = PulseFormat.date(raw), expiry <= now {
+        if let raw = lastMessage?.expiresAt, !PulseRemediationLogic.isAlive(raw, now: now) {
             copy.lastMessage = nil
         }
         if let unreadExpirations {
             var remaining = max(0, unreadCount ?? 0)
             copy.unreadExpirations = unreadExpirations.filter { bucket in
-                guard let expiry = PulseFormat.date(bucket.expiresAt), expiry <= now else { return true }
+                if PulseRemediationLogic.isAlive(bucket.expiresAt, now: now) { return true }
                 remaining -= min(remaining, max(0, bucket.count))
                 return false
             }

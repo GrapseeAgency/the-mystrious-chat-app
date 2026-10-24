@@ -1,11 +1,13 @@
 // /api/uploads - accept a base64 image/audio/document data URL,
 // store to disk (files served via GET /api/uploads/[file])
 import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, rename, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { DOC_MAX_BYTES, UPLOADS_DIR, UPLOAD_MIME, safeJson, strField } from '@/lib/serializers'
+import { DOC_MAX_BYTES, UPLOADS_DIR, UPLOAD_MIME, strField } from '@/lib/serializers'
+
+import { readUploadBody, decodeUploadBase64, UploadInputError } from '@/lib/upload-input'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,8 +35,27 @@ function isDocMime(mime: string): boolean {
  *        | "data:application/pdf;base64,...." (R40; also zip / plain / csv)
  * → 201 { filePath: "<uuid>.<ext>", imagePath: same (legacy alias for image flow) }
  */
+let activeUploads = 0
+const privateHeaders = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }
+
 export async function POST(req: Request) {
-  const body = await safeJson(req)
+  // Bound concurrent JSON/base64/blob allocations in this server process.
+  if (activeUploads >= 2) return NextResponse.json({ error: 'Uploads are busy. Retry shortly.' },
+    { status: 429, headers: { ...privateHeaders, 'Retry-After': '2' } })
+  activeUploads++
+  try {
+    const response = await upload(req)
+    for (const [name, value] of Object.entries(privateHeaders)) response.headers.set(name, value)
+    return response
+  } catch (error) {
+    if (error instanceof UploadInputError) return NextResponse.json({ error: error.message }, { status: error.status, headers: privateHeaders })
+    console.error('[uploads] Upload processing failed')
+    return NextResponse.json({ error: 'Upload was not saved. Please retry.' }, { status: 503, headers: privateHeaders })
+  } finally { activeUploads-- }
+}
+
+async function upload(req: Request) {
+  const body = await readUploadBody(req)
   const dataUrl = strField(body.dataUrl)
 
   const match = DATA_URL_REGEX.exec(dataUrl)
@@ -78,15 +99,8 @@ export async function POST(req: Request) {
               : mime === 'application/zip'
                 ? 'zip'
                 : ((Object.keys(UPLOAD_MIME) as string[]).find((k) => UPLOAD_MIME[k] === mime) ?? 'jpg')
-  let buffer: Buffer
-  try {
-    buffer = Buffer.from(match[2], 'base64')
-  } catch {
-    return NextResponse.json({ error: 'Malformed base64 payload.' }, { status: 400 })
-  }
-  if (buffer.length === 0) {
-    return NextResponse.json({ error: 'Empty attachment payload.' }, { status: 400 })
-  }
+  const buffer = decodeUploadBase64(match[2])
+  if (!buffer) return NextResponse.json({ error: 'Malformed or empty base64 payload.' }, { status: 400 })
   if (doc && buffer.length > DOC_MAX_BYTES) {
     return NextResponse.json(
       { error: 'Document is too large - the limit is 10 MB.' },
@@ -94,14 +108,9 @@ export async function POST(req: Request) {
     )
   }
 
-  await mkdir(UPLOADS_DIR, { recursive: true })
   const filePath = `${randomUUID()}.${ext}`
-  await writeFile(path.join(UPLOADS_DIR, filePath), buffer)
-
-  // R41 - durable store: the sandbox has twice wiped files from disk while
-  // DB rows persisted (avatars in R37, demo PDFs in R41). Bytes now live in
-  // SQLite as the source of truth; the disk copy is a fast-path cache. A
-  // store failure must never fail the upload itself.
+  // The durable store is authoritative. Never acknowledge an ephemeral-only
+  // upload: both native outboxes would discard their upload bytes on that ack.
   try {
     const storedBytes = new Uint8Array(buffer)
     await db.uploadedFile.upsert({
@@ -109,8 +118,22 @@ export async function POST(req: Request) {
       create: { name: filePath, mime, bytes: storedBytes, size: buffer.length },
       update: { mime, bytes: storedBytes, size: buffer.length },
     })
-  } catch (storeError) {
-    console.error('[uploads] durable store write failed:', storeError)
+  } catch {
+    console.error('[uploads] Durable upload storage unavailable')
+    return NextResponse.json({ error: 'Upload storage is temporarily unavailable. Your upload was not confirmed.' },
+      { status: 503, headers: { 'Retry-After': '3' } })
+  }
+
+  // Disk is only a cache. Publish it atomically so a concurrent GET cannot see
+  // partial bytes; a full/read-only cache must not invalidate the durable ack.
+  const temporary = path.join(UPLOADS_DIR, `${filePath}.tmp-${randomUUID()}`)
+  try {
+    await mkdir(UPLOADS_DIR, { recursive: true })
+    await writeFile(temporary, buffer)
+    await rename(temporary, path.join(UPLOADS_DIR, filePath))
+  } catch {
+    await unlink(temporary).catch(() => {})
+    console.error('[uploads] Disk cache unavailable; durable bytes retained')
   }
 
   return NextResponse.json({ filePath, imagePath: filePath }, { status: 201 })

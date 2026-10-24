@@ -28,6 +28,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -401,6 +406,29 @@ internal fun groupStatusLine(snapshot: GroupCallEngine.Snapshot): String {
 fun GroupCallBanner(vm: GroupCallViewModel, modifier: Modifier = Modifier) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val ring = snapshot.ring
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var pendingPermission by remember { mutableStateOf<Triple<String, GroupCallEngine.Ring?, String>?>(null) }
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val request = pendingPermission
+        pendingPermission = null
+        val current = vm.snapshot.value
+        if (request != null && current.meId == request.first && current.phase == GroupCallEngine.UiPhase.IDLE) {
+            val sameTarget = if (request.second != null) current.ring == request.second
+                else current.ongoingElsewhere && vm.engine.openConversationId == request.third
+            if (sameTarget) {
+                if (grants[android.Manifest.permission.RECORD_AUDIO] == true) {
+                    if (request.second != null) vm.joinCall() else vm.joinOngoing()
+                } else android.widget.Toast.makeText(context, "Microphone permission is needed to join.", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    fun requestJoin(incoming: Boolean) {
+        if (pendingPermission != null) return
+        pendingPermission = Triple(snapshot.meId, if (incoming) ring else null, vm.engine.openConversationId)
+        val kind = if (incoming) ring?.kind else snapshot.ongoingKind
+        permissions.launch(if (kind == CallKind.VIDEO) arrayOf(android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.CAMERA)
+            else arrayOf(android.Manifest.permission.RECORD_AUDIO))
+    }
     Box(modifier = modifier) {
         if (ring != null && snapshot.phase == GroupCallEngine.UiPhase.IDLE) {
             BannerRow(
@@ -409,7 +437,7 @@ fun GroupCallBanner(vm: GroupCallViewModel, modifier: Modifier = Modifier) {
                 ignoreLabel = "Ignore",
                 actionLabel = "Join",
                 onIgnore = { vm.dismissRing() },
-                onJoin = { vm.joinCall() },
+                onJoin = { requestJoin(incoming = true) },
                 joinDescription = "Join group call",
             )
             return@Box
@@ -426,7 +454,7 @@ fun GroupCallBanner(vm: GroupCallViewModel, modifier: Modifier = Modifier) {
                 ignoreLabel = "Ignore",
                 actionLabel = "Join",
                 onIgnore = { vm.ignoreOngoing() },
-                onJoin = { vm.joinOngoing() },
+                onJoin = { requestJoin(incoming = false) },
                 joinDescription = "Join ongoing group call",
             )
         }

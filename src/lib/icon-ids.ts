@@ -129,7 +129,7 @@ export const REACTION_LEGACY: Record<string, ReactionId> = {
  * the default so nothing unknown is ever rendered.
  */
 export function reactionId(value: string | null | undefined): ReactionId {
-  const v = value ?? ''
+  const v = (value ?? '').replace(/[\uFE0E\uFE0F]/g, '')
   if ((REACTION_IDS as readonly string[]).includes(v)) return v as ReactionId
   return REACTION_LEGACY[v] ?? REACTION_DEFAULT
 }

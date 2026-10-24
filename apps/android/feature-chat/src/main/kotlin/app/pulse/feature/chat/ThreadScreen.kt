@@ -122,6 +122,8 @@ class ThreadViewModel @Inject constructor(
         val downloadingFileId: String? = null,
         val openedFile: FileReady? = null,
         val loadedReplyIds: Set<String>? = null,
+        // Exact cached target is not a complete server reply inventory.
+        val offlineJumpId: String? = null,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -240,7 +242,7 @@ class ThreadViewModel @Inject constructor(
 
     fun retry() {
         if (_state.value.loading) return
-        _state.value = _state.value.copy(loading = true, error = null)
+        _state.value = _state.value.copy(loading = true, error = null, offlineJumpId = null)
         viewModelScope.launch {
             try {
                 val (root, loadedReplies) = repo.loadThread(rootId)
@@ -250,17 +252,29 @@ class ThreadViewModel @Inject constructor(
                 val liveIds = loadedReplies.filter { it.conversationId == conversationId && it.threadRootId == rootId &&
                     !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
                     .mapTo(mutableSetOf()) { it.id }
-                _state.value = _state.value.copy(loading = false, unavailable = false, error = null, loadedReplyIds = liveIds)
+                _state.value = _state.value.copy(loading = false, unavailable = false, error = null, loadedReplyIds = liveIds, offlineJumpId = null)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
                 val denied = threadAccessDenied((failure as? PulseApiException)?.status)
-                _state.value = _state.value.copy(loading = false, error = failure.message,
+                val offlineTarget = if (initialJumpMessageId != null && app.pulse.domain.sync.mayUseOfflineThread(failure)) {
+                    try {
+                        repo.cachedThreadTarget(conversationId, rootId, initialJumpMessageId)?.second?.id
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (cacheFailure: Exception) {
+                        null
+                    }
+                } else null
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                _state.value = _state.value.copy(loading = false, error = failure.message, offlineJumpId = offlineTarget,
                     unavailable = _state.value.unavailable || denied,
                     openedFile = if (denied) null else _state.value.openedFile)
             }
         }
     }
+
+    suspend fun markVisibleRead(messageId: String): Result<Unit> = repo.markReadThrough(conversationId, messageId)
 
     fun notify(text: String, isError: Boolean = false) {
         _state.value = _state.value.copy(notice = RoomNotice(text, isError))
@@ -340,6 +354,7 @@ fun ThreadScreen(
     onBack: () -> Unit,
     viewModel: ThreadViewModel = hiltViewModel(),
     jumpMessageId: String? = viewModel.initialJumpMessageId,
+    readingEnabled: Boolean = false, // host must grant foreground/unlocked reading eligibility
 ) {
     val cachedParent by viewModel.parent.collectAsStateWithLifecycle()
     val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
@@ -388,6 +403,15 @@ fun ThreadScreen(
             } finally { openingViewOnce = false }
         }
     }
+    ThreadReadReceipts(
+        ownerKey = viewModel,
+        enabled = readingEnabled && !state.unavailable && lightboxTarget == null && discardConfirm == null,
+        connected = state.connected == true,
+        root = parent,
+        replies = replies,
+        listState = listState,
+        onRead = viewModel::markVisibleRead,
+    )
     var anchoredToLatest by remember(viewModel.rootId) { mutableStateOf(false) }
     var jumpResolved by remember(viewModel.rootId, jumpMessageId) { mutableStateOf(false) }
     var flashId by remember(viewModel.rootId, jumpMessageId) { mutableStateOf<String?>(null) }
@@ -395,9 +419,15 @@ fun ThreadScreen(
 
     // Navigation carries the reply ID all the way into the rendered thread.
     // Wait for Room -> Compose propagation, not merely the HTTP response.
-    LaunchedEffect(jumpMessageId, jumpResolved, state.loadedReplyIds, state.unavailable, state.loading) {
+    LaunchedEffect(jumpMessageId, jumpResolved, state.loadedReplyIds, state.offlineJumpId, state.unavailable, state.loading) {
         val target = jumpMessageId ?: return@LaunchedEffect
-        val confirmed = state.loadedReplyIds ?: return@LaunchedEffect
+        val offline = state.offlineJumpId
+        val confirmed = if (offline != null) {
+            // Cache absence says nothing about any OTHER target. Never turn
+            // this one-row fallback into a false "reply deleted" result.
+            if (offline != target) return@LaunchedEffect
+            setOf(target)
+        } else state.loadedReplyIds ?: return@LaunchedEffect
         if (jumpResolved || state.unavailable || state.loading) return@LaunchedEffect
         anchoredToLatest = true
         if (target !in confirmed) {
@@ -489,7 +519,7 @@ fun ThreadScreen(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        parent?.authorName?.let { "Replies to $it" } ?: "…",
+                        (parent?.integrationLabel ?: parent?.authorName)?.let { "Replies to $it" } ?: "…",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -701,6 +731,9 @@ private fun ThreadContentBubble(
     onOpenFile: () -> Unit,
 ) {
     val mine = message.authorId == viewerId
+    message.integrationLabel?.let { origin ->
+        Text(origin, style = MaterialTheme.typography.labelSmall, color = PulsePalette.Emerald, fontWeight = FontWeight.SemiBold)
+    }
     // Wave 2 view-once gating - same state machine as the room river.
     val viewOncePhoto = message.viewOnce && message.imagePath != null
     val burned = viewOncePhoto && !mine && message.viewedAt != null

@@ -101,20 +101,18 @@ class SavedLibraryViewModel @Inject constructor(
     }
 
     fun refresh() {
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
+            if (repo.attachmentSessionKey() != epoch) return@launch
             _state.value = _state.value.copy(loading = true, error = null)
-            runCatching { repo.refreshSavedLibrary().getOrThrow() }
-                .onSuccess {
-                    // The joined Room stream is the only renderer; a delayed
-                    // HTTP return must not revive a removed/expired item.
-                    _state.value = _state.value.copy(loading = false)
-                }
-                .onFailure { failure ->
-                    _state.value = _state.value.copy(
-                        loading = false,
-                        error = failure.message ?: "Couldn't load your saved messages",
-                    )
-                }
+            try {
+                owned.refreshSavedLibrary().getOrThrow()
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(loading = false)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(
+                    loading = false, error = failure.message ?: "Couldn't load your saved messages")
+            }
         }
     }
 
@@ -124,11 +122,17 @@ class SavedLibraryViewModel @Inject constructor(
     }
 
     fun unsave(messageId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
-            runCatching { repo.unsaveMessage(messageId).getOrThrow() }
-                .onFailure {
-                    _state.value = _state.value.copy(error = "Couldn't remove from saved")
-                }
+            if (repo.attachmentSessionKey() != epoch) return@launch
+            try {
+                owned.unsaveMessage(messageId).getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(error = error.message ?: "Couldn't remove from saved")
+            }
         }
     }
 
@@ -140,7 +144,7 @@ class SavedLibraryViewModel @Inject constructor(
             } else {
                 all.filter { item ->
                     item.message.body.contains(q, ignoreCase = true) ||
-                        item.message.authorName.contains(q, ignoreCase = true) ||
+                        (item.message.integrationLabel ?: item.message.authorName).contains(q, ignoreCase = true) ||
                         (item.conversationName ?: "").contains(q, ignoreCase = true)
                 }
             },
@@ -324,7 +328,8 @@ private fun SavedRow(
     val message = item.message
     val mine = message.authorId == viewerId
     val convName = item.conversationName ?: "chat"
-    val title = if (mine) "You in $convName" else "${message.authorName.ifBlank { "Someone" }} in $convName"
+    val sender = message.integrationLabel ?: if (mine) "You" else message.authorName.ifBlank { "Someone" }
+    val title = "$sender in $convName"
     // R35 Neo - plain kind prefixes (the old glyph prefixes are gone).
     val prefix = when {
         message.imagePath != null -> ""

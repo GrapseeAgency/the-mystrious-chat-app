@@ -48,13 +48,14 @@ internal class AccountRepositoryRouter(
                             // not a synthetic null that would erase restored drafts.
                             if (!initial) when (method.name) {
                                 "events" -> Unit
-                                "observeConnected" -> emit(false)
+                                "observeConnected", "observePendingSettings" -> emit(false)
                                 "observeThreadAccessDenied" -> emit(true)
+                                "observePersonalScreenPrivacy" -> emit(app.pulse.domain.model.PersonalScreenPrivacy())
                                 "observePresence" -> emit(emptySet<String>())
                                 "observeDraft" -> emit(null)
                                 "observeThreadDraft" -> emit(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
                                 "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
-                                "getPulsePrefs" -> emit(PulseWave8Logic.mergePrefs(null as String?))
+                                "getPulsePrefs" -> emit(PulseWave8Logic.PRIVATE_DEFAULTS)
                                 else -> emit(emptyList<Any>())
                             }
                             initial = false

@@ -186,12 +186,20 @@ data class KanbanCardDto(
 )
 
 @Serializable
-data class KanbanPageDto(val cards: List<KanbanCardDto> = emptyList())
+data class KanbanPageDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val cards: List<KanbanCardDto>)
+
+@Serializable
+data class KanbanCardReceiptDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val card: KanbanCardDto)
+
+@Serializable
+data class KanbanDeleteReceiptDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val cardId: String, val ok: Boolean)
 
 // Events (F-RO-05)
 
 @Serializable
 data class EventRsvpDto(
+    val id: String? = null,
+    val eventId: String? = null,
     val userId: String = "",
     val name: String = "",
     /** going | maybe | no */
@@ -225,6 +233,9 @@ data class EventsPageDto(val events: List<GroupEventDto> = emptyList())
 
 @Serializable
 data class RsvpResultDto(
+    val eventReceiptVersion: Int,
+    val eventId: String,
+    val userId: String,
     val rsvp: EventRsvpDto? = null,
     val counts: EventCountsDto = EventCountsDto(),
 )
@@ -241,11 +252,17 @@ data class CheckinStampDto(
 
 @Serializable
 data class CheckinResultDto(
-    val checkIn: CheckinStampDto? = null,
-    val xpAwarded: Boolean = false,
-    val checkedInCount: Int = 0,
-    val alreadyCheckedIn: Boolean = false,
+    val eventReceiptVersion: Int,
+    val eventId: String,
+    val userId: String,
+    val checkIn: CheckinStampDto?,
+    val xpAwarded: Boolean,
+    val checkedInCount: Int,
+    val alreadyCheckedIn: Boolean,
 )
+
+@Serializable
+data class EventDeleteReceiptDto(val eventReceiptVersion: Int, val eventId: String, val userId: String, val ok: Boolean)
 
 // Reminders (F-RO-06)
 
@@ -505,10 +522,11 @@ data class HubTaskDto(
     val status: String = "todo",
     val createdAt: String? = null,
     val updatedAt: String? = null,
+    val ownerId: String? = null,
 )
 
 @Serializable
-data class HubTasksPageDto(val tasks: List<HubTaskDto> = emptyList())
+data class HubTasksPageDto(val userId: String, val tasks: List<HubTaskDto>)
 
 @Serializable
 data class MarketSellerDto(
@@ -520,26 +538,31 @@ data class MarketSellerDto(
 
 @Serializable
 data class MarketListingDto(
-    val id: String = "",
-    val title: String = "",
+    val id: String,
+    val title: String,
     val description: String? = null,
-    val price: Long = 0,
-    val asset: String = "PC",
-    /** open | sold */
-    val status: String = "open",
-    val createdAt: String? = null,
-    val seller: MarketSellerDto = MarketSellerDto(),
+    val price: Long,
+    val asset: String,
+    val status: String,
+    val createdAt: String,
+    val seller: MarketSellerDto,
     val buyer: MarketSellerDto? = null,
-    val mine: Boolean = false,
+    val mine: Boolean,
 )
 
 @Serializable
-data class MarketPageDto(val listings: List<MarketListingDto> = emptyList())
+data class MarketPageDto(val marketVersion: Int, val userId: String, val listings: List<MarketListingDto>)
+
+@Serializable
+data class MarketListingEnvelopeDto(val marketVersion: Int, val userId: String, val listing: MarketListingDto)
 
 @Serializable
 data class MarketBuyResultDto(
-    val ok: Boolean = false,
-    val wallet: WalletDto = WalletDto(),
+    val marketVersion: Int,
+    val userId: String,
+    val listingId: String,
+    val ok: Boolean,
+    val wallet: WalletDto,
 )
 
 @Serializable
@@ -562,29 +585,40 @@ data class HubLogDto(
 )
 
 @Serializable
-data class HubLogsPageDto(val logs: List<HubLogDto> = emptyList())
+data class HubLogsPageDto(val activityVersion: Int, val userId: String, val logs: List<HubLogDto>)
 
 @Serializable
 data class AppInstallStateDto(
-    val installed: Boolean = false,
+    val appVersion: Int,
+    val appId: String,
+    val userId: String,
+    val installed: Boolean,
     /** 'connected' | null */
     val status: String? = null,
     val installedAt: String? = null,
-    val installs: Int = 0,
-    val installers: List<HubLogUserDto> = emptyList(),
+    val installs: Int,
+    val installers: List<HubLogUserDto>,
 )
 
 @Serializable
 data class AppInstallResultDto(
-    val installed: Boolean = false,
+    val appVersion: Int,
+    val appId: String,
+    val userId: String,
+    val installed: Boolean,
     val status: String? = null,
-    val installs: Int = 0,
+    val installs: Int,
+    val installedAt: String? = null,
+    val installers: List<HubLogUserDto> = emptyList(),
 )
 
 @Serializable
 data class AppCommunityDto(
+    val appVersion: Int,
+    val appId: String,
+    val userId: String,
     /** Existing conversation-detail shape (same serializer as GET /api/conversations/{id}). */
     val conversation: ConversationSummaryDto? = null,
-    val memberCount: Long = 0,
-    val joined: Boolean = false,
+    val memberCount: Long,
+    val joined: Boolean,
 )

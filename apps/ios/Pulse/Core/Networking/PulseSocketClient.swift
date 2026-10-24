@@ -48,6 +48,7 @@ public final class PulseSocketClient {
         case joinError(message: String)
     }
 
+    public private(set) var isJoined = false
     private let manager: SocketManager
     private let socket: SocketIOClient
     /// Last joined identity - re-emitted on every (re)connect.
@@ -87,6 +88,7 @@ public final class PulseSocketClient {
         if lastUserId != nil { socket.disconnect() }
         lastUserId = userId
         lastToken = token
+        isJoined = false
         signals?(.connectionState(connected: false))
 
         socket.on(clientEvent: .connect) { [weak self] _, _ in
@@ -98,14 +100,17 @@ public final class PulseSocketClient {
                 self.socket.emit("join", payload)
             }
             // A transport connection is not a joined user room. Wait for joined.
+            self.isJoined = false
             self.signals?(.connectionState(connected: false))
         }
         socket.on(clientEvent: .disconnect) { [weak self] _, _ in
+            self?.isJoined = false
             self?.signals?(.connectionState(connected: false))
         }
         socket.on(clientEvent: .reconnect) { [weak self] _, _ in
             // v16 emits reconnect while DISCONNECTED; emit() rejects rather than
             // buffers. The next .connect sends join exactly once.
+            self?.isJoined = false
             self?.signals?(.connectionState(connected: false))
         }
 
@@ -116,6 +121,7 @@ public final class PulseSocketClient {
             let obj = data.first as? [String: Any]
             let message = obj?["error"] as? String
                 ?? "Session token is invalid or has been rotated. Log in again."
+            self?.isJoined = false
             self?.signals?(.connectionState(connected: false))
             self?.signals?(.joinError(message: message))
         }
@@ -123,6 +129,7 @@ public final class PulseSocketClient {
         socket.on("joined") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any],
                   let ids = obj["onlineUserIds"] as? [String] else { return }
+            self?.isJoined = true
             self?.signals?(.joined(onlineUserIds: ids))
             self?.signals?(.connectionState(connected: true))
         }
@@ -292,8 +299,12 @@ public final class PulseSocketClient {
     /// shape is built by CallWire / GroupCallWire (unit-tested against the
     /// relay's validation). Socket.IO v16 rejects emits while disconnected;
     /// call owners must not assume signaling is a durable offline queue.
-    public func emitCallSignal(event: String, payload: [String: Any]) {
+    /// True means handed to the connected transport, NOT a relay/peer acknowledgement.
+    @discardableResult
+    public func emitCallSignal(event: String, payload: [String: Any]) -> Bool {
+        guard isJoined, socket.status == .connected else { return false }
         socket.emit(event, payload)
+        return true
     }
 
     // W5-f - voice rooms / stage / space (typed emit helpers)
@@ -304,93 +315,96 @@ public final class PulseSocketClient {
     // not replayed on reconnect. Room owners rejoin after relay readiness.
 
     public func emitVoiceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) {
-        socket.emit(PulseSocketEvents.voiceJoin.rawValue, VoiceRoomWire.voiceJoin(
+        emitRoomSignal(event: PulseSocketEvents.voiceJoin.rawValue, payload: VoiceRoomWire.voiceJoin(
             conversationId: conversationId, userId: userId, name: name, username: username, color: color,
         ))
     }
 
     public func emitVoiceLeave(conversationId: String) {
-        socket.emit(PulseSocketEvents.voiceLeave.rawValue, VoiceRoomWire.voiceLeave(conversationId: conversationId))
+        emitRoomSignal(event: PulseSocketEvents.voiceLeave.rawValue, payload: VoiceRoomWire.voiceLeave(conversationId: conversationId))
     }
 
     public func emitVoicePtt(conversationId: String, userId: String, on: Bool) {
-        socket.emit(PulseSocketEvents.voicePtt.rawValue, VoiceRoomWire.voicePtt(
+        emitRoomSignal(event: PulseSocketEvents.voicePtt.rawValue, payload: VoiceRoomWire.voicePtt(
             conversationId: conversationId, userId: userId, on: on,
         ))
     }
 
     public func emitVoiceChunk(conversationId: String, userId: String, seq: Int, data: String) {
-        socket.emit(PulseSocketEvents.voiceChunk.rawValue, VoiceRoomWire.voiceChunk(
+        emitRoomSignal(event: PulseSocketEvents.voiceChunk.rawValue, payload: VoiceRoomWire.voiceChunk(
             conversationId: conversationId, userId: userId, seq: seq, data: data,
         ))
     }
 
     public func emitVoiceTranscript(conversationId: String, userId: String, text: String) {
-        socket.emit(PulseSocketEvents.voiceTranscript.rawValue, VoiceRoomWire.voiceTranscript(
+        emitRoomSignal(event: PulseSocketEvents.voiceTranscript.rawValue, payload: VoiceRoomWire.voiceTranscript(
             conversationId: conversationId, userId: userId, text: text,
         ))
     }
 
     public func emitStageJoin(conversationId: String, userId: String, name: String, username: String?, color: String?, asHost: Bool) {
-        socket.emit(PulseSocketEvents.stageJoin.rawValue, VoiceRoomWire.stageJoin(
+        emitRoomSignal(event: PulseSocketEvents.stageJoin.rawValue, payload: VoiceRoomWire.stageJoin(
             conversationId: conversationId, userId: userId, name: name, username: username, color: color, asHost: asHost,
         ))
     }
 
     public func emitStageHand(conversationId: String, userId: String, raised: Bool) {
-        socket.emit(PulseSocketEvents.stageHand.rawValue, VoiceRoomWire.stageHand(
+        emitRoomSignal(event: PulseSocketEvents.stageHand.rawValue, payload: VoiceRoomWire.stageHand(
             conversationId: conversationId, userId: userId, raised: raised,
         ))
     }
 
     public func emitStageApprove(conversationId: String, byUserId: String, targetUserId: String) {
-        socket.emit(PulseSocketEvents.stageApprove.rawValue, VoiceRoomWire.stageApprove(
+        emitRoomSignal(event: PulseSocketEvents.stageApprove.rawValue, payload: VoiceRoomWire.stageApprove(
             conversationId: conversationId, byUserId: byUserId, targetUserId: targetUserId,
         ))
     }
 
     public func emitStageMute(conversationId: String, byUserId: String, targetUserId: String) {
-        socket.emit(PulseSocketEvents.stageMute.rawValue, VoiceRoomWire.stageMute(
+        emitRoomSignal(event: PulseSocketEvents.stageMute.rawValue, payload: VoiceRoomWire.stageMute(
             conversationId: conversationId, byUserId: byUserId, targetUserId: targetUserId,
         ))
     }
 
     public func emitStageEnd(conversationId: String, byUserId: String) {
-        socket.emit(PulseSocketEvents.stageEnd.rawValue, VoiceRoomWire.stageEnd(
+        emitRoomSignal(event: PulseSocketEvents.stageEnd.rawValue, payload: VoiceRoomWire.stageEnd(
             conversationId: conversationId, byUserId: byUserId,
         ))
     }
 
     public func emitStageLeave(conversationId: String) {
-        socket.emit(PulseSocketEvents.stageLeave.rawValue, VoiceRoomWire.stageLeave(conversationId: conversationId))
+        emitRoomSignal(event: PulseSocketEvents.stageLeave.rawValue, payload: VoiceRoomWire.stageLeave(conversationId: conversationId))
     }
 
     public func emitSpaceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) {
-        socket.emit(PulseSocketEvents.spaceJoin.rawValue, VoiceRoomWire.spaceJoin(
+        emitRoomSignal(event: PulseSocketEvents.spaceJoin.rawValue, payload: VoiceRoomWire.spaceJoin(
             conversationId: conversationId, userId: userId, name: name, username: username, color: color,
         ))
     }
 
     public func emitSpaceMove(conversationId: String, x: Double, y: Double) {
-        socket.emit(PulseSocketEvents.spaceMove.rawValue, VoiceRoomWire.spaceMove(
+        emitRoomSignal(event: PulseSocketEvents.spaceMove.rawValue, payload: VoiceRoomWire.spaceMove(
             conversationId: conversationId, x: x, y: y,
         ))
     }
 
     public func emitSpaceLeave(conversationId: String) {
-        socket.emit(PulseSocketEvents.spaceLeave.rawValue, VoiceRoomWire.spaceLeave(conversationId: conversationId))
+        emitRoomSignal(event: PulseSocketEvents.spaceLeave.rawValue, payload: VoiceRoomWire.spaceLeave(conversationId: conversationId))
     }
 
     /// W5-f - generic rooms-event funnel for the session model (the socket
     /// is session-owned; mirrors emitCallSignal). Payloads are built by the
     /// pure VoiceRoomWire builders so the shape stays unit-tested.
     public func emitRoomSignal(event: String, payload: [String: Any]) {
-        socket.emit(event, payload)
+        // A transport connection is not yet a joined user session. All typed
+        // helpers and the session adapter share the same ready-only dispatch.
+        emitCallSignal(event: event, payload: payload)
     }
 
     public func disconnect() {
         lastUserId = nil
         lastToken = nil
+        isJoined = false
         signals?(.connectionState(connected: false))
         socket.disconnect()
         socket.removeAllHandlers()

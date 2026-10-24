@@ -8,6 +8,12 @@ public enum PulseOutboxEvent: Sendable {
     case dropped(clientId: String, conversationId: String)
 }
 
+public struct PulseLinkedRoomRequest: Equatable, Sendable {
+    public let id: UUID
+    public let conversationId: String
+    public let jumpMessageId: String?
+}
+
 /// App-wide realtime session: owns the viewer-bound API client, the Socket.IO
 /// client, presence, typing state and the local store. View models subscribe
 /// to `signals` (UDF: session = transport, features = state).
@@ -42,6 +48,15 @@ public final class PulseSession: ObservableObject {
     /// Chats tab's NavigationStack (the dock lives above the shell, the stack
     /// lives inside ChatsView - this is the bridge, same pattern as search).
     @Published public private(set) var pendingOpenRoom: WireConversationSummary?
+    private var pendingRoomDelivery = UUID()
+    /// User navigation intent, distinct from room visibility during foreground/
+    /// sheet transitions. Async link resolution must not displace a newer intent.
+    public private(set) var roomNavigationGeneration = UUID()
+
+    public func noteRoomNavigationIntent() {
+        roomNavigationGeneration = UUID()
+    }
+
     /// Wave 2 saved library - jump-to-message handoff consumed by ChatsView
     /// together with pendingOpenRoom (the SAME path search hits already use).
     @Published public private(set) var pendingJumpMessageId: String?
@@ -49,12 +64,39 @@ public final class PulseSession: ObservableObject {
     /// NavigationStack (same bridge pattern as pendingOpenRoom). Consumers
     /// call `consumePendingUserRoute()` when received.
     @Published public private(set) var pendingUserRoute: UserRoute?
-    /// R2-D - the linked-room bridge (conversation ID only): reminder-
-    /// notification taps (PulseReminderNotificationDelegate) and calls-
-    /// history rows set this; RootView consumes it and follows the exact
-    /// pulse://room path (detail fetch → Chats tab → requestOpenRoom).
-    /// Writable by the feature surfaces; RootView clears it on consumption.
-    @Published public var pendingLinkedRoomId: String?
+    private var pendingUserDelivery = UUID()
+    /// Linked-room bridge shared by reminder anchors and room-only callers.
+    /// Root owns cancellable resolution; delivery IDs protect deferred cleanup
+    /// even when the next request targets the same conversation or message.
+    @Published public private(set) var pendingLinkedRoom: PulseLinkedRoomRequest?
+    /// Compatibility for room-only callers; every assignment gets its own delivery.
+    public var pendingLinkedRoomId: String? {
+        get { pendingLinkedRoom?.conversationId }
+        set {
+            if let newValue { requestLinkedRoom(newValue) }
+            else { pendingLinkedRoom = nil }
+        }
+    }
+
+    @discardableResult
+    public func requestLinkedRoom(_ conversationId: String, jumpMessageId: String? = nil) -> Bool {
+        let room = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !room.isEmpty else { return false }
+        let jump = jumpMessageId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        noteRoomNavigationIntent()
+        pendingLinkedRoom = PulseLinkedRoomRequest(id: UUID(), conversationId: room,
+            jumpMessageId: jump?.isEmpty == false ? jump : nil)
+        return true
+    }
+
+    @discardableResult
+    public func consumePendingLinkedRoom(_ request: PulseLinkedRoomRequest) -> Task<Void, Never> {
+        let epoch = generation
+        return Task { @MainActor [weak self] in
+            guard let self, generation == epoch, pendingLinkedRoom?.id == request.id else { return }
+            pendingLinkedRoom = nil
+        }
+    }
     /// Opened on session start (nil before onboarding) - @Published so late
     /// view models can rehydrate the offline cache the moment it exists.
     @Published public private(set) var store: PulseStore?
@@ -85,12 +127,14 @@ public final class PulseSession: ObservableObject {
         didSet {
             if oldValue != activeRoomId {
                 readGate.reset()
+                readSurfaces.reset()
                 readFailureCount = 0
                 readReceiptTask?.cancel()
             }
         }
     }
     private var readGate = PulseReadReceiptGate()
+    private var readSurfaces = PulseReadSurfaces()
     private var readFailureCount = 0
     private var readReceiptTask: Task<Void, Never>?
     /// Wave 8 - weak handoff to the RootView-owned PulsePrefs (incoming
@@ -133,7 +177,7 @@ public final class PulseSession: ObservableObject {
     }
 
     private var threadValidationFence = PulseThreadValidationFence()
-    private var deniedThreadRoots: Set<String> = []
+    private(set) var deniedThreadRoots: Set<String> = []
 
     public func threadAccessDenied(rootId: String) -> Bool {
         deniedThreadRoots.contains(rootId) || ((try? store?.threadAccessDenied(rootId: rootId)) ?? true)
@@ -159,9 +203,9 @@ public final class PulseSession: ObservableObject {
             deniedThreadRoots.remove(rootId)
             messageVisibilityClock.send(Date())
             // Rows rejected by the revision fence may still be live in newer storage.
-            let replies = page.replies.compactMap { incoming -> WireChatMessage? in
+            let replies = try page.replies.compactMap { incoming -> WireChatMessage? in
                 guard incoming.parentId == rootId, incoming.conversationId == roomId else { return nil }
-                return try? store.message(id: incoming.id)
+                return try store.message(id: incoming.id)
             }
             return WireThreadPage(parent: saved.parent, replies: replies)
         } catch {
@@ -220,6 +264,158 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    private var savedActions: [String: UUID] = [:]
+
+    /// Shared by room Save and library Unsave. A receipt is not UI success until
+    /// the original account's marker has committed; never rewrite a tapped body.
+    public func setMessageSaved(_ requested: WireChatMessage, saved: Bool) async throws {
+        try Task.checkCancellation()
+        guard ready, let viewer, let store, savedActions[requested.id] == nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Saved messages are unavailable or still updating.")
+        }
+        if saved {
+            guard let cached = try store.message(id: requested.id), cached.conversationId == requested.conversationId,
+                  !cached.id.hasPrefix("local_"), cached.deletedAt == nil, cached.viewOnce != true,
+                  PulseRemediationLogic.isAlive(cached.expiresAt) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Refresh this message before saving it.")
+            }
+            if let root = cached.parentId, threadAccessDenied(rootId: root) {
+                throw PulseAPIClient.Failure(kind: .forbidden, message: "Reopen this thread to check access before saving.")
+            }
+        }
+        let epoch = sessionGeneration, client = api, ticket = UUID()
+        savedActions[requested.id] = ticket
+        noteSavedMutation()
+        defer {
+            if savedActions[requested.id] == ticket { savedActions.removeValue(forKey: requested.id) }
+            if sessionGeneration == epoch { noteSavedMutation() }
+        }
+        let receipt = try await client.setMessageSaved(id: requested.id, userId: viewer.id, saved: saved)
+        try Task.checkCancellation()
+        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
+        if saved {
+            guard let savedAt = receipt.savedAt, let current = try store.message(id: requested.id),
+                  current.conversationId == requested.conversationId else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Saved message is no longer cached. Refresh the library.")
+            }
+            let item = WireSavedItem(savedAt: savedAt,
+                conversation: WireSavedConversation(id: current.conversationId, isGroup: nil, name: nil), message: current)
+            try store.upsert(savedItems: [item], preservingMessageIds: [current.id])
+        } else { try store.deleteSaved(messageId: requested.id) }
+    }
+
+    public enum MessageAction { case edit(String), pin, unpin, delete }
+    private var messageActions: [String: UUID] = [:]
+
+    /// One account-owned action per message, persisted before any surface accepts it.
+    public func mutateMessage(_ requested: WireChatMessage, action: MessageAction) async throws -> WireChatMessage {
+        try Task.checkCancellation()
+        guard ready, let viewer, let store, !requested.id.hasPrefix("local_"),
+              let cached = try store.message(id: requested.id), cached.conversationId == requested.conversationId,
+              messageActions[requested.id] == nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "This message is unavailable or still updating.")
+        }
+        let ticket = UUID(), epoch = sessionGeneration, client = api, revision = messageRevision
+        messageActions[requested.id] = ticket
+        defer { if messageActions[requested.id] == ticket { messageActions.removeValue(forKey: requested.id) } }
+        let incoming: WireChatMessage?
+        switch action {
+        case .edit(let content): incoming = try await client.editMessage(id: requested.id, userId: viewer.id, content: content)
+        case .pin: incoming = try await client.pinMessage(id: requested.id, userId: viewer.id)
+        case .delete: incoming = try await client.deleteOwnMessage(id: requested.id)
+        case .unpin:
+            try await client.unpinMessage(id: requested.id, userId: viewer.id)
+            incoming = nil
+        }
+        try Task.checkCancellation()
+        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
+        if let incoming {
+            guard incoming.id == requested.id, incoming.conversationId == requested.conversationId else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "The action returned an unrelated message.")
+            }
+            if acceptsSyncMessage(incoming.id, startedAt: revision) {
+                try recordMessageMutation(incoming)
+            } else {
+                switch action {
+                case .delete: try recordMessageMutation(incoming) // deletion is monotonic
+                case .edit:
+                    if let current = try store.message(id: requested.id) {
+                        let merged = PulseMessageMerge.acceptEdit(current, incoming: incoming)
+                        try recordMessageMutation(merged)
+                    }
+                case .pin, .unpin: break // never rewind a later relayed pin/reaction
+                }
+            }
+        } else { try applyPinRemoval(requested.id, startedAt: revision) }
+        guard let retained = try store.message(id: requested.id) else {
+            throw PulseAPIClient.Failure(kind: .notFound, message: "This message is no longer available.")
+        }
+        return retained
+    }
+
+    private var pollActions: [String: UUID] = [:]
+
+    public func updatePoll(conversationId: String, pollId: String, optionId: String?) async throws -> WireChatMessage {
+        try Task.checkCancellation()
+        guard ready, let viewer, let store, !pollId.isEmpty, pollActions[pollId] == nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "This poll is unavailable or still updating.")
+        }
+        let ticket = UUID(), epoch = sessionGeneration, client = api, revision = messageRevision
+        pollActions[pollId] = ticket
+        defer { if pollActions[pollId] == ticket { pollActions.removeValue(forKey: pollId) } }
+        let incoming: WireChatMessage
+        if let optionId { incoming = try await client.votePoll(pollId: pollId, userId: viewer.id, optionId: optionId) }
+        else { incoming = try await client.closePoll(pollId: pollId, userId: viewer.id) }
+        try Task.checkCancellation()
+        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
+        guard incoming.conversationId == conversationId else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Poll returned another conversation.")
+        }
+        if let current = try store.message(id: incoming.id), current.conversationId != incoming.conversationId {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Poll returned another conversation.")
+        }
+        if acceptsSyncMessage(incoming.id, startedAt: revision) {
+            try recordMessageMutation(incoming)
+        } else if incoming.poll?.closed == true, var current = try store.message(id: incoming.id), current.deletedAt == nil {
+            // Closure is monotonic, but do not rewind other fields from a newer event.
+            current.poll = incoming.poll
+            try recordMessageMutation(current)
+        }
+        guard let retained = try store.message(id: incoming.id) else {
+            throw PulseAPIClient.Failure(kind: .notFound, message: "This poll is no longer available.")
+        }
+        return retained
+    }
+
+    private var reactionActions: [String: UUID] = [:]
+
+    /// Shared by the river, reaction drawer and alternate room. Persist before UI acceptance;
+    /// a late HTTP row must not overwrite a newer relayed edit/reaction/tombstone.
+    public func setReaction(_ requested: WireChatMessage, emoji: String, present: Bool) async throws {
+        try Task.checkCancellation()
+        guard ready, let store, let viewer, !requested.id.hasPrefix("local_"),
+              let cached = try store.message(id: requested.id), cached.conversationId == requested.conversationId,
+              cached.deletedAt == nil, PulseRemediationLogic.isAlive(cached.expiresAt) else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "This message is no longer available. Refresh before reacting.")
+        }
+        if let rootId = cached.parentId, threadAccessDenied(rootId: rootId) {
+            throw PulseAPIClient.Failure(kind: .forbidden, message: "Reopen this thread to check access before reacting.")
+        }
+        guard reactionActions[requested.id] == nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "A reaction is still updating.")
+        }
+        let ticket = UUID(), epoch = sessionGeneration, revision = messageRevision, client = api
+        reactionActions[requested.id] = ticket
+        defer { if reactionActions[requested.id] == ticket { reactionActions.removeValue(forKey: requested.id) } }
+        let fresh = try await client.react(messageId: requested.id, emoji: emoji, present: present)
+        try Task.checkCancellation()
+        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
+        guard fresh.id == requested.id, fresh.conversationId == requested.conversationId else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Reaction returned another message.")
+        }
+        if acceptsSyncMessage(fresh.id, startedAt: revision) { try recordMessageMutation(fresh) }
+    }
+
     public func recordMessageMutation(_ message: WireChatMessage) throws {
         try store?.upsert(messages: [message])
         noteMessageRevision(message.id)
@@ -263,6 +459,30 @@ public final class PulseSession: ObservableObject {
 
     public func setVisibleReadBoundary(conversationId: String, messageId: String?) {
         guard activeRoomId == conversationId else { return }
+        readSurfaces.setPrimary(roomId: conversationId, messageId: messageId)
+        applyVisibleReadBoundary(conversationId: conversationId)
+    }
+
+    func beginReadSurface(conversationId: String, rootId: String) -> PulseReadSurfaces.Owner? {
+        guard activeRoomId == conversationId else { return nil }
+        let owner = readSurfaces.begin(roomId: conversationId, rootId: rootId)
+        applyVisibleReadBoundary(conversationId: conversationId)
+        return owner
+    }
+
+    func setVisibleReadBoundary(owner: PulseReadSurfaces.Owner, messageId: String?) {
+        guard activeRoomId == owner.roomId else { return }
+        readSurfaces.setOverlay(owner, messageId: messageId)
+        applyVisibleReadBoundary(conversationId: owner.roomId)
+    }
+
+    func endReadSurface(_ owner: PulseReadSurfaces.Owner) {
+        guard readSurfaces.end(owner), activeRoomId == owner.roomId else { return }
+        applyVisibleReadBoundary(conversationId: owner.roomId)
+    }
+
+    private func applyVisibleReadBoundary(conversationId: String) {
+        let messageId = readSurfaces.boundary?.messageId
         guard readGate.setBoundary(roomId: conversationId, messageId: messageId,
             now: ProcessInfo.processInfo.systemUptime) else { return }
         readFailureCount = 0
@@ -283,12 +503,36 @@ public final class PulseSession: ObservableObject {
 
     public func markReadIfVisible(conversationId: String?) async {
         guard let conversationId, ready, isForeground,
-              activeRoomId == conversationId, !PulseAppLock.shared.needsLock, readFailureCount < 4,
+              activeRoomId == conversationId, !PulseAppLock.shared.needsLock,
               let request = readGate.begin(roomId: conversationId, now: ProcessInfo.processInfo.systemUptime) else { return }
+        if let owner = readSurfaces.owner, let rootId = owner.rootId {
+            // The expiry timer can tick AFTER the 600ms dwell. Recheck the
+            // canonical cache immediately before sending a thread boundary.
+            let available: Bool
+            if threadAccessDenied(rootId: rootId) {
+                available = false
+            } else if request.boundary.messageId == rootId {
+                let root = try? store?.message(id: rootId)
+                available = root.map { PulseRemediationLogic.threadRootAvailable($0, roomId: conversationId, rootId: rootId) } ?? false
+            } else {
+                available = (try? store?.cachedThreadTarget(roomId: conversationId, rootId: rootId,
+                    targetId: request.boundary.messageId)) != nil
+            }
+            if !available {
+                readGate.finish(request, succeeded: false)
+                setVisibleReadBoundary(owner: owner, messageId: nil)
+                return
+            }
+        }
         let client = api
         let epoch = generation
         do {
-            try await client.markRead(conversationId: conversationId, messageId: request.boundary.messageId)
+            guard let anchor = try store?.message(id: request.boundary.messageId), anchor.conversationId == conversationId,
+                  anchor.deletedAt == nil, !anchor.id.hasPrefix("local_") else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "The displayed read boundary is no longer available.")
+            }
+            try Task.checkCancellation()
+            try await client.markRead(conversationId: conversationId, messageId: request.boundary.messageId, minimumReadAt: anchor.createdAt)
             guard generation == epoch else { return }
             if readGate.finish(request, succeeded: true) { readFailureCount = 0 }
             // An older visible boundary can still have been accepted by the server;
@@ -297,9 +541,11 @@ public final class PulseSession: ObservableObject {
         } catch {
             guard generation == epoch, readGate.finish(request, succeeded: false),
                   !Task.isCancelled, isForeground, activeRoomId == conversationId else { return }
-            readFailureCount += 1
-            guard readFailureCount < 4 else { return }
-            let wait = Double(readFailureCount) * 1.5
+            readFailureCount = min(7, readFailureCount + 1)
+            guard let wait = PulseVisibleReadRetry.delay(after: error, failures: readFailureCount) else {
+                readGate.deferAttempt(until: .infinity)
+                return
+            }
             readGate.deferAttempt(until: ProcessInfo.processInfo.systemUptime + wait)
             scheduleVisibleRead(after: wait)
         }
@@ -331,6 +577,9 @@ public final class PulseSession: ObservableObject {
     /// funnel. Idempotent - the closures attach exactly once.
     public func attach(prefs: PulsePrefs) {
         self.prefs = prefs
+        prefs.refreshSettingsOwner()
+        prefs.notePatchSettled(successful: true, note: nil)
+        prefs.patchScreenPrivacy = { [weak self] ticket in self?.sendScreenPrivacy(ticket) }
         guard prefs.patchRemote == nil else { return }
         prefs.patchRemote = { [weak self] patch in
             self?.sendPrefsPatch(patch)
@@ -341,20 +590,49 @@ public final class PulseSession: ObservableObject {
     }
 
     /// Optimistic settings PATCH: the local value already applied; this
-    /// persists { userId, preferences } and echoes the server-merged blob
-    /// back (server wins on the response). Failure → local value STAYS +
-    /// an honest offline note for the settings surface.
-    private func sendPrefsPatch(_ patch: WirePulsePrefs) {
-        Task { [weak self] in
-            guard let self else { return }
+    /// queues { userId, preferences } in order and applies only its current,
+    /// explicitly confirmed fields. Failure retains intent for explicit Retry;
+    /// unrelated replies and older GETs must not reset the local choice.
+    private let settingsWrites = PulseSettingsWriteQueue()
+    private func sendScreenPrivacy(_ ticket: PulseScreenPrivacyTicket) {
+        guard let owner = viewer?.id, prefs?.viewer?.id == owner, api.userId == owner else { return }
+        let client = api, epoch = generation
+        settingsWrites.enqueue { [weak self] in
+            guard let self, !Task.isCancelled, self.generation == epoch,
+                  self.viewer?.id == owner, let prefs = self.prefs, prefs.viewer?.id == owner else { return }
             do {
-                let server = try await self.api.updateSettings(patch: patch)
-                self.prefs?.applyServer(server)
-                self.prefs?.notePatchSettled(successful: true, note: nil)
+                guard try prefs.currentScreenPrivacy(ticket, api: client) else { return }
+                let confirmed = try await client.setMyScreenPrivacy(ticket.room, on: ticket.on)
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner else { return }
+                try prefs.acknowledgeScreenPrivacy(ticket, on: confirmed)
+            } catch {
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner else { return }
+                prefs.noteScreenPrivacyFailure(ticket)
+            }
+        }
+    }
+    private func sendPrefsPatch(_ ticket: PulseSettingsTicket) {
+        guard let owner = viewer?.id, prefs?.viewer?.id == owner, api.userId == owner else { return }
+        let client = api, epoch = generation
+        settingsWrites.enqueue { [weak self] in
+            guard let self, !Task.isCancelled, self.generation == epoch,
+                  self.viewer?.id == owner, let prefs = self.prefs, prefs.viewer?.id == owner else { return }
+            do {
+                let patch = try prefs.currentSettingsPatch(ticket, api: client)
+                if patch.settingsKeys.isEmpty { return } // superseded before dispatch
+                let server = try await client.updateSettings(patch: patch)
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
+                      prefs.viewer?.id == owner else { return }
+                try prefs.acknowledgeSettings(ticket, sent: patch, server: server)
             } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
+                      prefs.viewer?.id == owner else { return }
+                prefs.notePatchSettled(successful: false, note: "Settings were not confirmed. Sign in to the original account before retrying.")
                 self.noteAuthFailure(failure.message)
             } catch {
-                self.prefs?.notePatchSettled(successful: false, note: "Saved on this device - the server didn't answer.")
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
+                      prefs.viewer?.id == owner else { return }
+                prefs.notePatchSettled(successful: false, note: "Settings saved on this device were not confirmed by the server. Tap Retry.")
             }
         }
     }
@@ -394,6 +672,7 @@ public final class PulseSession: ObservableObject {
         voiceRooms?.leaveSpace()
         PulsePushNotifications.deactivate()
         generation = UUID()
+        settingsWrites.cancelAll()
         startupTask?.cancel()
         startupTask = nil
         reminderDueTask?.cancel()
@@ -404,6 +683,10 @@ public final class PulseSession: ObservableObject {
         viewer = nil
         store = nil
         messageRevisions.removeAll()
+        reactionActions.removeAll()
+        pollActions.removeAll()
+        messageActions.removeAll()
+        savedActions.removeAll()
         threadValidationFence = PulseThreadValidationFence()
         deniedThreadRoots.removeAll()
         pendingOpenRoom = nil
@@ -457,6 +740,7 @@ public final class PulseSession: ObservableObject {
     // lifecycle
     public func start(as viewer: PulseViewer) {
         stop()
+        prefs?.refreshSettingsOwner()
         self.viewer = viewer
         let epoch = generation
         startupTask = Task { [weak self] in
@@ -493,7 +777,7 @@ public final class PulseSession: ObservableObject {
                         let deliveryOwner = PulseReminderDelivery.ownerKey(api)
                         let queued = await PulseReminderDelivery.queueOnce(ownerId: deliveryOwner, reminderId: item.id,
                             retract: { PulseReminderNotifications.cancel(reminderId: item.id, ownerId: deliveryOwner) }) {
-                            let accepted = await PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId, ownerId: deliveryOwner)
+                            let accepted = await PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId, ownerId: deliveryOwner, messageId: item.messageId)
                             guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == viewer.id else {
                                 if accepted { PulseReminderNotifications.cancel(reminderId: item.id, ownerId: deliveryOwner) }
                                 return false
@@ -543,7 +827,7 @@ public final class PulseSession: ObservableObject {
 
         // 4. Wave 8 - pull the server-merged prefs blob (server value wins;
         //    optimistic local values keep working when this fails).
-        await prefs?.syncFromServer(api: api)
+        await prefs?.syncFromServer(api: api, isCurrent: { [weak self] in self?.generation == epoch })
         guard !Task.isCancelled, generation == epoch else { return }
 
         // 5. Realtime only when a relay base is configured (nil → offline-first,
@@ -630,8 +914,12 @@ public final class PulseSession: ObservableObject {
     }
 
     /// The engine's signaling sender funnels here (the socket is session-owned).
-    public func emitCallSignal(event: String, payload: [String: Any]) {
-        socket?.emitCallSignal(event: event, payload: payload)
+    public var callSignalingReady: Bool { ready && socket?.isJoined == true }
+
+    @discardableResult
+    public func emitCallSignal(event: String, payload: [String: Any]) -> Bool {
+        guard callSignalingReady else { return false }
+        return socket?.emitCallSignal(event: event, payload: payload) ?? false
     }
 
     // outbox
@@ -717,6 +1005,17 @@ public final class PulseSession: ObservableObject {
         return false
     }
 
+    /// Discard the manager's displayed state, never a send retried since display.
+    @discardableResult
+    func discardOutbox(_ expected: OutboxRow) throws -> Bool {
+        guard let store else { throw CocoaError(.fileReadUnknown) }
+        let epoch = generation, engine = outbox
+        guard try store.discardOutboxIfUnchanged(expected) else { return false }
+        engine?.reloadPending()
+        if generation == epoch { outboxEvents.send(.dropped(clientId: expected.clientId, conversationId: expected.conversationId)) }
+        return true
+    }
+
     public func discardOutbox(clientId: String, conversationId: String) {
         guard let store else { return }
         do {
@@ -792,12 +1091,22 @@ public final class PulseSession: ObservableObject {
     /// Wave 2 - `jumpMessageId` rides along so the room scrolls to + flashes
     /// that message (saved-library "open original", spec §1 row 14).
     public func requestOpenRoom(_ conversation: WireConversationSummary, jumpMessageId: String? = nil) {
+        noteRoomNavigationIntent()
+        pendingRoomDelivery = UUID()
         pendingJumpMessageId = jumpMessageId
         pendingOpenRoom = conversation
     }
 
-    public func consumePendingOpenRoom() {
-        pendingOpenRoom = nil
+    /// @Published emits from willSet. Clearing inline from its subscriber can
+    /// be overwritten by the outer setter and replay the already-opened room.
+    /// Defer until that setter completes, without erasing a newer delivery.
+    @discardableResult
+    public func consumePendingOpenRoom() -> Task<Void, Never> {
+        let delivery = pendingRoomDelivery, epoch = generation
+        return Task { @MainActor [weak self] in
+            guard let self, generation == epoch, pendingRoomDelivery == delivery else { return }
+            pendingOpenRoom = nil
+        }
     }
 
     public func consumePendingJumpMessageId() {
@@ -808,11 +1117,17 @@ public final class PulseSession: ObservableObject {
     /// the full user page (F-CP-03). `name` seeds the nav title while the
     /// page fetches (nil-safe).
     public func requestOpenUser(_ userId: String, name: String?) {
+        pendingUserDelivery = UUID()
         pendingUserRoute = UserRoute(userId: userId, name: name ?? "Profile")
     }
 
-    public func consumePendingUserRoute() {
-        pendingUserRoute = nil
+    @discardableResult
+    public func consumePendingUserRoute() -> Task<Void, Never> {
+        let delivery = pendingUserDelivery, epoch = generation
+        return Task { @MainActor [weak self] in
+            guard let self, generation == epoch, pendingUserDelivery == delivery else { return }
+            pendingUserRoute = nil
+        }
     }
 
     public func typers(in conversationId: String, excluding userId: String?) -> [Typer] {
@@ -847,6 +1162,7 @@ public final class PulseSession: ObservableObject {
                 // 3-d - a live mesh is dead once the relay drops us (media
                 // flowing to a socket that stopped routing). Honest teardown
                 // instead of ghosting audio after a suspension.
+                callEngine?.handleSocketDisconnected()
                 groupCallEngine?.handleSocketDisconnected()
             }
             // W5-f - the rooms owner consumes connect/reconnect too (voice
@@ -860,6 +1176,7 @@ public final class PulseSession: ObservableObject {
         case .messageDeleted(_, let raw), .messageReact(_, let raw):
             cacheMessage(from: raw)
         case .messageEnvelope(_, _, let raw):
+            cacheMessage(from: raw)
             // message:edited/pinned/viewed, poll:voted, link:preview,
             // translation:added - live surfaces re-fetch on this tick.
             realtimeRefreshTick += 1
@@ -903,11 +1220,13 @@ public final class PulseSession: ObservableObject {
     /// NOT reading → soft ping + buzz + preview toast, each behind its own
     /// toggle, all behind the LOCAL quiet-hours window.
     private func noteIncomingAttention(conversationId: String, raw: [String: Any]) {
-        guard let message = Self.decodeMessage(from: raw), let viewer else { return }
-        guard message.senderId != viewer.id,
-              message.deletedAt == nil,
-              message.parentId == nil,
+        guard ready, isForeground, let store, let viewer,
+              let message = Self.decodeMessage(from: raw),
+              let preview = message.incomingPreview(viewerId: viewer.id, roomId: conversationId),
               activeRoomId != conversationId else { return }
+        do {
+            if try store.cachedConversation(id: conversationId)?.isMuted == true { return }
+        } catch { return } // A cache failure is not permission to ignore mute policy.
         guard !(prefs?.isQuietHoursNow ?? false) else { return } // quiet - stay silent
         // R14 5-b - the web gate chain (pulse-realtime-provider.tsx :602-605):
         // device soundOn AND quiet hours AND the per-account notifSound all
@@ -919,9 +1238,7 @@ public final class PulseSession: ObservableObject {
             PulseHaptics.incoming()
         }
         if prefs?.notifPreviews == true {
-            let sender = message.sender?.name ?? "Message"
-            let body = message.content.isEmpty ? "Sent an attachment" : message.content
-            toasts.show("\(sender): \(body)")
+            toasts.show("\(preview.senderName): \(preview.body)")
         }
     }
 
@@ -974,7 +1291,10 @@ private final class PulseSessionCallSignaling: PulseCallSignalingSending {
         self.session = session
     }
 
-    func send(event: String, payload: [String: Any]) {
-        session?.emitCallSignal(event: event, payload: payload)
+    var isReady: Bool { session?.callSignalingReady ?? false }
+
+    @discardableResult
+    func send(event: String, payload: [String: Any]) -> Bool {
+        session?.emitCallSignal(event: event, payload: payload) ?? false
     }
 }

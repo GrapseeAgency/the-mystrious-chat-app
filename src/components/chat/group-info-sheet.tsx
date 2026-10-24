@@ -420,7 +420,7 @@ function GroupInfoBody({
 
       {/* leaderboard + tournaments (R24-d, Twitch-style XP seasons) */}
       <LeaderboardSection conversationId={detail.id} meId={meId} />
-      <TournamentSection conversationId={detail.id} />
+      <TournamentSection conversationId={detail.id} meId={meId} />
 
       {/* members */}
       <div className="px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -980,14 +980,16 @@ interface TournamentListRow {
  */
 function TournamentSection({
   conversationId,
+  meId,
 }: {
   conversationId: string
+  meId: string
 }) {
   const seasonsQ = useQuery({
-    queryKey: ['tournaments', conversationId],
+    queryKey: ['tournaments', conversationId, meId],
     queryFn: async (): Promise<TournamentListRow[]> => {
       const res = await apiJson<{ tournaments: TournamentListRow[] }>(
-        `/api/tournaments?conversationId=${encodeURIComponent(conversationId)}`,
+        `/api/tournaments?conversationId=${encodeURIComponent(conversationId)}&userId=${encodeURIComponent(meId)}`,
       )
       return res.tournaments
     },

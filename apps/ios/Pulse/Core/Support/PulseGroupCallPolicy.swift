@@ -89,9 +89,7 @@ public enum PulseGroupCallPolicy {
         elapsedSec >= 1 ? "You left · \(CallFormat.duration(elapsedSec))" : "You left"
     }
 
-    /// The 45s local ring guard - group rings have NO server-side timeout
-    /// (web banners sit until dismissed), but a stuck CallKit incoming
-    /// screen is worse than a missed ring, so the iOS path self-clears.
+    /// Maximum local presentation window; the relay absolute deadline may be sooner.
     public static let ringTimeoutSec: TimeInterval = 45
 }
 
@@ -170,11 +168,9 @@ public struct PulseGroupCallStateSnapshot: Decodable, Equatable, Sendable {
 
 // gcall:* wire payload builders (C→S, exact relay-validated shapes)
 
-/// Builders for the C→S group-call events. NOTE: unlike call:*, the
-/// targeted gcall events carry NO callId from the client - the relay
-/// injects the conversation call's id server-side (mini-services
-/// pulse-socket gcall:offer/answer/ice handlers). Shapes mirror the web
-/// emit payloads verbatim; pinned by PulseGroupCallPolicyTests.
+/// Builders for C→S group calls. Admitted native peers carry the relay call ID
+/// so stale signaling cannot be relabeled as a replacement call in the same room.
+/// The optional default preserves compatibility for legacy callers.
 public enum GroupCallWire {
     /// gcall:join { conversationId, kind, user: {id,name,color,avatar} }
     public static func joinPayload(
@@ -183,9 +179,11 @@ public enum GroupCallWire {
         userId: String,
         userName: String,
         userColor: String?,
-        userAvatar: String?
+        userAvatar: String?,
+        expectedCallId: String? = nil,
+        joinAttemptId: String? = nil
     ) -> [String: Any] {
-        [
+        var payload: [String: Any] = [
             "conversationId": conversationId,
             "kind": kind.rawValue,
             "user": [
@@ -195,6 +193,9 @@ public enum GroupCallWire {
                 "avatar": userAvatar ?? "",
             ],
         ]
+        if let expectedCallId { payload["expectedCallId"] = expectedCallId }
+        if let joinAttemptId { payload["joinAttemptId"] = joinAttemptId }
+        return payload
     }
 
     /// gcall:offer { conversationId, from, to, kind, sdp }
@@ -203,15 +204,18 @@ public enum GroupCallWire {
         from: String,
         to: String,
         kind: CallKind,
-        sdp: String
+        sdp: String,
+        callId: String? = nil
     ) -> [String: Any] {
-        [
+        var payload: [String: Any] = [
             "conversationId": conversationId,
             "from": from,
             "to": to,
             "kind": kind.rawValue,
             "sdp": sdp,
         ]
+        if let callId, !callId.isEmpty { payload["callId"] = callId }
+        return payload
     }
 
     /// gcall:answer { conversationId, from, to, sdp }
@@ -219,14 +223,17 @@ public enum GroupCallWire {
         conversationId: String,
         from: String,
         to: String,
-        sdp: String
+        sdp: String,
+        callId: String? = nil
     ) -> [String: Any] {
-        [
+        var payload: [String: Any] = [
             "conversationId": conversationId,
             "from": from,
             "to": to,
             "sdp": sdp,
         ]
+        if let callId, !callId.isEmpty { payload["callId"] = callId }
+        return payload
     }
 
     /// gcall:ice { conversationId, from, to, kind, candidate, sdpMid, sdpMLineIndex }
@@ -238,7 +245,8 @@ public enum GroupCallWire {
         kind: CallKind,
         candidate: String,
         sdpMid: String?,
-        sdpMLineIndex: Int32?
+        sdpMLineIndex: Int32?,
+        callId: String? = nil
     ) -> [String: Any] {
         var payload: [String: Any] = [
             "conversationId": conversationId,
@@ -247,13 +255,17 @@ public enum GroupCallWire {
             "kind": kind.rawValue,
             "candidate": candidate,
         ]
+        if let callId, !callId.isEmpty { payload["callId"] = callId }
         payload["sdpMid"] = sdpMid ?? NSNull()
         payload["sdpMLineIndex"] = sdpMLineIndex.map { Int($0) } ?? NSNull()
         return payload
     }
 
     /// gcall:leave { conversationId, from }
-    public static func leavePayload(conversationId: String, from: String) -> [String: Any] {
-        ["conversationId": conversationId, "from": from]
+    public static func leavePayload(conversationId: String, from: String, callId: String? = nil, joinAttemptId: String? = nil) -> [String: Any] {
+        var payload: [String: Any] = ["conversationId": conversationId, "from": from]
+        if let callId { payload["callId"] = callId }
+        if let joinAttemptId { payload["joinAttemptId"] = joinAttemptId }
+        return payload
     }
 }

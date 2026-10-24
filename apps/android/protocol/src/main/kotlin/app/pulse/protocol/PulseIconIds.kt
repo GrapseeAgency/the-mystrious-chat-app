@@ -142,7 +142,7 @@ val REACTION_LEGACY: Map<String, String> = mapOf(
  * nothing unknown is ever rendered.
  */
 fun reactionId(value: String?): String {
-    val v = value ?: ""
+    val v = (value ?: "").replace("\uFE0E", "").replace("\uFE0F", "")
     if (v in REACTION_IDS) return v
     return REACTION_LEGACY[v] ?: REACTION_DEFAULT
 }

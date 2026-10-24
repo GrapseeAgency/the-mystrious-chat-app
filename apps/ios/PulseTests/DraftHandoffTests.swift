@@ -43,7 +43,7 @@ final class DraftHandoffTests: XCTestCase {
             content: "first", parentId: nil, replyTo: nil, anon: false, anonAlias: nil, topicId: nil)
         XCTAssertFalse(try first.enqueueMessage(message, clientId: "one", envelope: PulseOutboxForward(kind: "text"), consumingDraft: token))
         XCTAssertEqual(first.draftSnapshot(conversationId: "room"), "next")
-        XCTAssertEqual(first.countOutbox(), 1)
+        XCTAssertEqual(try first.countOutbox(), 1)
     }
 
     func testDraftWriteFailureRollsBackBubbleAndQueueWithoutLosingDraft() async throws {
@@ -57,7 +57,7 @@ final class DraftHandoffTests: XCTestCase {
             try db.execute(sql: "CREATE TRIGGER fail_draft BEFORE INSERT ON draft BEGIN SELECT RAISE(ABORT, 'disk write failed'); END")
         }
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: "keep me", draftJournal: journal))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(journal.snapshot, "keep me")
         XCTAssertEqual(store.draftSnapshot(conversationId: "room"), "keep me")
         let messageCount = try await connection.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM message") }
@@ -76,7 +76,7 @@ final class DraftHandoffTests: XCTestCase {
         _ = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: "room", kind: "sticker", payload: ["emoji": "🍁", "pack": "Pulse"])
         XCTAssertEqual(store.draftSnapshot(conversationId: "room"), "unfinished")
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: other, viewer: viewer, conversationId: "room", content: "unfinished", draftJournal: journal))
-        XCTAssertEqual(other.countOutbox(), 0)
+        XCTAssertEqual(try other.countOutbox(), 0)
         XCTAssertEqual(journal.snapshot, "unfinished")
     }
 }

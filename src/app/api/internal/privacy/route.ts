@@ -9,13 +9,13 @@
 //     → 200 { flags: { [id]: { typingVisible, presenceVisible } } }
 //
 // Semantics: unknown / missing ids are simply absent from the map -
-// consumers fail OPEN (treat as visible) so an API hiccup never
-// blinds the whole mesh. presenceVisible is derived from the
+// consumers fail closed until a valid policy snapshot is available.
+// presenceVisible is derived from the
 // Telegram-coupled "Last seen & online" toggle (lastSeenVisible);
 // typingVisible is its own R47 key.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { mergePrefs } from '@/lib/prefs-defaults'
+import { privacyPreferenceEnabled } from '@/lib/privacy-preferences'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,22 +55,12 @@ export async function GET(req: Request) {
 
   const flags: Record<string, { typingVisible: boolean; presenceVisible: boolean }> = {}
   for (const user of users) {
-    const prefs = mergePrefs(safeParse(user.preferences))
     flags[user.id] = {
-      typingVisible: prefs.typingVisible,
+      typingVisible: privacyPreferenceEnabled(user.preferences, 'typingVisible'),
       // Telegram parity: one toggle governs last seen AND online presence.
-      presenceVisible: prefs.lastSeenVisible,
+      presenceVisible: privacyPreferenceEnabled(user.preferences, 'lastSeenVisible'),
     }
   }
 
   return NextResponse.json({ flags })
-}
-
-function safeParse(raw: string | null): unknown {
-  if (!raw) return null
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
 }

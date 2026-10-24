@@ -1,19 +1,17 @@
 import type { PrismaClient } from '../../prisma/generated-client'
+import { mutateMessage, MessageMutationError } from './message-mutation.ts'
 
 export class PinAccessError extends Error {
   constructor(message: string, public status: number) { super(message) }
 }
 
-/** Explicit Unpin, not a toggle. Membership and mutation share a transaction. */
+/** Compatibility helper; pin authorization and writes use the shared transaction. */
 export async function removeMessagePin(db: PrismaClient, userId: string, messageId: string): Promise<string> {
-  return db.$transaction(async tx => {
-    const message = await tx.message.findUnique({ where: { id: messageId }, select: { conversationId: true } })
-    if (!message) throw new PinAccessError('Message not found.', 404)
-    const member = await tx.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: message.conversationId } }, select: { id: true },
-    })
-    if (!member) throw new PinAccessError('You are not a participant of this conversation.', 403)
-    await tx.message.updateMany({ where: { id: messageId, pinnedAt: { not: null } }, data: { pinnedAt: null, pinnedBy: null } })
-    return message.conversationId
-  })
+  try {
+    return (await mutateMessage(db, messageId, userId, { kind: 'pin', present: false },
+      (tx, id) => tx.message.findUniqueOrThrow({ where: { id }, select: { id: true } }))).conversationId
+  } catch (error) {
+    if (error instanceof MessageMutationError) throw new PinAccessError(error.message, error.status)
+    throw error
+  }
 }

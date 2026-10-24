@@ -44,19 +44,18 @@ import app.pulse.ui.PulseAvatar
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 /**
  * R10-a - the share-in payload MainActivity forwards from [ShareInActivity].
  * Text rides [text], an image rides [stream] (a caller-granted content:// Uri
- * - the app can read it: the grant belongs to OUR package).
+ * - ClipData forwards the temporary grant onto MainActivity).
  */
-data class ShareInPayload(val text: String? = null, val stream: Uri? = null) {
+data class ShareInPayload(val text: String? = null, val stream: Uri? = null, val id: String = java.util.UUID.randomUUID().toString()) {
     val isImage: Boolean get() = stream != null
     val isText: Boolean get() = !text.isNullOrBlank()
 }
@@ -66,8 +65,9 @@ data class ShareInPayload(val text: String? = null, val stream: Uri? = null) {
  * is the SAME live source the chats surface uses (repo.observeConversations);
  * text shares go through repo.sendMessage (the offline-queueable path the
  * room composer uses), image shares through the EXISTING staging pipeline
- * (MediaSupport.imageToDataUrl → repo.uploadMedia → repo.sendMediaMessage -
- * media is online-only by spec and surfaces honest errors, never fake rows).
+ * (MediaSupport.imageToDataUrl → repo.queueSharedImage). Raw bytes commit before
+ * upload; no room attachment draft is overwritten. Failed preparation/storage
+ * keeps the payload; only the account outbox owns subsequent network delivery.
  */
 @HiltViewModel
 class ShareInViewModel @Inject constructor(
@@ -81,46 +81,12 @@ class ShareInViewModel @Inject constructor(
     sealed interface Progress {
         data object Idle : Progress
         data object Sending : Progress
-        data class Sent(val conversationId: String) : Progress
         data class Failed(val message: String) : Progress
     }
 
-    private val _progress = MutableStateFlow<Progress>(Progress.Idle)
-    val progress: StateFlow<Progress> = _progress.asStateFlow()
+    fun delivery() = app.pulse.domain.sync.SharedContentDelivery(repo)
+    suspend fun prepareImage(uri: Uri) = MediaSupport.imageToDataUrl(context, uri)
 
-    fun sendText(conversationId: String, text: String) {
-        _progress.value = Progress.Sending
-        viewModelScope.launch {
-            repo.sendMessage(conversationId, text.trim())
-                .onSuccess { _progress.value = Progress.Sent(conversationId) }
-                .onFailure { _progress.value = Progress.Failed(it.message ?: "Couldn't send") }
-        }
-    }
-
-    fun sendImage(conversationId: String, uri: Uri) {
-        _progress.value = Progress.Sending
-        viewModelScope.launch {
-            MediaSupport.imageToDataUrl(context, uri)
-                .onSuccess { dataUrl ->
-                    repo.uploadMedia(dataUrl)
-                        .onSuccess { path ->
-                            repo.sendMediaMessage(
-                                conversationId = conversationId,
-                                body = "",
-                                imagePath = path,
-                            )
-                                .onSuccess { _progress.value = Progress.Sent(conversationId) }
-                                .onFailure { _progress.value = Progress.Failed(it.message ?: "Couldn't send the photo") }
-                        }
-                        .onFailure { _progress.value = Progress.Failed(it.message ?: "Upload failed") }
-                }
-                .onFailure { _progress.value = Progress.Failed(it.message ?: "Couldn't read the shared image") }
-        }
-    }
-
-    fun consumeProgress() {
-        _progress.value = Progress.Idle
-    }
 }
 
 /**
@@ -136,21 +102,22 @@ fun ShareInSheet(
     onOpenRoom: (String) -> Unit,
     viewModel: ShareInViewModel = hiltViewModel(),
 ) {
-    val conversations by viewModel.conversations.collectAsStateWithLifecycle()
-    val progress by viewModel.progress.collectAsStateWithLifecycle()
-    var sendingTo by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(progress) {
-        when (val p = progress) {
-            is ShareInViewModel.Progress.Sent -> {
-                onOpenRoom(p.conversationId)
-                viewModel.consumeProgress()
-                onDismiss()
-            }
-            is ShareInViewModel.Progress.Failed -> sendingTo = null
-            else -> Unit
-        }
+    androidx.compose.runtime.key(payload.id) {
+        OwnedShareInSheet(payload, onDismiss, onOpenRoom, viewModel)
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OwnedShareInSheet(payload: ShareInPayload, onDismiss: () -> Unit, onOpenRoom: (String) -> Unit, viewModel: ShareInViewModel) {
+    val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+    val delivery = remember { viewModel.delivery() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var progress by remember { mutableStateOf<ShareInViewModel.Progress>(ShareInViewModel.Progress.Idle) }
+    var sendingTo by remember { mutableStateOf<String?>(null) }
+    val current = delivery.isCurrent()
+    LaunchedEffect(current) { if (!current) onDismiss() }
+    if (!current) return
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 30.dp)) {
@@ -189,12 +156,22 @@ fun ShareInSheet(
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable(enabled = !busy) {
+                                .clickable(enabled = progress !is ShareInViewModel.Progress.Sending) {
+                                    if (progress is ShareInViewModel.Progress.Sending) return@clickable
                                     sendingTo = conversation.id
-                                    if (payload.isImage) {
-                                        viewModel.sendImage(conversation.id, payload.stream!!)
-                                    } else {
-                                        viewModel.sendText(conversation.id, payload.text.orEmpty())
+                                    progress = ShareInViewModel.Progress.Sending
+                                    scope.launch {
+                                        try {
+                                            val result = if (payload.isImage) delivery.image(conversation.id) { viewModel.prepareImage(payload.stream!!) }
+                                                else delivery.text(conversation.id, payload.text.orEmpty())
+                                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                            if (!delivery.isCurrent()) return@launch
+                                            result.fold(onSuccess = { onOpenRoom(conversation.id); onDismiss() },
+                                                onFailure = { progress = ShareInViewModel.Progress.Failed(it.message ?: "Couldn't queue this share. Retry when ready.") })
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                                        } catch (failure: Exception) {
+                                            if (delivery.isCurrent()) progress = ShareInViewModel.Progress.Failed(failure.message ?: "Couldn't queue this share")
+                                        }
                                     }
                                 }
                                 .padding(vertical = 10.dp),

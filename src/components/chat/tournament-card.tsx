@@ -65,12 +65,12 @@ export default function TournamentCard({
   const [joining, setJoining] = useState(false)
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['tournament', tournamentId],
+    queryKey: ['tournament', tournamentId, meId],
     queryFn: async () =>
       apiJson<TournamentDetail>(
-        `/api/tournaments/${encodeURIComponent(tournamentId)}`,
+        `/api/tournaments/${encodeURIComponent(tournamentId)}?userId=${encodeURIComponent(meId)}`,
       ),
-    enabled: tournamentId.length > 0,
+    enabled: tournamentId.length > 0 && meId.length > 0,
     refetchInterval: (query) =>
       query.state.data?.tournament.status === 'running' ? POLL_MS : false,
     staleTime: 5_000,
@@ -95,12 +95,12 @@ export default function TournamentCard({
       haptic(20)
       fireParticles({ kind: 'stars', count: 44 })
       toast.success('Joined the season - wins now score points')
-      void qc.invalidateQueries({ queryKey: ['tournament', tournamentId] })
+      void qc.invalidateQueries({ queryKey: ['tournament', tournamentId, meId] })
       void qc.invalidateQueries({ queryKey: ['tournaments'] })
       void qc.invalidateQueries({ queryKey: ['leaderboard'] })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not join the tournament.')
-      void qc.invalidateQueries({ queryKey: ['tournament', tournamentId] })
+      void qc.invalidateQueries({ queryKey: ['tournament', tournamentId, meId] })
     } finally {
       setJoining(false)
     }

@@ -7,6 +7,7 @@ final class ThreadReplyCountTests: XCTestCase {
     private func row(_ id: String, room: String = "room", parent: String? = nil, expires: Date? = nil) throws -> WireChatMessage {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
             OutboxFixtures.makeMessage(id: id, conversationId: room, content: id))) as? [String: Any])
+        object["createdAt"] = "2026-10-21T00:00:00.000Z" // deterministic timestamp ties, not wall-clock luck
         object["parentId"] = parent
         object["expiresAt"] = expires.map { ISO8601DateFormatter().string(from: $0) }
         return try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object))
@@ -49,7 +50,7 @@ final class ThreadReplyCountTests: XCTestCase {
         try store.rejectOutbox(clientId: "failed", reason: "forbidden")
         try store.upsert(messages: [echo]) // legacy retained echo, still rejected
         XCTAssertTrue(try store.threadReplyCountSnapshot(conversationId: "room").counts.isEmpty)
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
         let other = try PulseStore()
         XCTAssertTrue(try other.threadReplyCountSnapshot(conversationId: "room").counts.isEmpty)
     }
@@ -140,5 +141,84 @@ final class ThreadReplyCountTests: XCTestCase {
         _ = try store.acceptThreadSnapshot(rootId: "root", roomId: "room", messages: [root])
         XCTAssertTrue(try store.retryOutbox(clientId: "failed", message: echo))
         XCTAssertEqual(store.draft(conversationId: draftKey), "keep typing")
+    }
+
+    func testOfflineThreadPagesCross300RowsWithTiesAndDeletedCursorWithoutGaps() throws {
+        let store = try PulseStore()
+        let replies = try (0..<450).map { try row(String(format: "r%03d", $0), parent: "root") }
+        try store.upsert(messages: [row("root")] + replies)
+        var page = try store.cachedThreadPage(roomId: "room", rootId: "root", limit: 100)
+        XCTAssertEqual(page.messages.count, 100)
+        XCTAssertTrue(page.hasMore)
+        var ids = page.messages.map(\.id)
+        let cursor = try XCTUnwrap(page.cursor)
+        try store.deleteMessage(id: cursor.id) // paging must not look up the removed anchor
+        try store.upsert(messages: [row("z-new-arrival", parent: "root")])
+        while page.hasMore {
+            page = try store.cachedThreadPage(roomId: "room", rootId: "root", before: page.cursor, limit: 100)
+            ids += page.messages.map(\.id)
+        }
+        XCTAssertEqual(ids.count, 450)
+        XCTAssertEqual(Set(ids), Set(replies.map(\.id)))
+        XCTAssertFalse(ids.contains("z-new-arrival")) // belongs to the latest window, not earlier pages
+        XCTAssertEqual(try store.cachedThreadPage(roomId: "room", rootId: "root", before: page.cursor).messages.count, 0)
+    }
+
+    func testOfflineCursorIncludesPendingIdsButExcludesFailedEchoesAndForeignRows() throws {
+        let store = try PulseStore()
+        let root = try row("root"), pending = try row("local_pending", parent: "root")
+        let failed = try row("local_failed", parent: "root")
+        try store.upsert(messages: [root, pending, row("foreign", room: "other", parent: "root"), row("reply", parent: "root").deletedCopy()])
+        try store.appendOutbox(conversationId: "room", clientId: "failed", content: "saved failure")
+        try store.rejectOutbox(clientId: "failed", reason: "rejected")
+        try store.upsert(messages: [failed]) // legacy cached failed echo
+        let first = try store.cachedThreadPage(roomId: "room", rootId: "root", limit: 1)
+        let second = try store.cachedThreadPage(roomId: "room", rootId: "root", before: first.cursor, limit: 1)
+        XCTAssertEqual(first.messages.map(\.id), ["reply"])
+        XCTAssertNotNil(first.messages.first?.deletedAt)
+        XCTAssertEqual(second.messages.map(\.id), ["local_pending"])
+        XCTAssertEqual(second.cursor?.id, "local_pending")
+        XCTAssertFalse(second.hasMore)
+        XCTAssertEqual(try store.countOutbox(), 1) // recovery intent is not deleted to repair history
+        XCTAssertThrowsError(try store.cachedThreadPage(roomId: "other", rootId: "root", before: first.cursor))
+        XCTAssertThrowsError(try store.cachedThreadPage(roomId: "room", rootId: "other", before: first.cursor))
+    }
+
+    func testEarlierCachePagesHonorRefusalAndRootLifetimeAtEachRead() throws {
+        let store = try PulseStore(), now = Date(timeIntervalSince1970: 1000)
+        try store.upsert(messages: [row("root", expires: now.addingTimeInterval(1)),
+                                   row("a", parent: "root"), row("b", parent: "root")])
+        let first = try store.cachedThreadPage(roomId: "room", rootId: "root", limit: 1, now: now)
+        XCTAssertTrue(first.hasMore)
+        XCTAssertTrue(try store.cachedThreadPage(roomId: "room", rootId: "root", before: first.cursor,
+                                                 now: now.addingTimeInterval(1)).messages.isEmpty)
+        try store.denyThread(rootId: "root")
+        let refused = try store.cachedThreadPage(roomId: "room", rootId: "root", before: first.cursor, now: now)
+        XCTAssertTrue(refused.messages.isEmpty)
+        XCTAssertFalse(refused.hasMore)
+        XCTAssertNil(refused.cursor)
+        XCTAssertNotNil(try store.message(id: "a", now: now))
+    }
+
+    func testOfflineJumpReadsExactLiveRootAndReplyAndCannotBypassDenial() throws {
+        let store = try PulseStore(), now = Date(timeIntervalSince1970: 1000)
+        try store.upsert(messages: [row("root", expires: now.addingTimeInterval(1)),
+                                   row("reply", parent: "root"), row("foreign", room: "other", parent: "root")])
+        XCTAssertEqual(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "reply", now: now)?.reply.id, "reply")
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "foreign", now: now))
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "other", rootId: "root", targetId: "reply", now: now))
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "reply", now: now.addingTimeInterval(1)))
+        try store.denyThread(rootId: "root")
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "reply", now: now))
+    }
+
+    func testOfflineJumpDoesNotNavigateDeletedOrFailedLocalReplies() throws {
+        let store = try PulseStore()
+        try store.upsert(messages: [row("root"), row("deleted", parent: "root").deletedCopy()])
+        try store.appendOutbox(conversationId: "room", clientId: "failed", content: "saved")
+        try store.rejectOutbox(clientId: "failed", reason: "refused")
+        try store.upsert(messages: [row("local_failed", parent: "root")])
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "deleted"))
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "local_failed"))
     }
 }

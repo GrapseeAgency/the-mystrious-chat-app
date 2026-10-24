@@ -10,7 +10,8 @@ public enum PulseAvatarImage {
     /// Re-renders the image as a centered square whose edge is ≤ maxSide,
     /// then encodes JPEG q0.85. Nil when the source bytes are not an image.
     public static func jpegData(from data: Data) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
+        guard let bounded = PulseMediaSupport.downscaledJPEGData(from: data),
+              let image = UIImage(data: bounded) else { return nil }
         let side = min(image.size.width, image.size.height)
         guard side > 0 else { return nil }
         let scale = min(1, maxSide / side)
@@ -21,11 +22,23 @@ public enum PulseAvatarImage {
             y: (image.size.height - side) / 2,
         )
         let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
+        format.scale = 1; format.opaque = true
         let rendered = UIGraphicsImageRenderer(size: target, format: format).image { _ in
             image.draw(in: CGRect(origin: CGPoint(x: -cropOrigin.x * scale, y: -cropOrigin.y * scale), size: image.size.applying(.init(scaleX: scale, y: scale))))
         }
         return rendered.jpegData(compressionQuality: quality)
+    }
+
+    /// Upload receipts contain a filename; profile/group PATCH contracts require
+    /// a managed path. Accept an already-prefixed receipt without double-prefixing.
+    static func managedPath(_ receipt: String) throws -> String {
+        let prefix = "/api/uploads/"
+        let name = receipt.hasPrefix(prefix) ? String(receipt.dropFirst(prefix.count)) : receipt
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        guard (8...120).contains(name.count), name.allSatisfy({ allowed.contains($0) }) else {
+            throw PulseAPIClient.Failure(kind: .server, message: "The upload receipt was not a valid managed photo path.")
+        }
+        return prefix + name
     }
 
     /// Wire data-URL (`data:image/jpeg;base64,…`) for POST /api/uploads.
@@ -43,14 +56,15 @@ public enum PulseCoverImage {
     public static let quality: CGFloat = 0.85
 
     public static func jpegData(from data: Data) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
+        guard let bounded = PulseMediaSupport.downscaledJPEGData(from: data),
+              let image = UIImage(data: bounded) else { return nil }
         guard image.size.width > 0, image.size.height > 0 else { return nil }
         let scale = max(maxWidth / image.size.width, maxHeight / image.size.height)
         let drawW = image.size.width * scale
         let drawH = image.size.height * scale
         let cropOrigin = CGPoint(x: (drawW - maxWidth) / 2, y: (drawH - maxHeight) / 2)
         let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
+        format.scale = 1; format.opaque = true
         let rendered = UIGraphicsImageRenderer(size: CGSize(width: maxWidth, height: maxHeight), format: format).image { _ in
             image.draw(in: CGRect(origin: CGPoint(x: -cropOrigin.x, y: -cropOrigin.y), size: CGSize(width: drawW, height: drawH)))
         }

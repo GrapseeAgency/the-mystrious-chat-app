@@ -362,7 +362,7 @@ class MainActivity : FragmentActivity() {
                 appLock = appLock,
                 onRequestUnlock = { appLock.presentPrompt(this) },
                 shareInFlow = shareIn,
-                onConsumeShareIn = { shareIn.value = null },
+                onConsumeShareIn = { id -> val current = shareIn.value; if (current?.id == id) shareIn.compareAndSet(current, null) },
                 shortcutFlow = shortcutRequest,
                 onConsumeShortcut = { shortcutRequest.value = null },
             )
@@ -382,15 +382,17 @@ class MainActivity : FragmentActivity() {
      */
     private fun handleIntent(intent: android.content.Intent?) {
         deepLinks.value = app.pulse.core.link.PulseDeepLink.parse(intent?.dataString)
+            ?: runCatching {
+                app.pulse.core.link.PulseDeepLink.notificationRoom(
+                    intent?.getStringExtra("kind"),
+                    intent?.getStringExtra("conversationId"),
+                    intent?.getStringExtra("messageId"),
+                )
+            }.getOrNull()
         when (intent?.action) {
             ShareInActivity.ACTION_SHARE_IN -> {
                 val text = intent.getStringExtra(ShareInActivity.EXTRA_SHARE_TEXT)
-                val stream = if (Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableExtra(ShareInActivity.EXTRA_SHARE_STREAM, android.net.Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(ShareInActivity.EXTRA_SHARE_STREAM) as? android.net.Uri
-                }
+                val stream = ShareInActivity.forwardedStream(intent)
                 shareIn.value = if (text.isNullOrBlank() && stream == null) {
                     // Unreadable payload - say so and close, no half state.
                     android.widget.Toast.makeText(
@@ -428,7 +430,7 @@ fun PulseRoot(
     onRequestUnlock: () -> Unit,
     // R10-a - share-in payload + launcher-shortcut requests from the activity.
     shareInFlow: StateFlow<ShareInPayload?>,
-    onConsumeShareIn: () -> Unit,
+    onConsumeShareIn: (String) -> Unit,
     shortcutFlow: StateFlow<ShortcutRequest?>,
     onConsumeShortcut: () -> Unit,
 ) {
@@ -439,6 +441,7 @@ fun PulseRoot(
     val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
     val reduced by session.reducedMotion.collectAsStateWithLifecycle()
     val viewerName by session.viewerName.collectAsStateWithLifecycle()
+    val viewerColor by session.viewerColor.collectAsStateWithLifecycle()
     val storedBase by session.serverBase.collectAsStateWithLifecycle()
     // Cold-start race guard (R54): PulseApplication applies the stored gateway
     // asynchronously - if composition lands first, re-apply the persisted base
@@ -586,8 +589,34 @@ fun PulseRoot(
                 LaunchedEffect(noteVm) {
                     noteVm.player.notices.collect { android.widget.Toast.makeText(noteContext, it, android.widget.Toast.LENGTH_SHORT).show() }
                 }
-                LaunchedEffect(viewerId, viewerName, storedBase) {
-                    roomsVm.setIdentity(viewerId, viewerName, null)
+                LaunchedEffect(viewerId, viewerName, viewerColor, storedBase) {
+                    roomsVm.setIdentity(viewerId, viewerName, viewerColor)
+                    groupCallVm.setIdentity(viewerId, viewerName, viewerColor)
+                }
+                var activeCallRoomId by remember { mutableStateOf<String?>(null) }
+                var pendingCallPermission by remember { mutableStateOf<Pair<app.pulse.domain.model.Conversation, Boolean>?>(null) }
+                val callPermissions = rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+                ) { grants ->
+                    val pending = pendingCallPermission
+                    pendingCallPermission = null
+                    if (pending != null && repository.viewerId == viewerId && pending.first.id == activeCallRoomId) {
+                        if (grants[android.Manifest.permission.RECORD_AUDIO] == true) {
+                            val (convo, video) = pending
+                            val kind = if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE
+                            if (convo.isGroupish) {
+                                groupCallVm.startCall(kind, convo.title)
+                            } else {
+                                val peer = convo.members.firstOrNull { it.id != viewerId.orEmpty() }
+                                callVm.startOutgoing(peerId = peer?.id ?: convo.otherUserId.orEmpty(), name = convo.title,
+                                    color = convo.accentColor, avatar = convo.avatar,
+                                    callerName = viewerName.orEmpty().ifBlank { "You" }, kind = kind)
+                            }
+                        } else android.widget.Toast.makeText(noteContext, "Microphone permission is needed to call.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                LaunchedEffect(groupCallVm) {
+                    groupCallVm.notices.collect { android.widget.Toast.makeText(noteContext, it, android.widget.Toast.LENGTH_SHORT).show() }
                 }
                 androidx.compose.runtime.DisposableEffect(viewerId, storedBase) {
                     onDispose {
@@ -608,24 +637,15 @@ fun PulseRoot(
                     session = session,
                     readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value && liveSurface == null,
                     repository = repository,
+                    onActiveCallRoomChanged = { convo ->
+                        activeCallRoomId = convo?.id
+                        groupCallVm.setActiveConversation(convo?.takeIf { it.isGroupish }?.id, convo?.title)
+                    },
                     onStartCall = { convo, video ->
-                        val viewer = viewerName.orEmpty().ifBlank { "You" }
-                        if (convo.isGroupish) {
-                            groupCallVm.setActiveConversation(convo.id, convo.title)
-                            groupCallVm.startCall(
-                                if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
-                                convo.title,
-                            )
-                        } else {
-                            val peer = convo.members.firstOrNull { it.id != viewerId.orEmpty() }
-                            callVm.startOutgoing(
-                                peerId = peer?.id ?: convo.otherUserId.orEmpty(),
-                                name = convo.title,
-                                color = convo.accentColor,
-                                avatar = convo.avatar,
-                                callerName = viewer,
-                                kind = if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
-                            )
+                        if (pendingCallPermission == null) {
+                            pendingCallPermission = convo to video
+                            callPermissions.launch(if (video) arrayOf(android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.CAMERA)
+                                else arrayOf(android.Manifest.permission.RECORD_AUDIO))
                         }
                     },
                     tabRequest = pendingTab,
@@ -639,6 +659,7 @@ fun PulseRoot(
                     shortcutAction = pendingAction,
                     onConsumeShortcutAction = { pendingAction = null },
                 )
+                app.pulse.feature.calls.GroupCallBanner(groupCallVm, Modifier.statusBarsPadding())
                 VoiceRoomsOverlay(roomsVm)
                 CallOverlay(callVm)
                 GroupCallOverlay(groupCallVm)
@@ -647,10 +668,12 @@ fun PulseRoot(
                 shareInFlow.collectAsStateWithLifecycle().value?.let { payload ->
                     ShareInSheet(
                         payload = payload,
-                        onDismiss = onConsumeShareIn,
+                        onDismiss = { onConsumeShareIn(payload.id) },
                         onOpenRoom = { id ->
-                            onConsumeShareIn()
-                            pendingRoomId = id
+                            if (shareInFlow.value?.id == payload.id) {
+                                onConsumeShareIn(payload.id)
+                                pendingRoomId = id
+                            }
                         },
                     )
                 }

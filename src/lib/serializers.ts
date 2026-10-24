@@ -3,11 +3,13 @@
 // input normalization, safe JSON parsing, socket relay.
 // Server-only - never import from client components.
 import path from 'node:path'
-import { redactDeletedMessage, quoteDisclosure } from '@/lib/message-disclosure'
+import { randomInt } from 'node:crypto'
+import { normalizedReactionGroups } from '@/lib/reaction-contract'
+import { redactDeletedMessage, quoteSnippet } from '@/lib/message-disclosure'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
-import { unreadSnapshot, isExpiredMessage, unexpiredMessages } from '@/lib/message-visibility'
-import { DEFAULT_PREFERENCES, mergePrefs, type PulsePrefs } from '@/lib/prefs-defaults'
+import { unreadSnapshot, inboxMessagesWhere, visibleInboxPreview } from '@/lib/message-visibility'
+import { privacyPreferenceEnabled } from './privacy-preferences.ts'
 import type {
   AppUser,
   AutomationSummary,
@@ -169,7 +171,7 @@ export function mapUser(user: UserRow): AppUser {
   // R46 - privacy enforcement: a user with lastSeenVisible=false has their
   // last-seen stamp scrubbed at the SERIALIZATION layer (the payload never
   // leaves the server). Own profile is scrubbed too - the owner chose to hide.
-  const hideStamp = prefsOfUser(user).lastSeenVisible === false
+  const hideStamp = !privacyPreferenceEnabled(user.preferences, 'lastSeenVisible')
   return {
     id: user.id,
     name: user.name,
@@ -185,44 +187,26 @@ export function mapUser(user: UserRow): AppUser {
   }
 }
 
-/** Server-stored prefs of a user row (defensive - malformed JSON → defaults). */
-function prefsOfUser(user: UserRow): PulsePrefs {
-  if (!user.preferences) return DEFAULT_PREFERENCES
-  try {
-    return mergePrefs(JSON.parse(user.preferences))
-  } catch {
-    return DEFAULT_PREFERENCES
-  }
-}
-
 interface ReactionRow {
   emoji: string
   userId: string
 }
 
 export function groupReactions(reactions: ReactionRow[]): MessageReactionGroup[] {
-  const order: string[] = []
-  const byEmoji = new Map<string, string[]>()
-  for (const r of reactions) {
-    let ids = byEmoji.get(r.emoji)
-    if (!ids) {
-      ids = []
-      byEmoji.set(r.emoji, ids)
-      order.push(r.emoji)
-    }
-    ids.push(r.userId)
-  }
-  return order.map((emoji) => {
-    const userIds = byEmoji.get(emoji) ?? []
-    return { emoji, userIds, count: userIds.length }
-  })
+  return normalizedReactionGroups(reactions)
 }
 
 /** Deep include reused by every message fetch (history, last-message, single). */
 export const MESSAGE_FULL_INCLUDE = {
   sender: true,
   reactions: { select: { emoji: true, userId: true } },
-  replyTo: { select: { id: true, content: true, deletedAt: true, expiresAt: true, viewOnce: true, sender: { select: { name: true } } } },
+  replyTo: { select: {
+    id: true, content: true, deletedAt: true, expiresAt: true, viewOnce: true,
+    anon: true, anonAlias: true, viaAutomation: true, payload: true,
+    conversationId: true, parentId: true,
+    parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
+    sender: { select: { name: true } },
+  } },
   poll: {
     include: {
       options: {
@@ -239,13 +223,7 @@ export type MessageRowWithRelations = Prisma.MessageGetPayload<{ include: typeof
 
 export function mapMessage(message: MessageRowWithRelations, viewerId?: string): ChatMessage {
   const parent = message.replyTo
-  const replyTo = parent
-    ? {
-        id: parent.id,
-        ...quoteDisclosure(parent),
-        senderName: parent.sender.name,
-      }
-    : null
+  const replyTo = parent ? quoteSnippet(parent, message.conversationId) : null
 
   // Poll tally (viewer-aware my vote)
   let poll: ChatMessage['poll'] = null
@@ -390,7 +368,7 @@ export function membersForViewer(
   return participants
     .map((p) => {
       const m = mapMember(p)
-      if (viewerId && m.id !== viewerId && prefsOfUser(p.user).readReceipts === false) {
+      if (m.id !== viewerId && !privacyPreferenceEnabled(p.user.preferences, 'readReceipts')) {
         return { ...m, lastReadAt: EPOCH_ISO }
       }
       return m
@@ -399,12 +377,17 @@ export function membersForViewer(
 }
 
 /** Reusable deep include for "conversation + members + newest message". */
+const INBOX_MESSAGE_INCLUDE = {
+  ...MESSAGE_FULL_INCLUDE,
+  parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
+} satisfies Prisma.MessageInclude
+
 export const CONVERSATION_FULL_INCLUDE = {
   participants: { include: { user: true } },
   messages: {
-    orderBy: { createdAt: 'desc' as const },
+    orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
     take: 1,
-    include: MESSAGE_FULL_INCLUDE,
+    include: INBOX_MESSAGE_INCLUDE,
   },
 } satisfies Prisma.ConversationInclude
 
@@ -425,18 +408,19 @@ export async function buildConversationSummary(
   const myReadAt =
     conv.participants.find((p) => p.userId === viewerId)?.lastReadAt ?? new Date(0)
   const at = new Date()
-  const preview = conv.messages[0] ?? null
+  const preview = visibleInboxPreview(conv.messages[0], conv.id, at)
   const [unread, streakRow, lastRow] = await Promise.all([
     unreadSnapshot(db, conv.id, viewerId, myReadAt, at),
     db.conversationStreak.findUnique({
       where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
       select: { lastDay: true, count: true, best: true },
     }),
-    // TTL cleanup may not run until someone opens the room. Inbox truth must
-    // not depend on that incidental purge, nor leak an expired preview body.
-    preview && isExpiredMessage(preview, at)
-      ? db.message.findFirst({ where: { conversationId: conv.id, ...unexpiredMessages(at) },
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: MESSAGE_FULL_INCLUDE })
+    // Root deletion/expiry can hide the newest reply without changing its own
+    // expiresAt. Select the next visible row, not merely the next unexpired one.
+    !preview && conv.messages.length > 0
+      ? db.message.findFirst({ where: inboxMessagesWhere(conv.id, at),
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: INBOX_MESSAGE_INCLUDE })
+          .then(row => visibleInboxPreview(row, conv.id, new Date()))
       : Promise.resolve(preview),
   ])
   const mine = conv.participants.find((p) => p.userId === viewerId)
@@ -599,11 +583,11 @@ export const DOC_MAX_BYTES = 10_485_760
 const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 export const INVITE_CODE_LENGTH = 8
 
-/** Random invite code, e.g. "K7MQX2AB" (crypto-free is fine at this scale). */
+/** Invite codes authorize membership; select characters with the platform CSPRNG. */
 export function generateInviteCode(): string {
   let code = ''
   for (let i = 0; i < INVITE_CODE_LENGTH; i += 1) {
-    code += INVITE_ALPHABET[Math.floor(Math.random() * INVITE_ALPHABET.length)]
+    code += INVITE_ALPHABET[randomInt(INVITE_ALPHABET.length)]
   }
   return code
 }
@@ -640,10 +624,12 @@ export async function notifySocket(
   payload: unknown,
 ): Promise<void> {
   if (recipientIds.length === 0) return
+  const secret = process.env.CRON_SECRET
+  if (!secret) return
   try {
     await fetch(`${SOCKET_URL}/notify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-pulse-key': secret },
       body: JSON.stringify({ event, recipients: recipientIds, payload }),
       signal: AbortSignal.timeout(2500),
     })
