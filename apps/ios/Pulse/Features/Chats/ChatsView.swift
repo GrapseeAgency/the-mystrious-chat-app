@@ -3495,7 +3495,7 @@ final class ChatsViewModel: ObservableObject {
         let navigation = session.roomNavigationGeneration
         PulseHaptics.tap()
         selfOpeningTask = Task { @MainActor in
-            func owns() -> Bool {
+            @MainActor func owns() -> Bool {
                 !Task.isCancelled && session.sessionGeneration == epoch && session.roomNavigationGeneration == navigation &&
                     selfOpeningGate.isCurrent(ticket, owner: epoch, resource: viewer.id)
             }
