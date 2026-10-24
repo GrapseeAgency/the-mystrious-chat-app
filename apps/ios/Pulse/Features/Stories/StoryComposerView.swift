@@ -16,6 +16,7 @@ struct StoryComposerView: View {
     @State private var localPreview: UIImage?
     @State private var photoItem: PhotosPickerItem?
     @State private var pickerPresent = false
+    @State private var pickerOwner: UUID?
     @StateObject private var operations = PulseRoomOperations()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -37,13 +38,16 @@ struct StoryComposerView: View {
         }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
-            photoItem = nil
+            let owner = pickerOwner
+            pickerOwner = nil; photoItem = nil
+            guard owner == session.sessionGeneration, cs.mode == .photo else { return }
             pickAndUpload(item)
         }
         .photosPicker(isPresented: $pickerPresent, selection: $photoItem, matching: .images)
         .onDisappear { operations.stop() }
         .onChange(of: session.sessionGeneration) { _, _ in
             operations.stop()
+            pickerOwner = nil; pickerPresent = false
             cs = StoryComposerState(); localPreview = nil; photoItem = nil
             onClose()
         }
@@ -54,6 +58,7 @@ struct StoryComposerView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Button {
+                pickerOwner = nil
                 operations.stop()
                 onClose()
             } label: {
@@ -100,11 +105,10 @@ struct StoryComposerView: View {
             }
             modePill("Photo", systemImage: "photo", active: cs.mode == .photo) {
                 cs = cs.withMode(.photo)
-                // Web parity: switching to Photo auto-opens the picker when
-                // no photo is staged yet (story-composer-sheet.tsx).
-                if cs.imagePath == nil && localPreview == nil {
-                    pickerPresent = true
-                }
+                // Replacing a photo must not require deleting the confirmed one first.
+                // Capture the picker launch owner, not whichever account receives its callback.
+                pickerOwner = session.sessionGeneration
+                pickerPresent = true
             }
         }
         .background(Capsule().fill(Color.white.opacity(0.10)))
@@ -256,6 +260,7 @@ struct StoryComposerView: View {
 
     private func cancelImageImport() {
         guard !cs.posting else { return }
+        pickerOwner = nil
         operations.stop()
         cs = cs.withUploading(false)
     }

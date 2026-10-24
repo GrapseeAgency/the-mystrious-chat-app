@@ -98,7 +98,7 @@ fun StoryComposerScreen(
 @Composable
 private fun OwnedStoryComposerScreen(onPublished: () -> Unit, onClose: () -> Unit, storiesVm: StoriesViewModel) {
     var cs by remember { mutableStateOf(ComposerState()) }
-    var localPreview by remember { mutableStateOf<String?>(null) }
+    var localPreview by remember { mutableStateOf<ByteArray?>(null) }
     var photoJob by remember { mutableStateOf<Job?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -115,7 +115,7 @@ private fun OwnedStoryComposerScreen(onPublished: () -> Unit, onClose: () -> Uni
                     val path = storiesVm.uploadStoryImage(dataUrl, session).getOrThrow()
                     currentCoroutineContext().ensureActive()
                     if (!storiesVm.acceptsComposer(session)) return@launch
-                    localPreview = uri.toString()
+                    localPreview = android.util.Base64.decode(dataUrl.substringAfter(','), android.util.Base64.DEFAULT)
                     cs = cs.withImage(path).withUploading(false)
                 } catch (cancelled: CancellationException) { throw cancelled
                 } catch (failure: Exception) {

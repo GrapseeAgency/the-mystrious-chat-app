@@ -454,7 +454,7 @@ public struct PulseAPIClient: Sendable {
     public func uploadMedia(dataUrl: String) async throws -> String {
         let data = try await postRaw("/api/uploads", body: ["dataUrl": dataUrl])
         let result = try decoder.decode(WireUploadResult.self, from: data)
-        guard let filePath = result.filePath, !filePath.isEmpty else {
+        guard let filePath = result.filePath, !filePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Failure(kind: .validation, message: "Upload response missing filePath")
         }
         return filePath

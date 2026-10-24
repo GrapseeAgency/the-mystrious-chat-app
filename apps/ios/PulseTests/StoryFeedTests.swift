@@ -48,4 +48,10 @@ final class StoryFeedTests: XCTestCase {
         catch let failure as PulseAPIClient.Failure { XCTAssertEqual(failure.kind, .forbidden) }
         catch { XCTFail("Expected typed failure") }
     }
+
+    func testEmptyUploadPathCannotBecomeAnUnpostablePhotoDraft() async {
+        let (api, session) = client(#"{"filePath":"   "}"#); defer { session.invalidateAndCancel() }
+        do { _ = try await api.uploadMedia(dataUrl: "data:image/jpeg;base64,AA=="); XCTFail("Expected invalid upload receipt") }
+        catch { }
+    }
 }

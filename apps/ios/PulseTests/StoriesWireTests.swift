@@ -373,4 +373,16 @@ final class StoryStoreCacheTests: XCTestCase {
         XCTAssertEqual(updated.groupsJson, "{\"groups\":[{\"mine\":true}]}")
         XCTAssertEqual(updated.updatedAt, 1_700_000_060_000)
     }
+
+    func testFailedPhotoReplacementPreservesConfirmedPhotoAndCaption() {
+        let original = StoryComposerState().withCaption("sunset").withImage("confirmed.jpg")
+        let uploading = original.withUploading(true)
+        XCTAssertFalse(uploading.canPost)
+        let failed = uploading.withUploading(false).withError("Upload failed")
+        XCTAssertEqual(failed.imagePath, "confirmed.jpg")
+        XCTAssertEqual(failed.caption, "sunset")
+        XCTAssertTrue(failed.canPost)
+        XCTAssertFalse(StoryComposerState().withImage("   ").canPost)
+        XCTAssertEqual(failed.withMode(.text).imagePath, "confirmed.jpg")
+    }
 }

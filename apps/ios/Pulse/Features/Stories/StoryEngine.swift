@@ -105,7 +105,7 @@ struct StoryComposerState: Equatable {
         guard !uploading, !posting, caption.utf16.count <= Self.captionMax else { return false }
         switch mode {
         case .text: return !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .photo: return !(imagePath ?? "").isEmpty
+        case .photo: return !(imagePath ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 

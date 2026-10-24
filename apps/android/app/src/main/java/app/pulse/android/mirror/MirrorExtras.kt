@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import app.pulse.feature.stories.ComposerState
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -760,7 +762,7 @@ private fun MirrorStoryViewersSheet(storyId: String, account: PulseRepository, r
     }
 }
 
-/** Text story composer: background palette + caption + real createStory. */
+/** Mounted text/photo composer using the shared bounded preparation and state policy. */
 @Composable
 internal fun MirrorStoryComposer(
     repository: PulseRepository,
@@ -778,94 +780,111 @@ private fun MirrorOwnedStoryComposer(repository: PulseRepository, onDismiss: () 
     val actionScope = androidx.compose.runtime.rememberCoroutineScope()
     val owner = remember { repository.attachmentSessionKey() }
     val account = remember { repository.boundToCurrentAccount() }
-    var error by remember { mutableStateOf<String?>(null) }
-    var caption by remember { mutableStateOf("") }
-    var background by remember { mutableStateOf("emerald") }
-    var posting by remember { mutableStateOf(false) }
-    val palette = listOf("emerald", "rose", "amber", "violet", "teal", "orange", "pink", "cyan")
-
-    MirrorSheet(title = "New status", onDismiss = onDismiss) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(Brush.verticalGradient(MirrorArt.avatarGradient(background))),
-            contentAlignment = Alignment.Center,
-        ) {
-            BasicTextField(
-                value = caption,
-                onValueChange = { if (!posting) { caption = app.pulse.feature.stories.ComposerState.boundedCaption(it); error = null } },
-                enabled = !posting,
-                textStyle = TextStyle(
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                ),
-                cursorBrush = SolidColor(Color.White),
-                modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
-            )
-            if (caption.isBlank()) {
-                Text(
-                    "Type your status",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var cs by remember { mutableStateOf(ComposerState()) }
+    var preview by remember { mutableStateOf<ByteArray?>(null) }
+    var photoJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var pickerOwner by remember { mutableStateOf<String?>(null) }
+    fun ownsDraft() = owner != null && repository.attachmentSessionKey() == owner
+    fun cancelPhoto() {
+        pickerOwner = null
+        photoJob?.cancel(); photoJob = null
+        cs = cs.withUploading(false)
+    }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        val requestedOwner = pickerOwner
+        pickerOwner = null
+        if (uri != null && requestedOwner == owner && ownsDraft() && !cs.posting && cs.mode == ComposerState.Mode.PHOTO) {
+            photoJob?.cancel()
+            cs = cs.withUploading(true).copy(error = null)
+            photoJob = actionScope.launch {
+                try {
+                    val dataUrl = app.pulse.feature.stories.StoryMedia.imageToDataUrl(context, uri).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!ownsDraft()) return@launch
+                    val path = account.uploadMedia(dataUrl).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!ownsDraft()) return@launch
+                    // Preview the exact compressed upload, not a mutable/provider URI read again.
+                    preview = android.util.Base64.decode(dataUrl.substringAfter(','), android.util.Base64.DEFAULT)
+                    cs = cs.withImage(path).withUploading(false)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (failure: Exception) {
+                    if (ownsDraft()) cs = cs.withUploading(false).withError("Couldn't prepare or upload that photo. Your previous photo and caption are kept.")
+                }
             }
         }
-        Spacer(Modifier.height(14.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        ) {
-            for (key in palette) {
-                Box(
-                    Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .then(
-                            if (background == key) Modifier.border(2.dp, MirrorArt.Text, CircleShape)
-                            else Modifier,
-                        )
-                        .background(Brush.verticalGradient(MirrorArt.avatarGradient(key)))
-                        .clickable(enabled = !posting) { background = key },
-                )
+    }
+    MirrorSheet(title = "New status", onDismiss = { cancelPhoto(); onDismiss() }) {
+        MirrorSheetScroll {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Text", color = if (cs.mode == ComposerState.Mode.TEXT) MirrorArt.Accent else MirrorArt.Dim,
+                    modifier = Modifier.clickable(enabled = !cs.posting) { cancelPhoto(); cs = cs.withMode(ComposerState.Mode.TEXT) }.padding(vertical = 8.dp))
+                Text(if (cs.imagePath == null) "Choose photo" else "Change photo", color = if (cs.mode == ComposerState.Mode.PHOTO) MirrorArt.Accent else MirrorArt.Dim,
+                    modifier = Modifier.clickable(enabled = !cs.posting) {
+                        cs = cs.withMode(ComposerState.Mode.PHOTO)
+                        pickerOwner = owner
+                        try { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                        catch (_: Exception) { pickerOwner = null; cs = cs.withError("The photo picker couldn't open. Try again.") }
+                    }.padding(vertical = 8.dp))
+                if (cs.imagePath != null || cs.uploading) Text("Remove photo", color = MirrorArt.Dim,
+                    modifier = Modifier.clickable(enabled = !cs.posting) { cancelPhoto(); preview = null; cs = cs.withImage(null) }.padding(vertical = 8.dp))
             }
-        }
-        if (error != null) Text(error.orEmpty(), color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
-        Spacer(Modifier.height(16.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (caption.isBlank() || posting) MirrorArt.Chip else MirrorArt.Accent)
-                .clickable(enabled = caption.isNotBlank() && !posting) {
-                    val submittedCaption = caption
-                    val submittedBackground = background
-                    posting = true; error = null
+            Box(Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(18.dp))
+                .background(if (cs.mode == ComposerState.Mode.TEXT) Brush.verticalGradient(MirrorArt.avatarGradient(cs.background)) else SolidColor(MirrorArt.Chip)),
+                contentAlignment = Alignment.Center) {
+                if (cs.mode == ComposerState.Mode.PHOTO) {
+                    preview?.let { bytes -> coil.compose.AsyncImage(model = bytes, contentDescription = "Selected status photo",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+                    if (cs.uploading) Text("Preparing and uploading…", color = Color.White,
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(10.dp))
+                    else if (preview == null) Text("Choose a photo to share", color = MirrorArt.Dim)
+                } else {
+                    BasicTextField(value = cs.caption, onValueChange = { if (!cs.posting) cs = cs.withCaption(it) }, enabled = !cs.posting,
+                        textStyle = TextStyle(color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center),
+                        cursorBrush = SolidColor(Color.White), modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth())
+                    if (cs.caption.isEmpty()) Text("Type your status", color = Color.White.copy(alpha = 0.7f), fontSize = 18.sp)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (cs.mode == ComposerState.Mode.PHOTO) {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MirrorArt.Chip).padding(12.dp)) {
+                    BasicTextField(value = cs.caption, onValueChange = { if (!cs.posting) cs = cs.withCaption(it) }, enabled = !cs.posting,
+                        textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp), cursorBrush = SolidColor(MirrorArt.Accent), modifier = Modifier.fillMaxWidth())
+                    if (cs.caption.isEmpty()) Text("Add a caption (optional)", color = MirrorArt.Dim, fontSize = 14.sp)
+                }
+            } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                for (key in ComposerState.BACKGROUNDS) Box(Modifier.size(30.dp).clip(CircleShape)
+                    .then(if (cs.background == key) Modifier.border(2.dp, MirrorArt.Text, CircleShape) else Modifier)
+                    .background(Brush.verticalGradient(MirrorArt.avatarGradient(key)))
+                    .clickable(enabled = !cs.posting) { cs = cs.withBackground(key) })
+            }
+            Text("${cs.caption.length}/${ComposerState.CAPTION_MAX}", color = MirrorArt.Dim, fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.End).padding(top = 6.dp))
+            cs.error?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp)) }
+            Spacer(Modifier.height(14.dp))
+            Box(Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(14.dp))
+                .background(if (cs.canPost) MirrorArt.Accent else MirrorArt.Chip)
+                .clickable(enabled = cs.canPost && ownsDraft()) {
+                    val submitted = cs
+                    cs = cs.withPosting(true).copy(error = null)
                     actionScope.launch {
                         try {
-                            if (owner == null || repository.attachmentSessionKey() != owner) return@launch
-                            account.createStory(submittedCaption, submittedBackground, null).getOrThrow()
+                            if (!ownsDraft()) return@launch
+                            account.createStory(submitted.caption,
+                                if (submitted.mode == ComposerState.Mode.TEXT) submitted.background else null,
+                                if (submitted.mode == ComposerState.Mode.PHOTO) submitted.imagePath else null).getOrThrow()
                             kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                            if (repository.attachmentSessionKey() == owner) onPosted()
+                            if (ownsDraft()) onPosted()
                         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
                         } catch (failure: Exception) {
-                            if (repository.attachmentSessionKey() == owner) error = failure.message ?: "Couldn't share your status. Your text is kept."
-                        } finally { if (repository.attachmentSessionKey() == owner) posting = false }
+                            if (ownsDraft()) cs = cs.withError(failure.message ?: "Couldn't share your status. Your draft is kept.")
+                        } finally { if (ownsDraft()) cs = cs.withPosting(false) }
                     }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                if (posting) "Sharing…" else "Share status",
-                color = if (caption.isBlank() || posting) MirrorArt.Dim else MirrorArt.OnBubbleOut,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+                }, contentAlignment = Alignment.Center) {
+                Text(if (cs.posting) "Sharing…" else "Share status", color = if (cs.canPost) MirrorArt.OnBubbleOut else MirrorArt.Dim,
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
@@ -948,6 +967,7 @@ internal fun MirrorSheet(
             onDismiss()
         }
     }
+    androidx.activity.compose.BackHandler { leaving = true }
     val scrimAlpha = androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (leaving) 0f else 0.4f,
         animationSpec = androidx.compose.animation.core.tween(170),
@@ -958,9 +978,9 @@ internal fun MirrorSheet(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = scrimAlpha.value.coerceIn(0f, 0.66f)))
-            .clickable(onClick = { leaving = true }),
+            .background(Color.Black.copy(alpha = scrimAlpha.value.coerceIn(0f, 0.66f))),
     ) {
+        Box(Modifier.matchParentSize().clickable { leaving = true })
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -974,9 +994,9 @@ internal fun MirrorSheet(
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(Color(0xF21C1610))
                 .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .clickable(enabled = false) {}
                 .padding(16.dp)
                 .navigationBarsPadding()
+                .imePadding()
                 // web drag-to-dismiss: pull down past the threshold releases the
                 // sheet, a short drag springs back (stories-sheet.tsx elastic 0.65)
                 .draggable(
