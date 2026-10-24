@@ -345,7 +345,10 @@ internal fun MirrorRoot(
                     if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
                     val feed = account.stories()
                     currentCoroutineContext().ensureActive()
-                    if (storyTicket != null && storyReads.isCurrent(storyTicket)) feed.getOrNull()?.let { stories = it }
+                    if (storyTicket != null && storyReads.isCurrent(storyTicket)) {
+                        feed.getOrNull()?.let { stories = it }
+                        if ((feed.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.kind in setOf("AUTH", "FORBIDDEN", "NOT_FOUND")) stories = emptyList()
+                    }
                     val loadedFolders = account.folders()
                     currentCoroutineContext().ensureActive()
                     if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
@@ -465,7 +468,11 @@ internal fun MirrorRoot(
                 viewingStory?.let { selected ->
                     val current = stories.firstOrNull { it.user?.id == selected.user?.id }
                     if (current != null) {
-                        MirrorStoryViewer(group = current, repository = repository, playbackEnabled = readingEnabled, onDismiss = { viewingStory = null })
+                        MirrorStoryViewer(group = current, repository = repository, playbackEnabled = readingEnabled,
+                            onDismiss = { viewingStory = null }, onDeleted = { id ->
+                                storyReads.invalidate()
+                                stories = stories.map { it.copy(stories = it.stories.filterNot { row -> row.id == id }) }.filter { it.stories.isNotEmpty() }
+                            })
                     } else {
                         LaunchedEffect(selected.user?.id) { viewingStory = null }
                     }

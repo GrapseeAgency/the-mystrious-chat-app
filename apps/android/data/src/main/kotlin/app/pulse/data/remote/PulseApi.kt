@@ -767,7 +767,12 @@ class PulseApi(
         get(
             "/api/stories/$storyId/view?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(StoryViewersDto.serializer(), it)
+            val root = PulseJson.parseToJsonElement(it).jsonObject
+            if (root["viewers"] !is kotlinx.serialization.json.JsonArray) throw kotlinx.serialization.SerializationException("Viewers list missing")
+            val page = PulseJson.decodeFromString(StoryViewersDto.serializer(), it)
+            if (page.viewers.any { row -> row.userId.isBlank() } || page.viewers.map { row -> row.userId }.distinct().size != page.viewers.size)
+                throw kotlinx.serialization.SerializationException("Invalid viewers list")
+            page
         }
 
     /** DELETE /api/stories/{id}?requesterId= → { ok: true } (owner-only 403, unknown 404). */

@@ -82,19 +82,20 @@ struct StoryViewerView: View {
             }
         }
         .gesture(viewerGesture)
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled && session.sessionGeneration == ownerEpoch {
+                if stories.flags.loadedOnce || !stories.groups.isEmpty {
+                    machine.groupsUpdated(stories.groups, nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+                }
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { break }
+            }
+        }
         .task(id: playbackBlocked) {
             machine.setPlaybackBlocked(playbackBlocked, nowMs: playbackNow)
             guard !playbackBlocked else { return }
-            var lastExpiryCheck: Int64 = 0
             while !Task.isCancelled {
-                let now = playbackNow
-                if now - lastExpiryCheck >= 1000 {
-                    if stories.flags.loadedOnce || !stories.groups.isEmpty {
-                        machine.groupsUpdated(stories.groups, nowMs: Int64(Date().timeIntervalSince1970 * 1000))
-                    }
-                    lastExpiryCheck = now
-                }
-                machine.tick(nowMs: now)
+                machine.tick(nowMs: playbackNow)
                 do { try await Task.sleep(nanoseconds: 33_000_000) } catch { break }
             }
         }
@@ -433,6 +434,8 @@ struct StoryViewerView: View {
                         VStack(spacing: 8) {
                             if stories.viewersLoading {
                                 ProgressView()
+                            } else if let error = stories.viewersError {
+                                Text(error).font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding()
                             } else {
                                 Text("No views yet")
                                     .font(.system(size: 13, weight: .medium))
@@ -472,6 +475,12 @@ struct StoryViewerView: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if !stories.viewers.isEmpty, let error = stories.viewersError {
+                    Text(error).font(.system(size: 12)).foregroundStyle(.white).padding(12)
+                        .frame(maxWidth: .infinity).background(PulseTheme.emberChrome)
+                }
+            }
             // PULSE EMBER (EMB-I): the sheet subtree pins dark on the ground.
             .environment(\.colorScheme, .dark)
             .tint(.white)
@@ -480,7 +489,8 @@ struct StoryViewerView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .task(id: viewersOpen) {
+        .task(id: "\(viewersOpen)|\(scenePhase == .active)|\(viewersStoryId ?? "")|\(session.sessionGeneration)") {
+            guard scenePhase == .active, session.sessionGeneration == ownerEpoch else { return }
             // D7: poll every ≤5s while the sheet is open - the count badge
             // refreshes from each tick.
             while viewersOpen && !Task.isCancelled {

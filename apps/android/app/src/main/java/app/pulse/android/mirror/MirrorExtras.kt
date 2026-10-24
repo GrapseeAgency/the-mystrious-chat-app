@@ -489,17 +489,26 @@ internal fun MirrorStoryViewer(
     repository: PulseRepository,
     onDismiss: () -> Unit,
     playbackEnabled: Boolean = true,
+    onDeleted: (String) -> Unit = {},
 ) {
     val owner = repository.attachmentSessionKey()
     androidx.compose.runtime.key(owner, group.user?.id) {
-        MirrorOwnedStoryViewer(group, repository, onDismiss, playbackEnabled)
+        MirrorOwnedStoryViewer(group, repository, onDismiss, playbackEnabled, onDeleted)
     }
 }
 
 @Composable
-private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepository, onDismiss: () -> Unit, playbackEnabled: Boolean) {
+private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepository, onDismiss: () -> Unit, playbackEnabled: Boolean, onDeleted: (String) -> Unit) {
     val owner = remember { repository.attachmentSessionKey() }
     val account = remember { repository.boundToCurrentAccount() }
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var confirmDelete by remember { mutableStateOf<String?>(null) }
+    var viewersFor by remember { mutableStateOf<String?>(null) }
+    var deleting by remember { mutableStateOf(false) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    var deletedIds by remember { mutableStateOf(emptySet<String>()) }
+    val visibleGroup = group.copy(stories = group.stories.filterNot { it.id in deletedIds })
+    val canPlay = playbackEnabled && confirmDelete == null && viewersFor == null && !deleting && actionError == null
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val machine = remember(group.user?.id) { StoryViewerStateMachine(group.user?.id) }
     val state by machine.state.collectAsStateWithLifecycle()
@@ -507,23 +516,26 @@ private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepositor
     val stories = state.flat.map { it.story }
     val story = state.current?.story
 
-    LaunchedEffect(machine, group) {
-        machine.on(StoryViewerInput.GroupsUpdated(listOf(group), System.currentTimeMillis()))
+    LaunchedEffect(machine, visibleGroup) {
+        machine.on(StoryViewerInput.GroupsUpdated(listOf(visibleGroup), System.currentTimeMillis()))
     }
-    LaunchedEffect(machine, lifecycle, playbackEnabled, group) {
+    // Expiry continues while a modal pauses playback; privacy deadlines are not playback time.
+    LaunchedEffect(machine, lifecycle, visibleGroup) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                machine.on(StoryViewerInput.GroupsUpdated(listOf(visibleGroup), System.currentTimeMillis()))
+                delay(1_000)
+            }
+        }
+    }
+    LaunchedEffect(machine, lifecycle, canPlay, visibleGroup) {
         machine.on(StoryViewerInput.PlaybackBlocked(true, SystemClock.elapsedRealtime()))
-        if (!playbackEnabled) return@LaunchedEffect
+        if (!canPlay) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             machine.on(StoryViewerInput.PlaybackBlocked(false, SystemClock.elapsedRealtime()))
             try {
-                var lastExpiryCheck = 0L
                 while (isActive) {
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - lastExpiryCheck >= 1_000) {
-                        machine.on(StoryViewerInput.GroupsUpdated(listOf(group), System.currentTimeMillis()))
-                        lastExpiryCheck = now
-                    }
-                    machine.on(StoryViewerInput.Tick(now))
+                    machine.on(StoryViewerInput.Tick(SystemClock.elapsedRealtime()))
                     delay(16)
                 }
             } finally {
@@ -532,9 +544,9 @@ private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepositor
         }
     }
     // A slow/failed view receipt must not freeze playback. Only mark while actually visible.
-    LaunchedEffect(machine, state.pendingMark, playbackEnabled, lifecycle) {
+    LaunchedEffect(machine, state.pendingMark, canPlay, lifecycle) {
         val mark = state.pendingMark ?: return@LaunchedEffect
-        if (!playbackEnabled) return@LaunchedEffect
+        if (!canPlay) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (owner == null || repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
             val result = account.markStoryViewed(mark.storyId)
@@ -546,6 +558,10 @@ private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepositor
             )
         }
     }
+    LaunchedEffect(story?.id) {
+        if (confirmDelete != story?.id) confirmDelete = null
+        if (viewersFor != null && visibleGroup.stories.none { it.id == viewersFor }) viewersFor = null
+    }
     LaunchedEffect(state.dismissed) { if (state.dismissed) onDismiss() }
     Box(
         Modifier
@@ -553,8 +569,7 @@ private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepositor
             .background(
                 if (story?.imagePath != null) SolidColor(Color(0xFF17110C))
                 else Brush.verticalGradient(MirrorArt.avatarGradient(story?.background ?: "emerald")),
-            )
-            .clickable(onClick = onDismiss),
+            ),
     ) {
         if (story?.imagePath != null) {
             coil.compose.AsyncImage(
@@ -570,13 +585,13 @@ private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepositor
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { machine.on(StoryViewerInput.TapPrev) },
+                    .clickable(enabled = canPlay) { machine.on(StoryViewerInput.TapPrev) },
             )
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { machine.on(StoryViewerInput.TapNext) },
+                    .clickable(enabled = canPlay) { machine.on(StoryViewerInput.TapNext) },
             )
         }
         // progress bars - one segment per story, the ACTIVE one fills with
@@ -634,6 +649,12 @@ private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepositor
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
+            if (group.mine && group.user?.id == account.viewerId && story != null) {
+                Text("Viewers", color = MirrorArt.Text, fontSize = 12.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !deleting) { viewersFor = story.id }.padding(8.dp))
+                Text("Delete", color = MirrorArt.Accent, fontSize = 12.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !deleting) { confirmDelete = story.id }.padding(8.dp))
+            }
             Box(
                 Modifier
                     .size(36.dp)
@@ -660,6 +681,81 @@ private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepositor
                     .padding(14.dp)
                     .fillMaxWidth(),
             )
+        }
+    }
+    if (confirmDelete != null) {
+        val target = confirmDelete!!
+        MirrorSheet(title = "Delete this status?", onDismiss = { if (!deleting) confirmDelete = null }) {
+            Text("This removes the status for everyone. It stays here unless deletion is confirmed.", color = MirrorArt.Dim, fontSize = 13.sp)
+            Text(if (deleting) "Deleting…" else "Delete status", color = MirrorArt.Accent,
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !deleting) {
+                    deleting = true; actionError = null
+                    actionScope.launch {
+                        try {
+                            if (owner == null || repository.attachmentSessionKey() != owner) return@launch
+                            account.deleteStory(target).getOrThrow()
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            if (repository.attachmentSessionKey() != owner) return@launch
+                            deletedIds = deletedIds + target
+                            confirmDelete = null
+                            onDeleted(target)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                        } catch (failure: Exception) {
+                            if (repository.attachmentSessionKey() == owner) {
+                                confirmDelete = null
+                                actionError = failure.message ?: "Deletion wasn't confirmed. Your status has not been removed from this viewer."
+                            }
+                        } finally { if (repository.attachmentSessionKey() == owner) deleting = false }
+                    }
+                }.padding(vertical = 16.dp))
+        }
+    }
+    if (actionError != null) MirrorSheet(title = "Status action", onDismiss = { actionError = null }) {
+        Text(actionError.orEmpty(), color = MirrorArt.Text, fontSize = 13.sp)
+    }
+    viewersFor?.let { id ->
+        androidx.compose.runtime.key(owner, id) {
+            MirrorStoryViewersSheet(id, account, repository, owner) { viewersFor = null }
+        }
+    }
+
+}
+
+/** Owner-only list: empty, unavailable and offline are deliberately distinct. */
+@Composable
+private fun MirrorStoryViewersSheet(storyId: String, account: PulseRepository, repository: PulseRepository, owner: String?, onDismiss: () -> Unit) {
+    var viewers by remember { mutableStateOf<List<app.pulse.domain.model.StoryViewer>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(storyId, owner, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                if (owner == null || repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                val result = account.storyViewers(storyId)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                loading = false
+                result.fold(onSuccess = { viewers = it; error = null }, onFailure = { failure ->
+                    val kind = (failure as? app.pulse.domain.model.PulseApiException)?.kind
+                    if (kind in setOf("AUTH", "FORBIDDEN", "NOT_FOUND")) viewers = emptyList()
+                    error = failure.message ?: "Viewers could not be loaded. Reconnect to retry."
+                })
+                delay(5_000)
+            }
+        }
+    }
+    MirrorSheet(title = "Viewers", onDismiss = onDismiss) {
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+            if (loading) item { Text("Loading viewers…", color = MirrorArt.Dim) }
+            error?.let { message -> item { Text(message, color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp)) } }
+            if (!loading && error == null && viewers.isEmpty()) item { Text("No views yet", color = MirrorArt.Dim) }
+            items(viewers, key = { it.userId }) { viewer ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(viewer.name, color = MirrorArt.Text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    viewer.username?.let { Text("@$it", color = MirrorArt.Dim, fontSize = 12.sp) }
+                }
+            }
         }
     }
 }

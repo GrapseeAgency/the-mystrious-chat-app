@@ -852,7 +852,12 @@ public struct PulseAPIClient: Sendable {
             "/api/stories/\(id)/view?requesterId=\(Self.queryEncoded(userId))",
             as: WireStoryViewersPage.self,
         )
-        return page.viewers ?? []
+        guard let viewers = page.viewers,
+              viewers.allSatisfy({ !($0.userId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(viewers.compactMap(\.userId)).count == viewers.count else {
+            throw Failure(kind: .server, message: "The gateway did not return a valid viewers list.")
+        }
+        return viewers
     }
 
     /// DELETE /api/stories/{id}?requesterId= - the owner is a query parameter, not a body field.

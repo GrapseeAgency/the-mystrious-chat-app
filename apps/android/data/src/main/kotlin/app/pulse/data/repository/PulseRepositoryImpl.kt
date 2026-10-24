@@ -2752,40 +2752,37 @@ class PulseRepositoryImpl constructor(
         runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
     }
 
+    private val storySnapshots = StorySnapshotCache(
+        read = { key -> storyDao.get(key)?.let { PulseJson.decodeFromString(StoriesPageDto.serializer(), it.groupsJson) } },
+        write = { key, page -> storyDao.upsert(StoryCacheEntity(key, PulseJson.encodeToString(StoriesPageDto.serializer(), page), System.currentTimeMillis())) },
+        erase = { key -> storyDao.delete(key) },
+    )
+
     override suspend fun stories(): Result<List<StoryGroup>> {
-        val key = "stories:" + (viewerId ?: "")
-        val nowMs = System.currentTimeMillis()
-        return when (val r = api.stories(viewerId ?: "")) {
-            is PulseResult.Success -> {
-                // Offline cache: persist the CANONICAL wire page (pre-mapping)
-                // so a cached replay walks the exact same mapper - including
-                // the D2 expiry filter - as a live fetch.
-                runCatching {
-                    storyDao.upsert(
-                        StoryCacheEntity(
-                            key = key,
-                            groupsJson = PulseJson.encodeToString(StoriesPageDto.serializer(), r.value),
-                            updatedAt = nowMs,
-                        ),
-                    )
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        val ticket = storySnapshots.begin("stories:$owner")
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Story account changed")
+        val result = ownedAccountRequest(typedFailure = true) { api.stories(it) }
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Story account changed")
+        return try {
+            val failure = result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException
+            val page = when {
+                result.isSuccess -> storySnapshots.accept(ticket, result.getOrThrow())
+                failure?.kind in setOf("AUTH", "FORBIDDEN", "NOT_FOUND") -> {
+                    try { storySnapshots.deny(ticket) }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                    } catch (_: Exception) { /* In-memory denial still prevents cache reuse. */ }
+                    return Result.failure(failure!!)
                 }
-                Result.success(r.value.toDomainGroups(nowMs))
+                else -> storySnapshots.cached(ticket)
             }
-            is PulseResult.Failure -> {
-                val cached = runCatching { storyDao.get(key) }.getOrNull()
-                val page = cached?.let {
-                    runCatching {
-                        PulseJson.decodeFromString(StoriesPageDto.serializer(), it.groupsJson)
-                    }.getOrNull()
-                }
-                if (page != null) {
-                    Result.success(page.toDomainGroups(nowMs))
-                } else {
-                    // Honest error only when there is nothing cached to serve.
-                    Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-                }
-            }
-        }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Story account changed")
+            page?.let { Result.success(it.toDomainGroups(System.currentTimeMillis())) }
+                ?: Result.failure(result.exceptionOrNull() ?: IllegalStateException("A newer story snapshot replaced this response"))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (failure: Exception) { Result.failure(failure) }
     }
 
     override suspend fun createStory(caption: String, background: String?, imagePath: String?): Result<StoryItem> =
@@ -2803,32 +2800,25 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun markStoryViewed(storyId: String): Result<Int> =
-        when (val r = api.markStoryViewed(storyId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.viewCount)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(typedFailure = true) { api.markStoryViewed(storyId, it) }.map { it.viewCount }
 
     override suspend fun storyViewers(storyId: String): Result<List<StoryViewer>> =
-        when (val r = api.storyViewers(storyId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(
-                r.value.viewers.map {
-                    StoryViewer(
-                        userId = it.userId,
-                        name = it.name,
-                        username = it.username,
-                        color = it.color,
-                        viewedAtIso = it.viewedAt,
-                    )
-                },
-            )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        ownedAccountRequest(typedFailure = true) { api.storyViewers(storyId, it) }.map { page ->
+            page.viewers.map { StoryViewer(it.userId, it.name, it.username, it.color, it.viewedAt) }
         }
 
-    override suspend fun deleteStory(storyId: String): Result<Unit> =
-        when (val r = api.deleteStory(storyId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun deleteStory(storyId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val result = ownedAccountRequest(typedFailure = true) { api.deleteStory(storyId, it) }
+        if (result.isSuccess) {
+            try { storySnapshots.remove("stories:$owner", storyId) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                // The server deletion is confirmed. Keep the in-memory tombstone and
+                // avoid reporting a false server failure if local persistence is unavailable.
+                android.util.Log.w("PulseStories", "Confirmed deletion could not be persisted in the story cache")
+            }
         }
+        return result.map { Unit }
+    }
 
     /** Wire DTO → domain story (NO expiry filtering here - filter lives in [toDomainGroups]/the machine). */
     private fun StoryItemDto.toStoryItem(): StoryItem? {
@@ -3592,7 +3582,7 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    private suspend fun <T> ownedAccountRequest(denyGameRead: Boolean = false, denyScheduledRead: Boolean = false, operation: suspend (String) -> PulseResult<T>): Result<T> {
+    private suspend fun <T> ownedAccountRequest(denyGameRead: Boolean = false, denyScheduledRead: Boolean = false, typedFailure: Boolean = false, operation: suspend (String) -> PulseResult<T>): Result<T> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
@@ -3606,6 +3596,7 @@ class PulseRepositoryImpl constructor(
                     app.pulse.domain.sync.PrivateGameUnavailableException(result.message ?: "Private game is no longer available.")
                 else if (denyScheduledRead && result.kind in setOf(PulseResult.Failure.Kind.AUTH, PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND))
                     app.pulse.domain.sync.PrivateScheduleUnavailableException(result.message ?: "Scheduled messages are no longer available.")
+                else if (typedFailure) app.pulse.domain.model.PulseApiException(result.kind.name, result.message, result.status, result.retryAfter)
                 else IllegalStateException("${result.kind}: ${result.message}"))
         }
     }

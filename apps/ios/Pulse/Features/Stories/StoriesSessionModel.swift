@@ -25,6 +25,8 @@ public final class StoriesSessionModel: ObservableObject {
     @Published public private(set) var flags = Flags()
     @Published public private(set) var viewers: [WireStoryViewer] = []
     @Published public private(set) var viewersLoading = false
+    @Published public private(set) var viewersError: String?
+    private var viewersStoryId: String?
 
     private var viewersGeneration = UUID()
     private var refreshGeneration = UUID()
@@ -155,20 +157,33 @@ public final class StoriesSessionModel: ObservableObject {
     /// One fetch - the sheet re-issues it every ≤5s while open.
     public func loadViewers(storyId: String) async {
         guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
+        if viewersStoryId != storyId { resetViewers(); viewersStoryId = storyId }
         let ticket = UUID()
         viewersGeneration = ticket
-        let epoch = session.sessionGeneration
         let api = session.api
         viewersLoading = true
-        let list = try? await api.storyViewers(id: storyId)
-        guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == epoch else { return }
-        if let list { viewers = list }
+        do {
+            let list = try await api.storyViewers(id: storyId)
+            guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == ownerEpoch else { return }
+            viewers = list; viewersError = nil
+        } catch {
+            guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == ownerEpoch else { return }
+            if Self.discardsViewers(after: error) { viewers = [] }
+            viewersError = (error as? PulseAPIClient.Failure)?.message ?? "Viewers couldn't be loaded. Reconnect to retry."
+        }
         viewersLoading = false
+    }
+
+    static func discardsViewers(after error: Error) -> Bool {
+        guard let failure = error as? PulseAPIClient.Failure else { return false }
+        return [.auth, .forbidden, .notFound].contains(failure.kind)
     }
 
     public func resetViewers() {
         viewersGeneration = UUID()
+        viewersStoryId = nil
         viewers = []
+        viewersError = nil
         viewersLoading = false
     }
 

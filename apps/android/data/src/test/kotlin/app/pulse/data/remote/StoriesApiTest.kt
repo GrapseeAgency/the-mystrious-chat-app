@@ -165,4 +165,11 @@ class StoriesApiTest {
             assertTrue("unconfirmed body $body", api(body = body).deleteStory("s1", "u1") is PulseResult.Failure)
         }
     }
+    @Test fun `viewer list requires an explicit array of unique nonempty identities`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        for (body in listOf("{}", """{"viewers":null}""", """{"viewers":[{}]}""", """{"viewers":[{"userId":"a"},{"userId":"a"}]}""")) {
+            assertTrue(api(body = body).storyViewers("story", "owner") is PulseResult.Failure)
+        }
+        assertTrue(api(body = """{"viewers":[]}""").storyViewers("story", "owner") is PulseResult.Success)
+    }
 }
