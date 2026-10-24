@@ -1028,8 +1028,9 @@ private struct RoomContent: View {
         }
         .sheet(isPresented: $scheduleOpen) {
             ScheduleSheet { date in
-                viewModel.scheduleDraft(for: date, session: session)
+                await viewModel.scheduleDraft(for: date, session: session)
             }
+            .id("\(session.sessionGeneration.uuidString)|\(conversation.id)")
         }
     }
 
@@ -5053,12 +5054,13 @@ final class RoomViewModel: ObservableObject {
 
     // ── REM-B F-MS-18 - schedule the composer draft ────────
 
-    func scheduleDraft(for date: Date, session: PulseSession) {
-        guard !scheduling else { session.toasts.show("Scheduling is still in progress"); return }
-        let body = draft.trimmingCharacters(in: .whitespaces)
+    func scheduleDraft(for date: Date, session: PulseSession) async -> Bool {
+        guard session.sessionGeneration == readSessionGeneration, !Task.isCancelled else { return false }
+        guard !scheduling else { session.toasts.show("Scheduling is still in progress"); return false }
+        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else {
             session.toasts.show("Type the message first - scheduling sends the draft")
-            return
+            return false
         }
         let iso = ScheduleSheet.isoFormatter.string(from: date)
         let revision = draftEditRevision
@@ -5066,28 +5068,29 @@ final class RoomViewModel: ObservableObject {
         let client = session.api
         let epoch = session.sessionGeneration
         scheduling = true; scheduledRevision = UUID()
-        Task { [weak self] in
-            guard let self else { return }
-            defer { if session.sessionGeneration == epoch { self.scheduling = false } }
-            do {
-                // R5-A Item 6 - the returned row joins the cached list (no
-                // refetch) so the chip count + next-dispatch stamp update.
-                let item = try await client.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                if self.draftEditRevision == revision, let draftReceipt, self.draftJournal?.matches(draftReceipt) == true {
-                    self.draft = ""
-                    self.scheduleDraftSave(session: session)
-                }
-                self.scheduledItems.removeAll { $0.id == item.id }
-                self.scheduledItems.append(item)
-                try await client.acknowledgeScheduledCreation(item)
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                PulseHaptics.success()
-                session.toasts.show("Scheduled - \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
-            } catch {
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                session.toasts.show(Self.describe(error))
+        defer { if session.sessionGeneration == epoch { scheduling = false } }
+        var accepted = false
+        do {
+            let item = try await client.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
+            if draftEditRevision == revision, let draftReceipt, draftJournal?.matches(draftReceipt) == true {
+                draft = ""
+                scheduleDraftSave(session: session)
             }
+            scheduledItems.removeAll { $0.id == item.id }
+            scheduledItems.append(item)
+            accepted = true
+            try await client.acknowledgeScheduledCreation(item)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
+            PulseHaptics.success()
+            session.toasts.show("Scheduled - \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
+            return true
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
+            session.toasts.show(accepted
+                ? "Scheduled, but local confirmation could not be saved. Check Scheduled messages before retrying."
+                : Self.describe(error))
+            return accepted
         }
     }
 

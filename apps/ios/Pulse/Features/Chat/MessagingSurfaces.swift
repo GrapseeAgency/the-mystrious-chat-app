@@ -19,6 +19,10 @@ struct ScheduleSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .preset
     @State private var presetIndex = 0
+    @State private var presetDates = PulseScheduledChip.presetDates()
+    @State private var calendar = Calendar.current
+    @State private var attemptedDate: Date?
+    @StateObject private var operations = PulseRoomOperations()
     @State private var customDate = Date().addingTimeInterval(3_600)
     @State private var customTime = Date().addingTimeInterval(3_600)
 
@@ -30,19 +34,17 @@ struct ScheduleSheet: View {
         ("In 1 week", 7 * 86_400),
     ]
 
-    /// Computed per open - the web remindPresets pattern (never cached).
+    /// Stable for this presentation, including retries after an uncertain response.
     private var resolvedDate: Date? {
         switch mode {
         case .preset:
-            let preset = Self.presets[presetIndex]
-            if preset.seconds > 0 { return Date().addingTimeInterval(preset.seconds) }
-            return PulseScheduledChip.tomorrowMorning()
+            return presetDates[presetIndex]
         case .custom:
-            var components = Calendar.current.dateComponents([.year, .month, .day], from: customDate)
-            let time = Calendar.current.dateComponents([.hour, .minute], from: customTime)
+            var components = calendar.dateComponents([.year, .month, .day], from: customDate)
+            let time = calendar.dateComponents([.hour, .minute], from: customTime)
             components.hour = time.hour
             components.minute = time.minute
-            return Calendar.current.date(from: components)
+            return calendar.date(from: components)
         }
     }
 
@@ -81,6 +83,7 @@ struct ScheduleSheet: View {
                     }
                 }
             }
+            .disabled(!operations.pending.isEmpty)
             .navigationTitle("Schedule message")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -88,20 +91,21 @@ struct ScheduleSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Schedule") { dismissAndArm() }
+                    Button(operations.pending.isEmpty ? "Schedule" : "Scheduling…") { submit() }
                         .font(.subheadline.weight(.semibold))
-                        .disabled(!isInServerWindow)
+                        .disabled(!isInServerWindow || !operations.pending.isEmpty)
                 }
             }
         }
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
+        .onDisappear { operations.stop() }
     }
 
     private var isInServerWindow: Bool {
         guard let when = resolvedDate else { return false }
         let seconds = when.timeIntervalSinceNow
-        return seconds >= 30 && seconds <= 30 * 24 * 3_600
+        return attemptedDate == when || (seconds >= 30 && seconds <= 30 * 24 * 3_600)
     }
 
     private func isoOf(_ date: Date) -> String {
@@ -116,13 +120,13 @@ struct ScheduleSheet: View {
         return formatter
     }()
 
-    private func dismissAndArm() {
-        guard let when = resolvedDate, isInServerWindow else { return }
-        onSchedule(when)
-        dismiss()
+    private func submit() {
+        guard let when = resolvedDate, isInServerWindow, operations.pending.isEmpty else { return }
+        attemptedDate = when
+        operations.run(key: "schedule", operation: { await onSchedule(when) }, onSuccess: { dismiss() })
     }
 
-    var onSchedule: (Date) -> Void = { _ in }
+    var onSchedule: (Date) async -> Bool = { _ in false }
 }
 
 /// F-MS-18 - the sender's pending scheduled rows with cancel (GET/POST

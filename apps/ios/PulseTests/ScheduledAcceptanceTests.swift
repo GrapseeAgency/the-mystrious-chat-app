@@ -98,4 +98,33 @@ final class ScheduledAcceptanceTests: XCTestCase {
             } catch { XCTAssertEqual(mode, "lost-response", "\(error)") }
         }
     }
+    func testPresetSnapshotAndExpiredRetryKeepTheOriginalDeadline() throws {
+        let now = try XCTUnwrap(PulseFormat.date("2026-10-31T12:00:00.123Z"))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        let choices = PulseScheduledChip.presetDates(now: now, calendar: calendar)
+        XCTAssertEqual(choices[0], now.addingTimeInterval(3600))
+        XCTAssertEqual(choices[1], PulseFormat.date("2026-11-01T14:00:00Z"))
+        XCTAssertEqual(choices[2], now.addingTimeInterval(7 * 86400))
+        let selected = try XCTUnwrap(choices[0])
+        let attempt = PulseScheduledChip.Attempt(text: "Hello", date: selected)
+        let later = now.addingTimeInterval(7200)
+        XCTAssertTrue(PulseScheduledChip.canSubmit(text: " Hello ", date: selected, now: later, previous: attempt))
+        XCTAssertFalse(PulseScheduledChip.canSubmit(text: "Hello", date: selected, now: later, previous: nil))
+        XCTAssertFalse(PulseScheduledChip.canSubmit(text: "Changed", date: selected, now: later, previous: attempt))
+        XCTAssertFalse(PulseScheduledChip.canSubmit(text: "Hello", date: selected.addingTimeInterval(1), now: later, previous: attempt))
+        XCTAssertFalse(PulseScheduledChip.canSubmit(text: " ", date: selected, now: now, previous: nil))
+    }
+    func testScheduleDialogStaysOpenOnFailureAndDismissesOnlyAfterConfirmedRetry() async throws {
+        let gate = PulseRoomOperations()
+        var dismissals = 0
+        let failed = try XCTUnwrap(gate.run(key: "schedule", operation: { false }, onSuccess: { dismissals += 1 }))
+        XCTAssertNil(gate.run(key: "schedule", operation: { true }, onSuccess: { dismissals += 1 }))
+        await failed.value
+        XCTAssertEqual(dismissals, 0)
+        XCTAssertTrue(gate.pending.isEmpty)
+        let retry = try XCTUnwrap(gate.run(key: "schedule", operation: { true }, onSuccess: { dismissals += 1 }))
+        await retry.value
+        XCTAssertEqual(dismissals, 1)
+    }
 }

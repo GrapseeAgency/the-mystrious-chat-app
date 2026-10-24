@@ -550,6 +550,12 @@ internal fun ScheduleSheet(
             "In 1 week" to 7 * 86_400_000L,
         )
     }
+    val times = remember {
+        val now = java.time.Instant.now()
+        val zone = java.time.ZoneId.systemDefault()
+        listOf(app.pulse.domain.sync.ScheduleTimes.Preset.HOUR, app.pulse.domain.sync.ScheduleTimes.Preset.TOMORROW_MORNING,
+            app.pulse.domain.sync.ScheduleTimes.Preset.WEEK).map { app.pulse.domain.sync.ScheduleTimes.resolve(it, now, zone) }
+    }
     var selected by remember { mutableIntStateOf(0) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
@@ -568,7 +574,7 @@ internal fun ScheduleSheet(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { selected = index }
+                        .clickable(enabled = !busy) { selected = index }
                         .padding(horizontal = 8.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -586,18 +592,7 @@ internal fun ScheduleSheet(
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = {
-                    val iso = when (val offsetMs = presets[selected].second) {
-                        -1L -> {
-                            // Tomorrow 09:00 local (web remindPresets parity).
-                            val zone = java.time.ZoneId.systemDefault()
-                            val target = java.time.LocalDate.now(zone).plusDays(1).atTime(9, 0).atZone(zone)
-                            java.time.OffsetDateTime.ofInstant(target.toInstant(), zone)
-                                .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                        }
-                        else -> java.time.OffsetDateTime.now()
-                            .plusNanos(offsetMs * 1_000_000)
-                            .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    }
+                    val iso = times[selected].toString()
                     onSchedule(iso)
                 },
                 enabled = !busy,

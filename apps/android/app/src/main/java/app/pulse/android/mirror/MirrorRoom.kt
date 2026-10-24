@@ -4634,32 +4634,42 @@ private fun MirrorOwnedScheduleComposerSheet(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val epoch = repository.attachmentSessionKey()
+    var attempted by remember { mutableStateOf<app.pulse.domain.sync.ScheduleTimes.Attempt?>(null) }
+    val zone = remember { java.time.ZoneId.systemDefault() }
+    val presets = remember {
+        val now = java.time.Instant.now()
+        listOf("In 1 hour" to app.pulse.domain.sync.ScheduleTimes.Preset.HOUR,
+            "Tonight 20:00" to app.pulse.domain.sync.ScheduleTimes.Preset.TONIGHT,
+            "Tomorrow 09:00" to app.pulse.domain.sync.ScheduleTimes.Preset.TOMORROW_MORNING)
+            .map { (label, preset) -> label to app.pulse.domain.sync.ScheduleTimes.resolve(preset, now, zone) }
+    }
 
     fun parseWhen(iso: String): java.time.Instant? = runCatching {
-        java.time.LocalDateTime.parse(iso.trim().replace(' ', 'T')).atZone(java.time.ZoneId.systemDefault()).toInstant()
+        java.time.LocalDateTime.parse(iso.trim().replace(' ', 'T')).atZone(zone).toInstant()
     }.getOrNull()
 
-    fun scheduleAt(whenIso: String?) {
+    fun scheduleAt(preset: java.time.Instant?) {
         if (busy) return
         val text = body.trim()
         if (text.isEmpty()) {
             error = "Write the message first"
             return
         }
-        val instant = if (whenIso != null) {
-            parseWhen(whenIso)
-        } else {
-            parseWhen(customWhen.trim())
+        if (text.length > 2000) {
+            error = "Message must be at most 2000 characters"
+            return
         }
+        val instant = preset ?: parseWhen(customWhen.trim())
         if (instant == null) {
             error = "Use the YYYY-MM-DD HH:MM format"
             return
         }
         val now = java.time.Instant.now()
-        if (instant.isBefore(now.plusSeconds(30)) || instant.isAfter(now.plusSeconds(30L * 86400))) {
+        if (!app.pulse.domain.sync.ScheduleTimes.canSubmit(text, instant, now, attempted)) {
             error = "Choose a time between 30 seconds and 30 days from now"
             return
         }
+        attempted = app.pulse.domain.sync.ScheduleTimes.Attempt(text, instant)
         error = null
         busy = true
         scope.launch {
@@ -4704,7 +4714,7 @@ private fun MirrorOwnedScheduleComposerSheet(
                 modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (preset in listOf("In 1 hour" to java.time.LocalDateTime.now().plusHours(1).withSecond(0).withNano(0), "Tonight 20:00" to java.time.LocalDate.now().atTime(20, 0), "Tomorrow 09:00" to java.time.LocalDate.now().plusDays(1).atTime(9, 0))) {
+                for (preset in presets) {
                     Text(
                         preset.first,
                         color = MirrorArt.TextSoft, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold,
@@ -4712,7 +4722,7 @@ private fun MirrorOwnedScheduleComposerSheet(
                             .clip(RoundedCornerShape(50))
                             .background(MirrorArt.White7)
                             .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(50))
-                            .clickable(enabled = !busy) { scheduleAt(preset.second.toString()) }
+                            .clickable(enabled = !busy) { scheduleAt(preset.second) }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                 }

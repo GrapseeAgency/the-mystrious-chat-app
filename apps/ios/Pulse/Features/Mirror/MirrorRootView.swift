@@ -2992,8 +2992,10 @@ private struct MirrorScheduleBuilder: View {
     @Environment(\.dismiss) private var dismiss
     @State private var content = ""
     @State private var when = Date().addingTimeInterval(3600)
+    @State private var minimumDate = Date()
     @State private var busy = false
     @State private var request = UUID()
+    @State private var attempted: PulseScheduledChip.Attempt?
 
     var body: some View {
         MirrorPanel(title: "Schedule a message") {
@@ -3001,7 +3003,7 @@ private struct MirrorScheduleBuilder: View {
                 MirrorPanelHint("MESSAGE")
                 MirrorTrayField(placeholder: "Type the message first, then schedule it", text: $content)
                 MirrorPanelHint("WHEN - 30 SECONDS TO 30 DAYS OUT")
-                DatePicker("", selection: $when, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                DatePicker("", selection: $when, in: minimumDate..., displayedComponents: [.date, .hourAndMinute])
                     .labelsHidden()
                 MirrorTrayAction(label: "Schedule send", disabled: !valid || busy) { send() }
             }
@@ -3012,8 +3014,7 @@ private struct MirrorScheduleBuilder: View {
     }
 
     private var valid: Bool {
-        !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && content.utf16.count <= 2000 &&
-            when.timeIntervalSinceNow >= 30 && when.timeIntervalSinceNow <= 30 * 86400
+        PulseScheduledChip.canSubmit(text: content, date: when, previous: attempted)
     }
 
     private func send() {
@@ -3023,6 +3024,7 @@ private struct MirrorScheduleBuilder: View {
         let iso = ISO8601DateFormatter().string(from: when)
         let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
         let draftReceipt = captureDraft()
+        attempted = PulseScheduledChip.Attempt(text: body, date: when)
         Task {
             defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {

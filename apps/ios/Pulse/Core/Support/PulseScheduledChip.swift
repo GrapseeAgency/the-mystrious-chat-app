@@ -14,6 +14,23 @@ enum PulseScheduledChip {
         return calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)
     }
 
+    /// Snapshot once per presentation, not once per render or retry tap.
+    static func presetDates(now: Date = Date(), calendar: Calendar = .current) -> [Date?] {
+        [now.addingTimeInterval(3600), tomorrowMorning(now: now, calendar: calendar), now.addingTimeInterval(7 * 86400)]
+    }
+
+    struct Attempt: Equatable {
+        let text: String
+        let date: Date
+    }
+
+    static func canSubmit(text: String, date: Date, now: Date = Date(), previous: Attempt?) -> Bool {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, body.utf16.count <= 2000 else { return false }
+        return previous == Attempt(text: body, date: date) ||
+            (date.timeIntervalSince(now) >= 30 && date.timeIntervalSince(now) <= 30 * 86400)
+    }
+
     /// The scheduledAt ISO of the soonest non-cancelled row, or nil when
     /// every row is refused/cancelled (or nothing is schedulable).
     static func nextIso(in items: [WireScheduledItem]) -> String? {
