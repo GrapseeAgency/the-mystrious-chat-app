@@ -11,7 +11,7 @@ import {
   ABOUT_MAX,
   USER_NAME_MAX,
 } from '@/lib/serializers'
-import { DEFAULT_PREFERENCES, mergePrefs } from '@/lib/prefs-defaults'
+import { privacyPreferenceEnabled } from '@/lib/privacy-preferences'
 import { STATUS_ICON_IDS } from '@/lib/icon-ids'
 
 export const dynamic = 'force-dynamic'
@@ -157,13 +157,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
   // R46 - any successful profile touch counts as "last active", UNLESS the
   // user hides their last seen (then the stamp freezes - enforced privacy).
-  let prefs = DEFAULT_PREFERENCES
-  try {
-    prefs = mergePrefs(existing.preferences ? JSON.parse(existing.preferences) : null)
-  } catch {
-    // malformed → defaults
-  }
-  if (prefs.lastSeenVisible !== false) {
+  if (privacyPreferenceEnabled(existing.preferences, 'lastSeenVisible')) {
     data.lastSeenAt = new Date()
   }
 

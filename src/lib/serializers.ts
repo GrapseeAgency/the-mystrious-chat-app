@@ -9,7 +9,7 @@ import { redactDeletedMessage, quoteSnippet } from '@/lib/message-disclosure'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
 import { unreadSnapshot, inboxMessagesWhere, visibleInboxPreview } from '@/lib/message-visibility'
-import { DEFAULT_PREFERENCES, mergePrefs, type PulsePrefs } from '@/lib/prefs-defaults'
+import { privacyPreferenceEnabled } from './privacy-preferences.ts'
 import type {
   AppUser,
   AutomationSummary,
@@ -171,7 +171,7 @@ export function mapUser(user: UserRow): AppUser {
   // R46 - privacy enforcement: a user with lastSeenVisible=false has their
   // last-seen stamp scrubbed at the SERIALIZATION layer (the payload never
   // leaves the server). Own profile is scrubbed too - the owner chose to hide.
-  const hideStamp = prefsOfUser(user).lastSeenVisible === false
+  const hideStamp = !privacyPreferenceEnabled(user.preferences, 'lastSeenVisible')
   return {
     id: user.id,
     name: user.name,
@@ -184,16 +184,6 @@ export function mapUser(user: UserRow): AppUser {
     statusText: user.statusText ?? null,
     createdAt: user.createdAt.toISOString(),
     lastSeenAt: hideStamp ? null : user.lastSeenAt.toISOString(),
-  }
-}
-
-/** Server-stored prefs of a user row (defensive - malformed JSON → defaults). */
-function prefsOfUser(user: UserRow): PulsePrefs {
-  if (!user.preferences) return DEFAULT_PREFERENCES
-  try {
-    return mergePrefs(JSON.parse(user.preferences))
-  } catch {
-    return DEFAULT_PREFERENCES
   }
 }
 
@@ -378,7 +368,7 @@ export function membersForViewer(
   return participants
     .map((p) => {
       const m = mapMember(p)
-      if (viewerId && m.id !== viewerId && prefsOfUser(p.user).readReceipts === false) {
+      if (m.id !== viewerId && !privacyPreferenceEnabled(p.user.preferences, 'readReceipts')) {
         return { ...m, lastReadAt: EPOCH_ISO }
       }
       return m

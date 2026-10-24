@@ -91,3 +91,12 @@ test('disappearing pushes inherit root deadline without leaving original text in
  assert.equal(calls[0].payload.body,'Quiet Raven: Disappearing message')
  assert.equal(JSON.stringify(calls).includes('Secret caption'),false)
 }))
+
+test('non-object preferences and non-boolean preview settings never reveal notification text',()=>fixture(async(db,notify,calls)=>{
+ for(const preferences of ['null','[]','false','{"notifPreviews":"true"}','{"notifPreviews":1}','{"notifPreviews":null}']) {
+  await db.user.update({where:{id:'peer'},data:{preferences}})
+  await notify();assert.equal(calls.at(-1).bodies.peer,'New message')
+ }
+ await db.user.update({where:{id:'peer'},data:{preferences:null}})
+ await notify();assert.equal(calls.at(-1).bodies.peer,'Quiet Raven: Secret caption')
+}))

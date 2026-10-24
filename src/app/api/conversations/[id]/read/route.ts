@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   try {
     const at = await advanceReadReceipt(db, id, userId, body.messageId as string | undefined)
     const owner = await db.user.findUnique({ where: { id: userId }, select: { preferences: true } })
-    const recipients = receiptRecipients(userId, await memberIdsOf(id), owner?.preferences ?? null)
+    const recipients = receiptRecipients(userId, await memberIdsOf(id), owner?.preferences)
     await notifySocket('message:read', recipients, { conversationId: id, userId, lastReadAt: at.toISOString() })
     return NextResponse.json({ ok: true, lastReadAt: at.toISOString() })
   } catch (error) {

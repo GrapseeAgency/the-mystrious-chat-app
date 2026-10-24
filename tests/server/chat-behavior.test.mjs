@@ -83,7 +83,7 @@ test('explicit mark-all uses the latest server row, not wall-clock time', () => 
 test('receipt privacy still synchronizes the reader own devices', () => {
   assert.deepEqual(receiptRecipients('reader', ['reader','peer'], '{"readReceipts":false}'), ['reader'])
   assert.deepEqual(receiptRecipients('reader', ['reader','peer'], null), ['reader','peer'])
-  assert.deepEqual(receiptRecipients('reader', ['peer'], '{broken'), ['reader','peer'])
+  assert.deepEqual(receiptRecipients('reader', ['peer'], '{broken'), ['reader'])
 })
 test('reversed member order and response-loss retry open the same DM', () => fixture(async db => {
   const first = await openDirectConversation(db, ['a','b'])

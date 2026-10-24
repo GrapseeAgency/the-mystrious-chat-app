@@ -1,12 +1,12 @@
+import { privacyPreferenceEnabled } from './privacy-preferences.ts'
 import type { PrismaClient } from '../../prisma/generated-client'
 
 export class ReadReceiptError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
 }
 
-export function receiptRecipients(owner: string, members: string[], preferences: string | null): string[] {
-  let visible = true
-  try { visible = JSON.parse(preferences ?? '{}')?.readReceipts !== false } catch { /* default prefs */ }
+export function receiptRecipients(owner: string, members: string[], preferences: string | null | undefined): string[] {
+  const visible = privacyPreferenceEnabled(preferences, 'readReceipts')
   // Other devices belonging to the reader must still clear their unread badge.
   return [...new Set(visible ? [owner, ...members] : [owner])]
 }

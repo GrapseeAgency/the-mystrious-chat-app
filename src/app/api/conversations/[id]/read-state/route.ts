@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     const at = await advanceReadReceipt(db, id, userId, mode === 'visible' ? messageId! : undefined)
     const owner = await db.user.findUnique({ where: { id: userId }, select: { preferences: true } })
-    const recipients = receiptRecipients(userId, await memberIdsOf(id), owner?.preferences ?? null)
+    const recipients = receiptRecipients(userId, await memberIdsOf(id), owner?.preferences)
     await notifySocket('message:read', recipients, { conversationId: id, userId, lastReadAt: at.toISOString() })
     return NextResponse.json({ ok: true, readReceiptVersion: 1, conversationId: id, userId, mode,
       messageId: mode === 'visible' ? messageId : null, lastReadAt: at.toISOString() })

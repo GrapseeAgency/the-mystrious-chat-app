@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mergePrefs } from '@/lib/prefs-defaults'
+import { privacyPreferenceSnapshot } from '@/lib/privacy-preferences'
 
 /**
  * GET /api/settings?userId=<id>
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
       stored = null
     }
   }
-  return NextResponse.json({ preferences: mergePrefs(stored) })
+  return NextResponse.json({ preferences: { ...mergePrefs(stored), ...privacyPreferenceSnapshot(user.preferences) } })
 }
 
 /**
@@ -38,7 +39,11 @@ export async function GET(req: Request) {
 export async function PATCH(req: Request) {
   let body: Record<string, unknown> = {}
   try {
-    body = (await req.json()) as Record<string, unknown>
+    const raw: unknown = await req.json()
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return NextResponse.json({ error: 'Body must be an object.' }, { status: 400 })
+    }
+    body = raw as Record<string, unknown>
   } catch {
     return NextResponse.json({ error: 'Body must be valid JSON.' }, { status: 400 })
   }
@@ -70,7 +75,13 @@ export async function PATCH(req: Request) {
     }
   }
 
-  const merged = mergePrefs({ ...stored, ...(body.preferences as Record<string, unknown>) })
+  const patch = body.preferences as Record<string, unknown>
+  for (const key of ['readReceipts', 'lastSeenVisible', 'typingVisible', 'notifPreviews']) {
+    if (Object.prototype.hasOwnProperty.call(patch, key) && typeof patch[key] !== 'boolean') {
+      return NextResponse.json({ error: `${key} must be a boolean.` }, { status: 400 })
+    }
+  }
+  const merged = mergePrefs({ ...stored, ...privacyPreferenceSnapshot(user.preferences), ...patch })
   const serialized = JSON.stringify(merged)
   if (serialized.length > 4096) {
     return NextResponse.json({ error: 'Preferences payload too large.' }, { status: 413 })

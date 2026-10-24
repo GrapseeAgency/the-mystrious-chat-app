@@ -1,3 +1,4 @@
+import { privacyPreferenceEnabled } from './privacy-preferences.ts'
 import type { PrismaClient } from '../../prisma/generated-client'
 import { messageDisplayName } from './message-disclosure.ts'
 import { clipUtf16 } from './text-limits.ts'
@@ -46,14 +47,8 @@ export async function deliverMessageNotification(
       ? clipUtf16(message.content.trim(), 140) || 'New message'
       : ({ image: 'Photo', audio: 'Voice message', voice: 'Voice message', video: 'Video',
         sticker: 'Sticker', file: 'Document', location: 'Location', poll: 'Poll' } as Record<string, string>)[message.kind] ?? 'New message'
-    const previews = new Map(targets.map(row => {
-      let enabled = true
-      try {
-        const prefs: unknown = row.user.preferences ? JSON.parse(row.user.preferences) : null
-        if (prefs && typeof prefs === 'object' && 'notifPreviews' in prefs && prefs.notifPreviews === false) enabled = false
-      } catch { enabled = false } // corrupt preferences must not reveal content
-      return [row.userId, enabled] as const
-    }))
+    const previews = new Map(targets.map(row =>
+      [row.userId, privacyPreferenceEnabled(row.user.preferences, 'notifPreviews')] as const))
     return { targets: targets.map(row => row.userId), previews,
       deadline,
       payload: { kind: 'message' as const, conversationId: message.conversationId, messageId: message.id,

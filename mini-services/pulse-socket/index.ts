@@ -23,7 +23,7 @@
  *  - Privacy gating (R47) : typing relay + presence snapshots are FILTERED by
  *                           per-user privacy flags fetched from Next's
  *                           /api/internal/privacy (shared key, 30s TTL cache,
- *                           fail-open). Still NO database access here.
+ *                           fail-closed). Still NO database access here.
  *  - Health probe        : GET / (or anything unknown) → { ok:true, service:'pulse-socket' }
  *
  * Routing note (verified against engine.io@6.6.9 source): because our socket.io
@@ -113,8 +113,8 @@ function dropPresence(socketId: string): boolean {
 //   presenceVisible ← User prefs lastSeenVisible (Telegram couples last seen
 //                     AND online under one toggle)
 //   typingVisible   ← User prefs typingVisible (R47)
-// Consumers FAIL OPEN: a missing/stale flag means "visible", so an API hiccup
-// never blinds the whole mesh. Flags refresh lazily with a 30s TTL.
+// Missing/stale/invalid policy fails closed. Valid snapshots have a 30s TTL;
+// a periodic sweep also updates idle clients after privacy settings change.
 // ---------------------------------------------------------------------------
 const NEXT_API_BASE = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
 // Fail-closed (audit finding S5): no default secret; empty key never sent.
@@ -168,58 +168,72 @@ async function verifySessionToken(userId: string, token: string): Promise<boolea
 }
 
 type PrivacyFlags = { typingVisible: boolean; presenceVisible: boolean }
-const privacyCache = new Map<string, { flags: PrivacyFlags; fetchedAt: number }>()
+const PRIVATE_FLAGS: PrivacyFlags = { typingVisible: false, presenceVisible: false }
+const privacyCache = new Map<string, { flags: PrivacyFlags; validUntil: number }>()
 let privacyInflight: Promise<void> | null = null
 
 async function fetchPrivacyFlags(ids: string[]): Promise<void> {
-  if (ids.length === 0) return
-  const stale = (id: string): boolean => {
-    const hit = privacyCache.get(id)
-    return !hit || Date.now() - hit.fetchedAt > PRIVACY_TTL_MS
-  }
-  let need = ids.filter(stale)
+  const stale = (id: string): boolean => (privacyCache.get(id)?.validUntil ?? 0) <= Date.now()
+  let need = [...new Set(ids)].filter(stale)
   if (need.length === 0) return
-  if (privacyInflight) {
+  // Recheck the lock after every await: multiple waiters must not overwrite
+  // each other's in-flight refresh or incorrectly unlock a newer request.
+  while (privacyInflight) {
     await privacyInflight.catch(() => {})
-    need = ids.filter(stale)
+    need = need.filter(stale)
     if (need.length === 0) return
   }
   privacyInflight = (async () => {
     try {
-      const res = await fetch(
-        `${NEXT_API_BASE}/api/internal/privacy?ids=${encodeURIComponent(need.slice(0, 500).join(','))}`,
-        { headers: PRIVACY_KEY ? { 'x-pulse-key': PRIVACY_KEY } : {}, signal: AbortSignal.timeout(5000) },
-      )
-      const body = (await res.json().catch(() => null)) as {
-        flags?: Record<string, { typingVisible?: unknown; presenceVisible?: unknown }>
-      } | null
-      if (res.ok && body && body.flags) {
+      // Do not permanently starve users beyond the API's first 500 IDs.
+      for (let offset = 0; offset < need.length; offset += 500) {
+        const batch = need.slice(offset, offset + 500)
+        let flags: Record<string, { typingVisible?: unknown; presenceVisible?: unknown }> | undefined
+        try {
+          const res = await fetch(
+            `${NEXT_API_BASE}/api/internal/privacy?ids=${encodeURIComponent(batch.join(','))}`,
+            { headers: PRIVACY_KEY ? { 'x-pulse-key': PRIVACY_KEY } : {}, signal: AbortSignal.timeout(5000) },
+          )
+          const body = await res.json().catch(() => null)
+          if (res.ok && body?.flags && typeof body.flags === 'object' && !Array.isArray(body.flags)) flags = body.flags
+        } catch { /* restart/outage is not permission to disclose */ }
         const now = Date.now()
-        for (const [id, raw] of Object.entries(body.flags)) {
-          if (
-            raw &&
-            typeof raw.typingVisible === 'boolean' &&
-            typeof raw.presenceVisible === 'boolean'
-          ) {
-            privacyCache.set(id, {
-              flags: { typingVisible: raw.typingVisible, presenceVisible: raw.presenceVisible },
-              fetchedAt: now,
-            })
-          }
+        for (const id of batch) {
+          const raw = flags?.[id]
+          const valid = raw && typeof raw.typingVisible === 'boolean' && typeof raw.presenceVisible === 'boolean'
+          privacyCache.set(id, {
+            flags: valid ? { typingVisible: raw.typingVisible as boolean, presenceVisible: raw.presenceVisible as boolean } : PRIVATE_FLAGS,
+            // A short negative cache prevents an API outage/unknown ID from
+            // turning every typing event into another request. Never cache an
+            // unrelated unsolicited ID from a provider response.
+            validUntil: now + (valid ? PRIVACY_TTL_MS : Math.min(PRIVACY_TTL_MS, 5000)),
+          })
         }
       }
-    } catch {
-      // app may be mid-restart — fail OPEN until the next poll
-    } finally {
-      privacyInflight = null
-    }
+    } finally { privacyInflight = null }
   })()
   await privacyInflight
 }
 
 function privacyOf(userId: string): PrivacyFlags {
   const hit = privacyCache.get(userId)
-  return hit?.flags ?? { typingVisible: true, presenceVisible: true }
+  return hit && hit.validUntil > Date.now() ? hit.flags : PRIVATE_FLAGS
+}
+
+let privacySweepBusy = false
+let lastPrivacySnapshot: string | null = null
+async function refreshPresencePrivacy(): Promise<void> {
+  if (privacySweepBusy || onlineUsers.size === 0) return
+  privacySweepBusy = true
+  try {
+    await fetchPrivacyFlags(Array.from(onlineUsers.keys()))
+    const snapshot = Array.from(onlineUsers.keys()).filter(id => privacyOf(id).presenceVisible).sort()
+    const key = JSON.stringify(snapshot)
+    if (key !== lastPrivacySnapshot) {
+      lastPrivacySnapshot = key
+      io.emit('presence:snapshot', { onlineUserIds: snapshot })
+    }
+  } finally { privacySweepBusy = false }
 }
 
 /** Presence snapshot filtered to users whose "Last seen & online" toggle allows it. */
@@ -235,6 +249,9 @@ async function typingAllowed(userId: string): Promise<boolean> {
   await fetchPrivacyFlags([userId])
   return privacyOf(userId).typingVisible
 }
+
+// Privacy revocation must not wait indefinitely for another join or typing event.
+setInterval(() => { void refreshPresencePrivacy().catch(() => {}) }, PRIVACY_TTL_MS).unref()
 
 // ---------------------------------------------------------------------------
 // Live voice rooms (R21-b) — pure in-memory, ephemeral by design.
