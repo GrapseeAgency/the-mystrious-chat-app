@@ -83,6 +83,37 @@ class Wave7LogicTest {
         assertEquals("Ping", r.note)
     }
 
+    @Test fun `unrepresentable and nonfuture durations never wrap into a different reminder`() {
+        for (token in listOf("0m", "999999999999999999999999h", "9223372036854775807w", "999999999999d")) {
+            assertNull(PulseWave7Logic.parseRelativeReminder("keep note in $token", now, zone), token)
+            assertNull(PulseWave7Logic.parseRelativeReminder("keep note $token", now, zone), token)
+        }
+        for (clock in listOf(Long.MAX_VALUE, Long.MIN_VALUE, 253_402_300_799_999L)) {
+            for (token in listOf("1s", "next week", "tomorrow", "tonight"))
+                assertNull(PulseWave7Logic.parseRelativeReminder("note $token", clock, zone))
+        }
+        assertEquals(now + 3_600_000, PulseWave7Logic.parseRelativeReminder("note 1H", now, zone)?.remindAtEpochMs)
+        assertEquals(now + 1_000, PulseWave7Logic.parseRelativeReminder("note 1SECOND", now, zone)?.remindAtEpochMs)
+    }
+
+    @Test fun `tomorrow is next calendar day even before nine and across daylight savings`() {
+        val expected = java.time.LocalDateTime.of(2026, 1, 16, 9, 0).atZone(zone).toInstant().toEpochMilli()
+        assertEquals(expected, PulseWave7Logic.parseRelativeReminder("note tomorrow", at(7), zone)?.remindAtEpochMs)
+        val ny = ZoneId.of("America/New_York")
+        val before = java.time.ZonedDateTime.of(2026, 3, 7, 8, 0, 0, 0, ny).toInstant().toEpochMilli()
+        val after = java.time.ZonedDateTime.of(2026, 3, 8, 9, 0, 0, 0, ny).toInstant().toEpochMilli()
+        assertEquals(after, PulseWave7Logic.parseRelativeReminder("note tomorrow", before, ny)?.remindAtEpochMs)
+    }
+
+    @Test fun `separate when field accepts the advertised examples without consuming the note`() {
+        assertEquals(now + 1_800_000, PulseWave7Logic.parseReminderTime("in 30m", now, zone))
+        assertEquals(now + 1_800_000, PulseWave7Logic.parseReminderTime("30m", now, zone))
+        assertNotNull(PulseWave7Logic.parseReminderTime("tomorrow", now, zone))
+        assertNotNull(PulseWave7Logic.parseReminderTime("tonight", now, zone))
+        assertNull(PulseWave7Logic.parseReminderTime("replace the note in 30m", now, zone))
+        assertNull(PulseWave7Logic.parseReminderTime("in 9223372036854775807w", now, zone))
+    }
+
     // red packet / game / tournament payload decode
 
     @Test

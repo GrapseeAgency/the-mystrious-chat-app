@@ -1755,14 +1755,19 @@ class ChatRoomViewModel @Inject constructor(
             .onFailure { notify(it.message ?: "Could not finish the tournament", isError = true) }.isSuccess
 
     /** Reminder create via the sheet (absolute picker) - relative parse lives in PulseWave7Logic. */
-    fun createReminder(note: String, remindAtIso: String, anchoredMessageId: String? = null) {
-        viewModelScope.launch {
-            repo.createReminder(conversationId, anchoredMessageId, note, remindAtIso)
-                .onSuccess {
-                    remindersOpen = false
-                    loadRemindersUpcoming() // R6 - BE7: keep the header badge honest
-                }
-                .onFailure { notify(it.message ?: "Could not set the reminder", isError = true) }
+    suspend fun createReminder(note: String, remindAtIso: String, anchoredMessageId: String? = null): Boolean {
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val epoch = repo.attachmentSessionKey() ?: return false
+        val account = repo.boundToCurrentAccount()
+        return try {
+            account.createReminder(conversationId, anchoredMessageId, note, remindAtIso).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() != epoch) return false
+            loadRemindersUpcoming()
+            true // The submitting sheet, not an unrelated later screen, owns draft cleanup.
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not set the reminder", isError = true)
+            false
         }
     }
 

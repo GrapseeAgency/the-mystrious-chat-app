@@ -274,54 +274,21 @@ internal fun mirrorRollDice(spec: String): Pair<List<Int>, Int>? {
     return rolls to rolls.sum()
 }
 
-/** web durationToMs - s/m/h/d tokens for the relative reminder parser. */
-private fun mirrorDurationToMs(n: Int, token: String): Long? = when (token) {
-    "s" -> n * 1_000L
-    "m" -> n * 60_000L
-    "h" -> n * 3_600_000L
-    "d" -> n * 86_400_000L
-    else -> null
+/** Share overflow-safe calendar semantics with the reminder sheet. */
+internal fun mirrorParseRelativeReminder(arg: String, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): Pair<String, String>? {
+    val parsed = app.pulse.protocol.PulseWave7Logic.parseRelativeReminder(arg, now.toInstant().toEpochMilli(), now.zone) ?: return null
+    return parsed.note to java.time.Instant.ofEpochMilli(parsed.remindAtEpochMs).atZone(now.zone)
+        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
 }
 
-/**
- * web parseRelativeReminder (reminders-sheet.tsx L130): trailing
- * "in 30m" / "30m" / "next week" / "tomorrow" / "tonight" patterns;
- * tomorrow = 09:00 local, tonight = 20:00 local, next week = +7d.
- */
-internal fun mirrorParseRelativeReminder(arg: String, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): Pair<String, String>? {
-    val input = arg.trim().replace(Regex("\\s+"), " ")
-    if (input.isEmpty()) return null
-    data class Hit(val regex: Regex, val stripIn: Boolean, val at: (MatchResult) -> java.time.ZonedDateTime?)
-    val patterns = listOf(
-        Hit(Regex("\\s+in\\s+(\\d+)\\s*([smhd])$", RegexOption.IGNORE_CASE), false) { m ->
-            val ms = mirrorDurationToMs(m.groupValues[1].toInt(), m.groupValues[2].lowercase())
-            if (ms == null) null else now.plusSeconds(ms / 1000)
-        },
-        Hit(Regex("\\s+(\\d+)\\s*([smhd])$", RegexOption.IGNORE_CASE), true) { m ->
-            val ms = mirrorDurationToMs(m.groupValues[1].toInt(), m.groupValues[2].lowercase())
-            if (ms == null) null else now.plusSeconds(ms / 1000)
-        },
-        Hit(Regex("\\s+next\\s+week$", RegexOption.IGNORE_CASE), false) { now.plusSeconds(7L * 86_400) },
-        Hit(Regex("\\s+tomorrow$", RegexOption.IGNORE_CASE), false) {
-            now.plusDays(1).with(java.time.LocalTime.of(9, 0))
-        },
-        Hit(Regex("\\s+tonight$", RegexOption.IGNORE_CASE), false) {
-            now.with(java.time.LocalTime.of(20, 0))
-        },
-    )
-    for (hit in patterns) {
-        val m = hit.regex.find(input) ?: continue
-        val at = hit.at(m) ?: continue
-        var note = input.substring(0, m.range.first).trim()
-        if (hit.stripIn) note = note.replace(Regex("\\s+in$", RegexOption.IGNORE_CASE), "").trim()
-        if (note.isEmpty() || note.equals("in", ignoreCase = true)) return null
-        return note to at.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-    }
-    return null
-}
+/** Reject oversized input without silently deleting pasted text or splitting an emoji. */
+internal fun mirrorComposerAcceptsChange(previous: String, next: String): Boolean =
+    next.length <= 2000 || next.length < previous.length
 
 /** The slash text-command dispatch used by sendNow (web L445-540). */
 internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
+    fun sendBody(text: String): MirrorSlashBody = if (text.length <= 2000) MirrorSlashBody.Send(text)
+        else MirrorSlashBody.Error("The command result exceeds 2000 characters. Your draft is unchanged.")
     val input = inputRaw.trim()
     val m = Regex("^/(\\w+)(?:\\s+([\\s\\S]+))?$").find(input) ?: return null
     val word = m.groupValues[1].lowercase()
@@ -329,19 +296,19 @@ internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
     return when (word) {
         "me" -> {
             if (arg.isEmpty()) MirrorSlashBody.Error("Usage: /me waves hello")
-            else MirrorSlashBody.Send("_" + arg.take(1998) + "_")
+            else sendBody("_" + arg + "_")
         }
-        "shrug" -> MirrorSlashBody.Send("${arg}${if (arg.isNotEmpty()) " " else ""}¯\\_(ツ)_/¯")
-        "tableflip" -> MirrorSlashBody.Send("${arg}${if (arg.isNotEmpty()) " " else ""}(╯°□°）╯︵ ┻━┻")
-        "unflip" -> MirrorSlashBody.Send("┬┬ ノ( ゜-゜ノ${if (arg.isNotEmpty()) " $arg" else ""}")
+        "shrug" -> sendBody("${arg}${if (arg.isNotEmpty()) " " else ""}¯\\_(ツ)_/¯")
+        "tableflip" -> sendBody("${arg}${if (arg.isNotEmpty()) " " else ""}(╯°□°）╯︵ ┻━┻")
+        "unflip" -> sendBody("┬┬ ノ( ゜-゜ノ${if (arg.isNotEmpty()) " $arg" else ""}")
         "roll" -> {
             if (arg.isEmpty()) {
                 val roll = mirrorRollDice("1d6")
-                MirrorSlashBody.Send("Rolled **1d6**: *${roll?.second ?: "?"}*")
+                sendBody("Rolled **1d6**: *${roll?.second ?: "?"}*")
             } else {
                 val roll = mirrorRollDice(arg)
                 if (roll == null) MirrorSlashBody.Error("Usage: /roll AdM - e.g. /roll 2d6")
-                else MirrorSlashBody.Send("Rolled **${arg.lowercase()}**: ${roll.first.joinToString(" + ")} = *${roll.second}*")
+                else sendBody("Rolled **${arg.lowercase()}**: ${roll.first.joinToString(" + ")} = *${roll.second}*")
             }
         }
         "remind" -> {
@@ -353,7 +320,7 @@ internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
             }
         }
         // R21-a bot commands ride as a normal message - the server bot answers
-        "math", "flip", "8ball", "rps", "dice", "time", "wallet" -> MirrorSlashBody.Send(input)
+        "math", "flip", "8ball", "rps", "dice", "time", "wallet" -> sendBody(input)
         else -> MirrorSlashBody.Error("Unknown command \"/$word\" - try /help")
     }
 }
@@ -1009,7 +976,14 @@ internal fun MirrorRoom(
         val sendTopicId = activeTopicId
         if (broadcastLocked || sending) return
         if (rawText.isEmpty()) return
+        val actionRepository = repository.boundToCurrentAccount()
+        val actionEpoch = actionRepository.attachmentSessionKey()
+        if (actionEpoch == null || actionEpoch != repository.attachmentSessionKey()) {
+            sendError = "The account changed. Your draft was not sent."
+            return
+        }
         editing?.let { editTarget ->
+            if (rawText.length > 2000) { sendError = "The edit exceeds 2000 characters. Your draft is unchanged."; return }
             // Editing is not a new slash command, reminder, effect or outbox send.
             val epoch = repository.attachmentSessionKey() ?: return
             val owner = repository.viewerId ?: return
@@ -1018,7 +992,7 @@ internal fun MirrorRoom(
             historyScope.launch {
                 try {
                     if (!roomActionsLive.get() || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
-                    repository.editMessage(editTarget.id, rawText).getOrThrow()
+                    actionRepository.editMessage(editTarget.id, rawText).getOrThrow()
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     if (!roomActionsLive.get() || repository.attachmentSessionKey() != epoch) return@launch
                     if (editing?.id == editTarget.id && composerDraft.revision == submittedRevision) finishEditing()
@@ -1047,7 +1021,7 @@ internal fun MirrorRoom(
                 sending = true
                 CoroutineScope(Dispatchers.IO).launch {
                     val ok = runCatching {
-                        repository.createReminder(
+                        actionRepository.createReminder(
                             conversationId = groupId,
                             messageId = null,
                             note = parsed.note,
@@ -1055,7 +1029,7 @@ internal fun MirrorRoom(
                         ).getOrThrow()
                     }.isSuccess
                     CoroutineScope(Dispatchers.Main).launch completion@ {
-                        if (!roomActionsLive.get()) return@completion
+                        if (!roomActionsLive.get() || repository.attachmentSessionKey() != actionEpoch) return@completion
                         sending = false
                         if (ok) composerDraft.clearIfUnchanged(submittedRevision)
                         sendError = if (ok) "Reminder set" else "Could not set the reminder"
@@ -1066,7 +1040,8 @@ internal fun MirrorRoom(
             is MirrorSlashBody.Send -> slash.content
             null -> rawText
         }
-        val draftToken = repository.captureDraftToken(groupId)
+        if (text.length > 2000) { sendError = "The message exceeds 2000 characters. Your draft is unchanged."; return }
+        val draftToken = actionRepository.captureDraftToken(groupId)
         val replyTarget = replyTo
         // R74 - web consumes the armed effect at submit time (chat-room L3137:
         // "const armedEffect = pendingEffect; if (!== null) setPendingEffect(null)")
@@ -1082,9 +1057,9 @@ internal fun MirrorRoom(
                         EffectPayloadDto.serializer(),
                         EffectPayloadDto(effect = effectTarget.wire),
                     )
-                    repository.sendRichMessage(
+                    actionRepository.sendRichMessage(
                         conversationId = groupId,
-                        body = text.take(2000),
+                        body = text,
                         kind = "text",
                         payload = payload,
                         topicId = sendTopicId,
@@ -1092,9 +1067,9 @@ internal fun MirrorRoom(
                         draftToken = draftToken,
                     ).getOrThrow()
                 } else if (anonTarget) {
-                    repository.sendRichMessage(
+                    actionRepository.sendRichMessage(
                         conversationId = groupId,
-                        body = text.take(2000),
+                        body = text,
                         replyToId = replyTarget?.id,
                         draftToken = draftToken,
                         topicId = sendTopicId,
@@ -1102,7 +1077,7 @@ internal fun MirrorRoom(
                         anonAliasPreview = mirrorAnonAliasPreview(viewerId, groupId),
                     ).getOrThrow()
                 } else {
-                    repository.sendMessage(
+                    actionRepository.sendMessage(
                         conversationId = groupId,
                         body = text,
                         replyToId = replyTarget?.id,
@@ -1112,7 +1087,7 @@ internal fun MirrorRoom(
                 }
             }
             CoroutineScope(Dispatchers.Main).launch completion@ {
-                if (!roomActionsLive.get()) return@completion
+                if (!roomActionsLive.get() || repository.attachmentSessionKey() != actionEpoch) return@completion
                 sending = false
                 outcome.onSuccess {
                     composerDraft.clearIfUnchanged(submittedRevision, notify = false)
@@ -2202,9 +2177,12 @@ internal fun MirrorRoom(
                             BasicTextField(
                                 value = draftValue,
                                 onValueChange = {
-                                    // web maxLength 2000 (chat-room.tsx:5549)
-                                    draftValue = if (it.text.length > 2000) it.copy(it.text.take(2000)) else it
-                                    pumpTyping(it.text)
+                                    if (mirrorComposerAcceptsChange(draftValue.text, it.text)) {
+                                        draftValue = it
+                                        pumpTyping(it.text)
+                                    } else {
+                                        sendError = "This change wasn't inserted: the message limit is 2000 characters."
+                                    }
                                 },
                                 textStyle = TextStyle(
                                     color = MirrorArt.Text,

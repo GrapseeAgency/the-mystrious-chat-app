@@ -8,18 +8,26 @@ import Foundation
 
 public enum PulseWave7Logic {
 
-    private static let durationToken = "(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)"
+    private static let durationToken = "(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)"
 
     /// Minutes→ms etc. - unit is matched on its first char exactly like the web.
     static func durationToMs(_ value: Int, _ unit: String) -> Int64? {
-        switch unit.first {
-        case "m": return Int64(value) * 60_000
-        case "h": return Int64(value) * 3_600_000
-        case "d": return Int64(value) * 86_400_000
-        case "w": return Int64(value) * 7 * 86_400_000
+        let multiplier: Int64
+        switch unit.lowercased().first {
+        case "s": multiplier = 1_000
+        case "m": multiplier = 60_000
+        case "h": multiplier = 3_600_000
+        case "d": multiplier = 86_400_000
+        case "w": multiplier = 604_800_000
         default: return nil
         }
+        guard value > 0 else { return nil }
+        let (duration, overflow) = Int64(value).multipliedReportingOverflow(by: multiplier)
+        return overflow ? nil : duration
     }
+
+    private static let minReminderEpoch: Int64 = -62_135_596_800_000
+    private static let maxReminderEpoch: Int64 = 253_402_300_799_999
 
     public struct ParsedReminder: Equatable {
         public let note: String
@@ -33,15 +41,24 @@ public enum PulseWave7Logic {
     public static func parseRelativeReminder(_ arg: String, nowEpochMs: Int64 = Int64(Date().timeIntervalSince1970) * 1000, calendar: Calendar = .current) -> ParsedReminder? {
         let input = arg.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        if input.isEmpty { return nil }
+        guard !input.isEmpty, (minReminderEpoch...maxReminderEpoch).contains(nowEpochMs) else { return nil }
 
-        func endOfDayShift(_ hour: Int) -> Int64 {
-            let comps = calendar.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: TimeInterval(nowEpochMs) / 1000))
-            var target = calendar.date(from: DateComponents(year: comps.year, month: comps.month, day: comps.day, hour: hour, minute: 0))!
-            if Int64(target.timeIntervalSince1970) * 1000 <= nowEpochMs {
-                target = calendar.date(byAdding: .day, value: 1, to: target)!
+        func future(_ delta: Int64) -> Int64? {
+            guard delta > 0, delta <= maxReminderEpoch - nowEpochMs else { return nil }
+            return nowEpochMs + delta
+        }
+        func endOfDayShift(_ hour: Int, tomorrow: Bool = false) -> Int64? {
+            let base = Date(timeIntervalSince1970: TimeInterval(nowEpochMs) / 1000)
+            var comps = calendar.dateComponents([.era, .year, .month, .day], from: base)
+            comps.hour = hour; comps.minute = 0; comps.second = 0; comps.nanosecond = 0
+            guard var target = calendar.date(from: comps) else { return nil }
+            if tomorrow || target <= base {
+                guard let next = calendar.date(byAdding: .day, value: 1, to: target) else { return nil }
+                target = next
             }
-            return Int64(target.timeIntervalSince1970) * 1000
+            let ms = target.timeIntervalSince1970 * 1000
+            guard ms.isFinite, ms > Double(nowEpochMs), ms <= Double(maxReminderEpoch) else { return nil }
+            return Int64(ms)
         }
 
         func firstMatch(_ pattern: String) -> NSTextCheckingResult? {
@@ -52,21 +69,21 @@ public enum PulseWave7Logic {
 
         // Pattern 1: "… in 30m"
         if let m = firstMatch("\\s+in\\s+(\\d+)\\s*" + durationToken + "$") {
-            let value = Int((input as NSString).substring(with: m.range(at: 1))) ?? 0
+            guard let value = Int((input as NSString).substring(with: m.range(at: 1))) else { return nil }
             let unit = (input as NSString).substring(with: m.range(at: 2))
-            if let ms = durationToMs(value, unit.lowercased()) {
+            if let ms = durationToMs(value, unit), let at = future(ms) {
                 let note = (input as NSString).substring(to: m.range.location).trimmingCharacters(in: .whitespaces)
                 if !note.isEmpty && note.lowercased() != "in" {
-                    return ParsedReminder(note: note, remindAtEpochMs: nowEpochMs + ms)
+                    return ParsedReminder(note: note, remindAtEpochMs: at)
                 }
                 return nil
             }
         }
         // Pattern 2: bare trailing "30m" - a leftover "in" is stripped from the note.
         if let m = firstMatch("\\s+(\\d+)\\s*" + durationToken + "$") {
-            let value = Int((input as NSString).substring(with: m.range(at: 1))) ?? 0
+            guard let value = Int((input as NSString).substring(with: m.range(at: 1))) else { return nil }
             let unit = (input as NSString).substring(with: m.range(at: 2))
-            if let ms = durationToMs(value, unit.lowercased()) {
+            if let ms = durationToMs(value, unit), let at = future(ms) {
                 var note = (input as NSString).substring(to: m.range.location).trimmingCharacters(in: .whitespaces)
                 if let strip = try? NSRegularExpression(pattern: "\\s+in$", options: [.caseInsensitive]) {
                     let full = NSRange(location: 0, length: (note as NSString).length)
@@ -74,7 +91,7 @@ public enum PulseWave7Logic {
                         .trimmingCharacters(in: .whitespaces)
                 }
                 if !note.isEmpty && note.lowercased() != "in" {
-                    return ParsedReminder(note: note, remindAtEpochMs: nowEpochMs + ms)
+                    return ParsedReminder(note: note, remindAtEpochMs: at)
                 }
                 return nil
             }
@@ -82,28 +99,35 @@ public enum PulseWave7Logic {
         // Pattern 3: "next week"
         if let m = firstMatch("\\s+next\\s+week$") {
             let note = (input as NSString).substring(to: m.range.location).trimmingCharacters(in: .whitespaces)
-            if !note.isEmpty {
-                return ParsedReminder(note: note, remindAtEpochMs: nowEpochMs + 7 * 86_400_000)
+            if !note.isEmpty, let at = future(604_800_000) {
+                return ParsedReminder(note: note, remindAtEpochMs: at)
             }
             return nil
         }
         // Pattern 4: "tomorrow" (09:00 local)
         if let m = firstMatch("\\s+tomorrow$") {
             let note = (input as NSString).substring(to: m.range.location).trimmingCharacters(in: .whitespaces)
-            if !note.isEmpty {
-                return ParsedReminder(note: note, remindAtEpochMs: endOfDayShift(9))
+            if !note.isEmpty, let at = endOfDayShift(9, tomorrow: true) {
+                return ParsedReminder(note: note, remindAtEpochMs: at)
             }
             return nil
         }
         // Pattern 5: "tonight" (20:00 local)
         if let m = firstMatch("\\s+tonight$") {
             let note = (input as NSString).substring(to: m.range.location).trimmingCharacters(in: .whitespaces)
-            if !note.isEmpty {
-                return ParsedReminder(note: note, remindAtEpochMs: endOfDayShift(20))
+            if !note.isEmpty, let at = endOfDayShift(20) {
+                return ParsedReminder(note: note, remindAtEpochMs: at)
             }
             return nil
         }
         return nil
+    }
+
+    /// Separate Note/When fields must not interpret a time-field prefix as a replacement note.
+    public static func parseReminderTime(_ text: String, nowEpochMs: Int64, calendar: Calendar = .current) -> Int64? {
+        guard let parsed = parseRelativeReminder("reminder-time " + text.trimmingCharacters(in: .whitespacesAndNewlines),
+            nowEpochMs: nowEpochMs, calendar: calendar), parsed.note == "reminder-time" else { return nil }
+        return parsed.remindAtEpochMs
     }
 
     // MARK: payload decoders (tolerant)

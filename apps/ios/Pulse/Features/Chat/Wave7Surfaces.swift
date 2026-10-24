@@ -1372,15 +1372,15 @@ struct Wave7RemindersSheet: View {
                     }
                     Button("Set reminder") {
                         let nowMs = Int64(Date().timeIntervalSince1970) * 1000
-                        let parsed = PulseWave7Logic.parseRelativeReminder(whenText, nowEpochMs: nowMs)
+                        let parsed = PulseWave7Logic.parseReminderTime(whenText, nowEpochMs: nowMs)
                         var resolvedIso: String?
                         if let parsed {
-                            resolvedIso = Self.iso(fromMs: parsed.remindAtEpochMs)
+                            resolvedIso = Self.iso(fromMs: parsed)
                         }
                         if resolvedIso == nil {
                             resolvedIso = Self.parseIsoLoose(whenText)
                         }
-                        let finalNote = parsed?.note ?? note.trimmingCharacters(in: .whitespaces)
+                        let finalNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
                         if resolvedIso == nil {
                             error = "No sane time found - try \"in 30m\", \"tomorrow\" or an exact date."
                         } else if finalNote.isEmpty {

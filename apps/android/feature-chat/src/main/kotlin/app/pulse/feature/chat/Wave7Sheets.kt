@@ -759,7 +759,7 @@ internal fun formatEventTime(iso: String?): String {
 fun RemindersSheet(
     viewerId: String,
     load: suspend () -> RemindersPageDto?,
-    onCreate: (note: String, remindAtIso: String, anchoredMessageId: String?) -> Unit,
+    onCreate: suspend (note: String, remindAtIso: String, anchoredMessageId: String?) -> Boolean,
     onResolve: (id: String) -> Unit,
     onDelete: (id: String) -> Unit,
     // R7 item 4 - web REMINDER_JUMP_EVENT parity: rows anchored to a message
@@ -768,6 +768,8 @@ fun RemindersSheet(
     anchoredMessageId: String?,
     onDismiss: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    var creating by remember { mutableStateOf(false) }
     var items by remember { mutableStateOf(listOf<app.pulse.protocol.ReminderItemDto>()) }
     var note by remember { mutableStateOf("") }
     var when_ by remember { mutableStateOf("") }
@@ -803,23 +805,32 @@ fun RemindersSheet(
                 onClick = {
                     val now = System.currentTimeMillis()
                     val zone = ZoneId.systemDefault()
-                    val parsed = PulseWave7Logic.parseRelativeReminder(when_, now, zone)
+                    val parsed = PulseWave7Logic.parseReminderTime(when_, now, zone)
                     val iso = parsed?.let {
-                        java.time.Instant.ofEpochMilli(it.remindAtEpochMs).toString()
+                        java.time.Instant.ofEpochMilli(it).toString()
                     } ?: parseEventDate(when_)
-                    val finalNote = parsed?.note ?: note.trim()
+                    val finalNote = note.trim()
                     when {
                         iso == null -> error = "No sane time found - try \"in 30m\", \"tomorrow\" or an exact date."
                         finalNote.isEmpty() -> error = "Note can't be empty."
                         else -> {
                             error = null
-                            onCreate(finalNote, iso, anchoredMessageId)
-                            note = ""; when_ = ""
+                            if (!creating) {
+                                val submittedNote = note; val submittedWhen = when_; val anchor = anchoredMessageId
+                                creating = true
+                                scope.launch {
+                                    try {
+                                        if (onCreate(finalNote, iso, anchor)) {
+                                            if (note == submittedNote && when_ == submittedWhen) { note = ""; when_ = "" }
+                                        } else error = "Reminder was not confirmed. Your note and time are kept; check the list before retrying."
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { error = "Reminder was not confirmed. Your note and time are kept; check the list before retrying." } finally { creating = false }
+                                }
+                            }
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Set reminder") }
+                modifier = Modifier.fillMaxWidth(), enabled = !creating,
+            ) { Text(if (creating) "Setting reminder…" else "Set reminder") }
             Spacer(Modifier.height(12.dp))
             if (items.isEmpty()) {
                 Text("No reminders yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)

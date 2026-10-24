@@ -13,16 +13,25 @@ object PulseWave7Logic {
 
     val json: Json = PulseJson
 
-    private const val DURATION_TOKEN = "(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)"
+    private const val DURATION_TOKEN = "(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)"
 
     /** Minutes→ms etc. - unit is matched on its first char exactly like the web. */
-    internal fun durationToMs(value: Long, unit: String): Long? = when (unit.firstOrNull()) {
-        'm' -> value * 60_000
-        'h' -> value * 3_600_000
-        'd' -> value * 86_400_000
-        'w' -> value * 7 * 86_400_000
-        else -> null
+    internal fun durationToMs(value: Long, unit: String): Long? {
+        val multiplier = when (unit.firstOrNull()?.lowercaseChar()) {
+            's' -> 1_000L
+            'm' -> 60_000L
+            'h' -> 3_600_000L
+            'd' -> 86_400_000L
+            'w' -> 604_800_000L
+            else -> return null
+        }
+        if (value <= 0 || value > Long.MAX_VALUE / multiplier) return null
+        return value * multiplier
     }
+
+    // Keep generated dates representable by the shared four-digit-year wire format.
+    private const val MIN_REMINDER_EPOCH = -62_135_596_800_000L
+    private const val MAX_REMINDER_EPOCH = 253_402_300_799_999L
 
     data class ParsedReminder(val note: String, val remindAtEpochMs: Long)
 
@@ -34,13 +43,16 @@ object PulseWave7Logic {
      */
     fun parseRelativeReminder(arg: String, nowEpochMs: Long, zone: java.time.ZoneId): ParsedReminder? {
         val input = arg.trim().replace(Regex("\\s+"), " ")
-        if (input.isEmpty()) return null
+        if (input.isEmpty() || nowEpochMs !in MIN_REMINDER_EPOCH..MAX_REMINDER_EPOCH) return null
 
-        fun endOfDayShift(hour: Int): Long {
+        fun future(delta: Long): Long? =
+            if (delta > 0 && delta <= MAX_REMINDER_EPOCH - nowEpochMs) nowEpochMs + delta else null
+
+        fun endOfDayShift(hour: Int, tomorrow: Boolean = false): Long {
             val base = java.time.Instant.ofEpochMilli(nowEpochMs).atZone(zone)
             var target = base.toLocalDate().atTime(hour, 0)
             var result = target.atZone(zone).toInstant().toEpochMilli()
-            if (result <= nowEpochMs) {
+            if (tomorrow || result <= nowEpochMs) {
                 target = target.plusDays(1)
                 result = target.atZone(zone).toInstant().toEpochMilli()
             }
@@ -51,18 +63,19 @@ object PulseWave7Logic {
 
         val patterns = listOf(
             Pattern(Regex("\\s+in\\s+(\\d+)\\s*$DURATION_TOKEN$", RegexOption.IGNORE_CASE)) { m ->
-                durationToMs(m.groupValues[1].toLongOrNull() ?: return@Pattern null, m.groupValues[2])?.let { nowEpochMs + it }
+                durationToMs(m.groupValues[1].toLongOrNull() ?: return@Pattern null, m.groupValues[2])?.let(::future)
             },
             Pattern(Regex("\\s+(\\d+)\\s*$DURATION_TOKEN$", RegexOption.IGNORE_CASE), stripTrailingIn = true) { m ->
-                durationToMs(m.groupValues[1].toLongOrNull() ?: return@Pattern null, m.groupValues[2])?.let { nowEpochMs + it }
+                durationToMs(m.groupValues[1].toLongOrNull() ?: return@Pattern null, m.groupValues[2])?.let(::future)
             },
-            Pattern(Regex("\\s+next\\s+week$", RegexOption.IGNORE_CASE)) { nowEpochMs + 7 * 86_400_000 },
-            Pattern(Regex("\\s+tomorrow$", RegexOption.IGNORE_CASE)) { endOfDayShift(9) },
+            Pattern(Regex("\\s+next\\s+week$", RegexOption.IGNORE_CASE)) { future(604_800_000L) },
+            Pattern(Regex("\\s+tomorrow$", RegexOption.IGNORE_CASE)) { endOfDayShift(9, tomorrow = true) },
             Pattern(Regex("\\s+tonight$", RegexOption.IGNORE_CASE)) { endOfDayShift(20) },
         )
         for (p in patterns) {
             val m = p.regex.find(input) ?: continue
-            val remindAt = p.resolve(m) ?: continue
+            val remindAt = p.resolve(m) ?: return null
+            if (remindAt <= nowEpochMs || remindAt > MAX_REMINDER_EPOCH) return null
             var note = input.substring(0, m.range.first).trim()
             if (p.stripTrailingIn) note = note.replace(Regex("\\s+in$", RegexOption.IGNORE_CASE), "").trim()
             if (note.isEmpty() || note.equals("in", ignoreCase = true)) return null
@@ -70,6 +83,11 @@ object PulseWave7Logic {
         }
         return null
     }
+
+    /** The sheet has separate Note/When fields: the time must not consume or replace the note. */
+    fun parseReminderTime(text: String, nowEpochMs: Long, zone: java.time.ZoneId): Long? =
+        parseRelativeReminder("reminder-time " + text.trim(), nowEpochMs, zone)
+            ?.takeIf { it.note == "reminder-time" }?.remindAtEpochMs
 
     /** Tolerant decode of a red-packet message payload (raw JSON string). */
     fun redPacketPayload(payload: String?): RedPacketPayloadDto? {

@@ -80,6 +80,50 @@ final class Wave7LogicTests: XCTestCase {
         XCTAssertEqual(parsed?.note, "Ping")
     }
 
+    func testOversizedNonfutureAndUnrepresentableDurationsAreRejectedWithoutTrapping() {
+        let now: Int64 = 1_768_450_800_000
+        for token in ["0m", "999999999999999999999999h", "9223372036854775807w", "999999999999d"] {
+            XCTAssertNil(PulseWave7Logic.parseRelativeReminder("keep note in \(token)", nowEpochMs: now), token)
+            XCTAssertNil(PulseWave7Logic.parseRelativeReminder("keep note \(token)", nowEpochMs: now), token)
+        }
+        for clock in [Int64.max, Int64.min, 253_402_300_799_999] {
+            for token in ["1s", "next week", "tomorrow", "tonight"] {
+                XCTAssertNil(PulseWave7Logic.parseRelativeReminder("note \(token)", nowEpochMs: clock))
+            }
+        }
+        XCTAssertEqual(PulseWave7Logic.parseRelativeReminder("note 1H", nowEpochMs: now)?.remindAtEpochMs, now + 3_600_000)
+        XCTAssertEqual(PulseWave7Logic.parseRelativeReminder("note 1SECOND", nowEpochMs: now)?.remindAtEpochMs, now + 1_000)
+    }
+
+    func testTomorrowIsNextCalendarDayBeforeNineAndAcrossDST() throws {
+        for (zone, month, day) in [("Asia/Dhaka", 1, 15), ("America/New_York", 3, 7)] {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(TimeZone(identifier: zone))
+            let before = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: 8)))
+            let after = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: month, day: day + 1, hour: 9)))
+            XCTAssertEqual(PulseWave7Logic.parseRelativeReminder("note tomorrow", nowEpochMs: Int64(before.timeIntervalSince1970 * 1000), calendar: calendar)?.remindAtEpochMs,
+                Int64(after.timeIntervalSince1970 * 1000))
+        }
+    }
+
+    func testSlashTransformsKeepEveryUnicodeUnitOrRejectTheWholeOperation() {
+        let atLimit = String(repeating: "🌿", count: 999)
+        XCTAssertEqual(PulseRemediationLogic.applySlash("/me " + atLimit), .send("_" + atLimit + "_"))
+        for text in ["/me " + atLimit + "a", "/me " + String(repeating: "a", count: 2000), "/shrug " + String(repeating: "a", count: 1995)] {
+            guard case .error = PulseRemediationLogic.applySlash(text) else { XCTFail("Silently shortened or oversize result"); continue }
+        }
+    }
+
+    func testSeparateWhenFieldAcceptsItsAdvertisedExamplesWithoutReplacingTheNote() {
+        let now: Int64 = 1_768_450_800_000
+        XCTAssertEqual(PulseWave7Logic.parseReminderTime("in 30m", nowEpochMs: now), now + 1_800_000)
+        XCTAssertEqual(PulseWave7Logic.parseReminderTime("30m", nowEpochMs: now), now + 1_800_000)
+        XCTAssertNotNil(PulseWave7Logic.parseReminderTime("tomorrow", nowEpochMs: now))
+        XCTAssertNotNil(PulseWave7Logic.parseReminderTime("tonight", nowEpochMs: now))
+        XCTAssertNil(PulseWave7Logic.parseReminderTime("replace the note in 30m", nowEpochMs: now))
+        XCTAssertNil(PulseWave7Logic.parseReminderTime("in 9223372036854775807w", nowEpochMs: now))
+    }
+
     // payload decoders
 
     func testRedPacketPayloadDecodes() throws {
