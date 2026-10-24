@@ -63,4 +63,21 @@ class ScheduledAcceptanceTest {
             } finally { http.close() }
         }
     }
+    @Test fun cancellationFailureRemainsRetryableUntilAnExactReceiptArrives() = runTest {
+        var attempts = 0
+        val http = HttpClient(MockEngine { request ->
+            assertEquals("DELETE", request.method.value)
+            assertEquals("/api/scheduled/queued", request.url.encodedPath)
+            attempts++
+            if (attempts == 1) throw java.io.IOException("Response lost after server commit")
+            respond("""{"scheduleVersion":1,"userId":"me","conversationId":"room","scheduledId":"queued","ok":true,"cancelled":true}""",
+                HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        })
+        try {
+            val api = PulseApi(http, gateway = { "https://scheduled.test" })
+            assertTrue(api.cancelScheduled("queued", "me") is PulseResult.Failure)
+            assertTrue(api.cancelScheduled("queued", "me") is PulseResult.Success)
+            assertEquals(2, attempts)
+        } finally { http.close() }
+    }
 }

@@ -6,6 +6,10 @@ private final class ScheduledProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let mode = request.value(forHTTPHeaderField: "X-Mode") ?? "valid"
+        if mode == "lost-response" {
+            client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+            return
+        }
         let paging = request.value(forHTTPHeaderField: "X-Paging") == "true"
         let second = URLComponents(url:request.url!,resolvingAgainstBaseURL:false)?.queryItems?.contains(where:{$0.name == "cursor"}) == true
         let row: [String:Any] = ["id":paging ? (second && mode != "duplicate" ? "second" : "first") : "queued",
@@ -63,5 +67,19 @@ final class ScheduledAcceptanceTests: XCTestCase {
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier:"America/New_York"))
         let beforeFallBack = try XCTUnwrap(PulseFormat.date("2026-10-31T12:00:00Z"))
         XCTAssertEqual(PulseScheduledChip.tomorrowMorning(now:beforeFallBack,calendar:calendar),PulseFormat.date("2026-11-01T14:00:00Z"))
+    }
+    func testCancellationDoesNotInventSuccessAfterALostResponseAndAcceptsAConfirmedRetry() async throws {
+        for mode in ["lost-response", "valid"] {
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [ScheduledProtocol.self]
+            config.httpAdditionalHeaders = ["X-Mode": mode]
+            let transport = URLSession(configuration: config)
+            defer { transport.invalidateAndCancel() }
+            let api = PulseAPIClient(baseURL: URL(string: "https://scheduled.test")!, userId: "me", session: transport)
+            do {
+                try await api.cancelScheduled("queued")
+                XCTAssertEqual(mode, "valid")
+            } catch { XCTAssertEqual(mode, "lost-response", "\(error)") }
+        }
     }
 }

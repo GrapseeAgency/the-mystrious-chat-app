@@ -88,12 +88,13 @@ test('create validates time/content and current announcement/block policy within
  const when=new Date(Date.now()+3600000).toISOString(), created=await h.POST(req('POST','me','synthetic-me',{scheduledAt:when}),ctx())
  assert.equal(created.status,201);const receipt=await created.json();assert.equal(receipt.item.content,'Hello');assert.equal(receipt.item.scheduledAt,when);assert.equal(receipt.item.sentAt,null);assert.equal(await db.scheduledMessage.count(),1)
 }))
-test('already delivered rows cannot be falsely cancelled; failed deletes roll back',()=>fixture(async(db,h)=>{
+test('already delivered rows cannot be falsely cancelled; failed cancellation writes roll back',()=>fixture(async(db,h)=>{
  await h.create({sentAt:new Date()})
  assert.equal((await h.DELETE(req('DELETE'),ctx('queued'))).status,409);assert.equal(await db.scheduledMessage.count(),1)
  await db.scheduledMessage.update({where:{id:'queued'},data:{sentAt:null}})
- await db.$executeRawUnsafe("CREATE TRIGGER refuse_cancel BEFORE DELETE ON ScheduledMessage BEGIN SELECT RAISE(ABORT,'synthetic failure'); END")
+ await db.$executeRawUnsafe("CREATE TRIGGER refuse_cancel BEFORE UPDATE ON ScheduledMessage BEGIN SELECT RAISE(ABORT,'synthetic failure'); END")
  await assert.rejects(h.DELETE(req('DELETE'),ctx('queued')));assert.equal(await db.scheduledMessage.count(),1)
+ const unchanged=await db.scheduledMessage.findUnique({where:{id:'queued'}});assert.equal(unchanged.content,'Hello');assert.equal(unchanged.cancelledAt,null)
 }))
 test('dispatch emits the actual message to sender and peers without marking incoming rows Seen; repeat tick does not resend',()=>fixture(async(db,h)=>{
  await h.create({scheduledAt:new Date(Date.now()-1000)})
@@ -117,7 +118,7 @@ test('cancel versus delivery contention never acknowledges cancellation of a com
  await h.create({scheduledAt:new Date(Date.now()-1000)})
  const [cancelled]=await Promise.all([h.DELETE(req('DELETE'),ctx('queued')),h.dispatch(tick())])
  const messages=await db.message.count()
- if(cancelled.status===200){assert.equal(messages,0);assert.equal(await db.scheduledMessage.count(),0)}
+ if(cancelled.status===200){assert.equal(messages,0);assert.equal(await db.scheduledMessage.count({where:{cancelledReason:'user-cancelled'}}),1)}
  if(messages>0){assert.notEqual(cancelled.status,200);assert.equal(await db.scheduledMessage.count(),1)}
  assert.ok([200,409].includes(cancelled.status))
 }))
@@ -135,3 +136,19 @@ test('dispatcher ticker carries progress across ticks, retries failures without 
  const blocked=make(async()=>{started++;await new Promise(r=>{resolve=r});return Response.json({dispatched:0,nextCursor:null})})
  const first=blocked();await blocked();assert.equal(started,1);resolve();await first
 })
+
+test('a lost cancellation acknowledgement can be retried without resending or leaking discarded text',()=>fixture(async(db,h)=>{
+ await h.create({scheduledAt:new Date(Date.now()-1000)})
+ const first=await h.DELETE(req('DELETE'),ctx('queued'))
+ assert.equal(first.status,200)
+ const receipt=await first.json()
+ const row=await db.scheduledMessage.findUnique({where:{id:'queued'}})
+ assert.equal(row.content,'');assert.equal(row.cancelledReason,'user-cancelled');assert.ok(row.cancelledAt)
+ assert.deepEqual(await(await h.DELETE(req('DELETE'),ctx('queued'))).json(),receipt)
+ assert.equal((await h.DELETE(req('DELETE','other','synthetic-other'),ctx('queued'))).status,403)
+ assert.equal((await h.DELETE(req('DELETE'),ctx('never-existed'))).status,404)
+ assert.deepEqual((await(await h.GET(req('GET'),ctx())).json()).items,[])
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,0)
+ assert.equal(await db.message.count(),0)
+ assert.equal((await db.scheduledMessage.findUnique({where:{id:'queued'}})).cancelledAt.getTime(),row.cancelledAt.getTime())
+}))

@@ -1765,8 +1765,9 @@ struct MirrorRoomView: View {
                     composerFocused = true
                 },
                 onSent: { if generation == session.sessionGeneration { refreshRevision &+= 1 } },
-                onScheduled: { body in
-                    if generation == session.sessionGeneration, draftJournal?.isCurrentOwner == true,
+                captureScheduledDraft: { draftJournal?.captureReceipt() },
+                onScheduled: { body, receipt in
+                    if generation == session.sessionGeneration, let receipt, draftJournal?.matches(receipt) == true,
                        draft.trimmingCharacters(in: .whitespacesAndNewlines) == body { draft = "" }
                 },
                 onCreated: { message in
@@ -2598,7 +2599,8 @@ struct MirrorRoomSheetView: View {
     var draftText: String = ""
     var onInsertDraft: (String) -> Void = { _ in }
     var onSent: () -> Void = {}
-    var onScheduled: (String) -> Void = { _ in }
+    var captureScheduledDraft: () -> PulseDraftReceipt? = { nil }
+    var onScheduled: (String, PulseDraftReceipt?) -> Void = { _, _ in }
     var onCreated: (WireChatMessage) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -2685,7 +2687,8 @@ struct MirrorRoomSheetView: View {
             case .poll:
                 MirrorPollBuilder(session: session, row: row, onSent: onSent)
             case .schedule:
-                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent, onScheduled: onScheduled)
+                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent,
+                    captureDraft: captureScheduledDraft, onScheduled: onScheduled)
             case .phrases:
                 MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
             case .sticker:
@@ -2984,7 +2987,8 @@ private struct MirrorScheduleBuilder: View {
     let row: MirrorViewModel.MirrorRow
     let draftText: String
     let onSent: () -> Void
-    let onScheduled: (String) -> Void
+    let captureDraft: () -> PulseDraftReceipt?
+    let onScheduled: (String, PulseDraftReceipt?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var content = ""
     @State private var when = Date().addingTimeInterval(3600)
@@ -3018,12 +3022,13 @@ private struct MirrorScheduleBuilder: View {
         request = ticket; busy = true
         let iso = ISO8601DateFormatter().string(from: when)
         let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let draftReceipt = captureDraft()
         Task {
             defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
                 _ = try await api.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
                 guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
-                onScheduled(body)
+                onScheduled(body, draftReceipt)
                 dismiss()
                 onSent()
                 session.toasts.show("Scheduled - it sends on its own")

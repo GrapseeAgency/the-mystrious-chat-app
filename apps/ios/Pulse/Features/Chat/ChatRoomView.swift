@@ -5042,6 +5042,7 @@ final class RoomViewModel: ObservableObject {
         }
         let iso = ScheduleSheet.isoFormatter.string(from: date)
         let revision = draftEditRevision
+        let draftReceipt = draftJournal?.captureReceipt()
         let client = session.api
         let epoch = session.sessionGeneration
         scheduling = true; scheduledRevision = UUID()
@@ -5053,7 +5054,7 @@ final class RoomViewModel: ObservableObject {
                 // refetch) so the chip count + next-dispatch stamp update.
                 let item = try await client.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                if self.draftEditRevision == revision && self.draftJournal?.isCurrentOwner == true {
+                if self.draftEditRevision == revision, let draftReceipt, self.draftJournal?.matches(draftReceipt) == true {
                     self.draft = ""
                     self.scheduleDraftSave(session: session)
                 }

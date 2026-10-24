@@ -56,4 +56,34 @@ final class DraftJournalTests: XCTestCase {
         XCTAssertEqual(store.draft(conversationId: "room"), "new room edit")
     }
 
+    func testScheduleReceiptCannotClearAnEditedBackOrReopenedDraft() async throws {
+        let store = try PulseStore()
+        let journal = PulseDraftJournal(store: store, conversationId: "room")
+        try await journal.save("Schedule this", revision: 1)
+        let receipt = try XCTUnwrap(journal.captureReceipt())
+        XCTAssertTrue(journal.matches(receipt))
+        let away = journal.submit("New text", revision: 2)
+        let back = journal.submit("Schedule this", revision: 3)
+        XCTAssertFalse(journal.matches(receipt), "Reject before asynchronous SQLite writes finish too")
+        try await away.value; try await back.value
+        let current = try XCTUnwrap(journal.captureReceipt())
+        XCTAssertTrue(journal.matches(current))
+        let reopened = PulseDraftJournal(store: store, conversationId: "room")
+        XCTAssertFalse(journal.matches(current))
+        XCTAssertFalse(reopened.matches(current))
+        XCTAssertEqual(reopened.snapshot, "Schedule this")
+        let other = PulseDraftJournal(store: try PulseStore(), conversationId: "room")
+        XCTAssertFalse(other.matches(current), "Same room in another account/store is not the same draft")
+    }
+
+    func testScheduleReceiptCannotConsumeAThreadOrExternalDraftWrite() async throws {
+        let store = try PulseStore()
+        let journal = PulseDraftJournal(store: store, conversationId: "room")
+        try await journal.save("Schedule this", revision: 1)
+        let receipt = try XCTUnwrap(journal.captureReceipt())
+        let thread = PulseDraftJournal(store: store, conversationId: "room", parentId: "root")
+        XCTAssertFalse(thread.matches(receipt))
+        try store.saveDraft(conversationId: "room", text: "External editor")
+        XCTAssertFalse(journal.matches(receipt))
+    }
 }

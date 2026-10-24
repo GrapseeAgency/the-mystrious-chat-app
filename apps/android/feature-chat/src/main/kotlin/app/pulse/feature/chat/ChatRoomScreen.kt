@@ -258,7 +258,8 @@ fun ChatRoomScreen(
     // R5-B ITEM 1 - emoji appends re-focus the composer through this handle.
     val composerFocus = remember { FocusRequester() }
 
-    var draft by remember { mutableStateOf("") }
+    val draftState = remember(conversationId, viewerId) { ReceiptOwnedDraft() }
+    var draft by draftState
     val caption = state.staged?.caption.orEmpty()
     var actionTarget by remember { mutableStateOf<Message?>(null) }
     var forwardTarget by remember { mutableStateOf<Message?>(null) }
@@ -286,7 +287,8 @@ fun ChatRoomScreen(
     var reactionPickerTarget by remember { mutableStateOf<Message?>(null) }
     var whoReactedFor by remember { mutableStateOf<Pair<Message, String>?>(null) }
     var stickerOpen by remember { mutableStateOf(false) }
-    var scheduleOpen by remember { mutableStateOf(false) }
+    var scheduleOpen by remember(conversationId, viewerId) { mutableStateOf(false) }
+    var schedulePresentation by remember(conversationId, viewerId) { mutableStateOf<java.util.UUID?>(null) }
     // R3-B item 3 - scheduled sends manager sheet.
     var scheduledOpen by remember { mutableStateOf(false) }
     var helpOpen by remember { mutableStateOf(false) }
@@ -298,7 +300,7 @@ fun ChatRoomScreen(
     var locationDenied by remember { mutableStateOf(false) }
     var themeOpen by remember { mutableStateOf(false) }
     // R2-A item 5 - the composer draft staged for the /schedule armer.
-    var scheduleDraft by remember { mutableStateOf<String?>(null) }
+    var scheduleDraft by remember(conversationId, viewerId) { mutableStateOf<String?>(null) }
     // R2-A item 4 - the frozen pre-open read watermark (unread divider).
     var unreadAnchorMs by remember(conversationId) { mutableStateOf<Long?>(null) }
 
@@ -638,7 +640,7 @@ fun ChatRoomScreen(
         if (command.cmd == "/schedule") {
             val text = draft.trim().removePrefix("/schedule").trim()
             if (text.isEmpty()) viewModel.notify("Type the message first, then schedule it")
-            else { scheduleDraft = text; scheduleOpen = true }
+            else { scheduleDraft = text; schedulePresentation = java.util.UUID.randomUUID(); scheduleOpen = true }
             return
         }
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -656,7 +658,7 @@ fun ChatRoomScreen(
                 "poll" -> pollBuilderOpen = true
                 "schedule" -> {
                     scheduleDraft = ""
-                    scheduleOpen = true
+                    schedulePresentation = java.util.UUID.randomUUID(); scheduleOpen = true
                 }
                 "sticker" -> stickerOpen = true
                 "location" -> {
@@ -1904,7 +1906,7 @@ fun ChatRoomScreen(
                     viewModel.notify("Type the message first, then schedule it")
                 } else {
                     scheduleDraft = text
-                    scheduleOpen = true
+                    schedulePresentation = java.util.UUID.randomUUID(); scheduleOpen = true
                 }
             },
             onScheduledSends = {
@@ -1944,12 +1946,18 @@ fun ChatRoomScreen(
         ScheduleSheet(
             draft = scheduleDraft.orEmpty(),
             busy = scheduledBusy,
-            onDismiss = { scheduleOpen = false },
+            onDismiss = { scheduleOpen = false; schedulePresentation = null },
             onSchedule = { iso ->
                 val submitted = scheduleDraft.orEmpty()
+                val receipt = draftState.capture()
+                val presentation = schedulePresentation
                 viewModel.scheduleSend(submitted, iso) {
-                    if (draft.trim().removePrefix("/schedule").trim() == submitted.trim()) { draft = ""; viewModel.onDraftChanged("") }
-                    scheduleOpen = false; scheduleDraft = null
+                    if (scheduleOpen && presentation != null && schedulePresentation == presentation) {
+                        if (draftState.matches(receipt) && draft.trim().removePrefix("/schedule").trim() == submitted.trim()) {
+                            draft = ""; viewModel.onDraftChanged("")
+                        }
+                        scheduleOpen = false; scheduleDraft = null; schedulePresentation = null
+                    }
                 }
             },
         )

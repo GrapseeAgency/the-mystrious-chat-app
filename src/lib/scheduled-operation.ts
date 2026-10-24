@@ -12,6 +12,7 @@ export function scheduledErrorResponse(error: unknown): Response {
   }
   throw error
 }
+const USER_CANCELLED = 'user-cancelled'
 const scope = (userId: string, conversationId: string) => ({ scheduleVersion: 1, userId, conversationId })
 const fields = { id: true, conversationId: true, content: true, scheduledAt: true, sentAt: true, cancelledAt: true, cancelledReason: true } as const
 function wire(row: { id: string; conversationId: string; content: string; scheduledAt: Date; sentAt: Date | null; cancelledAt: Date | null; cancelledReason: string | null }) {
@@ -41,6 +42,7 @@ export async function scheduledPage(db: PrismaClient, userId: string, conversati
   return db.$transaction(async tx => {
     await member(tx, userId, conversationId)
     const rows = await tx.scheduledMessage.findMany({ where: { senderId: userId, conversationId, sentAt: null,
+      AND: [{ OR: [{ cancelledReason: null }, { cancelledReason: { not: USER_CANCELLED } }] }],
       ...(after ? { OR: [{ scheduledAt: { gt: after.at } }, { scheduledAt: after.at, id: { gt: after.id } }] } : {}),
     }, orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }], take: 51, select: fields })
     const page = rows.slice(0, 50), hasMore = rows.length > 50, last = page.at(-1)
@@ -61,16 +63,20 @@ export async function createScheduled(db: PrismaClient, userId: string, conversa
   }, { isolationLevel: 'Serializable' })
 }
 /** Dispatch's sentAt write and cancellation compete inside Serializable transactions.
- * Never delete a row based on a stale sentAt read outside the write transaction. */
+ * Never acknowledge cancellation based on a stale sentAt read outside the write transaction. */
 export async function cancelScheduled(db: PrismaClient, userId: string, scheduledId: string) {
   return db.$transaction(async tx => {
-    const row = await tx.scheduledMessage.findUnique({ where: { id: scheduledId }, select: { senderId: true, conversationId: true, sentAt: true } })
+    const row = await tx.scheduledMessage.findUnique({ where: { id: scheduledId }, select: { senderId: true, conversationId: true, sentAt: true, cancelledAt: true, cancelledReason: true } })
     if (!row) throw new ScheduledError(404, 'Scheduled message not found. Refresh to see its current state.')
     if (row.senderId !== userId) throw new ScheduledError(403, 'Only the sender can cancel this message.')
     if (row.sentAt !== null) throw new ScheduledError(409, 'This message was already sent. It was not cancelled.')
-    // Owners can cancel their own pending sends even after leaving the room.
-    const deleted = await tx.scheduledMessage.deleteMany({ where: { id: scheduledId, senderId: userId, sentAt: null } })
-    if (deleted.count !== 1) throw new ScheduledError(409, 'The scheduled message changed. Refresh before retrying.')
+    // Keep an owner-bound tombstone: a lost cancellation response can be retried.
+    // The discarded content is erased, and tombstones never enter list/dispatch pages.
+    if (row.cancelledAt === null || row.cancelledReason !== USER_CANCELLED) {
+      const cancelled = await tx.scheduledMessage.updateMany({ where: { id: scheduledId, senderId: userId, sentAt: null },
+        data: { cancelledAt: new Date(), cancelledReason: USER_CANCELLED, content: '' } })
+      if (cancelled.count !== 1) throw new ScheduledError(409, 'The scheduled message changed. Refresh before retrying.')
+    }
     return { ...scope(userId, row.conversationId), scheduledId, cancelled: true, ok: true }
   }, { isolationLevel: 'Serializable' })
 }
