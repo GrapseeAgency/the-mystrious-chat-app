@@ -124,6 +124,24 @@ final class Wave7LogicTests: XCTestCase {
         XCTAssertNil(PulseWave7Logic.parseReminderTime("in 9223372036854775807w", nowEpochMs: now))
     }
 
+    func testAbsoluteEventAndReminderTimesRejectCalendarAndDSTSurprises() throws {
+        let dhaka = try XCTUnwrap(TimeZone(identifier: "Asia/Dhaka"))
+        XCTAssertEqual(PulseWave7Logic.parseEventStart("2026-10-22 18:00", timeZone: dhaka), "2026-10-22T12:00:00Z")
+        XCTAssertEqual(PulseWave7Logic.parseEventStart("2026-10-22T18:00", timeZone: dhaka), "2026-10-22T12:00:00Z")
+        XCTAssertEqual(PulseWave7Logic.parseEventStart("2026-10-22", timeZone: dhaka), "2026-10-22T13:00:00Z")
+        XCTAssertEqual(PulseWave7Logic.parseEventStart("2026-10-22T18:00:00.123+06:00", timeZone: dhaka), "2026-10-22T12:00:00.123Z")
+        for value in ["2026-02-30 12:00", "2026-02-30T12:00:00Z", "2026-10-22 24:30", "2026-10-22 18:00 junk"] {
+            XCTAssertNil(PulseWave7Logic.parseEventStart(value, timeZone: dhaka), value)
+            XCTAssertNil(Wave7EventsSheet.parseDate(value), value)
+            XCTAssertNil(Wave7RemindersSheet.parseIsoLoose(value), value)
+        }
+        let ny = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        XCTAssertNil(PulseWave7Logic.parseEventStart("2026-03-08 02:30", timeZone: ny))
+        XCTAssertNil(PulseWave7Logic.parseEventStart("2026-11-01 01:30", timeZone: ny))
+        XCTAssertEqual(PulseWave7Logic.parseEventStart("2026-11-01T01:30:00-04:00", timeZone: ny), "2026-11-01T05:30:00Z")
+        XCTAssertEqual(PulseWave7Logic.parseEventStart("2026-11-01T01:30:00-05:00", timeZone: ny), "2026-11-01T06:30:00Z")
+    }
+
     // payload decoders
 
     func testRedPacketPayloadDecodes() throws {

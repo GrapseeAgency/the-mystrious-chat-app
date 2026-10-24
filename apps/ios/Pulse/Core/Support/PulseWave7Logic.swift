@@ -130,6 +130,49 @@ public enum PulseWave7Logic {
         return parsed.remindAtEpochMs
     }
 
+    /// User-entered local time must survive an exact Gregorian round trip.
+    /// Reject DST gaps/overlaps rather than silently picking a different time;
+    /// an explicit ISO offset makes an ambiguous wall clock intentional.
+    public static func parseEventStart(_ text: String, timeZone: TimeZone = .current) -> String? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = ISO8601DateFormatter()
+        let wall = DateFormatter()
+        wall.locale = Locale(identifier: "en_US_POSIX")
+        wall.calendar = Calendar(identifier: .gregorian)
+        wall.timeZone = TimeZone(secondsFromGMT: 0)
+        wall.isLenient = false
+        if value.range(of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"#, options: .regularExpression) != nil {
+            let clock = String(value.prefix(19))
+            wall.dateFormat = "yyyy-MM-dd'T'HH:mm"
+            // Validate the calendar day and minute separately from ISO's parser,
+            // which may normalize an impossible date on some Foundation versions.
+            let minute = String(clock.prefix(16))
+            guard let nominal = wall.date(from: minute), wall.string(from: nominal) == minute,
+                  let second = Int(clock.suffix(2)), (0...59).contains(second) else { return nil }
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let exact = fractional.date(from: value) ?? output.date(from: value) else { return nil }
+            return value.contains(".") ? fractional.string(from: exact) : output.string(from: exact)
+        }
+        let local = value.count == 10 ? value + " 19:00" : value.replacingOccurrences(of: "T", with: " ")
+        guard local.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$"#, options: .regularExpression) != nil else { return nil }
+        wall.dateFormat = "yyyy-MM-dd HH:mm"
+        guard let nominal = wall.date(from: local), wall.string(from: nominal) == local else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: nominal)
+        components.second = 0
+        calendar.timeZone = timeZone
+        guard let approximate = calendar.date(from: components) else { return nil }
+        let start = calendar.startOfDay(for: approximate).addingTimeInterval(-1)
+        guard let first = calendar.nextDate(after: start, matching: components, matchingPolicy: .strict, repeatedTimePolicy: .first),
+              let last = calendar.nextDate(after: start, matching: components, matchingPolicy: .strict, repeatedTimePolicy: .last),
+              first == last else { return nil }
+        wall.timeZone = timeZone
+        guard wall.string(from: first) == local else { return nil }
+        return output.string(from: first)
+    }
+
     // MARK: payload decoders (tolerant)
 
     public static func redPacketPayload(_ payload: String?) -> WireRedPacketPayload? {

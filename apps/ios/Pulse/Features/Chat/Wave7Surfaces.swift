@@ -1312,22 +1312,7 @@ struct Wave7EventsSheet: View {
 
     /// "YYYY-MM-DD HH:mm" (local) or ISO → UTC ISO-8601 wire form.
     nonisolated static func parseDate(_ text: String) -> String? {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return nil }
-        if let d = ISO8601DateFormatter().date(from: trimmed) {
-            return ISO8601DateFormatter().string(from: d)
-        }
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd HH:mm"
-        df.locale = Locale(identifier: "en_US_POSIX")
-        if let d = df.date(from: trimmed) {
-            return ISO8601DateFormatter().string(from: d)
-        }
-        df.dateFormat = "yyyy-MM-dd"
-        if let d = df.date(from: trimmed) {
-            return ISO8601DateFormatter().string(from: d)
-        }
-        return nil
+        PulseWave7Logic.parseEventStart(text)
     }
 
     nonisolated static func formatTime(_ iso: String?) -> String {
@@ -1481,19 +1466,9 @@ struct Wave7RemindersSheet: View {
 
     /// Loose absolute parse for the sheet ("2026-01-20 09:00" / "2026-01-20" / ISO).
     static func parseIsoLoose(_ text: String) -> String? {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return nil }
-        if let d = ISO8601DateFormatter().date(from: trimmed) {
-            return ISO8601DateFormatter().string(from: d)
-        }
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.dateFormat = "yyyy-MM-dd HH:mm"
-        if let d = df.date(from: trimmed) { return ISO8601DateFormatter().string(from: d) }
-        df.dateFormat = "yyyy-MM-dd"
-        if let d = df.date(from: trimmed) { return ISO8601DateFormatter().string(from: d) }
-        return nil
+        PulseWave7Logic.parseEventStart(text)
     }
+
 }
 
 // MARK: - Leaderboard (F-RO-09)

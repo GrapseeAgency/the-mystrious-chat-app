@@ -23,4 +23,11 @@ class EventTimeTest {
         assertEquals("2026-11-01T05:30:00Z", PulseWave7Logic.parseEventStart("2026-11-01T01:30:00-04:00", ny))
         assertEquals("2026-11-01T06:30:00Z", PulseWave7Logic.parseEventStart("2026-11-01T01:30:00-05:00", ny))
     }
+    @Test fun `absolute reminder fallback shares strict event parsing and preserves fractional offsets`() {
+        val dhaka = ZoneId.of("Asia/Dhaka")
+        assertEquals("2026-10-22T12:00:00.123Z", PulseWave7Logic.parseEventStart("2026-10-22T18:00:00.123+06:00", dhaka))
+        assertNull(PulseWave7Logic.parseEventStart("2026-02-30T12:00:00Z", dhaka))
+        assertNull(PulseWave7Logic.parseEventStart("2026-10-22 18:00 junk", dhaka))
+    }
+
 }
