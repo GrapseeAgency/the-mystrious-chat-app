@@ -502,6 +502,13 @@ private struct RoomContent: View {
 
     var body: some View {
         chatBodyStyled14
+            .background(PulseWindowPrivacyShield(policy: { [weak model = viewModel, weak settings = prefs,
+                                                          weak liveSession = session, room = conversation.id] in
+                guard let model, let settings, let liveSession,
+                      model.readSessionGeneration == liveSession.sessionGeneration else { return true }
+                return PulseScreenSecurityPolicy.requiresProtection(room: model.roomScreenPrivacy,
+                    personal: settings.screenPrivacy[room])
+            }))
             .disabled(departureEpoch != nil)
     }
 
@@ -3909,7 +3916,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     private let conversationId: String
-    private let readSessionGeneration: UUID
+    fileprivate let readSessionGeneration: UUID
     private let isGroupRoom: Bool
     private weak var session: PulseSession?
     private var cancellables: Set<AnyCancellable> = []
