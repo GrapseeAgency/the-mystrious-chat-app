@@ -54,7 +54,7 @@ class Wave6SocialApiTest {
     @Test
     fun `block posts the actor in the body`() = runTest {
         configured()
-        response = """{"ok":true,"blocked":true}"""
+        response = """{"ok":true,"blockReceiptVersion":1,"actorId":"viewer1","targetId":"target1","blocked":true}"""
         val r = api().blockUser("target1", "viewer1")
         assertTrue(r is PulseResult.Success)
         assertTrue((r as PulseResult.Success).value.blocked)
@@ -66,7 +66,7 @@ class Wave6SocialApiTest {
     @Test
     fun `unblock is DELETE block with the actor as a query param - route fix`() = runTest {
         configured()
-        response = """{"ok":true,"blocked":false}"""
+        response = """{"ok":true,"blockReceiptVersion":1,"actorId":"viewer1","targetId":"target1","blocked":false}"""
         val r = api().unblockUser("target1", "viewer1")
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Delete, lastMethod)
@@ -76,7 +76,7 @@ class Wave6SocialApiTest {
     @Test
     fun `report carries the reporter, reason and details`() = runTest {
         configured()
-        response = """{"reported":true}"""
+        response = """{"ok":true,"reportReceiptVersion":1,"reporterId":"me1","reportedId":"bad1","reason":"spam","details":"detail text","reported":true,"updated":false,"reportedAt":"2026-01-01T00:00:00.000Z"}"""
         val r = api().reportUser("bad1", "me1", "spam", "detail text")
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Post, lastMethod)
@@ -85,8 +85,9 @@ class Wave6SocialApiTest {
     }
 
     @Test
-    fun `report omits blank details`() = runTest {
+    fun `report omits null details`() = runTest {
         configured()
+        response = """{"ok":true,"reportReceiptVersion":1,"reporterId":"me1","reportedId":"bad1","reason":"other","details":"","reported":true,"updated":false,"reportedAt":"2026-01-01T00:00:00.000Z"}"""
         val r = api().reportUser("bad1", "me1", "other", null)
         assertTrue(r is PulseResult.Success)
         assertEquals("""{"userId":"me1","reason":"other"}""", lastBody)
@@ -151,7 +152,7 @@ class Wave6SocialApiTest {
     @Test
     fun `blocked accounts list uses the owner as the actor`() = runTest {
         configured()
-        response = """{"blocks":[]}"""
+        response = """{"blockListVersion":1,"userId":"me1","blocks":[]}"""
         val r = api().blockedAccounts("me1")
         assertTrue(r is PulseResult.Success)
         assertEquals("https://gw.example/api/users/me1/blocks?userId=me1", lastUrl)

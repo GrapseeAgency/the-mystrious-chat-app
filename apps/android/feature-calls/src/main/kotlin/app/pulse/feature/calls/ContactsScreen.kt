@@ -158,6 +158,10 @@ fun ContactsScreen(
             }
         }
 
+        if (users.isNotEmpty()) state.error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+            TextButton(onClick = viewModel::refresh) { Text("Retry contacts") }
+        }
         state.safetyError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
         when {
             state.error != null && users.isEmpty() -> Text(
