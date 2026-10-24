@@ -21,17 +21,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 
-/**
- * Wave 8 - DataStore-backed user-preferences blob (the `pulse.prefs` file
- * shared with the identity prefs + session vault).
- *
- * Rules (web parity with src/lib/prefs.ts):
- *  - every read resolves through [PulseWave8Logic.mergePrefs] → the canonical
- *    defaults back any missing/garbage field, so the UI never sees nulls;
- *  - the SERVER value wins on fetch ([replaceFromServer]);
- *  - a settings toggle applies locally FIRST ([applyLocal]) and the PATCH
- *    follows - a failed PATCH keeps the local change (honest offline parity).
- */
+/** Account/gateway DataStore settings. Unknown privacy is conservative; local
+ * intent and its receipt ledger commit together. Owned reads merge only fields
+ * not pending, and stale read revisions cannot undo confirmed choices. */
 @Singleton
 class PulsePrefsLocalStore internal constructor(
     private val storage: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
@@ -98,7 +90,7 @@ class PulsePrefsLocalStore internal constructor(
 
     /** Resolved prefs - defaults guaranteed on every emission. */
     val prefs: Flow<WirePulsePrefs> = storage.data.map { p ->
-        PulseWave8Logic.mergePrefs(p[Keys.PREFS])
+        PulseWave8Logic.localPrefs(p[Keys.PREFS])
     }
 
     // R2-C item 3 - design-language selection (pulse.uiTheme.v2)
@@ -341,7 +333,7 @@ class PulsePrefsLocalStore internal constructor(
     internal suspend fun pendingSettingsTicket(): SettingsTicket {
         val p = storage.data.first()
         val pending = pendingFields(p)
-        val patch = PulseWave8Logic.mergePrefs(p[Keys.PREFS]).selectSettingsFields(pending.keys)
+        val patch = PulseWave8Logic.localPrefs(p[Keys.PREFS]).selectSettingsFields(pending.keys)
         check(patch.settingsFields().keys.containsAll(pending.keys)) { "Unreadable pending settings; nothing was discarded" }
         return SettingsTicket(patch, pending)
     }
@@ -354,7 +346,7 @@ class PulsePrefsLocalStore internal constructor(
             if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
             val pending = pendingFields(p) + fields
             p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(),
-                PulseWave8Logic.mergePatch(PulseWave8Logic.mergePrefs(p[Keys.PREFS]), patch))
+                PulseWave8Logic.mergePatch(PulseWave8Logic.localPrefs(p[Keys.PREFS]), patch))
             storePending(p, pending)
             p[settingsRevisionKey] = java.util.UUID.randomUUID().toString()
         }
@@ -372,7 +364,7 @@ class PulsePrefsLocalStore internal constructor(
             if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
             val pending = pendingFields(p).toMutableMap()
             val accepted = keys.filter { pending[it] == ticket.fields[it] }.toSet()
-            val current = PulseWave8Logic.mergePrefs(p[Keys.PREFS])
+            val current = PulseWave8Logic.localPrefs(p[Keys.PREFS])
             p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(),
                 PulseWave8Logic.mergePatch(current, server.selectSettingsFields(accepted)))
             accepted.forEach { pending.remove(it) }
@@ -387,7 +379,7 @@ class PulsePrefsLocalStore internal constructor(
             if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
             if (readTicket != null && p[settingsRevisionKey] != readTicket.revision) return@edit
             val pending = pendingFields(p)
-            val current = PulseWave8Logic.mergePrefs(p[Keys.PREFS])
+            val current = PulseWave8Logic.localPrefs(p[Keys.PREFS])
             val safe = server.selectSettingsFields(server.settingsFields().keys - pending.keys)
             p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(), PulseWave8Logic.mergePatch(current, safe))
         }
@@ -397,7 +389,7 @@ class PulsePrefsLocalStore internal constructor(
     suspend fun applyLocal(patch: WirePulsePrefs) {
         storage.edit { p ->
             p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(),
-                PulseWave8Logic.mergePatch(PulseWave8Logic.mergePrefs(p[Keys.PREFS]), patch))
+                PulseWave8Logic.mergePatch(PulseWave8Logic.localPrefs(p[Keys.PREFS]), patch))
         }
     }
 

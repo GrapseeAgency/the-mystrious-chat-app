@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.booleanOrNull
 
 /**
  * Wave 8 - user preferences wire shape. The single source of truth is the
@@ -92,6 +93,14 @@ fun WirePulsePrefs.toPatchJson(userId: String): JsonObject {
 
 /** A raw wire JSON object → [WirePulsePrefs] with only the fields present (no clamping - see mergePrefs). */
 fun JsonObject.toWirePrefsOrNull(): WirePulsePrefs? = runCatching {
+    // kotlinx.serialization accepts quoted booleans. They are not boolean
+    // acknowledgements under this API's contract; reject rather than opt in.
+    for (key in listOf("notifPreviews", "notifSound", "notifVibrate", "lastSeenVisible", "readReceipts", "typingVisible", "reducedMotion")) {
+        val value = this[key]
+        if (value != null && value != kotlinx.serialization.json.JsonNull) {
+            require(value is JsonPrimitive && !value.isString && value.booleanOrNull != null) { "Invalid settings boolean" }
+        }
+    }
     PulseJson.decodeFromJsonElement(WirePulsePrefs.serializer(), this)
 }.getOrNull()
 

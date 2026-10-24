@@ -128,7 +128,7 @@ class ChatRoomViewModel @Inject constructor(
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            app.pulse.protocol.PulseWave8Logic.DEFAULTS,
+            app.pulse.protocol.PulseWave8Logic.PRIVATE_DEFAULTS,
         )
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()

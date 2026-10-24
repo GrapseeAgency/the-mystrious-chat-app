@@ -577,6 +577,7 @@ public final class PulseSession: ObservableObject {
     /// funnel. Idempotent - the closures attach exactly once.
     public func attach(prefs: PulsePrefs) {
         self.prefs = prefs
+        prefs.refreshSettingsOwner()
         prefs.notePatchSettled(successful: true, note: nil)
         guard prefs.patchRemote == nil else { return }
         prefs.patchRemote = { [weak self] patch in
@@ -721,6 +722,7 @@ public final class PulseSession: ObservableObject {
     // lifecycle
     public func start(as viewer: PulseViewer) {
         stop()
+        prefs?.refreshSettingsOwner()
         self.viewer = viewer
         let epoch = generation
         startupTask = Task { [weak self] in

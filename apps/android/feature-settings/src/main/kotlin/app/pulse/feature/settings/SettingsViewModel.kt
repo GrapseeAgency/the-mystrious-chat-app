@@ -67,7 +67,7 @@ class SettingsViewModel @Inject constructor(
     // user preferences blob (server-backed)
 
     val pulsePrefs: StateFlow<WirePulsePrefs> = repo.pulsePrefs
-        .stateIn(viewModelScope, SharingStarted.Eagerly, PulseWave8Logic.DEFAULTS)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, PulseWave8Logic.PRIVATE_DEFAULTS)
 
     // Network failures belong to the durable journal, not a sticky view-local
     // flag: a Retry from another settings surface must clear the same notice.

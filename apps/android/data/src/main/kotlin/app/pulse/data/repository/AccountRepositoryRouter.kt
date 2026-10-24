@@ -54,7 +54,7 @@ internal class AccountRepositoryRouter(
                                 "observeDraft" -> emit(null)
                                 "observeThreadDraft" -> emit(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
                                 "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
-                                "getPulsePrefs" -> emit(PulseWave8Logic.mergePrefs(null as String?))
+                                "getPulsePrefs" -> emit(PulseWave8Logic.PRIVATE_DEFAULTS)
                                 else -> emit(emptyList<Any>())
                             }
                             initial = false

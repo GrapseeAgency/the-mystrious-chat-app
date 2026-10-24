@@ -34,6 +34,21 @@ object PulseWave8Logic {
         fxWebglMode = null,
     )
 
+    /** An unloaded account is not an opt-in to sharing privacy-sensitive data. */
+    val PRIVATE_DEFAULTS = DEFAULTS.copy(notifPreviews = false, lastSeenVisible = false,
+        readReceipts = false, typingVisible = false)
+
+    /** Local account cache: missing/corrupt privacy fields fail closed. Keep the
+     * canonical server-default resolver separate from this disclosure policy. */
+    fun localPrefs(raw: String?): WirePulsePrefs {
+        val objectValue = runCatching { raw?.let { PulseJson.parseToJsonElement(it) } }.getOrNull() as? JsonObject
+        fun optedIn(key: String): Boolean = (objectValue?.get(key) as? JsonPrimitive)
+            ?.takeIf { !it.isString }?.booleanOrNull == true
+        return mergePrefs(objectValue).copy(notifPreviews = optedIn("notifPreviews"),
+            lastSeenVisible = optedIn("lastSeenVisible"), readReceipts = optedIn("readReceipts"),
+            typingVisible = optedIn("typingVisible"))
+    }
+
     /**
      * Shallow-merge a stored/partial JSON object over the defaults, silently
      * discarding anything malformed (never throws, never returns junk).
@@ -55,7 +70,7 @@ object PulseWave8Logic {
             val v = (raw[key] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
             return v.takeIf { it in allowed }
         }
-        fun bool(key: String): Boolean? = (raw[key] as? JsonPrimitive)?.booleanOrNull
+        fun bool(key: String): Boolean? = (raw[key] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
         return WirePulsePrefs(
             bubbleRadius = str("bubbleRadius", RADIUS) ?: DEFAULTS.bubbleRadius,
             density = str("density", DENSITY) ?: DEFAULTS.density,

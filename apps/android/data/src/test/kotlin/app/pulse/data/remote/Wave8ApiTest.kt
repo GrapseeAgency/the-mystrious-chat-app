@@ -97,16 +97,16 @@ class Wave8ApiTest {
     }
 
     @Test
-    fun `settings GET decode tolerates a partial blob via the merge defaults`() = runTest {
+    fun `settings GET preserves absent fields for the owned cache merge`() = runTest {
         configured()
         response = """{"preferences":{"wallpaper":"dusk"}}"""
         val r = api().settings("u1")
         assertTrue(r is PulseResult.Success)
         val prefs = (r as PulseResult.Success).value.preferences
         assertEquals("dusk", prefs?.wallpaper)
-        // server merged defaults; decode-side tolerance ALSO guarantees them
-        assertEquals("lg", prefs?.bubbleRadius)
-        assertTrue(prefs?.readReceipts == true)
+        // Missing fields cannot become fabricated privacy acknowledgements.
+        assertNull(prefs?.bubbleRadius)
+        assertNull(prefs?.readReceipts)
     }
 
     // settings PATCH

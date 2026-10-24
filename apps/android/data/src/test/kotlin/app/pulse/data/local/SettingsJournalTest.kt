@@ -22,6 +22,21 @@ class SettingsJournalTest {
         suspend fun reopen() { job.cancelAndJoin(); job = SupervisorJob(); store = open() }
         suspend fun close() { job.cancelAndJoin(); file.delete() }
     }
+    @Test fun `unloaded and independent account stores do not inherit privacy opt ins`() = runBlocking {
+        val first = Storage(); val second = Storage()
+        try {
+            assertEquals(false, first.store.prefs.first().readReceipts)
+            first.store.replaceFromServer(WirePulsePrefs(readReceipts = true, notifPreviews = true))
+            assertEquals(true, first.store.prefs.first().readReceipts)
+            assertEquals(false, second.store.prefs.first().readReceipts)
+            second.store.stageSettings(WirePulsePrefs(density = "compact")) { true }
+            second.reopen()
+            assertEquals(false, second.store.prefs.first().notifPreviews)
+            assertEquals("compact", second.store.prefs.first().density)
+            first.reopen()
+            assertEquals(true, first.store.prefs.first().readReceipts)
+        } finally { first.close(); second.close() }
+    }
     @Test fun `old receipt cannot clear ABA intent or overwrite unrelated fields`() = runBlocking {
         val db = Storage()
         try {

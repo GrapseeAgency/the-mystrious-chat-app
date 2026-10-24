@@ -96,9 +96,7 @@ class PulseApplication : Application() {
             repository.pulsePrefs.collect { p ->
                 app.pulse.android.notify.ReminderAlertPolicy.soundOn = p.notifSound ?: true
                 app.pulse.android.notify.ReminderAlertPolicy.vibrateOn = p.notifVibrate ?: false
-                // R7 item 7 - the notifPreviews gate finally rides the
-                // incoming-attention path (toast preview vs generic line).
-                app.pulse.android.notify.IncomingAttention.previewsOn = p.notifPreviews ?: true
+
             }
         }
         appScope.launch {
@@ -123,12 +121,22 @@ class PulseApplication : Application() {
         appScope.launch {
             repository.events().collect { event ->
                 if (event is app.pulse.domain.repository.PulseEvent.MessageReceived) {
-                    app.pulse.android.notify.IncomingAttention.onMessageReceived(
-                        this@PulseApplication,
-                        event.conversationId,
-                        event.message,
-                        repository.viewerId,
-                    )
+                    val target = repository.boundToCurrentAccount()
+                    val owner = target.viewerId ?: return@collect
+                    val epoch = target.attachmentSessionKey() ?: return@collect
+                    val alerts = try { target.pulsePrefs.first() } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { app.pulse.protocol.PulseWave8Logic.PRIVATE_DEFAULTS }
+                    // Do not read an asynchronously mirrored flag from another
+                    // account. Recheck the source after the owned cache read.
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        if (target.viewerId == owner && target.attachmentSessionKey() == epoch &&
+                            repository.attachmentSessionKey() == epoch) {
+                            app.pulse.android.notify.IncomingAttention.onMessageReceived(
+                                this@PulseApplication, event.conversationId, event.message, owner, alerts,
+                            )
+                        }
+                    }
                 }
             }
         }

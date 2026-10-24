@@ -19,4 +19,15 @@ class SettingsAcknowledgementTest {
         assertEquals("aurora", PulseWave8Logic.mergePrefs("""{"fxWebglMode":"aurora"}""").fxWebglMode)
         assertEquals(setOf("fx.webglMode"), wire.settingsFields().keys)
     }
+    @Test fun `unknown local privacy never becomes an opt in`() {
+        for (raw in listOf(null, "{broken", "{}", "[]", """{"readReceipts":"true","notifPreviews":1,"typingVisible":null}""")) {
+            val prefs = PulseWave8Logic.localPrefs(raw)
+            assertEquals(false, prefs.readReceipts)
+            assertEquals(false, prefs.notifPreviews)
+            assertEquals(false, prefs.lastSeenVisible)
+            assertEquals(false, prefs.typingVisible)
+        }
+        assertEquals(true, PulseWave8Logic.localPrefs("""{"readReceipts":true}""").readReceipts)
+        assertNull("""{"preferences":{"readReceipts":"true"}}""".decodeSettingsEnvelope().preferences)
+    }
 }
