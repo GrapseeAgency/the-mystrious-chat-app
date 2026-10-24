@@ -3177,13 +3177,23 @@ final class ChatsViewModel: ObservableObject {
 
     // ── multi-select ─────────────────────────────────────────
 
+    private(set) var selectionEpoch = UUID()
+
+    func acknowledgeBatchSelection(_ confirmed: Set<String>, epoch: UUID) {
+        guard selectionEpoch == epoch else { return }
+        selection.subtract(confirmed)
+        if selection.isEmpty { selectMode = false }
+    }
+
     func enterSelect(_ conversationId: String) {
+        selectionEpoch = UUID()
         PulseHaptics.tap()
         selectMode = true
         selection = [conversationId]
     }
 
     func exitSelect() {
+        selectionEpoch = UUID()
         selectMode = false
         selection = []
     }
@@ -3314,6 +3324,7 @@ final class ChatsViewModel: ObservableObject {
         let convs = selectedConvs
         guard !convs.isEmpty else { return }
         let client = session.api, epoch = session.sessionGeneration
+        let selectionTicket = selectionEpoch
         let actionIDs = Set(convs.map(\.id))
         guard beginConversationActions(actionIDs, session: session) else { return }
         defer {
@@ -3330,15 +3341,15 @@ final class ChatsViewModel: ObservableObject {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 updateSummaries({ $0.withArchived(receipt.timestamp) }, ids: [conv.id])
                 archived += 1
+                acknowledgeBatchSelection([conv.id], epoch: selectionTicket)
             }
         }
         guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
         if archived == convs.count {
             PulseHaptics.success()
             session.toasts.show("Archived \(archived) chat\(archived == 1 ? "" : "s")")
-            exitSelect()
         } else {
-            session.toasts.show("Could not archive the selected chats")
+            session.toasts.show("Archived \(archived) of \(convs.count) chats. \(convs.count - archived) changes could not be confirmed.")
         }
     }
 
@@ -3346,6 +3357,7 @@ final class ChatsViewModel: ObservableObject {
         let convs = selectedConvs
         guard !convs.isEmpty else { return }
         let client = session.api, epoch = session.sessionGeneration
+        let selectionTicket = selectionEpoch
         let actionIDs = Set(convs.map(\.id))
         guard beginConversationActions(actionIDs, session: session) else { return }
         defer {
@@ -3361,12 +3373,14 @@ final class ChatsViewModel: ObservableObject {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 updateSummaries({ $0.withMutedUntil(receipt.timestamp) }, ids: [conv.id])
                 muted += 1
+                acknowledgeBatchSelection([conv.id], epoch: selectionTicket)
             }
         }
         guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
         if muted > 0 {
             PulseHaptics.success()
-            session.toasts.show("Muted \(muted) chat\(muted == 1 ? "" : "s") for 8 hours")
+            session.toasts.show(muted == convs.count ? "Muted \(muted) chats for 8 hours" :
+                "Muted \(muted) of \(convs.count) chats. \(convs.count - muted) changes could not be confirmed.")
         } else {
             session.toasts.show("Could not mute the selected chats")
         }
@@ -3376,6 +3390,7 @@ final class ChatsViewModel: ObservableObject {
         let convs = selectedConvs
         guard !convs.isEmpty else { return }
         let client = session.api, epoch = session.sessionGeneration
+        let selectionTicket = selectionEpoch
         let actionIDs = Set(convs.map(\.id))
         guard beginConversationActions(actionIDs, session: session) else { return }
         defer {
@@ -3391,7 +3406,7 @@ final class ChatsViewModel: ObservableObject {
             // Explicit mark-all; acceptance must not erase arrivals during the request.
             if (try? await client.markRead(conversationId: conv.id)) != nil {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                selection.remove(conv.id)
+                acknowledgeBatchSelection([conv.id], epoch: selectionTicket)
                 session.noteInboxChanged() // reload canonical counts; never zero a newer arrival locally
                 read += 1
             } else {
@@ -3405,8 +3420,6 @@ final class ChatsViewModel: ObservableObject {
         }
         if failed > 0 {
             session.toasts.show("\(failed) chat\(failed == 1 ? "" : "s") could not be marked read - try again")
-        } else {
-            exitSelect()
         }
     }
 
