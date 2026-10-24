@@ -61,4 +61,20 @@ final class ImagePreparationTests: XCTestCase {
         try handle.close()
         XCTAssertNil(PulseMediaSupport.downscaledJPEGData(from: file))
     }
+
+    func testCameraUIImagePathUsesBoundedPixelsWithoutAFullResolutionIntermediateJPEG() throws {
+        let original = try XCTUnwrap(UIImage(data: image(width: 3000, height: 1500)))
+        let scaledSource = UIImage(cgImage: try XCTUnwrap(original.cgImage), scale: 3, orientation: .up)
+        let jpeg = try XCTUnwrap(PulseMediaSupport.downscaledJPEGData(from: scaledSource))
+        let result = try XCTUnwrap(UIImage(data: jpeg)?.cgImage)
+        XCTAssertEqual(result.width, 1280)
+        XCTAssertEqual(result.height, 640)
+        XCTAssertNil(PulseMediaSupport.downscaledJPEGData(from: UIImage()))
+    }
+    func testUnavailableCameraDoesNotRequestOrPresentAnInvalidSource() {
+        guard !CameraPicker.isAvailable else { return }
+        var response: Bool?
+        CameraPicker.requestAccess { response = $0 }
+        XCTAssertEqual(response, false)
+    }
 }

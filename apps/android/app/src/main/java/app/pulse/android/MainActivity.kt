@@ -362,7 +362,7 @@ class MainActivity : FragmentActivity() {
                 appLock = appLock,
                 onRequestUnlock = { appLock.presentPrompt(this) },
                 shareInFlow = shareIn,
-                onConsumeShareIn = { shareIn.value = null },
+                onConsumeShareIn = { id -> val current = shareIn.value; if (current?.id == id) shareIn.compareAndSet(current, null) },
                 shortcutFlow = shortcutRequest,
                 onConsumeShortcut = { shortcutRequest.value = null },
             )
@@ -392,12 +392,7 @@ class MainActivity : FragmentActivity() {
         when (intent?.action) {
             ShareInActivity.ACTION_SHARE_IN -> {
                 val text = intent.getStringExtra(ShareInActivity.EXTRA_SHARE_TEXT)
-                val stream = if (Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableExtra(ShareInActivity.EXTRA_SHARE_STREAM, android.net.Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(ShareInActivity.EXTRA_SHARE_STREAM) as? android.net.Uri
-                }
+                val stream = ShareInActivity.forwardedStream(intent)
                 shareIn.value = if (text.isNullOrBlank() && stream == null) {
                     // Unreadable payload - say so and close, no half state.
                     android.widget.Toast.makeText(
@@ -435,7 +430,7 @@ fun PulseRoot(
     onRequestUnlock: () -> Unit,
     // R10-a - share-in payload + launcher-shortcut requests from the activity.
     shareInFlow: StateFlow<ShareInPayload?>,
-    onConsumeShareIn: () -> Unit,
+    onConsumeShareIn: (String) -> Unit,
     shortcutFlow: StateFlow<ShortcutRequest?>,
     onConsumeShortcut: () -> Unit,
 ) {
@@ -672,10 +667,12 @@ fun PulseRoot(
                 shareInFlow.collectAsStateWithLifecycle().value?.let { payload ->
                     ShareInSheet(
                         payload = payload,
-                        onDismiss = onConsumeShareIn,
+                        onDismiss = { onConsumeShareIn(payload.id) },
                         onOpenRoom = { id ->
-                            onConsumeShareIn()
-                            pendingRoomId = id
+                            if (shareInFlow.value?.id == payload.id) {
+                                onConsumeShareIn(payload.id)
+                                pendingRoomId = id
+                            }
                         },
                     )
                 }

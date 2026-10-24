@@ -25,6 +25,23 @@ enum PulseMediaSupport {
 
     static let maxImageSourceBytes = 64 * 1024 * 1024
 
+    /// Camera already supplies a UIImage. Render only the bounded output instead
+    /// of allocating another full-resolution JPEG and decoding it again.
+    @MainActor
+    static func downscaledJPEGData(from image: UIImage) -> Data? {
+        let width = image.size.width * image.scale, height = image.size.height * image.scale
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else { return nil }
+        let scale = min(1, maxImageDimension / max(width, height))
+        let size = CGSize(width: max(1, (width * scale).rounded(.down)), height: max(1, (height * scale).rounded(.down)))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1; format.opaque = true
+        let rendered = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.white.setFill(); context.fill(CGRect(origin: .zero, size: size))
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return rendered.jpegData(compressionQuality: imageQuality)
+    }
+
     static func downscaledJPEGData(from data: Data) -> Data? {
         guard data.count <= maxImageSourceBytes,
               let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
@@ -82,6 +99,7 @@ enum PulseMediaSupport {
         var result = Data()
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
+            try Task.checkCancellation()
             let count = stream.read(&buffer, maxLength: buffer.count)
             if count < 0 { throw stream.streamError ?? CocoaError(.fileReadUnknown) }
             if count == 0 { break }

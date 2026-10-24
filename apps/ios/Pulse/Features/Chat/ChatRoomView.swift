@@ -345,6 +345,10 @@ private struct RoomContent: View {
     @State private var searchOpen = false
     @State private var searchQuery = ""
     @State private var photoItem: PhotosPickerItem?
+    @State private var photoPickerOwner: UUID?
+    @State private var documentPickerOwner: UUID?
+    @State private var cameraPickerOwner: UUID?
+    @State private var cameraRequest = UUID()
     @State private var showFileImporter = false
     // D30 camera capture - system camera + TCC state; D31 hold-to-record state.
     @State private var showCamera = false
@@ -1315,13 +1319,12 @@ private struct RoomContent: View {
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(
                 onCapture: { image in
-                    if let data = image.jpegData(compressionQuality: 0.95) {
-                        viewModel.stageImage(data)
-                    } else {
-                        session.toasts.show("Couldn't read the camera photo")
-                    }
+                    guard cameraPickerOwner == session.sessionGeneration,
+                          viewModel.acceptsAttachmentSession(session, conversationId: conversation.id) else { return }
+                    cameraPickerOwner = nil
+                    viewModel.stageCameraImage(image)
                 },
-                onCancel: {},
+                onCancel: { cameraPickerOwner = nil },
             )
             .ignoresSafeArea()
         }
@@ -1330,9 +1333,11 @@ private struct RoomContent: View {
             allowedContentTypes: PulseMediaSupport.documentTypes,
             allowsMultipleSelection: false,
         ) { result in
-            if case .success(let urls) = result, let url = urls.first {
-                viewModel.stageDocument(url: url)
-            }
+            let owner = documentPickerOwner
+            documentPickerOwner = nil
+            guard owner == session.sessionGeneration,
+                  viewModel.acceptsAttachmentSession(session, conversationId: conversation.id) else { return }
+            if case .success(let urls) = result, let url = urls.first { viewModel.stageDocument(url: url) }
         }
     }
 
@@ -1340,7 +1345,10 @@ private struct RoomContent: View {
         chatBodyStyled13
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
-            photoItem = nil
+            let owner = photoPickerOwner
+            photoPickerOwner = nil; photoItem = nil
+            guard owner == session.sessionGeneration,
+                  viewModel.acceptsAttachmentSession(session, conversationId: conversation.id) else { return }
             viewModel.importPhoto(item, session: session)
         }
     }
@@ -2232,15 +2240,7 @@ private struct RoomContent: View {
             // EMB-I - camera shortcut inside the capsule; it
             // rides the EXISTING D30 camera capture flow.
             Button {
-                CameraPicker.requestAccess { granted in
-                    DispatchQueue.main.async {
-                        if granted {
-                            showCamera = true
-                        } else {
-                            cameraDenied = true
-                        }
-                    }
-                }
+                requestCamera()
             } label: {
                 Image(systemName: "camera")
                     .font(.system(size: 20, weight: .medium))
@@ -2375,9 +2375,24 @@ private struct RoomContent: View {
         .background(.thinMaterial)
     }
 
+    private func requestCamera() {
+        guard viewModel.acceptsAttachmentSession(session, conversationId: conversation.id) else { return }
+        guard CameraPicker.isAvailable else { session.toasts.show("This device has no available camera."); return }
+        let owner = session.sessionGeneration, ticket = UUID()
+        cameraPickerOwner = owner; cameraRequest = ticket
+        CameraPicker.requestAccess { granted in
+            DispatchQueue.main.async {
+                guard cameraRequest == ticket, cameraPickerOwner == owner, session.sessionGeneration == owner,
+                      viewModel.acceptsAttachmentSession(session, conversationId: conversation.id) else { return }
+                if granted { showCamera = true } else { cameraPickerOwner = nil; cameraDenied = true }
+            }
+        }
+    }
+
     private var attachMenu: some View {
         Menu {
             Button {
+                photoPickerOwner = session.sessionGeneration
                 showPhotoPicker = true
             } label: {
                 Label("Photo Library", systemImage: "photo")
@@ -2385,19 +2400,12 @@ private struct RoomContent: View {
             // D30 - take a full-resolution shot with the system camera; the
             // file flows through the same staged upload path as the library.
             Button {
-                CameraPicker.requestAccess { granted in
-                    DispatchQueue.main.async {
-                        if granted {
-                            showCamera = true
-                        } else {
-                            cameraDenied = true
-                        }
-                    }
-                }
+                requestCamera()
             } label: {
                 Label("Camera", systemImage: "camera")
             }
             Button {
+                documentPickerOwner = session.sessionGeneration
                 showFileImporter = true
             } label: {
                 Label("Document", systemImage: "folder")
@@ -5348,6 +5356,11 @@ final class RoomViewModel: ObservableObject {
     private var photoImportTask: Task<Void, Never>?
     private var photoImportGeneration = UUID()
 
+    func acceptsAttachmentSession(_ candidate: PulseSession, conversationId: String) -> Bool {
+        session === candidate && candidate.sessionGeneration == readSessionGeneration &&
+            candidate.viewer != nil && self.conversationId == conversationId
+    }
+
     private func cancelPhotoImport() {
         photoImportGeneration = UUID()
         photoImportTask?.cancel(); photoImportTask = nil
@@ -5355,6 +5368,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     func importPhoto(_ item: PhotosPickerItem, session: PulseSession) {
+        guard acceptsAttachmentSession(session, conversationId: conversationId) else { return }
         cancelPhotoImport()
         guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
         let ticket = photoImportGeneration
@@ -5378,12 +5392,21 @@ final class RoomViewModel: ObservableObject {
     }
 
     func stageImage(_ data: Data) {
+        guard let session, acceptsAttachmentSession(session, conversationId: conversationId) else { return }
         cancelPhotoImport()
         guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
         guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: data) else {
             errorText = "Couldn't read that image"
             return
         }
+        stagePreparedImage(jpeg)
+    }
+
+    func stageCameraImage(_ image: UIImage) {
+        guard let session, acceptsAttachmentSession(session, conversationId: conversationId) else { return }
+        cancelPhotoImport()
+        guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
+        guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: image) else { errorText = "Couldn't read the camera photo"; return }
         stagePreparedImage(jpeg)
     }
 
@@ -5403,32 +5426,37 @@ final class RoomViewModel: ObservableObject {
     }
 
     func stageDocument(url: URL) {
+        guard let session, acceptsAttachmentSession(session, conversationId: conversationId) else { return }
         cancelPhotoImport()
         guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
-        let secured = url.startAccessingSecurityScopedResource()
-        defer { if secured { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? PulseMediaSupport.readDocument(url: url) else {
-            errorText = "Couldn't read that document"
-            return
+        guard let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) else {
+            errorText = "That file type isn't supported (pdf, zip, txt, csv)"; return
         }
-        if data.count > PulseMediaSupport.maxDocumentBytes {
-            errorText = "Documents are limited to 10 MB"
-            return
+        let ticket = photoImportGeneration, epoch = session.sessionGeneration
+        uploading = true
+        photoImportTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if photoImportGeneration == ticket { uploading = false; photoImportTask = nil } }
+            let prepared = Task.detached(priority: .userInitiated) {
+                try Task.checkCancellation()
+                let secured = url.startAccessingSecurityScopedResource()
+                defer { if secured { url.stopAccessingSecurityScopedResource() } }
+                let data = try PulseMediaSupport.readDocument(url: url)
+                try Task.checkCancellation()
+                return (PulseMediaSupport.dataUrl(mime: mime, data: data), data.count)
+            }
+            do {
+                let (dataUrl, size) = try await withTaskCancellationHandler(operation: { try await prepared.value }, onCancel: { prepared.cancel() })
+                guard !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch else { return }
+                staged = StagedMedia(kind: .file, dataUrl: dataUrl, fileName: url.lastPathComponent,
+                    fileSize: size, previewURL: nil, viewOnce: false)
+                caption = ""
+            } catch {
+                if !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch {
+                    errorText = "Couldn't read that document (10 MB maximum). Any previous attachment is kept."
+                }
+            }
         }
-        let ext = url.pathExtension
-        guard let mime = PulseMediaSupport.mime(forExtension: ext) else {
-            errorText = "That file type isn't supported (pdf, zip, txt, csv)"
-            return
-        }
-        staged = StagedMedia(
-            kind: .file,
-            dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data),
-            fileName: url.lastPathComponent,
-            fileSize: data.count,
-            previewURL: nil,
-            viewOnce: false,
-        )
-        caption = ""
     }
 
     /// Wave 2 view-once - flips the staged card's burn flag (image sends).
@@ -5456,6 +5484,9 @@ final class RoomViewModel: ObservableObject {
     /// Commit bytes + immutable send metadata before clearing the staged card.
     /// The account outbox owns upload/retry, even after this screen disappears.
     func sendStaged(session: PulseSession) {
+        guard acceptsAttachmentSession(session, conversationId: conversationId) else {
+            errorText = "Return to the original account before sending this attachment."; return
+        }
         guard let media = staged, !uploading else { return }
         guard let viewer = session.viewer, let store = session.store, session.ready else {
             errorText = "The account store is not ready. Your attachment is kept."
