@@ -598,10 +598,14 @@ class GroupCallEngine @Inject constructor(
             GroupCallEvents.ICE -> handleIce(s)
 
             GroupCallEvents.ENDED -> {
-                if (phase == UiPhase.JOINING && matchesPendingGroupAttempt(s, joinedConvId, joinAttemptId)) {
-                    teardownMedia()
-                    phase = UiPhase.ENDED
-                    _snapshot.value = _snapshot.value.copy(phase = phase, summary = "This call is not available to join")
+                // Admission replies must never fall through to call-wide end
+                // handling: a newer attempt may target the very same call ID.
+                if (s.joinAttemptId != null) {
+                    if (phase == UiPhase.JOINING && matchesPendingGroupAttempt(s, joinedConvId, joinAttemptId)) {
+                        teardownMedia()
+                        phase = UiPhase.ENDED
+                        _snapshot.value = _snapshot.value.copy(phase = phase, summary = "This call is not available to join")
+                    }
                     return
                 }
                 val pending = expectedJoin

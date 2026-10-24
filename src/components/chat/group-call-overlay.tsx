@@ -618,11 +618,13 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       }
 
       if (event === 'gcall:ended') {
-        if (stateRef.current === 'joining' && joinAttemptRef.current && payload.joinAttemptId === joinAttemptRef.current &&
-            payload.conversationId === joinedConvRef.current) {
-          teardownMedia()
-          setStateBoth('ended')
-          setSummary('This call is not available to join')
+        if (payload.joinAttemptId !== undefined) {
+          if (stateRef.current === 'joining' && joinAttemptRef.current && payload.joinAttemptId === joinAttemptRef.current &&
+              payload.conversationId === joinedConvRef.current) {
+            teardownMedia()
+            setStateBoth('ended')
+            setSummary('This call is not available to join')
+          }
           return
         }
         if (stateRef.current === 'joining' && expectedJoinRef.current?.roomId === payload.conversationId &&

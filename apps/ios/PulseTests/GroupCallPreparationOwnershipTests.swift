@@ -294,9 +294,13 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         await preparation.value
         let payload = try XCTUnwrap(signals.payloads.first { $0.0 == "gcall:join" }?.1)
         XCTAssertEqual(payload["expectedCallId"] as? String, "observed")
+        e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "callId": "observed", "joinAttemptId": "older-attempt"])
+        XCTAssertEqual(e.uiState, .joining)
         e.handleGroupCallSignal(event: "gcall:state", raw: roster(call: "replacement", ids: ["me", "peer"]))
         XCTAssertEqual(e.uiState, .joining)
         e.handleGroupCallSignal(event: "gcall:state", raw: roster(call: "observed", ids: ["me"]))
+        XCTAssertEqual(e.uiState, .active)
+        e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "callId": "observed", "joinAttemptId": "older-attempt"])
         XCTAssertEqual(e.uiState, .active)
     }
     func testLeaveCapturesTheAttemptBeforeTeardownAndEachNewJoinHasAnotherAttempt() async throws {

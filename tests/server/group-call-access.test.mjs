@@ -45,3 +45,30 @@ test('relay membership verdicts are fail-closed and cannot be borrowed from anot
   const cancelled = new AbortController(); cancelled.abort()
   assert.equal(await make(noFetch)('room', 'reader', cancelled.signal), false)
 })
+
+test('an old admission refusal cannot fall through to terminate the same call under a newer attempt', async () => {
+  const file = await readFile(new URL('../../src/components/chat/group-call-overlay.tsx', import.meta.url), 'utf8')
+  const start = file.indexOf('  const handleGroupCallEvent =')
+  const source = stripTypeScriptTypes(file.slice(start, file.indexOf('  useEffect(', start)))
+  for (const phase of ['joining', 'active']) {
+    let releases = 0
+    const refs = { stateRef: { current: phase }, optionsRef: { current: { meId: 'me' } },
+      joinAttemptRef: { current: 'current-attempt' }, joinedConvRef: { current: 'room' },
+      joinedCallIdRef: { current: phase === 'active' ? 'same-call' : null },
+      expectedJoinRef: { current: phase === 'joining' ? { roomId: 'room', callId: 'same-call' } : null },
+      ringRef: { current: null }, ongoingTargetRef: { current: null } }
+    const noop = () => {}
+    const deps = { ...refs, useCallback: fn => fn, applyRoster: noop, emitCallEvent: noop, ensurePeerConnection: noop,
+      setStateBoth: state => { refs.stateRef.current = state }, setSummary: noop, setRing: noop,
+      setOngoingElsewhere: noop, setOngoingMembers: noop,
+      teardownMedia: () => { releases++; refs.expectedJoinRef.current = null; refs.joinedCallIdRef.current = null; refs.joinedConvRef.current = null } }
+    const handle = new Function(...Object.keys(deps), source + ';return handleGroupCallEvent')(...Object.values(deps))
+    const ended = { conversationId: 'room', callId: 'same-call' }
+    handle('gcall:ended', { ...ended, joinAttemptId: 'old-attempt' })
+    assert.equal(refs.stateRef.current, phase)
+    assert.equal(releases, 0)
+    handle('gcall:ended', phase === 'joining' ? { ...ended, joinAttemptId: 'current-attempt' } : ended)
+    assert.equal(refs.stateRef.current, 'ended')
+    assert.equal(releases, 1)
+  }
+})

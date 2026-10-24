@@ -694,11 +694,15 @@ public final class PulseGroupCallEngine: ObservableObject {
             }
 
         case "gcall:ended":
-            if uiState == .joining, let joinAttemptId, raw["conversationId"] as? String == joinedConv,
-               raw["joinAttemptId"] as? String == joinAttemptId {
-                teardownMedia()
-                uiState = .ended
-                summary = "This call is not available to join"
+            // An admission reply is not a call-wide termination, even if an
+            // old and current attempt reference the same observed call ID.
+            if raw["joinAttemptId"] != nil {
+                if uiState == .joining, let joinAttemptId, raw["conversationId"] as? String == joinedConv,
+                   raw["joinAttemptId"] as? String == joinAttemptId {
+                    teardownMedia()
+                    uiState = .ended
+                    summary = "This call is not available to join"
+                }
                 return
             }
             if uiState == .joining, let expectedJoin, raw["conversationId"] as? String == expectedJoin.roomId,
