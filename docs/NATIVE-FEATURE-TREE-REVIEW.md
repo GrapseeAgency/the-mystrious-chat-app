@@ -3951,3 +3951,9 @@ are NOT a claim that all financial endpoints are safe. Autumn preserved; no full
 
 - GitHub Android `build` checks for 5854c5f (job 120822703784) and 609dad3 (120824087128) failed at `ReadStateApiTest.manualUnreadRequiresExactOwnerRoomVersionAndDesiredBoolean`: the supposedly valid response was rejected. Inspection confirmed its manually concatenated raw string omitted the closing quote of `userId`; production strict parsing correctly refused it.
 - Replaced that fixture with a JSON object builder for every valid/malformed-field variant and included the actual result in assertion diagnostics. Production decoding/validation is unchanged. Corrected native execution is still pending; this is not a successful-build claim.
+
+### Android receipt token-type enforcement (2026-10-24)
+
+- Corrected-fixture job 120825230842 revealed a real decoder behavior: the string-boolean variant was accepted even with `isLenient=false`. The earlier assumption that strict decoding alone enforced boolean token types was wrong.
+- Manual-unread acceptance now validates the JSON object tokens before DTO decoding: `ok`/`manualUnread` must be unquoted booleans, version must be the unquoted supported number, and room/owner must be strings. Added quoted-success, quoted-version and numeric-owner refusal cases alongside the existing string/null/omitted state matrix. Production badge confirmation remains fail-closed.
+- Two changed Kotlin files syntax-parse; corrected Android execution remains pending. Backend behavior/theme unchanged.

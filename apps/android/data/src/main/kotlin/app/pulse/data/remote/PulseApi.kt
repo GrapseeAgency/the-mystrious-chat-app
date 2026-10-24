@@ -420,10 +420,23 @@ class PulseApi(
     /** Exact owner/room/desired-state receipt before changing a cached badge. */
     suspend fun markUnread(conversationId: String, userId: String, on: Boolean): PulseResult<Unit> =
         patch("/api/conversations/$conversationId/mark-unread", jsonOf("userId" to userId, "on" to on)) { raw ->
-            // PulseJson is lenient for legacy message payloads. Mutation receipts
-            // must not coerce strings such as "true" into confirmation booleans.
-            val receipt = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-                .decodeFromString(app.pulse.protocol.ManualUnreadReceiptDto.serializer(), raw)
+            // Even the strict decoder accepts quoted booleans. Check JSON token
+            // types before deserialization: a string is not a committed boolean.
+            val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            val fields = json.parseToJsonElement(raw) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Unread receipt must be an object")
+            for (key in listOf("ok", "manualUnread")) {
+                val value = fields[key] as? JsonPrimitive
+                if (value == null || value.isString || value.content !in listOf("true", "false")) {
+                    throw kotlinx.serialization.SerializationException("Unread receipt requires boolean $key")
+                }
+            }
+            val version = fields["unreadReceiptVersion"] as? JsonPrimitive
+            if (version == null || version.isString || version.content != "1" ||
+                listOf("conversationId", "userId").any { (fields[it] as? JsonPrimitive)?.isString != true }) {
+                throw kotlinx.serialization.SerializationException("Unread receipt identity or version is invalid")
+            }
+            val receipt = json.decodeFromString(app.pulse.protocol.ManualUnreadReceiptDto.serializer(), raw)
             if (!receipt.ok || receipt.unreadReceiptVersion != 1 || receipt.conversationId != conversationId ||
                 receipt.userId != userId || receipt.manualUnread != on) {
                 throw kotlinx.serialization.SerializationException("Unread state was not confirmed. Refresh before retrying.")

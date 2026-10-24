@@ -44,17 +44,19 @@ class ReadStateApiTest {
         } finally { http.close() }
     }
     @Test fun manualUnreadRequiresExactOwnerRoomVersionAndDesiredBoolean() = runTest {
-        for (on in listOf(true, false)) for (mode in listOf("valid", "legacy", "false", "version", "room", "owner", "opposite", "missing", "null", "string")) {
+        for (on in listOf(true, false)) for (mode in listOf("valid", "legacy", "false", "version", "room", "owner", "opposite", "missing", "null", "string", "ok-string", "version-string", "numeric-owner")) {
             val http = HttpClient(MockEngine { request ->
                 assertEquals("PATCH", request.method.value)
                 assertEquals("/api/conversations/room/mark-unread", request.url.encodedPath)
                 assertTrue((request.body as TextContent).text.contains("\"on\":$on"))
                 val body = buildJsonObject {
-                    put("ok", mode != "false")
+                    if (mode == "ok-string") put("ok", "true") else put("ok", mode != "false")
                     if (mode != "legacy") {
-                        put("unreadReceiptVersion", if (mode == "version") 0 else 1)
+                        if (mode == "version-string") put("unreadReceiptVersion", "1")
+                        else put("unreadReceiptVersion", if (mode == "version") 0 else 1)
                         put("conversationId", if (mode == "room") "other" else "room")
-                        put("userId", if (mode == "owner") "other" else "me")
+                        if (mode == "numeric-owner") put("userId", 1)
+                        else put("userId", if (mode == "owner") "other" else "me")
                         when (mode) {
                             "missing" -> Unit
                             "null" -> put("manualUnread", JsonNull)
