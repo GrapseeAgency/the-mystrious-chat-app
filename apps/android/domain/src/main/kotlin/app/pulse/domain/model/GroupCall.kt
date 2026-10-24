@@ -64,6 +64,7 @@ data class GroupCallSignalOut(
     /** The emitting member identity (join only) - id/name/color/avatar. */
     val user: GroupCallMember? = null,
     val expectedCallId: String? = null,
+    val joinAttemptId: String? = null,
     val callId: String = "",
     val from: String = "",
     val to: String = "",

@@ -145,6 +145,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   const expectedJoinRef = useRef<{ roomId: string; callId: string } | null>(null)
   const ongoingTargetRef = useRef<{ roomId: string; callId: string } | null>(null)
   const joinGenerationRef = useRef(0)
+  const joinAttemptRef = useRef<string | null>(null)
 
   useEffect(() => {
     optionsRef.current = { meId, meName, meColor, meAvatar, conversationId }
@@ -189,6 +190,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   }, [])
 
   const teardownMedia = useCallback(() => {
+    joinAttemptRef.current = null
     joinGenerationRef.current++
     expectedJoinRef.current = null
     const stalePeers = Array.from(peersRef.current.values())
@@ -334,6 +336,8 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       haptic(14)
       joinIntentRef.current = true
       const ticket = ++joinGenerationRef.current
+      const attempt = crypto.randomUUID()
+      joinAttemptRef.current = attempt
       const opts = { ...optionsRef.current }
       const isCurrent = () => joinGenerationRef.current === ticket && stateRef.current === 'joining' && optionsRef.current.meId === opts.meId
       expectedJoinRef.current = expectedCallId === undefined ? null : { roomId: targetConvId, callId: expectedCallId }
@@ -352,7 +356,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
           pendingRingRef.current = ringOthers
           joinedCallIdRef.current = null
           emitCallEvent('gcall:join', {
-            conversationId: targetConvId,
+            conversationId: targetConvId, joinAttemptId: attempt,
             ...(expectedCallId === undefined ? {} : { expectedCallId }),
             kind: resolved,
             user: { id: opts.meId, name: opts.meName, color: opts.meColor, avatar: opts.meAvatar },
@@ -398,7 +402,9 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     haptic(12)
     if (current === 'joining' || current === 'active') {
       if (conv) {
-        emitCallEvent('gcall:leave', { conversationId: conv, from: optionsRef.current.meId })
+        emitCallEvent('gcall:leave', { conversationId: conv, from: optionsRef.current.meId,
+          ...(joinedCallIdRef.current ? { callId: joinedCallIdRef.current } : {}),
+          ...(joinAttemptRef.current ? { joinAttemptId: joinAttemptRef.current } : {}) })
       }
       const elapsed = joinedAtRef.current > 0 ? (Date.now() - joinedAtRef.current) / 1000 : 0
       teardownMedia()
@@ -731,7 +737,9 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       expectedJoinRef.current = null
       const conv = joinedConvRef.current
       if (conv) {
-        emitCallEvent('gcall:leave', { conversationId: conv, from: optionsRef.current.meId })
+        emitCallEvent('gcall:leave', { conversationId: conv, from: optionsRef.current.meId,
+          ...(joinedCallIdRef.current ? { callId: joinedCallIdRef.current } : {}),
+          ...(joinAttemptRef.current ? { joinAttemptId: joinAttemptRef.current } : {}) })
       }
       for (const pc of peersRef.current.values()) {
         try {

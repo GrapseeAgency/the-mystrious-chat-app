@@ -180,7 +180,8 @@ public enum GroupCallWire {
         userName: String,
         userColor: String?,
         userAvatar: String?,
-        expectedCallId: String? = nil
+        expectedCallId: String? = nil,
+        joinAttemptId: String? = nil
     ) -> [String: Any] {
         var payload: [String: Any] = [
             "conversationId": conversationId,
@@ -193,6 +194,7 @@ public enum GroupCallWire {
             ],
         ]
         if let expectedCallId { payload["expectedCallId"] = expectedCallId }
+        if let joinAttemptId { payload["joinAttemptId"] = joinAttemptId }
         return payload
     }
 
@@ -260,7 +262,10 @@ public enum GroupCallWire {
     }
 
     /// gcall:leave { conversationId, from }
-    public static func leavePayload(conversationId: String, from: String) -> [String: Any] {
-        ["conversationId": conversationId, "from": from]
+    public static func leavePayload(conversationId: String, from: String, callId: String? = nil, joinAttemptId: String? = nil) -> [String: Any] {
+        var payload: [String: Any] = ["conversationId": conversationId, "from": from]
+        if let callId { payload["callId"] = callId }
+        if let joinAttemptId { payload["joinAttemptId"] = joinAttemptId }
+        return payload
     }
 }

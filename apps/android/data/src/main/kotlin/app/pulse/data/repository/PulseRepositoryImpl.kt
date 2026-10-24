@@ -3364,6 +3364,7 @@ class PulseRepositoryImpl constructor(
                     avatar = signal.user?.avatar,
                 ),
                 expectedCallId = signal.expectedCallId,
+                joinAttemptId = signal.joinAttemptId,
             )
             app.pulse.protocol.GroupCallEvents.OFFER -> socket.emitGroupCallOffer(
                 GroupCallOfferDto(
@@ -3384,7 +3385,7 @@ class PulseRepositoryImpl constructor(
                     candidate = signal.candidate ?: "", sdpMid = signal.sdpMid, sdpMLineIndex = signal.sdpMLineIndex,
                 ),
             )
-            app.pulse.protocol.GroupCallEvents.LEAVE -> socket.emitGroupCallLeave(signal.conversationId, signal.from)
+            app.pulse.protocol.GroupCallEvents.LEAVE -> socket.emitGroupCallLeave(signal.conversationId, signal.from, signal.callId.takeIf { it.isNotBlank() }, signal.joinAttemptId)
         }
     }
 

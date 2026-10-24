@@ -651,6 +651,7 @@ interface GroupCallMember {
   color: string
   avatar: string | null
   joinedAt: number
+  joinAttemptId?: string // per-device intent; never a room-wide leave capability
 }
 
 interface GroupCallSession {
@@ -1765,7 +1766,12 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !kind || !me) return
     if (socketUser.get(socket.id) !== me.userId) return
 
+    const joinAttemptId = data.joinAttemptId === undefined ? undefined : asTrimmedString(data.joinAttemptId)
+    if (joinAttemptId !== undefined && (!joinAttemptId || joinAttemptId.length > 128)) return
     let call = groupCalls.get(conversationId)
+    const priorMember = call?.members.get(me.userId)
+    // A legacy/unbound replay cannot remove a modern admission's leave fence.
+    if (priorMember?.socketId === socket.id && priorMember.joinAttemptId && !joinAttemptId) return
     // An invitation/probe join is not permission to CREATE a replacement call
     // or take over this account's already-admitted device. Check before any leave.
     if (data.expectedCallId !== undefined) {
@@ -1809,8 +1815,12 @@ io.on('connection', (socket: Socket) => {
         console.log(`[gcall] join rejected (full) conv=${conversationId} user=${me.userId}`)
         return
       }
-      call.members.set(me.userId, { ...me, socketId: socket.id, joinedAt: Date.now() })
+      call.members.set(me.userId, { ...me, socketId: socket.id, joinedAt: Date.now(), joinAttemptId })
     }
+    // Rejoining the same live call on the same device transfers ownership to
+    // this intent even when the roster/call ID itself did not change.
+    const admitted = call.members.get(me.userId)!
+    admitted.joinAttemptId = joinAttemptId
     socket.join(gcallRoomName(conversationId))
     groupCallByUser.set(me.userId, conversationId)
     broadcastGcallState(conversationId)
@@ -1825,6 +1835,14 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !me) return
     if (socketUser.get(socket.id) !== me) return
     if (groupCallByUser.get(me) !== conversationId) return
+    const call = groupCalls.get(conversationId)
+    const member = call?.members.get(me)
+    if (!call || member?.socketId !== socket.id) return
+    if (data.callId !== undefined && asTrimmedString(data.callId) !== call.callId) return
+    if (member.joinAttemptId) {
+      if (asTrimmedString(data.joinAttemptId) !== member.joinAttemptId) return
+    } else if (data.joinAttemptId !== undefined) return
+    // Validate before leaving the room as well as before mutating membership.
     socket.leave(gcallRoomName(conversationId))
     leaveGroupCall(me, 'leave', socket.id)
   })

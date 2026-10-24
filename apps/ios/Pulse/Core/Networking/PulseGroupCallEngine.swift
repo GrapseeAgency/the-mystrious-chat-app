@@ -119,6 +119,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     private var pendingLocalIce: [String: [[String: Any]]] = [:]
     private var negotiatingPeers: Set<String> = []
     private var expectedJoin: (roomId: String, callId: String)?
+    private var joinAttemptId: String?
     private var joinedCallId: String?
     private var joinSentAt: Date?
     private var pendingRing = false
@@ -253,6 +254,8 @@ public final class PulseGroupCallEngine: ObservableObject {
             signaling.send(event: "gcall:leave", payload: GroupCallWire.leavePayload(
                 conversationId: conv,
                 from: viewer.id,
+                callId: joinedCallId,
+                joinAttemptId: joinAttemptId,
             ))
         }
         let elapsed = joinedAt.map { Int(Date().timeIntervalSince($0).rounded()) } ?? 0
@@ -337,6 +340,7 @@ public final class PulseGroupCallEngine: ObservableObject {
         ring = nil
         let ticket = UUID()
         joinGeneration = ticket
+        joinAttemptId = ticket.uuidString
         preparationTask = Task { await beginJoin(targetConvId, wanted: wanted, ringOthers: ringOthers, title: title, ticket: ticket, expectedCallId: expectedCallId) }
     }
 
@@ -411,6 +415,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             userColor: viewer.color,
             userAvatar: viewer.avatar,
             expectedCallId: expectedCallId,
+            joinAttemptId: ticket.uuidString,
         )) else {
             handleSocketDisconnected()
             return
@@ -771,6 +776,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     // teardown
 
     private func teardownMedia() {
+        joinAttemptId = nil
         expectedJoin = nil
         joinGeneration = UUID()
         preparationTask?.cancel()

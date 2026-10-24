@@ -443,8 +443,8 @@ class PulseSocketClient(
     // engine tears down honestly on disconnect instead).
 
     /** gcall:join - creates/joins the conversation's ONE live group call. */
-    fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto, expectedCallId: String? = null) {
-        emitCall(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user, expectedCallId))
+    fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto, expectedCallId: String? = null, joinAttemptId: String? = null) {
+        emitCall(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user, expectedCallId, joinAttemptId))
     }
 
     /** gcall:offer - joiner → existing member (targeted relay). */
@@ -463,8 +463,8 @@ class PulseSocketClient(
     }
 
     /** gcall:leave - explicit exit (roster rebroadcast; last member ends the call). */
-    fun emitGroupCallLeave(conversationId: String, from: String) {
-        emitCall(GroupCallEvents.LEAVE, groupCallLeavePayload(conversationId, from))
+    fun emitGroupCallLeave(conversationId: String, from: String, callId: String? = null, joinAttemptId: String? = null) {
+        emitCall(GroupCallEvents.LEAVE, groupCallLeavePayload(conversationId, from, callId, joinAttemptId))
     }
 
     // Wave-5 voice/stage/space emission (wire-perfect payloads)

@@ -360,4 +360,12 @@ final class PulseGroupCallPolicyTests: XCTestCase {
             XCTAssertEqual(join["expectedCallId"] as? String, expected)
         }
     }
+    func testLeavePayloadCarriesTheJoinAttemptBeforeRosterAndCallIDAfterAdmission() {
+        let pending = GroupCallWire.leavePayload(conversationId: "room", from: "me", joinAttemptId: "attempt-A")
+        XCTAssertNil(pending["callId"])
+        XCTAssertEqual(pending["joinAttemptId"] as? String, "attempt-A")
+        let admitted = GroupCallWire.leavePayload(conversationId: "room", from: "me", callId: "call-A", joinAttemptId: "attempt-A")
+        XCTAssertEqual(admitted["callId"] as? String, "call-A")
+        XCTAssertEqual(admitted["joinAttemptId"] as? String, "attempt-A")
+    }
 }

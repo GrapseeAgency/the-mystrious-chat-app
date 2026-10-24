@@ -130,7 +130,9 @@ fun groupCallJoinPayload(
     kind: String,
     user: GroupCallMemberDto,
     expectedCallId: String? = null,
+    joinAttemptId: String? = null,
 ): JsonObject = buildJsonObject {
+    if (joinAttemptId != null) put("joinAttemptId", joinAttemptId)
     if (expectedCallId != null) put("expectedCallId", expectedCallId)
     put("conversationId", conversationId)
     put("kind", kind)
@@ -173,7 +175,9 @@ fun GroupCallIceDto.toJsonObject(): JsonObject = buildJsonObject {
 }
 
 /** gcall:leave - explicit exit (roster rebroadcast; last member ends the call). */
-fun groupCallLeavePayload(conversationId: String, from: String): JsonObject = buildJsonObject {
+fun groupCallLeavePayload(conversationId: String, from: String, callId: String? = null, joinAttemptId: String? = null): JsonObject = buildJsonObject {
+    if (callId != null) put("callId", callId)
+    if (joinAttemptId != null) put("joinAttemptId", joinAttemptId)
     put("conversationId", conversationId)
     put("from", from)
 }

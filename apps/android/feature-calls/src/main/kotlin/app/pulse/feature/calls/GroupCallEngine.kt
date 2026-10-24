@@ -168,6 +168,7 @@ class GroupCallEngine @Inject constructor(
     private var ringTask: Job? = null
     private var callRepository: PulseRepository? = null
     private var expectedJoin: Pair<String, String>? = null
+    private var joinAttemptId: String? = null
     private var ringAfterAdmission = false
     private var joinSentAtMs = 0L
     private var ownsForegroundService = false
@@ -370,7 +371,8 @@ class GroupCallEngine @Inject constructor(
         if (currentPhase != UiPhase.JOINING && currentPhase != UiPhase.ACTIVE) return
         val target = callRepository
         if (conv != null && target != null) {
-            val signal = GroupCallSignalOut(event = GroupCallEvents.LEAVE, conversationId = conv, from = meId)
+            val signal = GroupCallSignalOut(event = GroupCallEvents.LEAVE, conversationId = conv, from = meId,
+                callId = currentCallId, joinAttemptId = joinAttemptId)
             scope.launch { runCatching { target.emitGroupCall(signal) } }
         }
         val elapsedSec = if (joinedAtMs > 0) (System.currentTimeMillis() - joinedAtMs) / 1000 else 0
@@ -441,6 +443,8 @@ class GroupCallEngine @Inject constructor(
         if (target.viewerId != meId) return
         callRepository = target
         val ticket = ++generation
+        val attempt = java.util.UUID.randomUUID().toString()
+        joinAttemptId = attempt
         probeRevision++
         joinIntent = true
         expectedJoin = expectedCallId?.let { targetConvId to it }
@@ -467,7 +471,7 @@ class GroupCallEngine @Inject constructor(
                 joinedConvId = targetConvId
                 ringAfterAdmission = ringOthers
                 joinSentAtMs = System.currentTimeMillis()
-                emitSignal(GroupCallSignalOut(event = GroupCallEvents.JOIN, conversationId = targetConvId, expectedCallId = expectedCallId,
+                emitSignal(GroupCallSignalOut(event = GroupCallEvents.JOIN, conversationId = targetConvId, expectedCallId = expectedCallId, joinAttemptId = attempt,
                     kind = kind, user = GroupCallMember(id = meId, name = meName, color = meColor, avatar = null)))
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -973,6 +977,7 @@ class GroupCallEngine @Inject constructor(
 
     /** Invalidate first; each native release is independent so one failure cannot retain the mic. */
     private fun teardownMedia() {
+        joinAttemptId = null
         expectedJoin = null
         generation++
         probeRevision++

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { webcrypto } from 'node:crypto'
 import { stripTypeScriptTypes } from 'node:module'
 import { dispatchGroupCallRing, relayGroupCallRing, GroupCallRingError } from '../../src/lib/group-call-ringing.ts'
 
@@ -130,13 +131,13 @@ test('shared web join retains the expected call and releases permission results 
     let approve, stopped = 0
     const emitted = [], refs = {
       localStreamRef: { current: null }, kindRef: { current: 'voice' }, stateRef: { current: 'idle' },
-      joinIntentRef: { current: false }, joinGenerationRef: { current: 0 },
+      joinIntentRef: { current: false }, joinGenerationRef: { current: 0 }, joinAttemptRef: { current: null },
       optionsRef: { current: { meId: 'me', meName: 'Me', meColor: 'amber', meAvatar: null, conversationId: 'room' } },
       expectedJoinRef: { current: null }, ringRef: { current: null }, joinedConvRef: { current: null },
       pendingRingRef: { current: false }, joinedCallIdRef: { current: null },
     }
     const noop = () => {}
-    const deps = { ...refs, useCallback: callback => callback, enabled: true, callChannelConnected: true,
+    const deps = { ...refs, crypto: webcrypto, useCallback: callback => callback, enabled: true, callChannelConnected: true,
       navigator: { mediaDevices: { getUserMedia: () => new Promise(resolve => { approve = resolve }) } },
       setLocalStream: noop, setCameraEnabled: noop, DOMException, toast: Object.assign(noop, { error: noop }),
       setKind: noop, haptic: noop, setError: noop, setSummary: noop, setRing: noop,
@@ -154,6 +155,8 @@ test('shared web join retains the expected call and releases permission results 
       assert.equal(stopped, 0)
       assert.equal(emitted.length, 1)
       assert.equal(emitted[0].payload.expectedCallId, 'observed-call')
+      assert.equal(emitted[0].payload.joinAttemptId, refs.joinAttemptRef.current)
+      assert.ok(emitted[0].payload.joinAttemptId)
       assert.equal(emitted[0].payload.user.id, 'me')
     } else {
       assert.equal(stopped, 1)

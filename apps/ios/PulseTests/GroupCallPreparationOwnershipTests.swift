@@ -299,4 +299,27 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         e.handleGroupCallSignal(event: "gcall:state", raw: roster(call: "observed", ids: ["me"]))
         XCTAssertEqual(e.uiState, .active)
     }
+    func testLeaveCapturesTheAttemptBeforeTeardownAndEachNewJoinHasAnotherAttempt() async throws {
+        let media = Media(), signals = Signals()
+        media.lendAudio = true
+        let e = engine(media, signals)
+        defer { e.stop() }
+        try await join(e, media)
+        let first = try XCTUnwrap(signals.payloads.last { $0.0 == "gcall:join" }?.1["joinAttemptId"] as? String)
+        XCTAssertFalse(first.isEmpty)
+        e.leaveCall() // no roster was read yet, so there is no admitted call ID
+        let cancelled = try XCTUnwrap(signals.payloads.last { $0.0 == "gcall:leave" }?.1)
+        XCTAssertEqual(cancelled["joinAttemptId"] as? String, first)
+        XCTAssertNil(cancelled["callId"])
+        e.dismissSummary()
+        try await join(e, media)
+        let second = try XCTUnwrap(signals.payloads.last { $0.0 == "gcall:join" }?.1["joinAttemptId"] as? String)
+        XCTAssertNotEqual(first, second)
+        e.handleGroupCallSignal(event: "gcall:state", raw: roster())
+        e.leaveCall()
+        let left = try XCTUnwrap(signals.payloads.last { $0.0 == "gcall:leave" }?.1)
+        XCTAssertEqual(left["joinAttemptId"] as? String, second)
+        XCTAssertEqual(left["callId"] as? String, "current")
+        XCTAssertEqual(cancelled["joinAttemptId"] as? String, first)
+    }
 }

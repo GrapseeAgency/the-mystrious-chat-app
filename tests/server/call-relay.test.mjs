@@ -54,9 +54,9 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       socket.emit('join', { userId: id })
       await ack
     }
-    async function join(socket, id, room = 'room') {
+    async function join(socket, id, room = 'room', joinAttemptId) {
       const state = event(socket, 'gcall:state', row => row.conversationId === room)
-      socket.emit('gcall:join', { conversationId: room, kind: 'voice', user: { id, name: id } })
+      socket.emit('gcall:join', { conversationId: room, kind: 'voice', user: { id, name: id }, ...(joinAttemptId === undefined ? {} : { joinAttemptId }) })
       return state
     }
     const alice = await connect('alice'), idleAlice = await connect('alice')
@@ -135,6 +135,47 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       assert.equal((await read('bound-room')).callId, replacement.callId)
       assert.deepEqual((await read('bound-room')).members.map(row => row.id), ['bound-host'])
       host.disconnect(); otherHostDevice.disconnect(); joiner.disconnect()
+    })
+
+    await t.test('leave and pre-ack cancellation belong to one join attempt, not the room', async () => {
+      const owner = await connect('intent-owner'), peer = await connect('intent-peer')
+      const first = await join(owner, 'intent-owner', 'intent-room', 'attempt-A')
+      const second = await join(owner, 'intent-owner', 'intent-room', 'attempt-B')
+      assert.equal(first.callId, second.callId)
+      const leave = patch => owner.emit('gcall:leave', { conversationId: 'intent-room', from: 'intent-owner', ...patch })
+      const read = async () => (await (await fetch(`${base}/gcall?conversationId=intent-room`)).json()).state
+      for (const patch of [{}, { joinAttemptId: 'attempt-A' }, { callId: first.callId, joinAttemptId: 'attempt-A' },
+        { callId: 'different-call', joinAttemptId: 'attempt-B' }]) {
+        leave(patch); await barrier(owner, 'intent-owner')
+        assert.deepEqual((await read()).members.map(row => row.id), ['intent-owner'])
+      }
+      // A legacy replay must not downgrade the modern member's leave fence.
+      owner.emit('gcall:join', { conversationId: 'intent-room', kind: 'voice', user: { id: 'intent-owner' } })
+      leave({}); await barrier(owner, 'intent-owner')
+      assert.equal((await read()).callId, first.callId)
+      // Refused leaves must not even unsubscribe the admitted socket from its roster.
+      const stillSubscribed = event(owner, 'gcall:state', row => row.members.length === 2)
+      await join(peer, 'intent-peer', 'intent-room')
+      await stillSubscribed
+      leave({ joinAttemptId: 'attempt-B', callId: second.callId })
+      await barrier(owner, 'intent-owner')
+      assert.deepEqual((await read()).members.map(row => row.id), ['intent-peer'])
+      peer.emit('gcall:leave', { conversationId: 'intent-room', from: 'intent-peer' })
+      await barrier(peer, 'intent-peer')
+      const replacement = await join(owner, 'intent-owner', 'intent-room', 'attempt-C')
+      assert.notEqual(replacement.callId, first.callId)
+      leave({ callId: first.callId, joinAttemptId: 'attempt-B' })
+      await barrier(owner, 'intent-owner')
+      assert.equal((await read()).callId, replacement.callId)
+      leave({ joinAttemptId: 'attempt-C' }); await barrier(owner, 'intent-owner')
+      assert.equal(await read(), null)
+      // Cancel immediately after sending JOIN, before reading its roster/call ID.
+      const ended = event(owner, 'gcall:ended', row => row.conversationId === 'intent-room')
+      owner.emit('gcall:join', { conversationId: 'intent-room', kind: 'voice', user: { id: 'intent-owner' }, joinAttemptId: 'attempt-D' })
+      leave({ joinAttemptId: 'attempt-D' })
+      await ended; await barrier(owner, 'intent-owner')
+      assert.equal(await read(), null)
+      owner.disconnect(); peer.disconnect()
     })
 
     let activeAlice = alice

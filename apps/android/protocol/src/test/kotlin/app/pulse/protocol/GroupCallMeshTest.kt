@@ -256,4 +256,15 @@ class GroupCallMeshTest {
         // Even an invalid explicit expectation is retained: never downgrade it to create.
         assertTrue(groupCallJoinPayload("room", "voice", user, "").containsKey("expectedCallId"))
     }
+    @Test fun `leave payload retains the exact join intent before and after call acknowledgement`() {
+        val user = GroupCallMemberDto(id = "me")
+        val join = groupCallJoinPayload("room", "voice", user, joinAttemptId = "attempt-A")
+        assertEquals("attempt-A", join["joinAttemptId"]!!.jsonPrimitive.content)
+        val pendingLeave = groupCallLeavePayload("room", "me", joinAttemptId = "attempt-A")
+        assertEquals("attempt-A", pendingLeave["joinAttemptId"]!!.jsonPrimitive.content)
+        assertFalse(pendingLeave.containsKey("callId"))
+        val admittedLeave = groupCallLeavePayload("room", "me", "call-A", "attempt-A")
+        assertEquals("call-A", admittedLeave["callId"]!!.jsonPrimitive.content)
+        assertEquals("attempt-A", admittedLeave["joinAttemptId"]!!.jsonPrimitive.content)
+    }
 }
