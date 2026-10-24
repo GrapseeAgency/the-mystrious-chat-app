@@ -61,9 +61,10 @@ test('relay acknowledgement must bind call, caller, conversation, version and ab
 
 test('actual relay refuses the absolute deadline and never trusts a supplied expiry', async () => {
   const file = await readFile(new URL('../../mini-services/pulse-socket/index.ts', import.meta.url), 'utf8')
-  const source = stripTypeScriptTypes(file.slice(file.indexOf('async function handleNotify('), file.indexOf('type TypingBody =')))
+  const source = stripTypeScriptTypes(file.slice(file.indexOf('function liveGroupCallMember('), file.indexOf('/** Identity checks precede removal:')) +
+    file.slice(file.indexOf('async function handleNotify('), file.indexOf('type TypingBody =')))
   let clock = 1_000
-  const call = { callId: 'call', kind: 'voice', createdAt: clock, members: new Map([['caller', {}]]) }
+  const call = { callId: 'call', kind: 'voice', createdAt: clock, members: new Map([['caller', { accessValidUntil: 60_000 }]]) }
   const events = []
   const deps = {
     readJsonBody: async req => req.body, asTrimmedString: value => typeof value === 'string' ? value.trim() : '',

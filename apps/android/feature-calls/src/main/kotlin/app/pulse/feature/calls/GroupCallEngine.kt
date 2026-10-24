@@ -618,7 +618,11 @@ class GroupCallEngine @Inject constructor(
                 if (matchesGroupCall(s, joinedConvId, currentCallId)) {
                     teardownMedia()
                     phase = UiPhase.ENDED
-                    _snapshot.value = _snapshot.value.copy(phase = UiPhase.ENDED, summary = "Call ended")
+                    _snapshot.value = _snapshot.value.copy(phase = UiPhase.ENDED, summary = when (s.reason) {
+                        "membership-revoked" -> "You no longer have access to this call"
+                        "access-unavailable" -> "Call access could not be verified"
+                        else -> "Call ended"
+                    })
                 }
                 if (s.conversationId == activeConversationId && s.callId == _snapshot.value.ongoingCallId) {
                     _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList(), ongoingCallId = null)

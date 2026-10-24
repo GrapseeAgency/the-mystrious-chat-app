@@ -345,4 +345,44 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         e.handleGroupCallSignal(event: "gcall:full", raw: ["conversationId": "room", "joinAttemptId": current])
         XCTAssertEqual(e.uiState, .idle)
     }
+    func testMembershipRevocationEndsOnlyTheCurrentCallAndReleasesItsMicrophone() async throws {
+        for reason in ["membership-revoked", "access-unavailable"] {
+            let media = Media(), signals = Signals()
+            media.lendAudio = true
+            var restores = 0
+            let e = engine(media, signals, restore: { restores += 1 })
+            defer { e.handleSocketDisconnected(); e.dismissRing() }
+            try await join(e, media)
+            e.handleGroupCallSignal(event: "gcall:state", raw: roster())
+            e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "callId": "old", "reason": reason])
+            XCTAssertEqual(e.uiState, .active)
+            e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "callId": "current", "reason": reason])
+            XCTAssertEqual(e.uiState, .ended)
+            XCTAssertEqual(media.audioEnabled.last, false)
+            XCTAssertEqual(restores, 1)
+            XCTAssertEqual(e.summary, reason == "membership-revoked" ? "You no longer have access to this call" : "Call access could not be verified")
+        }
+    }
+    func testRevokedPeerRosterClosesOnlyThatConnectionAndRejectsItsLateOffer() async throws {
+        let media = Media(), signals = Signals(), peer = Peer()
+        media.lendAudio = true
+        media.peer = peer
+        let e = engine(media, signals)
+        defer { e.handleSocketDisconnected(); e.dismissRing() }
+        let offered = expectation(description: "peer offer pending")
+        peer.offerRequested = { offered.fulfill() }
+        try await join(e, media)
+        e.handleGroupCallSignal(event: "gcall:state", raw: roster(ids: ["me", "z-peer"]))
+        await fulfillment(of: [offered], timeout: 1)
+        e.handleGroupCallSignal(event: "gcall:state", raw: roster(ids: ["me"]))
+        XCTAssertTrue(peer.closed)
+        XCTAssertEqual(e.uiState, .active)
+        XCTAssertEqual(media.audioEnabled.last, true)
+        let noLocal = expectation(description: "revoked peer cannot install late local SDP")
+        noLocal.isInverted = true
+        peer.onSetLocal = { noLocal.fulfill() }
+        peer.offer?.resume(returning: "late-offer")
+        await fulfillment(of: [noLocal], timeout: 0.2)
+        XCTAssertFalse(signals.events.contains("gcall:offer"))
+    }
 }

@@ -25,7 +25,7 @@ test('internal call access refuses missing/wrong keys and returns only a version
 
 test('relay membership verdicts are fail-closed and cannot be borrowed from another room or user', async () => {
   const file = await readFile(new URL('../../mini-services/pulse-socket/index.ts', import.meta.url), 'utf8')
-  const source = stripTypeScriptTypes(file.slice(file.indexOf('async function groupCallAccessAllowed('), file.indexOf('type PrivacyFlags =')))
+  const source = stripTypeScriptTypes(file.slice(file.indexOf('type GroupCallAccessVerdict ='), file.indexOf('type PrivacyFlags =')))
   const valid = { callAccessVersion: 1, conversationId: 'room', userId: 'reader', allowed: true }
   const make = (fetch, key = 'key') => new Function('fetch', 'PRIVACY_KEY', 'NEXT_API_BASE', source + ';return groupCallAccessAllowed')(fetch, key, 'https://authority.test')
   const signal = new AbortController().signal
@@ -70,5 +70,18 @@ test('an old admission refusal cannot fall through to terminate the same call un
     handle('gcall:ended', phase === 'joining' ? { ...ended, joinAttemptId: 'current-attempt' } : ended)
     assert.equal(refs.stateRef.current, 'ended')
     assert.equal(releases, 1)
+  }
+})
+
+test('only an explicit bound negative verdict is revocation; outages and malformed replies are unavailable', async () => {
+  const file = await readFile(new URL('../../mini-services/pulse-socket/index.ts', import.meta.url), 'utf8')
+  const source = stripTypeScriptTypes(file.slice(file.indexOf('type GroupCallAccessVerdict ='), file.indexOf('type PrivacyFlags =')))
+  const body = { callAccessVersion: 1, conversationId: 'room', userId: 'reader', allowed: false }
+  for (const [value, status, expected] of [[body, 200, 'denied'], [{ ...body, allowed: true }, 200, 'allowed'],
+    [{ ...body, userId: 'other' }, 200, 'unavailable'], [{ ...body, allowed: 'false' }, 200, 'unavailable'],
+    [body, 503, 'unavailable'], [null, 200, 'unavailable']]) {
+    const check = new Function('fetch', 'PRIVACY_KEY', 'NEXT_API_BASE', source + ';return groupCallAccessVerdict')(
+      async () => Response.json(value, { status }), 'key', 'https://authority.test')
+    assert.equal(await check('room', 'reader', new AbortController().signal), expected)
   }
 })

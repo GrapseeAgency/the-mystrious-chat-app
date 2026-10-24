@@ -717,7 +717,11 @@ public final class PulseGroupCallEngine: ObservableObject {
             if matchesJoinedCall(raw) {
                 teardownMedia()
                 uiState = .ended
-                summary = "Call ended"
+                switch raw["reason"] as? String {
+                case "membership-revoked": summary = "You no longer have access to this call"
+                case "access-unavailable": summary = "Call access could not be verified"
+                default: summary = "Call ended"
+                }
             }
             if raw["conversationId"] as? String == ongoingConversationId, raw["callId"] as? String == ongoingCallId {
                 ongoingElsewhere = false

@@ -28,7 +28,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
     if (req.headers['x-pulse-key'] !== 'synthetic-call-key') { res.writeHead(401); res.end(); return }
     if (url.pathname === '/api/internal/call-access') {
       const room = url.searchParams.get('conversationId'), user = url.searchParams.get('userId')
-      const mode = accessModes.get(room)
+      const mode = accessModes.get(`${room}:${user}`) ?? accessModes.get(room)
       if (mode === 'hold') heldAccess.push(() => sendAccess(res, room, user))
       else if (mode === 'error') { res.writeHead(503); res.end() }
       else sendAccess(res, room, user, mode === 'deny' ? false : mode === 'malformed' ? 'true' : true)
@@ -259,6 +259,34 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       heldAccess.shift()()
       assert.equal(await read('access-held'), null)
       assert.equal(await read('access-latest'), null)
+    })
+
+    await t.test('conversation changes revoke only the removed live member and notify surviving peers', async () => {
+      const host = await connect('lease-host'), removed = await connect('lease-removed')
+      const initial = await join(host, 'lease-host', 'lease-room', 'host-attempt')
+      await join(removed, 'lease-removed', 'lease-room', 'removed-attempt')
+      accessModes.set('lease-room:lease-removed', 'deny')
+      const kicked = event(removed, 'gcall:ended', row => row.callId === initial.callId && row.reason === 'membership-revoked')
+      const roster = event(host, 'gcall:state', row => row.callId === initial.callId && row.members.length === 1)
+      await fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'conversation:updated', recipients: ['lease-host', 'lease-removed'], payload: { conversationId: 'lease-room' } }) })
+      await kicked
+      assert.deepEqual((await roster).members.map(row => row.id), ['lease-host'])
+      const offers = []; host.on('gcall:offer', row => offers.push(row))
+      removed.emit('gcall:offer', { conversationId: 'lease-room', callId: initial.callId, from: 'lease-removed', to: 'lease-host', kind: 'voice', sdp: 'after-removal' })
+      await barrier(removed, 'lease-removed')
+      assert.equal(offers.length, 0)
+      const stillLive = await (await fetch(`${base}/gcall?conversationId=lease-room`)).json()
+      assert.equal(stillLive.state.callId, initial.callId)
+      assert.deepEqual(stillLive.state.members.map(row => row.id), ['lease-host'])
+      // Removing the final conversation member also ends the relay call.
+      accessModes.set('lease-room:lease-host', 'deny')
+      const ended = event(host, 'gcall:ended', row => row.callId === initial.callId)
+      await fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'conversation:updated', recipients: ['lease-host'], payload: { conversationId: 'lease-room' } }) })
+      await ended
+      assert.equal((await (await fetch(`${base}/gcall?conversationId=lease-room`)).json()).state, null)
+      host.disconnect(); removed.disconnect()
     })
 
     let activeAlice = alice

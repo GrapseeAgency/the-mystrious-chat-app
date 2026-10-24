@@ -167,17 +167,25 @@ async function verifySessionToken(userId: string, token: string): Promise<boolea
   return verdict
 }
 
-/** Do not cache positive room access: every admission needs current membership. */
-async function groupCallAccessAllowed(conversationId: string, userId: string, signal: AbortSignal): Promise<boolean> {
-  if (!PRIVACY_KEY || signal.aborted) return false
+type GroupCallAccessVerdict = 'allowed' | 'denied' | 'unavailable'
+
+/** Admission fails closed; active leases distinguish a refusal from a temporary outage. */
+async function groupCallAccessVerdict(conversationId: string, userId: string, signal: AbortSignal): Promise<GroupCallAccessVerdict> {
+  if (!PRIVACY_KEY || signal.aborted) return 'unavailable'
   try {
     const response = await fetch(`${NEXT_API_BASE}/api/internal/call-access?conversationId=${encodeURIComponent(conversationId)}&userId=${encodeURIComponent(userId)}`, {
       headers: { 'x-pulse-key': PRIVACY_KEY }, signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
     })
-    if (!response.ok) return false
+    if (!response.ok) return 'unavailable'
     const receipt = await response.json()
-    return !signal.aborted && receipt?.callAccessVersion === 1 && receipt.conversationId === conversationId && receipt.userId === userId && receipt.allowed === true
-  } catch { return false }
+    if (signal.aborted || receipt?.callAccessVersion !== 1 || receipt.conversationId !== conversationId ||
+        receipt.userId !== userId || typeof receipt.allowed !== 'boolean') return 'unavailable'
+    return receipt.allowed ? 'allowed' : 'denied'
+  } catch { return 'unavailable' }
+}
+
+async function groupCallAccessAllowed(conversationId: string, userId: string, signal: AbortSignal): Promise<boolean> {
+  return await groupCallAccessVerdict(conversationId, userId, signal) === 'allowed'
 }
 
 type PrivacyFlags = { typingVisible: boolean; presenceVisible: boolean }
@@ -664,6 +672,7 @@ interface GroupCallMember {
   color: string
   avatar: string | null
   joinedAt: number
+  accessValidUntil: number
   joinAttemptId?: string // per-device intent; never a room-wide leave capability
 }
 
@@ -688,6 +697,7 @@ function gcallStatePayload(conversationId: string): Record<string, unknown> | nu
   const call = groupCalls.get(conversationId)
   if (!call) return null
   const members = Array.from(call.members.values())
+    .filter(member => member.accessValidUntil > Date.now())
     .sort((a, b) => a.joinedAt - b.joinedAt)
     .map((m) => ({ id: m.userId, name: m.name, color: m.color, avatar: m.avatar }))
   return {
@@ -755,6 +765,63 @@ function leaveGroupCall(userId: string, reason: string, expectedSocketId?: strin
   console.log(`[gcall] leave conv=${conversationId} user=${userId} remaining=${call.members.size}`)
 }
 
+const GROUP_CALL_ACCESS_LEASE_MS = 30_000
+const pendingGroupAccessRooms = new Set<string>()
+let groupAccessRefreshBusy = false
+
+function liveGroupCallMember(call: GroupCallSession, userId: string): GroupCallMember | undefined {
+  const member = call.members.get(userId)
+  return member && member.accessValidUntil > Date.now() ? member : undefined
+}
+
+/** Identity checks precede removal: an old reply cannot revoke a new admission. */
+async function refreshGroupCallMemberAccess(call: GroupCallSession, member: GroupCallMember): Promise<void> {
+  const checkedAt = Date.now()
+  const verdict = await groupCallAccessVerdict(call.conversationId, member.userId, new AbortController().signal)
+  if (groupCalls.get(call.conversationId) !== call || call.members.get(member.userId) !== member) return
+  if (member.accessValidUntil <= Date.now()) {
+    leaveGroupCall(member.userId, 'access-unavailable', member.socketId)
+  } else if (verdict === 'denied') {
+    leaveGroupCall(member.userId, 'membership-revoked', member.socketId)
+  } else if (verdict === 'allowed') {
+    // Request start, not response arrival: backend latency must not extend permission.
+    member.accessValidUntil = checkedAt + GROUP_CALL_ACCESS_LEASE_MS
+  }
+}
+
+function expireGroupCallAccess(now = Date.now()): void {
+  for (const call of groupCalls.values()) {
+    for (const member of [...call.members.values()]) {
+      if (member.accessValidUntil <= now) leaveGroupCall(member.userId, 'access-unavailable', member.socketId)
+    }
+  }
+}
+
+/** One room (at most eight checks) at a time; events coalesce rather than spawning unbounded requests. */
+async function drainGroupAccessRefreshes(): Promise<void> {
+  if (groupAccessRefreshBusy) return
+  groupAccessRefreshBusy = true
+  try {
+    while (pendingGroupAccessRooms.size) {
+      const room = pendingGroupAccessRooms.values().next().value!
+      pendingGroupAccessRooms.delete(room)
+      const call = groupCalls.get(room)
+      if (call) await Promise.all([...call.members.values()].map(member => refreshGroupCallMemberAccess(call, member)))
+    }
+  } finally { groupAccessRefreshBusy = false }
+}
+
+function queueGroupAccessRefresh(conversationId: string): void {
+  if (!groupCalls.has(conversationId)) return
+  pendingGroupAccessRooms.add(conversationId)
+  void drainGroupAccessRefreshes().catch(() => {})
+}
+
+setInterval(() => {
+  expireGroupCallAccess()
+  for (const room of groupCalls.keys()) queueGroupAccessRefresh(room)
+}, 5000).unref()
+
 function asGroupMember(value: unknown): GroupCallMember | null {
   if (typeof value !== 'object' || value === null) return null
   const v = value as Record<string, unknown>
@@ -768,6 +835,7 @@ function asGroupMember(value: unknown): GroupCallMember | null {
     avatar:
       typeof v.avatar === 'string' && v.avatar.length > 0 && v.avatar.length <= 256 ? v.avatar : null,
     joinedAt: 0,
+    accessValidUntil: 0,
   }
 }
 
@@ -843,6 +911,9 @@ async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<
   }
 
   const recipients = sanitizeRecipients(body.recipients)
+  if (event === 'conversation:updated') {
+    queueGroupAccessRefresh(asTrimmedString((body.payload as Record<string, unknown> | null)?.conversationId))
+  }
   if (event === 'gcall:ring') {
     const raw = body.payload as Record<string, unknown> | null
     const caller = raw?.caller as Record<string, unknown> | null
@@ -852,7 +923,7 @@ async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<
     const call = groupCalls.get(conversationId)
     const deadline = call ? call.createdAt + 45_000 : 0
     // Check immediately before emitting, not against a stale HTTP preflight.
-    if (!call || !callId || call.callId !== callId || !call.members.has(callerId) ||
+    if (!call || !callId || call.callId !== callId || !liveGroupCallMember(call, callerId) ||
         raw?.kind !== call.kind || Date.now() >= deadline) {
       sendJson(res, 409, { ok: false, error: 'call is not available to ring' })
       return
@@ -1796,11 +1867,12 @@ io.on('connection', (socket: Socket) => {
     cancelPendingGroupJoin()
     const intent = { userId: me.userId, conversationId, joinAttemptId, controller: new AbortController() }
     pendingGroupJoin = intent
+    const accessValidUntil = Date.now() + GROUP_CALL_ACCESS_LEASE_MS
     const allowed = await groupCallAccessAllowed(conversationId, me.userId, intent.controller.signal)
     // A cancelled/older permission request cannot create a call or evict any member.
     if (pendingGroupJoin !== intent || !socket.connected || socketUser.get(socket.id) !== me.userId) return
     pendingGroupJoin = null
-    if (!allowed) {
+    if (!allowed || accessValidUntil <= Date.now()) {
       socket.emit('gcall:ended', { conversationId, callId: asTrimmedString(data.expectedCallId), joinAttemptId, reason: 'access-unavailable' })
       return
     }
@@ -1856,7 +1928,7 @@ io.on('connection', (socket: Socket) => {
     // Rejoining the same live call on the same device transfers ownership to
     // this intent even when the roster/call ID itself did not change.
     const admitted = call.members.get(me.userId)!
-    admitted.joinAttemptId = joinAttemptId
+    call.members.set(me.userId, { ...admitted, joinAttemptId, accessValidUntil })
     socket.join(gcallRoomName(conversationId))
     groupCallByUser.set(me.userId, conversationId)
     broadcastGcallState(conversationId)
@@ -1904,7 +1976,7 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !sdp || !kind) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || call.members.get(from)?.socketId !== socket.id || !call.members.has(to)) return
+    if (!call || liveGroupCallMember(call, from)?.socketId !== socket.id || !liveGroupCallMember(call, to)) return
     if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
     io.to(call.members.get(to)!.socketId).emit('gcall:offer', { conversationId, callId: call.callId, from, to, kind, sdp })
   })
@@ -1922,7 +1994,7 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !sdp) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || call.members.get(from)?.socketId !== socket.id || !call.members.has(to)) return
+    if (!call || liveGroupCallMember(call, from)?.socketId !== socket.id || !liveGroupCallMember(call, to)) return
     if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
     io.to(call.members.get(to)!.socketId).emit('gcall:answer', { conversationId, callId: call.callId, from, to, sdp })
   })
@@ -1940,7 +2012,7 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !candidate) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || call.members.get(from)?.socketId !== socket.id || !call.members.has(to)) return
+    if (!call || liveGroupCallMember(call, from)?.socketId !== socket.id || !liveGroupCallMember(call, to)) return
     if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
     io.to(call.members.get(to)!.socketId).emit('gcall:ice', {
       conversationId,

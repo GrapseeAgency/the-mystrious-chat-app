@@ -640,7 +640,8 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
         if (joinedConvRef.current === payload.conversationId && joinedCallIdRef.current === payload.callId) {
           teardownMedia()
           setStateBoth('ended')
-          setSummary('Call ended')
+          setSummary(payload.reason === 'membership-revoked' ? 'You no longer have access to this call'
+            : payload.reason === 'access-unavailable' ? 'Call access could not be verified' : 'Call ended')
         }
         if (ongoingTargetRef.current?.roomId === payload.conversationId && ongoingTargetRef.current?.callId === payload.callId) {
           ongoingTargetRef.current = null
