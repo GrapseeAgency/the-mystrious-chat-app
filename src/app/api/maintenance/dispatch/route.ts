@@ -1,9 +1,11 @@
 // /api/maintenance/dispatch - flush DUE scheduled messages.
 // Called on an interval by the socket mini-service (no DB access
-// over there), and safe to call manually. Replays each due row
-// through the exact same pipeline as a live send: real message
-// row, list bump, archive-unlock, socket relay.
+// over there), and safe to call manually. Delivers due rows using current
+// send policy, list/unarchive updates, socket relay and the same
+// privacy-planned push as live messages.
 import { NextResponse } from 'next/server'
+import { deliverMessageNotification } from '@/lib/message-notification'
+import { fanoutPush } from '@/lib/push/transport'
 import { db } from '@/lib/db'
 import { scheduledDeliveryDecision } from '@/lib/scheduled-delivery'
 import { scheduledDispatchPage, scheduledErrorResponse } from '@/lib/scheduled-operation'
@@ -68,6 +70,14 @@ export async function POST(req: Request) {
         return created
       }, { isolationLevel: 'Serializable' })
       if (!result) continue
+      // Count durable message commits, not best-effort transport successes.
+      dispatched += 1
+      // Same current-policy planner as manual sends, including per-viewer
+      // preview/mute/block/expiry rules. Do not wait for providers or replay the
+      // message when a push fails. This remains best-effort, not an outbox.
+      void deliverMessageNotification(db, fanoutPush, result.id).catch(error => {
+        console.error('[dispatch] notification failed for', result.id, error instanceof Error ? error.message : error)
+      })
 
       // No live send response reaches the sender when the scheduler fires.
       // Include the sender's devices or their own message stays invisible until refresh.
@@ -79,7 +89,6 @@ export async function POST(req: Request) {
         recipientIds: recipients,
         conversationId: result.conversationId,
       })
-      dispatched += 1
     } catch (error) {
       console.error('[dispatch] failed for', id, error instanceof Error ? error.message : error)
     }

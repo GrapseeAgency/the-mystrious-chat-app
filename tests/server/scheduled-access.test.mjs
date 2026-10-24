@@ -1,5 +1,6 @@
 import test from 'node:test'
 import { createHash } from 'node:crypto'
+import { deliverMessageNotification } from '../../src/lib/message-notification.ts'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -14,6 +15,7 @@ async function load(path, bindings, expression) {
 }
 async function fixture(run) {
  const dir=await mkdtemp(join(tmpdir(),'scheduled-'));const db=new PrismaClient({datasourceUrl:`file:${join(dir,'test.sqlite')}`})
+ const notificationWork=[]
  try {
   // Real SQLite tables with the generated model's complete scalar columns.
   for(const name of ['User','Conversation','ConversationParticipant','UserBlock','Message','ScheduledMessage']) {
@@ -31,7 +33,7 @@ async function fixture(run) {
    await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
   }
   await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261024_scheduled_creation_operations.sql',import.meta.url),'utf8'))
-  for(const id of ['me','other']) await db.$executeRawUnsafe('INSERT INTO User(id,sessionTokenHash,legacyTokenHashes) VALUES(?,?,?)',id,hashSessionToken(`synthetic-${id}`),'[]')
+  for(const id of ['me','other']) await db.$executeRawUnsafe('INSERT INTO User(id,name,sessionTokenHash,legacyTokenHashes) VALUES(?,?,?,?)',id,'Name '+id,hashSessionToken(`synthetic-${id}`),'[]')
   for(const id of ['room','second']) await db.conversation.create({data:{id,isGroup:true}})
   for(const [id,userId,conversationId]of [['p1','me','room'],['p2','other','room'],['p3','other','second']]) await db.conversationParticipant.create({data:{id,userId,conversationId,lastReadAt:new Date('2026-01-01')}})
   const helper=await load('src/lib/scheduled-operation.ts',{messageDeliveryDecision,createHash},'({ScheduledError,scheduledErrorResponse,scheduledHeaders,scheduledPage,createScheduled,cancelScheduled,scheduledDispatchPage})')
@@ -41,13 +43,17 @@ async function fixture(run) {
   const base=await load('src/app/api/conversations/[id]/scheduled/route.ts',bindings,'({GET,POST})')
   const POSTv2=await load('src/app/api/conversations/[id]/scheduled/create-v2/route.ts',{...bindings,createScheduledRequest:base.POST},'POST')
   const cancel=await load('src/app/api/scheduled/[id]/route.ts',bindings,'DELETE')
-  const events=[]
+  const events=[], pushes=[], faults={socket:false,push:false}
+  const flushNotifications=()=>Promise.all(notificationWork)
   const dispatch=await load('src/app/api/maintenance/dispatch/route.ts',{...bindings,scheduledDeliveryDecision,process:{env:{CRON_SECRET:'synthetic'}},MESSAGE_FULL_INCLUDE:{},
    mapMessage:row=>row, memberIdsOf:room=>db.conversationParticipant.findMany({where:{conversationId:room}}).then(rows=>rows.map(r=>r.userId)),
-   notifySocket:async(...args)=>events.push(args),console:{error:()=>{}}},'POST')
+   notifySocket:async(...args)=>{if(faults.socket)throw Error('socket failed');events.push(args)},
+   deliverMessageNotification:(...args)=>{const work=deliverMessageNotification(...args);notificationWork.push(work.catch(()=>false));return work},
+   fanoutPush:async(recipients,payload,options)=>{if(faults.push)throw Error('provider failed');pushes.push({recipients,payload,bodies:recipients.map(options.bodyFor)})},
+   console:{error:()=>{}}},'POST')
   const create=(data={})=>db.scheduledMessage.create({data:{id:'queued',conversationId:'room',senderId:'me',content:'Hello',scheduledAt:new Date(Date.now()+3600000),...data}})
-  await run(db,{...base,POSTv2,DELETE:cancel,dispatch,events,create,helper})
- } finally {await db.$disconnect();await rm(dir,{recursive:true,force:true})}
+  await run(db,{...base,POSTv2,DELETE:cancel,dispatch,events,pushes,faults,flushNotifications,create,helper})
+ } finally {await Promise.all(notificationWork);await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
 const ctx=(id='room')=>({params:Promise.resolve({id})})
 const req=(method,owner='me',token='synthetic-me',body={},cursor=null)=>new Request(`https://schedule.test/?userId=${owner}${cursor?'&cursor='+encodeURIComponent(cursor):''}`,{method,headers:token?{Authorization:`Bearer ${token}`}:{},...(method==='GET'?{}:{body:JSON.stringify({senderId:owner,requesterId:owner,content:' Hello ',scheduledAt:new Date(Date.now()+3600000).toISOString(),...body})})})
@@ -228,4 +234,50 @@ test('retry admission is owner scoped and is checked before the new-send time ho
 test('versioned scheduled creation requires a retry key before touching the legacy create path',()=>fixture(async(db,h)=>{
  assert.equal((await h.POSTv2(req('POST'),ctx())).status,400)
  assert.equal(await db.scheduledMessage.count(),0)
+}))
+
+test('scheduled dispatch plans offline notifications from the actual committed message without duplicate retries',()=>fixture(async(db,h)=>{
+ await h.create({scheduledAt:new Date(Date.now()-1000)})
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,1)
+ await h.flushNotifications()
+ const message=await db.message.findFirst()
+ assert.equal(h.pushes.length,1)
+ assert.deepEqual(h.pushes[0].recipients,['other'])
+ assert.equal(h.pushes[0].payload.messageId,message.id)
+ assert.equal(h.pushes[0].payload.conversationId,'room')
+ assert.equal(h.pushes[0].payload.kind,'message')
+ assert.deepEqual(h.pushes[0].bodies,['Name me: Hello'])
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,0)
+ await h.flushNotifications();assert.equal(h.pushes.length,1)
+}))
+test('scheduled push applies mute, block, hidden previews and disappearing-message policy',()=>fixture(async(db,h)=>{
+ const due=()=>new Date(Date.now()-1000)
+ await db.conversationParticipant.update({where:{id:'p2'},data:{mutedUntil:new Date(Date.now()+3600000)}})
+ await h.create({id:'muted',scheduledAt:due()});await h.dispatch(tick());await h.flushNotifications()
+ assert.equal(h.pushes.length,0)
+ await db.conversationParticipant.update({where:{id:'p2'},data:{mutedUntil:null}})
+ await db.userBlock.create({data:{blockerId:'other',blockedId:'me'}})
+ await h.create({id:'blocked',scheduledAt:due()});await h.dispatch(tick());await h.flushNotifications()
+ assert.equal(h.pushes.length,0)
+ await db.userBlock.deleteMany()
+ await db.user.update({where:{id:'other'},data:{preferences:JSON.stringify({notifPreviews:false})}})
+ await h.create({id:'private',scheduledAt:due()});await h.dispatch(tick());await h.flushNotifications()
+ assert.deepEqual(h.pushes.at(-1).bodies,['New message'])
+ await db.user.update({where:{id:'other'},data:{preferences:null}})
+ await db.conversation.update({where:{id:'room'},data:{ttlSeconds:60}})
+ await h.create({id:'expiring',scheduledAt:due()});await h.dispatch(tick());await h.flushNotifications()
+ assert.deepEqual(h.pushes.at(-1).bodies,['Name me: Disappearing message'])
+ assert.ok(Date.parse(h.pushes.at(-1).payload.expiresAt)>Date.now())
+}))
+test('socket or push failure does not change committed dispatch counts or resend messages',()=>fixture(async(db,h)=>{
+ h.faults.socket=true
+ await h.create({id:'socket-failure',scheduledAt:new Date(Date.now()-1000)})
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,1)
+ await h.flushNotifications();assert.equal(h.pushes.length,1)
+ h.faults.socket=false;h.faults.push=true
+ await h.create({id:'push-failure',scheduledAt:new Date(Date.now()-1000)})
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,1)
+ await h.flushNotifications();assert.equal(h.events.length,1)
+ assert.equal(await db.message.count(),2)
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,0)
 }))
