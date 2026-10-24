@@ -48,10 +48,12 @@ async function emitBotTyping(
   isTyping: boolean,
 ): Promise<void> {
   if (recipients.length === 0) return
+  const secret = process.env.CRON_SECRET
+  if (!secret) return
   try {
     await fetch('http://localhost:3003/typing', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-pulse-key': secret },
       body: JSON.stringify({
         recipients,
         conversationId,

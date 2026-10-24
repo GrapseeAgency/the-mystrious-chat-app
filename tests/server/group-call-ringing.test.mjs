@@ -35,7 +35,12 @@ test('a duplicate relay admission skips push as well as live delivery', async ()
     async () => { assert.fail('duplicate must not push'); }), { rang: 0, pushed: 0 })
 })
 
-test('relay acknowledgement must bind call, caller, conversation, version and absolute deadline', async () => {
+test('relay acknowledgement must bind call, caller, conversation, version and absolute deadline', async t => {
+  const previous = process.env.CRON_SECRET
+  t.after(() => { if (previous === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = previous })
+  delete process.env.CRON_SECRET
+  await assert.rejects(relayGroupCallRing(['peer'], {}, async () => { assert.fail('missing key must not contact relay') }), { status: 503 })
+  process.env.CRON_SECRET = 'synthetic-relay-key'
   const payload = { conversationId: 'room', callId: 'call', kind: 'voice', caller: { id: 'caller' }, title: 'Room' }
   const valid = { ok: true, ringReceiptVersion: 1, conversationId: 'room', callId: 'call', callerId: 'caller',
     accepted: true, expiresAt: new Date(Date.now() + 30_000).toISOString() }
@@ -43,6 +48,7 @@ test('relay acknowledgement must bind call, caller, conversation, version and ab
   const send = body => async (url, options) => {
     calls++
     assert.equal(url, 'http://localhost:3003/notify')
+    assert.equal(options.headers['x-pulse-key'], 'synthetic-relay-key')
     assert.deepEqual(JSON.parse(options.body), { event: 'gcall:ring', recipients: ['peer'], payload })
     return Response.json(body)
   }

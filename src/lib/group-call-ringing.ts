@@ -27,8 +27,10 @@ export async function relayGroupCallRing(
   fetcher: typeof fetch = fetch,
 ): Promise<{ accepted: boolean; expiresAt: string }> {
   try {
+    const secret = process.env.CRON_SECRET
+    if (!secret) throw new Error('Internal relay key is unavailable')
     const response = await fetcher('http://localhost:3003/notify', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pulse-key': secret },
       body: JSON.stringify({ event: 'gcall:ring', recipients, payload }), signal: AbortSignal.timeout(2500),
     })
     if (response.status === 409) throw new GroupCallRingError(409, 'This call is no longer available to ring.')

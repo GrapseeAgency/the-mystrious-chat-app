@@ -119,6 +119,7 @@ function dropPresence(socketId: string): boolean {
 const NEXT_API_BASE = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
 // Fail-closed (audit finding S5): no default secret; empty key never sent.
 const PRIVACY_KEY = process.env.CRON_SECRET ?? ''
+if (!PRIVACY_KEY) console.warn('[pulse-socket] CRON_SECRET missing: internal relay endpoints and call access are unavailable.')
 const PRIVACY_TTL_MS = 30_000
 
 // ---------------------------------------------------------------------------
@@ -1052,6 +1053,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return
   }
 
+  // Shared-key boundary applies before any body parsing, privacy lookup or fanout.
+  // Socket.IO and health traffic above/below remain available without this server secret.
+  if (['/notify', '/typing', '/online', '/gcall'].includes(pathname)) {
+    res.setHeader('Cache-Control', 'no-store')
+    if (!PRIVACY_KEY || req.headers['x-pulse-key'] !== PRIVACY_KEY) {
+      sendJson(res, 401, { ok: false, error: 'Unauthorized' })
+      return
+    }
+  }
+
   // 3. relay endpoints (Next.js API routes call these internally)
   if (req.method === 'POST' && pathname === '/notify') {
     await handleNotify(req, res)
@@ -1074,11 +1085,6 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // conversation?" so a late-opening room can show the Join affordance even
   // after the original ring scrolled away. Unknown conversation → null state.
   if (req.method === 'GET' && pathname === '/gcall') {
-    res.setHeader('Cache-Control', 'no-store')
-    if (!PRIVACY_KEY || req.headers['x-pulse-key'] !== PRIVACY_KEY) {
-      sendJson(res, 401, { ok: false, error: 'Unauthorized' })
-      return
-    }
     const conversationId = asTrimmedString(searchParams.get('conversationId')).slice(0, 128)
     sendJson(res, 200, { ok: true, state: conversationId ? gcallStatePayload(conversationId) : null })
     return

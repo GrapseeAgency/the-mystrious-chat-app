@@ -206,8 +206,10 @@ async function apnsBearer(): Promise<string | null> {
 // online suppression 
 
 async function onlineUserIds(): Promise<Set<string>> {
+  const secret = process.env.CRON_SECRET
+  if (!secret) return new Set()
   try {
-    const res = await fetch(`${SOCKET_URL}/online`, { signal: AbortSignal.timeout(1500) })
+    const res = await fetch(`${SOCKET_URL}/online`, { headers: { 'x-pulse-key': secret }, signal: AbortSignal.timeout(1500) })
     if (!res.ok) return new Set()
     const body = (await res.json()) as { onlineUserIds?: unknown }
     if (!Array.isArray(body.onlineUserIds)) return new Set()

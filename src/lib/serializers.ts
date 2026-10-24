@@ -624,10 +624,12 @@ export async function notifySocket(
   payload: unknown,
 ): Promise<void> {
   if (recipientIds.length === 0) return
+  const secret = process.env.CRON_SECRET
+  if (!secret) return
   try {
     await fetch(`${SOCKET_URL}/notify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-pulse-key': secret },
       body: JSON.stringify({ event, recipients: recipientIds, payload }),
       signal: AbortSignal.timeout(2500),
     })

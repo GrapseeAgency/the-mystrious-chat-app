@@ -91,6 +91,31 @@ test('real call relay binds membership, signaling and disconnect to the admitted
     })
     const alice = await connect('alice'), idleAlice = await connect('alice')
     const bob = await connect('bob'), idleBob = await connect('bob')
+    await t.test('internal event, typing and online endpoints refuse public requests without touching socket clients', async () => {
+      const forged = []
+      alice.on('message:deleted', value => forged.push(value))
+      for (const key of [null, 'wrong']) {
+        for (const endpoint of ['notify', 'typing', 'online']) {
+          const response = await fetch(`${base}/${endpoint}`, {
+            method: endpoint === 'online' ? 'GET' : 'POST',
+            headers: { 'Content-Type': 'application/json', ...(key ? { 'x-pulse-key': key } : {}) },
+            ...(endpoint === 'online' ? {} : { body: JSON.stringify({ event: 'message:deleted', recipients: ['alice'],
+              payload: { id: 'forged' }, conversationId: 'room', userId: 'bob', isTyping: true }) }),
+          })
+          assert.equal(response.status, 401, endpoint)
+        }
+      }
+      await barrier(alice, 'alice')
+      assert.deepEqual(forged, [])
+      const response = await fetch(`${base}/online`, { headers: { 'x-pulse-key': 'synthetic-call-key' } })
+      assert.equal(response.status, 200)
+      assert.ok(Array.isArray((await response.json()).onlineUserIds))
+      const accepted = event(alice, 'message:deleted', value => value.id === 'authorized')
+      assert.equal((await fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pulse-key': 'synthetic-call-key' },
+        body: JSON.stringify({ event: 'message:deleted', recipients: ['alice'], payload: { id: 'authorized' } }) })).status, 200)
+      await accepted
+      assert.equal((await fetch(base)).status, 200)
+    })
     await join(alice, 'alice')
     const state = await join(bob, 'bob')
     const callId = state.callId
@@ -98,7 +123,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       const starter = await connect('starter'), invitee = await connect('invitee')
       const live = await join(starter, 'starter', 'ring-room')
       const raw = { conversationId: 'ring-room', callId: live.callId, kind: 'voice', caller: { id: 'starter', name: 'Starter' }, title: 'Room' }
-      const send = async payload => fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const send = async payload => fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pulse-key': 'synthetic-call-key' },
         body: JSON.stringify({ event: 'gcall:ring', recipients: ['invitee', 'invitee', 'starter'], payload }) })
       for (const patch of [{ callId: '' }, { callId: 'old' }, { conversationId: 'missing' }, { kind: 'video' }, { caller: { id: 'outsider' } }]) {
         assert.equal((await send({ ...raw, ...patch })).status, 409)
@@ -277,7 +302,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       accessModes.set('lease-room:lease-removed', 'deny')
       const kicked = event(removed, 'gcall:ended', row => row.callId === initial.callId && row.reason === 'membership-revoked')
       const roster = event(host, 'gcall:state', row => row.callId === initial.callId && row.members.length === 1)
-      await fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      await fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pulse-key': 'synthetic-call-key' },
         body: JSON.stringify({ event: 'conversation:updated', recipients: ['lease-host', 'lease-removed'], payload: { conversationId: 'lease-room' } }) })
       await kicked
       assert.deepEqual((await roster).members.map(row => row.id), ['lease-host'])
@@ -291,7 +316,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       // Removing the final conversation member also ends the relay call.
       accessModes.set('lease-room:lease-host', 'deny')
       const ended = event(host, 'gcall:ended', row => row.callId === initial.callId)
-      await fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      await fetch(`${base}/notify`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pulse-key': 'synthetic-call-key' },
         body: JSON.stringify({ event: 'conversation:updated', recipients: ['lease-host'], payload: { conversationId: 'lease-room' } }) })
       await ended
       assert.equal((await (await relayProbe(`${base}/gcall?conversationId=lease-room`)).json()).state, null)
