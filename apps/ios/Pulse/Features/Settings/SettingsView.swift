@@ -46,6 +46,14 @@ struct SettingsView: View {
     @State private var footprintStats: WireUserStats?
     @State private var footprintLoading = false
     @State private var footprintFailed = false
+    @State private var footprintGate = ProfileMutationGate()
+    @State private var footprintTask: Task<Void, Never>?
+
+    private var footprintOwner: ProfileMutationGate.Owner? {
+        guard let id = session.viewer?.id, prefs.viewer?.id == id,
+              PulseWalletOperations.gatewayKey(session.api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL) else { return nil }
+        return .init(userId: id, session: session.sessionGeneration)
+    }
 
     private enum ProbeResult: Equatable {
         case ok(String)
@@ -123,10 +131,17 @@ struct SettingsView: View {
         }
         .onAppear {
             refreshLocalCounts()
-            Task { await loadFootprintStats() }
+            loadFootprintStats()
         }
-        .onDisappear { appLockConfirmation = UUID() }
-        .onChange(of: session.sessionGeneration) { _, _ in refreshLocalCounts() }
+        .onDisappear {
+            appLockConfirmation = UUID()
+            footprintTask?.cancel(); footprintTask = nil
+            footprintGate.invalidate(); footprintLoading = false
+        }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            refreshLocalCounts()
+            loadFootprintStats()
+        }
         .onChange(of: draftsOutboxOpen) { _, open in
             if !open { refreshLocalCounts() }
         }
@@ -923,15 +938,32 @@ struct SettingsView: View {
     /// R5-A Item 4 - the viewer's live footprint (web StatTile row parity:
     /// messages / photos / voice notes / chats / groups / days active).
     /// Signed-out renders the honest notice; a failed fetch shows Try again.
-    private func loadFootprintStats() async {
-        guard let viewerId = session.viewer?.id ?? prefs.viewer?.id else { return }
+    private func loadFootprintStats() {
+        footprintTask?.cancel()
+        footprintGate.invalidate()
+        footprintStats = nil; footprintLoading = false; footprintFailed = false
+        guard let owner = footprintOwner else { return }
+        footprintGate.bind(owner)
+        guard let ticket = footprintGate.begin(current: owner) else { return }
+        let api = session.api
         footprintLoading = true
-        footprintFailed = false
-        defer { footprintLoading = false }
-        do {
-            footprintStats = try await session.api.userStats(viewerId)
-        } catch {
-            footprintFailed = true
+        footprintTask = Task {
+            defer {
+                if footprintGate.active == ticket {
+                    footprintGate.finish(ticket)
+                    footprintLoading = false
+                    footprintTask = nil
+                }
+            }
+            guard !Task.isCancelled, footprintGate.accepts(ticket, current: footprintOwner) else { return }
+            do {
+                let stats = try await api.userStats(owner.userId)
+                guard !Task.isCancelled, footprintGate.accepts(ticket, current: footprintOwner) else { return }
+                footprintStats = stats
+            } catch {
+                guard !Task.isCancelled, footprintGate.accepts(ticket, current: footprintOwner) else { return }
+                footprintFailed = true
+            }
         }
     }
 
@@ -975,7 +1007,7 @@ struct SettingsView: View {
             Spacer()
             Button {
                 PulseHaptics.tap()
-                Task { await loadFootprintStats() }
+                loadFootprintStats()
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 13, weight: .semibold))
@@ -1010,7 +1042,7 @@ struct SettingsView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Color.white.opacity(0.55))
                 Button {
-                    Task { await loadFootprintStats() }
+                    loadFootprintStats()
                 } label: {
                     Label("Try again", systemImage: "arrow.clockwise")
                         .font(.system(size: 12.5, weight: .semibold))

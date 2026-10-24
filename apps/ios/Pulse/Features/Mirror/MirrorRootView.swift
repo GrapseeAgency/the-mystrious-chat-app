@@ -76,13 +76,24 @@ public struct MirrorProfileRow: Codable, Sendable {
     public let createdAt: String?
 }
 
+extension MirrorProfileRow {
+    static func fetch(using client: PulseAPIClient) async throws -> MirrorProfileRow {
+        let user = try await client.user(client.userId)
+        guard user.id == client.userId else {
+            throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account.")
+        }
+        return MirrorProfileRow(name: user.name, username: user.username, about: user.about,
+            color: user.color, coverImage: user.coverImage, statusText: user.statusText, createdAt: user.createdAt)
+    }
+}
+
 @MainActor
 final class MirrorViewModel: ObservableObject {
     @Published var rows: [MirrorRow] = []
     @Published var archivedRows: [MirrorRow] = []
     @Published var profile: MirrorProfileRow?
     @Published var stats: WireUserStats?
-    @Published var coins: Int = 0
+    @Published var coins: Int?
 
     var totalUnread: Int { rows.reduce(0) { $0 + $1.unread } }
 
@@ -162,7 +173,7 @@ final class MirrorViewModel: ObservableObject {
     }
 
     func start(session: PulseSession) {
-        if client?.userId != session.api.userId { profile = nil; stats = nil; coins = 0 }
+        if client?.userId != session.api.userId || client?.baseURL != session.api.baseURL { profile = nil; stats = nil; coins = nil }
         client = session.api
         store = session.store
         inbox = ((try? store?.cachedConversations()) ?? []).map { WireConversationSummary(cached: $0) }
@@ -222,19 +233,11 @@ final class MirrorViewModel: ObservableObject {
             }
             guard !Task.isCancelled, revision == refreshRevision else { return }
             // profile row (tolerant subset), stats, coins
-            if let url = URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/users/" + client.userId) {
-                var req = URLRequest(url: url)
-                req.timeoutInterval = 8
-                if let token = client.authToken {
-                    req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-                }
-                if let (data, _) = try? await URLSession.shared.data(for: req) {
-                    guard !Task.isCancelled, revision == refreshRevision else { return }
-                    let root = try? JSONDecoder().decode(MirrorEnvelope<MirrorProfileRow>.self, from: data)
-                    if let unwrapped = root?.user {
-                        profile = unwrapped
-                    }
-                }
+            // Keep the endpoint and credential in the SAME captured API client.
+            // Never attach an old client's bearer to the global, mutable gateway.
+            if let loaded = try? await MirrorProfileRow.fetch(using: client) {
+                guard !Task.isCancelled, revision == refreshRevision else { return }
+                profile = loaded
             }
             guard !Task.isCancelled, revision == refreshRevision else { return }
             if let s = try? await client.userStats(client.userId) {
@@ -244,15 +247,10 @@ final class MirrorViewModel: ObservableObject {
             guard !Task.isCancelled, revision == refreshRevision else { return }
             if let w = try? await client.wallet() {
                 guard !Task.isCancelled, revision == refreshRevision else { return }
-                coins = w.coins ?? 0
+                coins = w.coins
             }
         }
     }
-}
-
-/// {user: {...}} envelope unwrap - the users routes return both shapes.
-private struct MirrorEnvelope<T: Codable>: Codable {
-    let user: T?
 }
 
 enum MirrorRowTime {
@@ -1183,7 +1181,7 @@ private struct MirrorStatsCardView: View {
         HStack(spacing: 0) {
             MirrorStatCell(value: "\(model.stats?.messages ?? 0)", label: "MESSAGES", tint: MirrorArt.text)
             MirrorStatCell(value: "\(model.stats?.chats ?? 0)", label: "ROOMS", tint: MirrorArt.text)
-            MirrorStatCell(value: "\(model.coins)", label: "COINS", tint: MirrorArt.accent)
+            MirrorStatCell(value: model.coins.map { String($0) } ?? "—", label: "COINS", tint: MirrorArt.accent)
             MirrorStatCell(value: MirrorSince.short(model.stats?.joinedAt), label: "SINCE", tint: MirrorArt.text, small: true)
         }
         .padding(.vertical, 16)
