@@ -27,6 +27,12 @@ struct RoomInfoSheet: View {
     @State private var detail: WireConversationSummary?
     @State private var themeOpen = false
     @State private var safetyOpen = false
+    @State private var surfaceEpoch: UUID?
+    @State private var loadTicket = UUID()
+    @State private var loadTask: Task<Void, Never>?
+    @State private var mutationGate = PulseMutationGate()
+    @State private var mutationTask: Task<Void, Never>?
+    private var busy: Bool { mutationGate.isBusy }
 
     private var viewerId: String { session.viewer?.id ?? "" }
 
@@ -49,7 +55,7 @@ struct RoomInfoSheet: View {
                             .font(.system(size: 26, weight: .light))
                             .foregroundStyle(.secondary)
                         Text(message).font(.footnote).foregroundStyle(.secondary)
-                        Button("Retry") { Task { await load() } }
+                        Button("Retry") { reloadDetail() }
                             .font(.footnote.weight(.semibold))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -70,21 +76,54 @@ struct RoomInfoSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .task { await load() }
+        .onAppear { surfaceEpoch = session.sessionGeneration; reloadDetail() }
+        .onDisappear { retireSurfaceWork() }
+        .onChange(of: session.sessionGeneration) { _, _ in retireSurfaceWork(); dismiss() }
     }
 
     // data
 
     /// One quiet detail GET (GroupInfoView pattern): TTL, mute state and the
     /// room-wide veil flag all read from the fresh server truth.
+    private func owns(_ epoch: UUID) -> Bool {
+        !Task.isCancelled && surfaceEpoch == epoch && session.sessionGeneration == epoch
+    }
+    private func reloadDetail() {
+        let epoch = session.sessionGeneration
+        guard owns(epoch) else { return }
+        loadTask?.cancel(); loadTicket = UUID()
+        loadTask = Task { @MainActor in
+            guard owns(epoch) else { return }
+            await load()
+        }
+    }
     private func load() async {
+        let epoch = session.sessionGeneration, client = session.api, owner = viewerId, ticket = UUID()
+        guard owns(epoch), !owner.isEmpty, prefs.viewer?.id == owner, client.userId == owner,
+              PulseWalletOperations.gatewayKey(client.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL) else { return }
+        loadTicket = ticket
         phase = detail == nil ? .loading : phase
         do {
-            detail = try await session.api.conversationDetail(id: conversation.id, userId: viewerId)
+            let fresh = try await client.conversationDetail(id: conversation.id, userId: owner)
+            guard owns(epoch), prefs.viewer?.id == owner, loadTicket == ticket else { return }
+            try acceptDetail(fresh)
             phase = .loaded
         } catch {
+            guard owns(epoch), prefs.viewer?.id == owner, loadTicket == ticket else { return }
             if detail == nil { phase = .failed(RoomViewModel.describe(error)) }
         }
+    }
+    private func acceptDetail(_ fresh: WireConversationSummary) throws {
+        guard fresh.id == conversation.id else {
+            throw PulseAPIClient.Failure(kind: .server, message: "The response did not match this chat. Refresh chat info.")
+        }
+        detail = fresh
+        onDetailUpdated?(fresh)
+    }
+    private func retireSurfaceWork() {
+        surfaceEpoch = nil; loadTicket = UUID()
+        loadTask?.cancel(); loadTask = nil
+        mutationGate.cancel(); mutationTask?.cancel(); mutationTask = nil
     }
 
     // content
@@ -223,6 +262,7 @@ struct RoomInfoSheet: View {
             }
         }
         .listStyle(.insetGrouped)
+        .disabled(busy)
         .sheet(isPresented: $themeOpen) {
             ConvThemeSheet(conversationId: conversation.id, prefs: prefs)
         }
@@ -239,107 +279,77 @@ struct RoomInfoSheet: View {
         }
     }
 
-    // actions
+    // actions — claim synchronously and capture the original client/owner.
+    private func mutate<Value: Sendable>(optimistic: () -> Void = {},
+        request: @escaping @MainActor (PulseAPIClient, String) async throws -> Value,
+        apply: @escaping @MainActor (Value) throws -> Void) {
+        let epoch = session.sessionGeneration, client = session.api, owner = viewerId
+        guard owns(epoch), !owner.isEmpty, prefs.viewer?.id == owner, client.userId == owner,
+              PulseWalletOperations.gatewayKey(client.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL),
+              let ticket = mutationGate.begin(owner: epoch, resource: conversation.id) else { return }
+        loadTicket = UUID(); loadTask?.cancel()
+        optimistic()
+        mutationTask = Task { @MainActor in
+            defer {
+                if mutationGate.finish(ticket) { mutationTask = nil }
+                // A cancelled/lost reply may still follow a committed write.
+                if session.sessionGeneration == epoch { session.noteInboxChanged() }
+            }
+            do {
+                guard owns(epoch), mutationGate.isCurrent(ticket, owner: epoch, resource: conversation.id) else { return }
+                let result = try await request(client, owner)
+                guard owns(epoch), prefs.viewer?.id == owner,
+                      mutationGate.isCurrent(ticket, owner: epoch, resource: conversation.id) else { return }
+                loadTicket = UUID()
+                try apply(result)
+            } catch {
+                guard owns(epoch), mutationGate.isCurrent(ticket, owner: epoch, resource: conversation.id) else { return }
+                session.toasts.show(RoomViewModel.describe(error))
+                // Do not roll back to a possibly obsolete pre-request snapshot.
+                detail = nil; phase = .loading
+                reloadDetail()
+            }
+        }
+    }
 
-    /// PATCH disappearing { userId, ttlSeconds } - the exact call
-    /// GroupInfoView makes; toast copy follows the web setTtl onSuccess.
     private func setTtl(_ seconds: Int) {
-        Task {
-            do {
-                let fresh = try await session.api.setDisappearingTtl(conversation.id, userId: viewerId, ttlSeconds: seconds)
-                detail = fresh
-                session.toasts.show(
-                    seconds == 0
-                        ? "Disappearing messages off"
-                        : "New messages vanish after \(GroupInfoView.ttlLabel(seconds).lowercased())",
-                )
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
+        mutate(request: { api, owner in
+            try await api.setDisappearingTtl(conversation.id, userId: owner, ttlSeconds: seconds)
+        }, apply: { fresh in
+            guard let applied = fresh.ttlSeconds else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Disappearing messages were not confirmed.")
             }
-        }
+            try acceptDetail(fresh)
+            session.toasts.show(applied == 0 ? "Disappearing messages off" :
+                "New messages vanish after \(GroupInfoView.ttlLabel(applied).lowercased())")
+        })
     }
 
-    /// R2-D - mute presets through the real route (ChatsViewModel.setMuted
-    /// parity: optimistic watermark, honest failure restores the old value).
     private func setMuted(_ preset: String?) {
-        guard let current = detail else { return }
-        let previous = current
-        let offsets: [String: TimeInterval] = [
-            "8h": 8 * 3600,
-            "1w": 7 * 86_400,
-            "always": 50 * 365 * 86_400,
-        ]
-        let optimistic: String?
-        if let preset {
-            let offset = offsets[preset] ?? 8 * 3600
-            optimistic = ISO8601DateFormatter().string(from: Date().addingTimeInterval(offset))
-        } else {
-            optimistic = nil
-        }
-        detail = Self.withMuted(current, until: optimistic)
-        Task {
-            do {
-                try await session.api.setMuted(conversationId: conversation.id, until: preset)
-                if preset == nil {
-                    session.toasts.show("Notifications unmuted")
-                } else if preset == "always" {
-                    session.toasts.show("Muted - always")
-                } else {
-                    let stamp = Date().addingTimeInterval(preset == "1w" ? 7 * 86_400 : 8 * 3_600)
-                    session.toasts.show("Muted until \(PulseFormat.listStamp(stamp))")
-                }
-                await load()
-            } catch {
-                detail = previous
-                session.toasts.show(RoomViewModel.describe(error))
-            }
-        }
+        mutate(request: { api, owner in
+            try await api.setMuted(conversationId: conversation.id, until: preset)
+            return try await api.conversationDetail(id: conversation.id, userId: owner)
+        }, apply: { fresh in
+            try acceptDetail(fresh)
+            session.toasts.show(fresh.isMutedNow ? "Notifications muted" : "Notifications unmuted")
+        })
     }
 
-    /// withMutedUntil resets the defaulted detail vars (they sit behind the
-    /// memberwise init) - restore them so the veil/throttle state survives
-    /// the optimistic mute swap.
-    private static func withMuted(_ summary: WireConversationSummary, until: String?) -> WireConversationSummary {
-        var fresh = summary.withMutedUntil(until)
-        fresh.inviteCode = summary.inviteCode
-        fresh.slowModeSeconds = summary.slowModeSeconds
-        fresh.screenPrivacy = summary.screenPrivacy
-        fresh.myScreenPrivacy = summary.myScreenPrivacy
-        return fresh
-    }
-
-    /// R42 - MY veil (prefs write-through + per-viewer route mirror), the
-    /// GroupInfoView path verbatim.
     private func setMyScreenPrivacy(_ on: Bool) {
-        prefs.setScreenPrivacy(conversationId: conversation.id, on: on)
-        Task {
-            do {
-                let confirmed = try await session.api.setMyScreenPrivacy(conversation.id, on: on)
-                prefs.adoptServerScreenPrivacy(conversationId: conversation.id, on: confirmed)
-                session.toasts.show(confirmed ? "Screen security on for you" : "Screen security off for you")
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
-            }
-        }
+        mutate(optimistic: { prefs.setScreenPrivacy(conversationId: conversation.id, on: on) }, request: { api, _ in
+            try await api.setMyScreenPrivacy(conversation.id, on: on)
+        }, apply: { confirmed in
+            prefs.adoptServerScreenPrivacy(conversationId: conversation.id, on: confirmed)
+            session.toasts.show(confirmed ? "Screen security on for you" : "Screen security off for you")
+        })
     }
 
-    /// R38 - the room-wide switch: PATCH conversation { screenPrivacy }, then
-    /// push the fresh detail into the open room (onDetailUpdated) and the
-    /// sheet's own state.
     private func setRoomScreenPrivacy(_ on: Bool) {
-        Task {
-            do {
-                let fresh = try await session.api.patchConversation(
-                    conversation.id,
-                    requesterId: viewerId,
-                    screenPrivacy: on,
-                )
-                detail = fresh
-                onDetailUpdated?(fresh)
-                session.toasts.show(on ? "Screen security on" : "Screen security off")
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
-            }
-        }
+        mutate(request: { api, owner in
+            try await api.patchConversation(conversation.id, requesterId: owner, screenPrivacy: on)
+        }, apply: { fresh in
+            try acceptDetail(fresh)
+            session.toasts.show(fresh.screenPrivacy == true ? "Screen security on" : "Screen security off")
+        })
     }
 }

@@ -20,7 +20,9 @@ private final class GroupReplyProtocol: URLProtocol {
         } else if path.contains("/confirmed/") {
             if path.hasSuffix("/members") { body = #"{"added":[]}"# }
             else if path.hasSuffix("/slow-mode") { body = #"{"ok":true,"slowModeSeconds":5}"# }
-            else { body = #"{"screenPrivacy":true}"# }
+            else { body = #"{"ok":true,"screenPrivacy":true}"# }
+        } else if path.contains("/denied-privacy/") { body = #"{"ok":false,"screenPrivacy":true}"#
+        } else if path.contains("/missing-ok/") { body = #"{"screenPrivacy":true}"#
         } else if path.contains("/wrong/") {
             if path.hasSuffix("/members") { body = #"{"added":["stranger"]}"# }
             else if path.hasSuffix("/slow-mode") { body = #"{"ok":true,"slowModeSeconds":0}"# }
@@ -86,6 +88,10 @@ final class GroupMutationOwnershipTests: XCTestCase {
             do { _ = try await api.setSlowMode(room, userId: "me", seconds: 5); XCTFail("Unconfirmed throttle accepted") }
             catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
             do { _ = try await api.setMyScreenPrivacy(room, on: true); XCTFail("Unconfirmed preference accepted") }
+            catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
+        }
+        for room in ["denied-privacy", "missing-ok"] {
+            do { _ = try await api.setMyScreenPrivacy(room, on: true); XCTFail("Unconfirmed privacy receipt accepted") }
             catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
         }
         let joined = try await api.subscribeChannel("confirmed")

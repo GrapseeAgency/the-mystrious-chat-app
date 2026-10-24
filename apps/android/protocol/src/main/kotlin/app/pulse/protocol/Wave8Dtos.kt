@@ -112,6 +112,9 @@ fun String.decodeSettingsEnvelope(): SettingsEnvelopeDto = runCatching {
     SettingsEnvelopeDto(preferences = fields?.toWirePrefsOrNull())
 }.getOrDefault(SettingsEnvelopeDto())
 
+/** UI modules can inspect field identity without depending on serialization types. */
+fun WirePulsePrefs.settingsFieldNames(): Set<String> = settingsFields().keys
+
 fun WirePulsePrefs.settingsFields(): JsonObject = toPatchJson("")["preferences"]!!.jsonObject
 
 /** Only fields in this request may be acknowledged, never the entire reply. */

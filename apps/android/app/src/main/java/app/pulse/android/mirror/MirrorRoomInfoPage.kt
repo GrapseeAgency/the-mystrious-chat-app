@@ -614,8 +614,12 @@ internal fun MirrorRoomInfoPage(
     androidx.compose.runtime.DisposableEffect(photoGate) {
         onDispose { photoGate.invalidate(); photoJob?.cancel() }
     }
-    var myPrivacyLocal by remember { mutableStateOf<Boolean?>(null) }
-    var everyonePrivacyLocal by remember { mutableStateOf<Boolean?>(null) }
+    val privacyGate = remember(repository, conversationId, viewerId) {
+        RoomControlGate { repository.attachmentSessionKey().takeIf { repository.viewerId == viewerId } }
+    }
+    androidx.compose.runtime.DisposableEffect(privacyGate) { onDispose { privacyGate.invalidate() } }
+    var myPrivacyLocal by remember(privacyGate) { mutableStateOf<Boolean?>(null) }
+    var everyonePrivacyLocal by remember(privacyGate) { mutableStateOf<Boolean?>(null) }
     var armedId by remember { mutableStateOf<String?>(null) }
     var armedKind by remember { mutableStateOf("") }
     var rolePendingId by remember { mutableStateOf<String?>(null) }
@@ -639,10 +643,17 @@ internal fun MirrorRoomInfoPage(
     }
 
     suspend fun refreshMeta() {
+        val target = repository.boundToCurrentAccount()
+        val epoch = target.attachmentSessionKey() ?: return
+        if (target.viewerId != viewerId) return
         val ticket = ++metaTicket
-        val res = repositoryResult { repository.groupMeta(conversationId) }
+        val res = repositoryResult {
+            if (target.viewerId != viewerId || target.attachmentSessionKey() != epoch) throw CancellationException("Account changed")
+            target.groupMeta(conversationId)
+        }
         currentCoroutineContext().ensureActive()
-        if (ticket != metaTicket) return
+        if (ticket != metaTicket || target.viewerId != viewerId || target.attachmentSessionKey() != epoch ||
+            repository.attachmentSessionKey() != epoch) return
         meta = res.getOrNull()
         metaFailed = res.isFailure
     }
@@ -804,39 +815,40 @@ internal fun MirrorRoomInfoPage(
         }
     }
 
-    fun setMyScreenPrivacy(on: Boolean) {
-        if (myPrivacyLocal != null) return
+    fun changeScreenPrivacy(on: Boolean, personal: Boolean) {
+        val target = repository.boundToCurrentAccount()
+        val ticket = privacyGate.beginWrite() ?: return
+        if (target.viewerId != viewerId || target.attachmentSessionKey() != ticket.owner) {
+            privacyGate.finishWrite(ticket)
+            return
+        }
         metaTicket++
-        myPrivacyLocal = on
+        if (personal) myPrivacyLocal = on else everyonePrivacyLocal = on
         scope.launch {
             try {
-                val res = repositoryResult { repository.setMyScreenPrivacy(conversationId, on) }
+                val res = repositoryResult {
+                    if (target.viewerId != viewerId || target.attachmentSessionKey() != ticket.owner) throw CancellationException("Account changed")
+                    if (personal) target.setMyScreenPrivacy(conversationId, on) else target.setScreenPrivacy(conversationId, on)
+                }
+                currentCoroutineContext().ensureActive()
+                if (!privacyGate.isCurrent(ticket)) return@launch
                 metaTicket++
                 res.onSuccess {
-                    meta = meta?.copy(myScreenPrivacy = on)
-                    showNote(if (on) "Screen security on for you" else "Screen security off for you", false)
+                    if (personal) meta = meta?.copy(myScreenPrivacy = on)
+                    showNote(if (personal) "Screen security updated for you" else "Room screen security updated", false)
                 }.onFailure { showNote(it.message ?: "Could not confirm screen security", true) }
                 refreshMeta()
-                onChanged()
-            } finally { myPrivacyLocal = null }
+                if (privacyGate.isCurrent(ticket)) onChanged()
+            } finally {
+                if (privacyGate.finishWrite(ticket)) {
+                    if (personal) myPrivacyLocal = null else everyonePrivacyLocal = null
+                }
+            }
         }
     }
 
-    fun setEveryoneScreenPrivacy(on: Boolean) {
-        if (everyonePrivacyLocal != null) return
-        metaTicket++
-        everyonePrivacyLocal = on
-        scope.launch {
-            try {
-                val res = repositoryResult { repository.setScreenPrivacy(conversationId, on) }
-                metaTicket++
-                res.onSuccess { showNote("Room screen security updated", false) }
-                    .onFailure { showNote(it.message ?: "Could not confirm screen security", true) }
-                refreshMeta()
-                onChanged()
-            } finally { everyonePrivacyLocal = null }
-        }
-    }
+    fun setMyScreenPrivacy(on: Boolean) = changeScreenPrivacy(on, personal = true)
+    fun setEveryoneScreenPrivacy(on: Boolean) = changeScreenPrivacy(on, personal = false)
 
     fun commitSlowMode(seconds: Int) {
         if (slowPending) return

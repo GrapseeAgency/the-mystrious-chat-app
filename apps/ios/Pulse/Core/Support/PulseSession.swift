@@ -600,7 +600,7 @@ public final class PulseSession: ObservableObject {
             guard let self, !Task.isCancelled, self.generation == epoch,
                   self.viewer?.id == owner, let prefs = self.prefs, prefs.viewer?.id == owner else { return }
             do {
-                let patch = try prefs.currentSettingsPatch(ticket)
+                let patch = try prefs.currentSettingsPatch(ticket, api: client)
                 if patch.settingsKeys.isEmpty { return } // superseded before dispatch
                 let server = try await client.updateSettings(patch: patch)
                 guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,

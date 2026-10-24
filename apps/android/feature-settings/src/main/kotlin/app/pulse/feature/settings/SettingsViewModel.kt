@@ -16,7 +16,7 @@ import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.PulseWave8Logic
 import app.pulse.protocol.WirePulsePrefs
-import app.pulse.protocol.settingsFields
+import app.pulse.protocol.settingsFieldNames
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.IOException
 import java.net.URL
@@ -272,7 +272,7 @@ class SettingsViewModel @Inject constructor(
                 val result = if (patch == null) target.retryPendingSettings() else target.updatePulsePrefs(patch)
                 currentCoroutineContext().ensureActive()
                 if (!current()) return@launch
-                val fields = patch?.settingsFields()?.keys.orEmpty()
+                val fields = patch?.settingsFieldNames().orEmpty()
                 unsavedSettingsFields.value = if (result.exceptionOrNull() is app.pulse.domain.repository.SettingsPersistenceFailure) {
                     unsavedSettingsFields.value + fields
                 } else {
@@ -281,7 +281,7 @@ class SettingsViewModel @Inject constructor(
                     unsavedSettingsFields.value - fields
                 }
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) {
-                if (current()) unsavedSettingsFields.value += patch?.settingsFields()?.keys.orEmpty()
+                if (current()) unsavedSettingsFields.value += patch?.settingsFieldNames().orEmpty()
             }
         }
     }

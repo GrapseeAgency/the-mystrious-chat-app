@@ -2200,7 +2200,7 @@ public struct PulseAPIClient: Sendable {
             body: ["userId": userId, "on": on],
         )
         let result = try envelope(WireScreenPrivacyResult.self, from: data)
-        guard result.screenPrivacy == on else {
+        guard result.ok == true, result.screenPrivacy == on else {
             throw Failure(kind: .server, message: "Screen privacy couldn't be confirmed on the server. Your local preference is kept.")
         }
         return on

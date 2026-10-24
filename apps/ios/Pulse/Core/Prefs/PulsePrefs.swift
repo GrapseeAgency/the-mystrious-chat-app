@@ -442,7 +442,7 @@ public final class PulsePrefs: ObservableObject {
 
     public func setViewer(_ viewer: PulseViewer?) {
         let previousId = self.viewer?.id
-        let nextOwner = Self.settingsOwnerKey(for: viewer?.id)
+        let nextOwner = Self.settingsOwnerKey(for: viewer?.id, gateway: PulseEndpoints.gatewayURL)
         // Restore BEFORE publishing the replacement viewer; a synchronous
         // observer must never connect it with the previous account's policy.
         if loadedSettingsOwner != nextOwner { restoreSettings(owner: nextOwner) }
@@ -779,12 +779,12 @@ public final class PulsePrefs: ObservableObject {
     }
 
     private var settingsJournal: PulseSettingsJournal { PulseSettingsJournal(defaults: defaults) }
-    private static func settingsOwnerKey(for id: String?) -> String? {
+    private static func settingsOwnerKey(for id: String?, gateway: URL) -> String? {
         guard let id, !id.isEmpty,
-              let data = try? JSONEncoder().encode([PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL), id]) else { return nil }
+              let data = try? JSONEncoder().encode([PulseWalletOperations.gatewayKey(gateway), id]) else { return nil }
         return data.base64EncodedString()
     }
-    private var settingsOwnerKey: String? { Self.settingsOwnerKey(for: viewer?.id) }
+    private var settingsOwnerKey: String? { Self.settingsOwnerKey(for: viewer?.id, gateway: PulseEndpoints.gatewayURL) }
 
     /// Account/gateway cache activation is synchronous, before network dispatch.
     func refreshSettingsOwner() {
@@ -829,6 +829,12 @@ public final class PulsePrefs: ObservableObject {
     func currentSettingsPatch(_ ticket: PulseSettingsTicket) throws -> WirePulsePrefs {
         guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner else { throw CancellationError() }
         return try settingsJournal.current(ticket)
+    }
+    func currentSettingsPatch(_ ticket: PulseSettingsTicket, api: PulseAPIClient) throws -> WirePulsePrefs {
+        // The prefs scope can change before the session has rebuilt its client.
+        // Never send new-gateway intent through an old captured API instance.
+        guard Self.settingsOwnerKey(for: api.userId, gateway: api.baseURL) == ticket.owner else { throw CancellationError() }
+        return try currentSettingsPatch(ticket)
     }
     func acknowledgeSettings(_ ticket: PulseSettingsTicket, sent: WirePulsePrefs, server: WirePulsePrefs) throws {
         guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner else { throw CancellationError() }
