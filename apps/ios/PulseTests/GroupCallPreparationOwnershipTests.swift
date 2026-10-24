@@ -228,7 +228,7 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
     }
     func testIncomingRingExpiresAtServerDeadlineAndOnlyMatchingEndDismissesIt() {
         let e = engine(Media(), Signals())
-        defer { e.stop() }
+        defer { e.handleSocketDisconnected(); e.dismissRing() }
         let deadline = Date().addingTimeInterval(10)
         let raw: [String: Any] = ["conversationId": "room", "callId": "call", "kind": "voice",
             "caller": ["id": "peer"], "expiresAt": ISO8601DateFormatter().string(from: deadline)]
@@ -247,7 +247,7 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
     }
     func testAnswerPublishesJoiningBeforeRemovingRingForCallKitObservers() {
         let e = engine(Media(), Signals())
-        defer { e.stop() }
+        defer { e.handleSocketDisconnected(); e.dismissRing() }
         e.handleGroupCallSignal(event: "gcall:ring", raw: ["conversationId": "room", "callId": "call", "kind": "voice",
             "caller": ["id": "peer"], "expiresAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(30))])
         var inCallAtRemoval: Bool?
@@ -261,7 +261,7 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
     func testEndedInvitationDuringPermissionCannotCreateAnotherCallAfterApproval() async throws {
         let media = Media(), signals = Signals(), prompt = expectation(description: "invitation permission")
         let e = engine(media, signals)
-        defer { e.stop() }
+        defer { e.handleSocketDisconnected(); e.dismissRing() }
         media.requested = { prompt.fulfill() }
         e.handleGroupCallSignal(event: "gcall:ring", raw: ["conversationId": "room", "callId": "invited", "kind": "voice",
             "caller": ["id": "peer"], "expiresAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(30))])
@@ -282,7 +282,7 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         let media = Media(), signals = Signals(), prompt = expectation(description: "ongoing permission")
         media.lendAudio = true
         let e = engine(media, signals)
-        defer { e.stop() }
+        defer { e.handleSocketDisconnected(); e.dismissRing() }
         e.setActiveConversation("room")
         e.handleGroupCallSignal(event: "gcall:state", raw: roster(call: "observed", ids: ["peer"]))
         XCTAssertTrue(e.ongoingElsewhere)
@@ -307,7 +307,7 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         let media = Media(), signals = Signals()
         media.lendAudio = true
         let e = engine(media, signals)
-        defer { e.stop() }
+        defer { e.handleSocketDisconnected(); e.dismissRing() }
         try await join(e, media)
         let first = try XCTUnwrap(signals.payloads.last { $0.0 == "gcall:join" }?.1["joinAttemptId"] as? String)
         XCTAssertFalse(first.isEmpty)
@@ -330,7 +330,7 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         let media = Media(), signals = Signals()
         media.lendAudio = true
         let e = engine(media, signals)
-        defer { e.stop() }
+        defer { e.handleSocketDisconnected(); e.dismissRing() }
         try await join(e, media)
         let attempt = try XCTUnwrap(signals.payloads.last { $0.0 == "gcall:join" }?.1["joinAttemptId"] as? String)
         e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "joinAttemptId": "old", "reason": "access-unavailable"])

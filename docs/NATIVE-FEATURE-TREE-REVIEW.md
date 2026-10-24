@@ -3979,3 +3979,8 @@ are NOT a claim that all financial endpoints are safe. Autumn preserved; no full
 - Follow-up review caught a fall-through case: an old attempt's refusal carrying the same observed call ID could miss the attempt gate and then be interpreted as a call-wide end, cancelling a newer pending or active join.
 - Android, iOS and the shared web handler now treat any attempt-bearing end as an admission reply exclusively. A nonmatching reply returns without reaching expected-call, active-call or ring termination. Ordinary relay call-end events still use their exact call identity.
 - Added actual Swift engine regressions for same-call old-attempt refusal before and after admission, plus execution of the actual web handler. Full server suite **343 passing**; three changed native files syntax-parse. Native runtime verification remains pending; no broader completion claim.
+
+### Swift regression-test cleanup correction (2026-10-24)
+
+- Native build-test jobs 120827334177 / 120827799808 reported that new tests called nonexistent `PulseGroupCallEngine.stop()`. This was an introduced test-compilation error; syntax parsing did not establish symbol correctness.
+- Test cleanup now uses the engine's existing `handleSocketDisconnected()` plus `dismissRing()` lifecycle paths, rather than adding an artificial production API. Runtime assertions are unchanged. Corrected Swift build/test execution remains pending; existing concurrency/deprecation warnings are not claimed resolved.
