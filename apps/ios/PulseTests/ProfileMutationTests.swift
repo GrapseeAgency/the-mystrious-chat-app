@@ -35,6 +35,23 @@ final class ProfileMutationTests: XCTestCase {
         XCTAssertNil(gate.begin(current: replacement))
     }
 
+    func testCoverReservationPrecedesTaskExecutionAndOldCleanupCannotUnlockNewWork() throws {
+        var gate = ProfileMutationGate()
+        let mounted = ProfileMutationGate.Owner(userId: "owner", session: UUID())
+        gate.bind(mounted)
+        // The UI reserves synchronously, before its Task can begin executing.
+        let queued = try XCTUnwrap(gate.begin(current: mounted))
+        XCTAssertNil(gate.begin(current: mounted))
+        let replacement = ProfileMutationGate.Owner(userId: "owner", session: UUID())
+        XCTAssertFalse(gate.accepts(queued, current: replacement))
+        gate.invalidate() // presentation disappears, even if transfer ignores cancellation
+        gate.bind(mounted)
+        let next = try XCTUnwrap(gate.begin(current: mounted))
+        gate.finish(queued)
+        XCTAssertTrue(gate.accepts(next, current: mounted))
+        XCTAssertFalse(gate.accepts(queued, current: mounted))
+    }
+
     func testUploadReceiptNormalizationAndTextBudgetsMatchTheProfileEndpoint() throws {
         XCTAssertEqual(try PulseAvatarImage.managedPath("known-photo.jpg"), "/api/uploads/known-photo.jpg")
         XCTAssertEqual(try PulseAvatarImage.managedPath("/api/uploads/known-photo.jpg"), "/api/uploads/known-photo.jpg")
