@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
+import { peerBlock, PeerBlockError } from '../../src/lib/peer-block.ts'
 import * as personalSettings from '../../src/lib/conversation-personal-settings.ts'
 import { setConversationPin, ConversationPinError } from '../../src/lib/conversation-pin.ts'
 import * as metadata from '../../src/lib/conversation-metadata.ts'
@@ -20,7 +21,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'UserBlock']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -32,6 +33,7 @@ async function fixture(run, database = db => db) {
       })
       await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
     }
+    await db.$executeRawUnsafe('CREATE UNIQUE INDEX "UserBlock_pair" ON "UserBlock" ("blockerId", "blockedId")')
     for (const id of ['owner','other']) await db.user.create({ data: {
       id, name:id, color:'amber', preferences: '{"readReceipts":true,"density":"cozy"}',
       sessionTokenHash:hashSessionToken(`synthetic-${id}`), legacyTokenHashes:'[]',
@@ -79,7 +81,17 @@ async function fixture(run, database = db => db) {
     const setPersonal=(kind,body,token='synthetic-owner',userId='owner')=>personalRoutes[kind](new Request(`https://settings.test/api/conversations/room/${kind}`,{
       method:'PATCH',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId,...body}),
     }),{params:Promise.resolve({id:'room'})})
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal})
+    const blockDeps = {db,requireActionOwner,peerBlock,PeerBlockError,NextResponse:Response,
+      safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',notifySocket:async(...args)=>notices.push(args)}
+    const pairRoutes=await load('src/app/api/users/[id]/block/route.ts',blockDeps,'({GET,POST,DELETE})')
+    const listRoute=await load('src/app/api/users/[id]/blocks/route.ts',blockDeps,'GET')
+    const peer=(method,token='synthetic-owner',actor='owner',target='other')=>pairRoutes[method](new Request(`https://settings.test?userId=${actor}`,{
+      method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='POST'?{body:JSON.stringify({userId:actor})}:{})
+    }),{params:Promise.resolve({id:target})})
+    const blocks=(token='synthetic-owner',actor='owner',target='owner')=>listRoute(new Request(`https://settings.test?userId=${actor}`,{
+      headers:token?{authorization:`Bearer ${token}`}:{},
+    }),{params:Promise.resolve({id:target})})
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -212,3 +224,40 @@ test('personal mute and archive contention are retryable and do not return inven
   await assert.rejects(personalSettings.setConversationMute(db,'room','owner','8h'),{status:409})
   await assert.rejects(personalSettings.setConversationArchive(db,'room','owner',true),{status:409})
 })
+
+
+test('peer block and private list require owner credentials, not matching public IDs', () => fixture(async({db,peer,blocks})=>{
+  for(const token of [null,'synthetic-other','invalid']) {
+    for(const method of ['GET','POST','DELETE']) assert.equal((await peer(method,token)).status,token?403:401)
+    assert.equal((await blocks(token)).status,token?403:401)
+  }
+  assert.equal((await blocks('synthetic-other','other','owner')).status,403)
+  assert.equal(await db.userBlock.count(),0)
+}))
+
+test('pair receipts confirm desired state; block/unblock are repeatable and actor-private', () => fixture(async({db,peer,blocks,notices})=>{
+  await db.conversation.update({where:{id:'room'},data:{isGroup:false}})
+  for(const [method,expected] of [['GET',false],['POST',true],['POST',true],['GET',true],['DELETE',false],['DELETE',false]]) {
+    const response=await peer(method)
+    assert.equal(response.status,200)
+    assert.equal(response.headers.get('cache-control'),'private, no-store')
+    assert.deepEqual(await response.json(),{ok:true,blockReceiptVersion:1,actorId:'owner',targetId:'other',blocked:expected})
+    assert.equal(await db.userBlock.count(),expected?1:0)
+    const list=await blocks(); assert.equal(list.headers.get('cache-control'),'private, no-store')
+    const body=await list.json();assert.equal(body.blockListVersion,1);assert.equal(body.userId,'owner')
+    assert.deepEqual(body.blocks.map(row=>row.id),expected?['other']:[])
+    if(expected) assert.ok(Number.isFinite(Date.parse(body.blocks[0].blockedAt)))
+  }
+  assert.equal(notices.length,4)
+  for(const [event,recipients,payload] of notices) {
+    assert.equal(event,'conversation:updated');assert.deepEqual(recipients,['owner'])
+    assert.deepEqual(payload.recipientIds,['owner'])
+  }
+  assert.deepEqual((await (await blocks('synthetic-other','other','other')).json()).blocks,[])
+}))
+
+test('self or missing peer mutations cannot yield successful block receipts', () => fixture(async({db,peer})=>{
+  for(const method of ['POST','DELETE']) assert.equal((await peer(method,'synthetic-owner','owner','owner')).status,400)
+  for(const method of ['GET','POST','DELETE']) assert.equal((await peer(method,'synthetic-owner','owner','missing')).status,404)
+  assert.equal(await db.userBlock.count(),0)
+}))

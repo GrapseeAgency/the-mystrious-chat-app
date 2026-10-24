@@ -2850,17 +2850,26 @@ class PulseRepositoryImpl constructor(
     // Wave 6 route fixes (audit A): block carries the ACTOR in the body, and
     // unblock is DELETE /block?userId= - POST /unblock does NOT exist on the
     // wire (the same defect iOS shipped; both platforms converge now).
-    override suspend fun block(userId: String): Result<Unit> =
-        when (val r = api.blockUser(userId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    // Capture before transport, reject retired responses even when the server
+    // committed successfully. A late acknowledgement cannot update another UI owner.
+    private suspend fun <T> ownedPeerRequest(request: suspend (String) -> PulseResult<T>): Result<T> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        requireConversationOwner(owner, epoch)
+        val result = request(owner)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        requireConversationOwner(owner, epoch)
+        return when (result) {
+            is PulseResult.Success -> Result.success(result.value)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(result))
         }
+    }
+
+    override suspend fun block(userId: String): Result<Unit> =
+        ownedPeerRequest { api.blockUser(userId, it) }.map { Unit }
 
     override suspend fun unblock(userId: String): Result<Unit> =
-        when (val r = api.unblockUser(userId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedPeerRequest { api.unblockUser(userId, it) }.map { Unit }
 
     override suspend fun report(userId: String, reason: String, details: String?): Result<Unit> =
         when (val r = api.reportUser(userId, viewerId ?: "", reason, details)) {
@@ -4186,26 +4195,14 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun blockState(userId: String): Result<Boolean> =
-        when (val r = api.blockState(userId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.blocked)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedPeerRequest { api.blockState(userId, it) }.map { it.blocked }
 
     override suspend fun blockedAccounts(): Result<List<BlockedAccount>> =
-        when (val r = api.blockedAccounts(viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(
-                r.value.blocks.map {
-                    BlockedAccount(
-                        id = it.id,
-                        name = it.name,
-                        handle = it.username,
-                        avatar = it.avatar,
-                        color = it.color,
-                        blockedAtIso = it.blockedAt,
-                    )
-                },
-            )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        ownedPeerRequest { api.blockedAccounts(it) }.map { page ->
+            page.blocks.map {
+                BlockedAccount(id = it.id, name = it.name, handle = it.username,
+                    avatar = it.avatar, color = it.color, blockedAtIso = it.blockedAt)
+            }
         }
 
     override suspend fun myReportReasons(userId: String): Result<List<String>> =

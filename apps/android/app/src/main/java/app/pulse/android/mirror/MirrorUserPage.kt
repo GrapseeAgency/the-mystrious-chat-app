@@ -41,11 +41,9 @@ import coil.compose.AsyncImage
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.repository.PulseRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -84,19 +82,22 @@ internal fun MirrorUserPage(
     onDismiss: () -> Unit,
     onOpenConversation: (String) -> Unit,
 ) {
-    var profile by remember { mutableStateOf<UserProfile?>(null) }
-    var loadFailed by remember { mutableStateOf(false) }
-    var blocked by remember { mutableStateOf(false) }
-    var blockBusy by remember { mutableStateOf(false) }
-    var blockArmed by remember { mutableStateOf(false) }
-    var reportOpen by remember { mutableStateOf(false) }
-    var reportReason by remember { mutableStateOf<String?>(null) }
-    var reportDetails by remember { mutableStateOf("") }
-    var reportBusy by remember { mutableStateOf(false) }
-    var reportDone by remember { mutableStateOf(false) }
-    var dmBusy by remember { mutableStateOf(false) }
-    var handleCopied by remember { mutableStateOf(false) }
-    var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
+    val ownerEpoch = repository.attachmentSessionKey()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var blockKnown by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var profile by remember(repository, userId, ownerEpoch) { mutableStateOf<UserProfile?>(null) }
+    var loadFailed by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var blocked by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var blockBusy by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var blockArmed by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var reportOpen by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var reportReason by remember(repository, userId, ownerEpoch) { mutableStateOf<String?>(null) }
+    var reportDetails by remember(repository, userId, ownerEpoch) { mutableStateOf("") }
+    var reportBusy by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var reportDone by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var dmBusy by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var handleCopied by remember(repository, userId, ownerEpoch) { mutableStateOf(false) }
+    var nowTick by remember(repository, userId, ownerEpoch) { mutableStateOf(System.currentTimeMillis()) }
     val context = LocalContext.current
 
     // the web refreshes the relative stamps every 30s while the page is open
@@ -106,12 +107,49 @@ internal fun MirrorUserPage(
             delay(30_000)
         }
     }
-    LaunchedEffect(userId) {
+    LaunchedEffect(repository, userId, ownerEpoch) {
+        val epoch = ownerEpoch ?: return@LaunchedEffect
+        val owned = repository.boundToCurrentAccount()
         loadFailed = false
-        val user = runCatching { repository.userProfile(userId) }.getOrNull()?.getOrNull()
-        profile = user
-        if (user == null) loadFailed = true
-        blocked = runCatching { repository.blockState(userId) }.getOrNull()?.getOrNull() ?: false
+        val user = owned.userProfile(userId).getOrNull()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
+        profile = user; loadFailed = user == null
+        blockBusy = true
+        try {
+            val result = owned.blockState(userId)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
+            result.onSuccess { blocked = it; blockKnown = true }
+        } finally {
+            if (repository.attachmentSessionKey() == epoch) blockBusy = false
+        }
+    }
+
+    fun changeBlock(desired: Boolean?) {
+        if (blockBusy) return
+        val epoch = ownerEpoch ?: return
+        if (repository.attachmentSessionKey() != epoch) return
+        val owned = repository.boundToCurrentAccount()
+        blockBusy = true; blockArmed = false
+        actionScope.launch {
+            try {
+                val confirmed = if (desired == null) owned.blockState(userId).getOrThrow() else {
+                    (if (desired) owned.block(userId) else owned.unblock(userId)).getOrThrow()
+                    desired
+                }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() != epoch) return@launch
+                blocked = confirmed; blockKnown = true
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (repository.attachmentSessionKey() == epoch) android.widget.Toast.makeText(context,
+                    "Block status was not confirmed. Please retry.", android.widget.Toast.LENGTH_LONG).show()
+            } finally {
+                if (repository.attachmentSessionKey() == epoch) blockBusy = false
+            }
+        }
     }
 
     val user = profile
@@ -378,14 +416,22 @@ internal fun MirrorUserPage(
                                 Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(16.dp))
                                     .background(MirrorArt.Accent)
                                     .clickable(enabled = !isSelf && !dmBusy) {
+                                        val epoch = ownerEpoch ?: return@clickable
+                                        if (repository.attachmentSessionKey() != epoch) return@clickable
+                                        val owned = repository.boundToCurrentAccount()
                                         dmBusy = true
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            val target = existingDm ?: runCatching {
-                                                repository.createDm(userId).getOrNull()
-                                            }.getOrNull()
-                                            withContext(Dispatchers.Main) {
-                                                dmBusy = false
-                                                if (target != null) onOpenConversation(target.id)
+                                        actionScope.launch {
+                                            try {
+                                                val target = existingDm ?: owned.createDm(userId).getOrThrow()
+                                                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                                if (repository.attachmentSessionKey() == epoch) onOpenConversation(target.id)
+                                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                                throw cancelled
+                                            } catch (error: Exception) {
+                                                if (repository.attachmentSessionKey() == epoch) android.widget.Toast.makeText(context,
+                                                    error.message ?: "Could not open chat", android.widget.Toast.LENGTH_LONG).show()
+                                            } finally {
+                                                if (repository.attachmentSessionKey() == epoch) dmBusy = false
                                             }
                                         }
                                     }
@@ -408,29 +454,16 @@ internal fun MirrorUserPage(
                         }
                         // block / unblock + report (web danger rows)
                         if (!isSelf) {
-                            val blockLabel = if (blocked) "Unblock $firstName" else "Block $firstName"
+                            val blockLabel = if (blockBusy) "Checking…" else if (!blockKnown) "Retry block status" else if (blocked) "Unblock $firstName" else "Block $firstName"
                             Row(
                                 Modifier.fillMaxWidth().padding(top = 8.dp).height(44.dp)
                                     .clip(RoundedCornerShape(16.dp))
                                     .border(1.dp, Color(0x40F43F5E), RoundedCornerShape(16.dp))
                                     .background(Color(0x0FF43F5E))
-                                    .clickable {
-                                        // 2-tap confirm before blocking (destructive guard)
-                                        if (blocked || blockArmed) {
-                                            blockArmed = false
-                                            blockBusy = true
-                                            CoroutineScope(Dispatchers.IO).launch {
-                                                val r = runCatching {
-                                                    if (blocked) repository.unblock(userId) else repository.block(userId)
-                                                }.isSuccess
-                                                withContext(Dispatchers.Main) {
-                                                    blockBusy = false
-                                                    if (r) blocked = !blocked
-                                                }
-                                            }
-                                        } else {
-                                            blockArmed = true
-                                        }
+                                    .clickable(enabled = !blockBusy) {
+                                        if (!blockKnown) changeBlock(null)
+                                        else if (blocked || blockArmed) changeBlock(!blocked)
+                                        else blockArmed = true
                                     }
                                     .padding(horizontal = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -513,17 +546,24 @@ internal fun MirrorUserPage(
                                                 .background(if (reportReason != null && !reportBusy) MirrorArt.Accent else MirrorArt.White10)
                                                 .clickable(enabled = reportReason != null && !reportBusy) {
                                                     val chosen = reportReason ?: return@clickable
+                                                    val epoch = ownerEpoch ?: return@clickable
+                                                    if (repository.attachmentSessionKey() != epoch) return@clickable
+                                                    val owned = repository.boundToCurrentAccount()
+                                                    val details = reportDetails.trim().ifBlank { null }
                                                     reportBusy = true
-                                                    CoroutineScope(Dispatchers.IO).launch {
-                                                        val ok = runCatching {
-                                                            repository.report(userId, chosen, reportDetails.trim().ifBlank { null })
-                                                        }.isSuccess
-                                                        withContext(Dispatchers.Main) {
-                                                            reportBusy = false
-                                                            if (ok) {
-                                                                reportDone = true
-                                                                reportOpen = true
-                                                            }
+                                                    actionScope.launch {
+                                                        try {
+                                                            owned.report(userId, chosen, details).getOrThrow()
+                                                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                                            if (repository.attachmentSessionKey() != epoch) return@launch
+                                                            reportDone = true; reportOpen = true
+                                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                                            throw cancelled
+                                                        } catch (error: Exception) {
+                                                            if (repository.attachmentSessionKey() == epoch) android.widget.Toast.makeText(context,
+                                                                "Report was not confirmed. Please retry.", android.widget.Toast.LENGTH_LONG).show()
+                                                        } finally {
+                                                            if (repository.attachmentSessionKey() == epoch) reportBusy = false
                                                         }
                                                     }
                                                 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 /** Contacts tab state holder - directory from GET /api/users + live presence. */
 @HiltViewModel
@@ -93,11 +94,30 @@ class ContactsViewModel @Inject constructor(
         _dmResult.value = null
     }
 
-    fun block(user: User) {
-        viewModelScope.launch { repo.block(user.id) }
+    private val pendingSafety = mutableMapOf<String, java.util.UUID>()
+    private var safetyEpoch: String? = null
+
+    private fun safetyAction(user: User, action: suspend (PulseRepository) -> Result<Unit>) {
+        val epoch = repo.attachmentSessionKey() ?: return
+        if (safetyEpoch != epoch) { safetyEpoch = epoch; pendingSafety.clear() }
+        if (pendingSafety.containsKey(user.id)) return
+        val owned = repo.boundToCurrentAccount()
+        val ticket = java.util.UUID.randomUUID(); pendingSafety[user.id] = ticket
+        viewModelScope.launch {
+            try {
+                coroutineContext.ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                action(owned).getOrThrow()
+                coroutineContext.ensureActive()
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(error = null)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(error = error.message ?: "Action was not confirmed. Please retry.")
+            } finally { if (pendingSafety[user.id] == ticket) pendingSafety.remove(user.id) }
+        }
     }
 
-    fun report(user: User, reason: String, details: String?) {
-        viewModelScope.launch { repo.report(user.id, reason, details) }
-    }
+    fun block(user: User) = safetyAction(user) { it.block(user.id) }
+    fun report(user: User, reason: String, details: String?) = safetyAction(user) { it.report(user.id, reason, details) }
 }

@@ -334,7 +334,7 @@ struct UserPageView: View {
                             if model.blockBusy {
                                 ProgressView()
                             } else {
-                                Text(model.blocked ? "Unblock" : "Block")
+                                Text(!model.blockKnown ? "Retry block status" : model.blocked ? "Unblock" : "Block")
                                     .font(.system(size: 13, weight: .semibold))
                             }
                         }
@@ -373,6 +373,7 @@ final class UserPageModel: ObservableObject {
     @Published private(set) var stats: WireUserStats?
     @Published private(set) var statsFailed = false
     @Published private(set) var blocked = false
+    @Published private(set) var blockKnown = false
     @Published private(set) var sharedRooms: [WireConversationSummary] = []
     @Published private(set) var messaging = false
     @Published private(set) var blockBusy = false
@@ -383,22 +384,25 @@ final class UserPageModel: ObservableObject {
     private var userId = ""
     private var configuredEpoch: UUID?
     private var blockRevision: UInt = 0
+    private var profileRevision = UUID()
 
     func configure(session: PulseSession, userId: String) {
         guard configuredEpoch != session.sessionGeneration || self.userId != userId else { return }
         configuredEpoch = session.sessionGeneration
+        profileRevision = UUID()
         blockRevision &+= 1
         self.session = session
         self.userId = userId
         user = nil; stats = nil; statsFailed = false; sharedRooms = []; errorText = nil
-        blocked = false
+        blocked = false; blockKnown = false; blockBusy = false
     }
 
     func load() async {
-        guard let session else { return }
+        guard let session, configuredEpoch == session.sessionGeneration else { return }
         let api = session.api, epoch = session.sessionGeneration, target = userId, blockTicket = blockRevision
+        let profileTicket = profileRevision
         func isCurrent() -> Bool {
-            !Task.isCancelled && session.sessionGeneration == epoch && userId == target
+            !Task.isCancelled && session.sessionGeneration == epoch && userId == target && profileRevision == profileTicket
         }
         if user == nil {
             do {
@@ -425,7 +429,7 @@ final class UserPageModel: ObservableObject {
         guard isCurrent() else { return }
         if let state = try? await api.blockState(target: target) {
             guard isCurrent() else { return }
-            if blockTicket == blockRevision { blocked = state }
+            if blockTicket == blockRevision { blocked = state; blockKnown = true }
         }
         guard isCurrent() else { return }
         if sharedRooms.isEmpty, let mine = try? await api.conversations() {
@@ -459,25 +463,33 @@ final class UserPageModel: ObservableObject {
     /// Block/unblock with the honest toasts - the pair state refetches
     /// afterwards (server truth, no optimistic lies).
     func toggleBlock() async {
-        guard let session, !blockBusy else { return }
+        guard let session, configuredEpoch == session.sessionGeneration, !blockBusy else { return }
         let api = session.api, epoch = session.sessionGeneration, target = userId, wasBlocked = blocked
         blockBusy = true
         blockRevision &+= 1
-        defer { blockBusy = false }
+        let ticket = blockRevision
+        defer {
+            if configuredEpoch == epoch, userId == target, blockRevision == ticket { blockBusy = false }
+        }
         do {
+            if !blockKnown {
+                let state = try await api.blockState(target: target)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
+                blocked = state; blockKnown = true
+                return
+            }
             if wasBlocked { try await api.unblock(userId: target) }
             else { try await api.block(userId: target) }
-            guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target else { return }
-            blockRevision &+= 1
+            guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
             blocked = !wasBlocked
             PulseHaptics.success()
             session.toasts.show("\(wasBlocked ? "Unblocked" : "Blocked") \(user?.name ?? "account")")
             if let fresh = try? await api.blockState(target: target) {
-                guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
                 blocked = fresh
             }
         } catch {
-            guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target else { return }
+            guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
             session.toasts.show(ChatsViewModel.describe(error))
         }
     }

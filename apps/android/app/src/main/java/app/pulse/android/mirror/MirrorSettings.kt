@@ -1623,19 +1623,37 @@ private fun PrivacySection(
     prefs: ResolvedPrefs,
     onPrefs: (WirePulsePrefs) -> Unit,
 ) {
-    var blocks by remember { mutableStateOf<List<BlockedAccount>>(emptyList()) }
-    var loadingBlocks by remember { mutableStateOf(false) }
-    var showBlocked by remember { mutableStateOf(false) }
-    var busyId by remember { mutableStateOf<String?>(null) }
+    val ownerEpoch = repository.attachmentSessionKey()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var blocks by remember(repository, ownerEpoch) { mutableStateOf<List<BlockedAccount>>(emptyList()) }
+    var loadingBlocks by remember(repository, ownerEpoch) { mutableStateOf(false) }
+    var blocksLoaded by remember(repository, ownerEpoch) { mutableStateOf(false) }
+    var blockError by remember(repository, ownerEpoch) { mutableStateOf<String?>(null) }
+    var showBlocked by remember(repository, ownerEpoch) { mutableStateOf(false) }
+    var busyId by remember(repository, ownerEpoch) { mutableStateOf<String?>(null) }
+    var readTicket by remember(repository, ownerEpoch) { mutableStateOf(java.util.UUID.randomUUID()) }
 
-    LaunchedEffect(showBlocked) {
-        if (showBlocked) {
-            loadingBlocks = true
-            blocks = runCatching { repository.blockedAccounts() }
-                .getOrNull()?.getOrNull() ?: emptyList()
-            loadingBlocks = false
+    suspend fun reloadBlocks() {
+        val epoch = ownerEpoch ?: return
+        if (repository.attachmentSessionKey() != epoch || busyId != null) return
+        val owned = repository.boundToCurrentAccount()
+        val ticket = java.util.UUID.randomUUID()
+        readTicket = ticket; loadingBlocks = true
+        try {
+            val fresh = owned.blockedAccounts().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != epoch || readTicket != ticket) return
+            blocks = fresh; blocksLoaded = true; blockError = null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (repository.attachmentSessionKey() == epoch && readTicket == ticket)
+                blockError = "Could not refresh blocked accounts. Please retry."
+        } finally {
+            if (repository.attachmentSessionKey() == epoch && readTicket == ticket) loadingBlocks = false
         }
     }
+    LaunchedEffect(repository, ownerEpoch, showBlocked) { if (showBlocked) reloadBlocks() }
 
     SettingsGroup("Visibility") {
         SettingsToggleRow(
@@ -1675,7 +1693,9 @@ private fun PrivacySection(
                 Text("Blocked accounts", color = SubPageInk.Zinc50, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Text(
                     when {
-                        !showBlocked && blocks.isEmpty() -> "No blocked accounts"
+                        !showBlocked && blockError != null -> "Could not confirm blocked accounts"
+                        !blocksLoaded -> "Open to review blocked accounts"
+                        blocks.isEmpty() -> "No blocked accounts"
                         loadingBlocks -> "Loading..."
                         blocks.isEmpty() -> "No blocked accounts"
                         blocks.size == 1 -> "1 account blocked"
@@ -1692,7 +1712,12 @@ private fun PrivacySection(
             )
         }
         if (showBlocked) {
-            if (blocks.isEmpty()) {
+            if (blockError != null) {
+                Text(blockError!!, color = SubPageInk.Zinc500, fontSize = 12.sp)
+                androidx.compose.material3.TextButton(enabled = busyId == null && !loadingBlocks,
+                    onClick = { actionScope.launch { reloadBlocks() } }) { Text("Retry list") }
+            }
+            if (blocks.isEmpty() && blockError == null) {
                 Text(
                     if (loadingBlocks) "Loading..." else "Nobody is blocked. Blocked accounts cannot message you in direct chats.",
                     color = SubPageInk.Zinc500,
@@ -1747,12 +1772,26 @@ private fun PrivacySection(
                                 .clip(CircleShape)
                                 .border(1.dp, SubPageInk.PanelBorder, CircleShape)
                                 .clickable(enabled = busyId == null) {
+                                    val epoch = ownerEpoch ?: return@clickable
+                                    if (repository.attachmentSessionKey() != epoch) return@clickable
+                                    val owned = repository.boundToCurrentAccount()
                                     busyId = account.id
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        runCatching { repository.unblock(account.id) }
-                                        blocks = runCatching { repository.blockedAccounts() }
-                                            .getOrNull()?.getOrNull() ?: blocks
-                                        busyId = null
+                                    readTicket = java.util.UUID.randomUUID(); loadingBlocks = false
+                                    actionScope.launch {
+                                        try {
+                                            owned.unblock(account.id).getOrThrow()
+                                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                            if (repository.attachmentSessionKey() != epoch) return@launch
+                                            blocks = blocks.filterNot { it.id == account.id }
+                                            blockError = null
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                            throw cancelled
+                                        } catch (error: Exception) {
+                                            if (repository.attachmentSessionKey() == epoch)
+                                                blockError = "Unblock was not confirmed. Refresh or try again."
+                                        } finally {
+                                            if (repository.attachmentSessionKey() == epoch) busyId = null
+                                        }
                                     }
                                 }
                                 .padding(horizontal = 14.dp, vertical = 6.dp),

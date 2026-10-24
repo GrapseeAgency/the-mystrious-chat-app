@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -64,29 +65,71 @@ class BlockedListViewModel @Inject constructor(
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    init {
-        refresh()
+    private var ownerEpoch: String? = repo.attachmentSessionKey()
+    private var readTicket = java.util.UUID.randomUUID()
+    private var actionTicket = java.util.UUID.randomUUID()
+
+    init { refresh() }
+
+    private fun owner(): String? {
+        val epoch = repo.attachmentSessionKey()
+        if (epoch != ownerEpoch) {
+            ownerEpoch = epoch; readTicket = java.util.UUID.randomUUID(); actionTicket = java.util.UUID.randomUUID()
+            _state.value = State()
+        }
+        return epoch
     }
 
     fun refresh() {
+        val epoch = owner() ?: return
+        if (_state.value.busyId != null) return
+        val owned = repo.boundToCurrentAccount()
+        val ticket = java.util.UUID.randomUUID()
+        readTicket = ticket
+        _state.value = _state.value.copy(loading = true)
         viewModelScope.launch {
-            val result = repo.blockedAccounts()
-            _state.value = State(
-                loading = false,
-                rows = result.getOrElse { emptyList() },
-                error = result.isFailure,
-            )
+            try {
+                val rows = owned.blockedAccounts().getOrThrow()
+                coroutineContext.ensureActive()
+                if (repo.attachmentSessionKey() != epoch || readTicket != ticket) return@launch
+                _state.value = _state.value.copy(rows = rows, error = false)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch && readTicket == ticket)
+                    _state.value = _state.value.copy(error = true)
+            } finally {
+                if (repo.attachmentSessionKey() == epoch && readTicket == ticket)
+                    _state.value = _state.value.copy(loading = false)
+            }
         }
     }
 
     fun unblock(id: String) {
+        val epoch = owner() ?: return
+        if (_state.value.busyId != null || _state.value.rows.none { it.id == id }) return
+        val owned = repo.boundToCurrentAccount()
+        val ticket = java.util.UUID.randomUUID()
+        actionTicket = ticket; readTicket = java.util.UUID.randomUUID()
+        _state.value = _state.value.copy(busyId = id, loading = false)
         viewModelScope.launch {
-            _state.value = _state.value.copy(busyId = id)
-            repo.unblock(id)
-                .onSuccess { refresh() }
-                .onFailure { _state.value = _state.value.copy(busyId = null) }
+            try {
+                owned.unblock(id).getOrThrow()
+                coroutineContext.ensureActive()
+                if (repo.attachmentSessionKey() != epoch || actionTicket != ticket) return@launch
+                _state.value = _state.value.copy(rows = _state.value.rows.filterNot { it.id == id }, error = false)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch && actionTicket == ticket)
+                    _state.value = _state.value.copy(error = true)
+            } finally {
+                if (repo.attachmentSessionKey() == epoch && actionTicket == ticket)
+                    _state.value = _state.value.copy(busyId = null)
+            }
         }
     }
+
 }
 
 @Composable
@@ -112,6 +155,7 @@ fun BlockedListScreen(
                 Text(
                     when {
                         state.loading -> "Loading…"
+                        state.error -> "Could not confirm blocked accounts"
                         state.rows.isEmpty() -> "No blocked accounts"
                         else -> "${state.rows.size} account" + if (state.rows.size == 1) " blocked" else "s blocked"
                     },
@@ -121,18 +165,17 @@ fun BlockedListScreen(
             }
         }
 
+        if (state.error) {
+            Text("Blocked accounts could not be confirmed. Known rows are retained.", color = MaterialTheme.colorScheme.error)
+            TextButton(enabled = state.busyId == null, onClick = viewModel::refresh) { Text("Retry list") }
+        }
         when {
-            state.loading -> Row(
+            state.loading && state.rows.isEmpty() -> Row(
                 Modifier.padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) }
 
-            state.error -> Column(Modifier.padding(20.dp)) {
-                Text("Could not load the list.", color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = viewModel::refresh) { Text("Try again") }
-            }
-
-            state.rows.isEmpty() -> Column(Modifier.padding(20.dp)) {
+            state.rows.isEmpty() && !state.error -> Column(Modifier.padding(20.dp)) {
                 Text("Nobody is blocked. Blocked accounts cannot message you in direct chats.", fontSize = 13.sp)
             }
 
@@ -157,6 +200,7 @@ fun BlockedListScreen(
                         } else {
                             Button(
                                 onClick = { viewModel.unblock(row.id) },
+                                enabled = state.busyId == null,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                     contentColor = MaterialTheme.colorScheme.onSurface,

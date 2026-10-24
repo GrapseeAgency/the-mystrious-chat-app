@@ -611,16 +611,28 @@ public struct PulseAPIClient: Sendable {
         return envelope.preferences ?? WirePulsePrefs()
     }
 
-    public func block(userId target: String) async throws {
-        try await postEmpty("/api/users/\(target)/block", body: ["userId": userId])
+    private struct BlockReceipt: Decodable {
+        let ok: Bool
+        let blockReceiptVersion: Int
+        let actorId: String
+        let targetId: String
+        let blocked: Bool
     }
-    /// WAVE-6 DEFECT FIX - the old body POSTed /api/users/{target}/unblock,
-    /// a route that does NOT exist server-side (every unblock failed). The
-    /// R47 contract is DELETE /api/users/{id}/block?userId={actor} (query
-    /// param, not body - mirrors the safety route's pair convention).
+    private func confirmedBlock(_ data: Data, target: String, desired: Bool? = nil) throws -> Bool {
+        let receipt = try decoder.decode(BlockReceipt.self, from: data)
+        guard receipt.ok, receipt.blockReceiptVersion == 1, receipt.actorId == userId, receipt.targetId == target,
+              desired == nil || receipt.blocked == desired else {
+            throw Failure(kind: .server, message: "The block state was not confirmed for this account.")
+        }
+        return receipt.blocked
+    }
+    public func block(userId target: String) async throws {
+        let data = try await postRaw("/api/users/\(q(target))/block", body: ["userId": userId])
+        _ = try confirmedBlock(data, target: target, desired: true)
+    }
     public func unblock(userId target: String) async throws {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        try await deleteEmpty("/api/users/\(target)/block?userId=\(query)", body: ["userId": userId])
+        let data = try await deleteRaw("/api/users/\(q(target))/block?userId=\(q(userId))", body: ["userId": userId])
+        _ = try confirmedBlock(data, target: target, desired: false)
     }
     /// POST /api/users/{id}/report { userId, reason, details? } - repeat with
     /// the same reason refreshes the row → { reported, updated: true }.
@@ -669,16 +681,19 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/users/{id}/block?userId={actor} - pair block state.
     public func blockState(target: String) async throws -> Bool {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        let state: WireBlockState = try await get("/api/users/\(target)/block?userId=\(query)")
-        return state.blocked
+        var request = URLRequest(url: url("/api/users/\(q(target))/block?userId=\(q(userId))"))
+        request.httpMethod = "GET"
+        return try confirmedBlock(try await send(request), target: target)
     }
 
-    /// GET /api/users/{id}/blocks?userId={self} - MY block list, newest first
-    /// (self-service only; the server 403s any other viewer).
     public func blockedAccounts() async throws -> [WireBlockedAccount] {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        let page: WireBlocksPage = try await get("/api/users/\(userId)/blocks?userId=\(query)")
+        struct Page: Decodable { let blockListVersion: Int; let userId: String; let blocks: [WireBlockedAccount] }
+        let page: Page = try await get("/api/users/\(q(userId))/blocks?userId=\(q(userId))")
+        guard page.blockListVersion == 1, page.userId == userId,
+              Set(page.blocks.map(\.id)).count == page.blocks.count,
+              page.blocks.allSatisfy({ !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.id != userId && PulseFormat.date($0.blockedAt) != nil }) else {
+            throw Failure(kind: .server, message: "Blocked accounts were not confirmed for this owner.")
+        }
         return page.blocks
     }
 

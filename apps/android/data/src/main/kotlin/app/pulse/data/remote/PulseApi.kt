@@ -1319,12 +1319,22 @@ class PulseApi(
         ) { PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
 
     /** GET /api/users/{id}/block?userId= → pair state (drives Block/Unblock label). */
+    private fun blockReceipt(text: String, actor: String, target: String, desired: Boolean? = null): BlockStateDto {
+        val raw = PulseJson.parseToJsonElement(text) as? JsonObject
+            ?: throw kotlinx.serialization.SerializationException("Block receipt is missing")
+        val state = PulseJson.decodeFromString(BlockStateDto.serializer(), text)
+        if (raw["ok"] != JsonPrimitive(true) || raw["blockReceiptVersion"] != JsonPrimitive(1) ||
+            raw["actorId"] != JsonPrimitive(actor) || raw["targetId"] != JsonPrimitive(target) ||
+            raw["blocked"] != JsonPrimitive(state.blocked) || (desired != null && state.blocked != desired))
+            throw kotlinx.serialization.SerializationException("The requested block state was not confirmed")
+        return state
+    }
     suspend fun blockState(targetId: String, actorId: String): PulseResult<BlockStateDto> =
         get(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block?userId=" +
                 java.net.URLEncoder.encode(actorId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(BlockStateDto.serializer(), it)
+            blockReceipt(it, actorId, targetId)
         }
 
     /** POST /api/users/{id}/block { userId } - idempotent (actor in the BODY). */
@@ -1332,14 +1342,14 @@ class PulseApi(
         post(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
             jsonOf("userId" to actorId),
-        ) { PulseJson.decodeFromString(BlockStateDto.serializer(), it) }
+        ) { blockReceipt(it, actorId, targetId, true) }
 
     /** DELETE /api/users/{id}/block?userId= - idempotent unblock (POST /unblock does NOT exist). */
     suspend fun unblockUser(targetId: String, actorId: String): PulseResult<BlockStateDto> =
         deleteWithQuery(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
             actorId,
-        ) { PulseJson.decodeFromString(BlockStateDto.serializer(), it) }
+        ) { blockReceipt(it, actorId, targetId, false) }
 
     /** GET /api/users/{id}/blocks?userId= - self-service list (403 otherwise). */
     suspend fun blockedAccounts(ownerId: String): PulseResult<BlockedPageDto> =
@@ -1347,7 +1357,15 @@ class PulseApi(
             "/api/users/" + java.net.URLEncoder.encode(ownerId, "UTF-8") + "/blocks?userId=" +
                 java.net.URLEncoder.encode(ownerId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(BlockedPageDto.serializer(), it)
+            val raw = PulseJson.parseToJsonElement(it) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Blocked accounts envelope is missing")
+            val page = PulseJson.decodeFromString(BlockedPageDto.serializer(), it)
+            if (raw["blockListVersion"] != JsonPrimitive(1) || raw["userId"] != JsonPrimitive(ownerId) ||
+                raw["blocks"] !is JsonArray || page.blocks.any { row -> row.id.isBlank() || row.id == ownerId ||
+                    runCatching { java.time.Instant.parse(row.blockedAt) }.isFailure } ||
+                page.blocks.map { row -> row.id }.distinct().size != page.blocks.size)
+                throw kotlinx.serialization.SerializationException("Blocked accounts were not confirmed for this owner")
+            page
         }
 
     /** POST /api/users/{id}/report { userId, reason, details? } → 201/200 { reported }. */
