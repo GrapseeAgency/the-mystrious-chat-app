@@ -4,7 +4,9 @@
 // marks rows fired via PATCH /api/reminders/[id].
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { reminderPage, ReminderContractError } from '@/lib/reminder-contract'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { clipUtf16 } from '@/lib/text-limits'
+import { reminderPage, reminderAnchor, ReminderContractError } from '@/lib/reminder-contract'
 import { parseIsoDate, safeJson, strField } from '@/lib/serializers'
 import type { ReminderItem } from '@/lib/types'
 
@@ -51,8 +53,8 @@ async function conversationLabel(
   conversationId: string,
   viewerId: string,
 ): Promise<{ id: string; name: string; isGroup: boolean } | null> {
-  const conv = await db.conversation.findUnique({
-    where: { id: conversationId },
+  const conv = await db.conversation.findFirst({
+    where: { id: conversationId, participants: { some: { userId: viewerId } } },
     select: {
       id: true,
       name: true,
@@ -75,15 +77,12 @@ async function conversationLabel(
 }
 
 /** Anchored-message snippet for the nudge/sheet (null when deleted or missing). */
-async function messageSnippet(messageId: string | null): Promise<string | null> {
+async function messageSnippet(messageId: string | null, conversationId: string): Promise<string | null> {
   if (!messageId) return null
-  const msg = await db.message.findUnique({
-    where: { id: messageId },
-    select: { content: true, deletedAt: true, kind: true },
-  })
-  if (!msg || msg.deletedAt !== null) return null
+  const msg = await reminderAnchor(db, conversationId, messageId)
+  if (!msg) return null
   const text = msg.content.replace(/\s+/g, ' ').trim()
-  if (text.length > 0) return text.slice(0, SNIPPET_MAX)
+  if (text.length > 0) return clipUtf16(text, SNIPPET_MAX)
   if (msg.kind === 'image') return 'Photo'
   if (msg.kind === 'audio') return 'Voice note'
   return null
@@ -101,6 +100,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
   }
 
+  const denied = await requireActionOwner(req, userId, 'reminder')
+  if (denied) return denied
+
   const dueOnly = url.searchParams.get('due') === '1'
   let page
   try { page = await reminderPage(db, userId, dueOnly, url.searchParams.get('cursor')) }
@@ -112,10 +114,8 @@ export async function GET(req: Request) {
 
   const items = await Promise.all(
     rows.map(async (row) => {
-      const [conversation, snippet] = await Promise.all([
-        conversationLabel(row.conversationId, userId),
-        messageSnippet(row.messageId),
-      ])
+      const conversation = await conversationLabel(row.conversationId, userId)
+      const snippet = conversation ? await messageSnippet(row.messageId, row.conversationId) : null
       return toReminderItem(
         row,
         conversation ?? { id: row.conversationId, name: 'Chat', isGroup: false },
@@ -124,7 +124,7 @@ export async function GET(req: Request) {
     }),
   )
 
-  return NextResponse.json({ items, nextCursor: page.nextCursor }, { headers: { 'Cache-Control': 'no-store' } })
+  return NextResponse.json({ items, nextCursor: page.nextCursor }, { headers: { 'Cache-Control': 'private, no-store' } })
 }
 
 /**
@@ -143,6 +143,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'conversationId is required.' }, { status: 400 })
   }
 
+  const denied = await requireActionOwner(req, userId, 'reminder')
+  if (denied) return denied
+
   const participant = await db.conversationParticipant.findUnique({
     where: { userId_conversationId: { userId, conversationId } },
     select: { id: true },
@@ -156,11 +159,8 @@ export async function POST(req: Request) {
 
   const messageId = strField(body.messageId) || null
   if (messageId) {
-    const message = await db.message.findUnique({
-      where: { id: messageId },
-      select: { id: true, conversationId: true },
-    })
-    if (!message || message.conversationId !== conversationId) {
+    const message = await reminderAnchor(db, conversationId, messageId)
+    if (!message) {
       return NextResponse.json(
         { error: 'The anchored message was not found in this conversation.' },
         { status: 400 },
@@ -195,6 +195,6 @@ export async function POST(req: Request) {
 
   return NextResponse.json(
     { item: toReminderItem(row, conversation ?? { id: conversationId, name: 'Chat', isGroup: false }, null) },
-    { status: 201 },
+    { status: 201, headers: { 'Cache-Control': 'private, no-store' } },
   )
 }

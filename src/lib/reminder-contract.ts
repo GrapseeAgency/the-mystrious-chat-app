@@ -27,6 +27,16 @@ export async function reminderPage(db: PrismaClient, userId: string, dueOnly: bo
     ? Buffer.from(JSON.stringify([userId, dueOnly, last.remindAt.toISOString(), last.id])).toString('base64url') : null }
 }
 
+/** Reminder context is not a back door to expired/deleted or orphaned thread text. */
+export async function reminderAnchor(db: PrismaClient, conversationId: string, messageId: string, now = new Date()) {
+  const alive = { conversationId, deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }
+  const message = await db.message.findFirst({ where: { ...alive, id: messageId },
+    select: { id: true, parentId: true, content: true, kind: true } })
+  if (!message) return null
+  if (message.parentId && !await db.message.findFirst({ where: { ...alive, id: message.parentId, parentId: null }, select: { id: true } })) return null
+  return message
+}
+
 export async function resolveReminder(db: PrismaClient, id: string, userId: string) {
   return db.$transaction(async tx => {
     const row = await tx.reminder.findUnique({ where: { id } })

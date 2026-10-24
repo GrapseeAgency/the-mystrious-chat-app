@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
 import { DirectConversationError, openSelfConversation } from '../../src/lib/direct-conversation.ts'
+import * as reminders from '../../src/lib/reminder-contract.ts'
+import { clipUtf16 } from '../../src/lib/text-limits.ts'
 import { deriveSafetyNumber } from '../../src/lib/safety.ts'
 import { peerBlock, PeerBlockError } from '../../src/lib/peer-block.ts'
 import * as personalSettings from '../../src/lib/conversation-personal-settings.ts'
@@ -23,7 +25,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'UserBlock', 'AccountReport', 'UserVerification']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'UserBlock', 'AccountReport', 'UserVerification', 'Message', 'Reminder']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -110,7 +112,14 @@ async function fixture(run, database = db => db) {
     const notebook=(token='synthetic-owner',userId='owner')=>notebookRoute(new Request('https://settings.test/api/conversations/self',{
       method:'POST',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId}),
     }))
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook})
+    const reminderDeps={...blockDeps,...reminders,clipUtf16,parseIsoDate:value=>typeof value==='string' && Number.isFinite(Date.parse(value))?new Date(value):null}
+    const reminderList=await load('src/app/api/reminders/route.ts',reminderDeps,'({GET,POST})')
+    const reminderItem=await load('src/app/api/reminders/[id]/route.ts',reminderDeps,'({PATCH,DELETE})')
+    const reminder=(method,body={},token='synthetic-owner',userId='owner',id='private-reminder')=>
+      (reminderList[method]??reminderItem[method])(new Request(`https://settings.test/api/reminders?userId=${userId}`,{
+        method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='GET'?{}:{body:JSON.stringify({userId,...body})}),
+      }),{params:Promise.resolve({id})})
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -354,4 +363,57 @@ test('private notebook cannot be opened or created by matching public IDs withou
   const other=await notebook('synthetic-other','other');assert.equal(other.status,201)
   const otherBody=await other.json();assert.notEqual(otherBody.conversation.id,receipt.conversation.id)
   assert.deepEqual(otherBody.conversation.members,[{id:'other'}])
+}))
+
+
+test('reminder list create resolve and delete require the exact credential before accessing private rows',()=>fixture(async({db,reminder})=>{
+  const remindAt=new Date(Date.now()+60_000)
+  await db.reminder.create({data:{id:'private-reminder',userId:'owner',conversationId:'room',note:'private note',remindAt}})
+  for(const method of ['GET','POST','PATCH','DELETE']) {
+    for(const token of [null,'invalid','synthetic-other']) {
+      const response=await reminder(method,{conversationId:'room',note:'injected',remindAt:remindAt.toISOString()},token)
+      assert.equal(response.status,token?403:401,method)
+      assert.equal(JSON.stringify(await response.json()).includes('private note'),false)
+    }
+  }
+  assert.equal(await db.reminder.count(),1)
+  assert.equal((await db.reminder.findUnique({where:{id:'private-reminder'}})).firedAt,null)
+  const own=await reminder('GET');assert.equal(own.status,200);assert.equal(own.headers.get('cache-control'),'private, no-store')
+  assert.equal((await own.json()).items[0].note,'private note')
+  const created=await reminder('POST',{conversationId:'room',note:'new note',remindAt:remindAt.toISOString()})
+  assert.equal(created.status,201)
+  const resolved=await reminder('PATCH');assert.equal(resolved.status,200)
+  assert.equal((await resolved.json()).ok,true)
+  assert.equal((await reminder('DELETE')).status,200)
+  assert.equal((await reminder('DELETE')).status,200)
+}))
+
+test('reminder context stops revealing expired or inaccessible anchors without deleting the owners own notes',()=>fixture(async({db,reminder})=>{
+  const remindAt=new Date(Date.now()+60_000)
+  await db.conversation.update({where:{id:'room'},data:{name:'Private room'}})
+  await db.message.create({data:{id:'anchor',conversationId:'room',senderId:'other',content:'a'.repeat(119)+'🌿tail'}})
+  await db.reminder.create({data:{id:'private-reminder',userId:'owner',conversationId:'room',messageId:'anchor',note:'my retained note',remindAt}})
+  const row=async()=>(await (await reminder('GET')).json()).items[0]
+  assert.equal((await row()).snippet,'a'.repeat(119))
+  await db.message.update({where:{id:'anchor'},data:{expiresAt:new Date(0)}})
+  assert.equal((await row()).snippet,null)
+  assert.equal((await reminder('POST',{conversationId:'room',messageId:'anchor',remindAt:remindAt.toISOString()})).status,400)
+  await db.message.update({where:{id:'anchor'},data:{expiresAt:null,deletedAt:new Date()}})
+  assert.equal((await row()).snippet,null)
+  await db.message.update({where:{id:'anchor'},data:{deletedAt:null}})
+  await db.conversationParticipant.deleteMany({where:{conversationId:'room',userId:'owner'}})
+  const revoked=await row();assert.equal(revoked.snippet,null);assert.equal(revoked.conversation.name,'Chat');assert.equal(revoked.note,'my retained note')
+}))
+
+test('reminder thread anchors need a live canonical root in the same conversation',()=>fixture(async({db,reminder})=>{
+  const remindAt=new Date(Date.now()+60_000).toISOString()
+  await db.message.create({data:{id:'root',conversationId:'room',senderId:'other',content:'root',expiresAt:new Date(0)}})
+  await db.message.create({data:{id:'reply',conversationId:'room',senderId:'other',content:'private reply',parentId:'root'}})
+  const create=()=>reminder('POST',{conversationId:'room',messageId:'reply',note:'my note',remindAt})
+  assert.equal((await create()).status,400)
+  await db.message.update({where:{id:'root'},data:{expiresAt:null}})
+  assert.equal((await create()).status,201)
+  let list=await (await reminder('GET')).json();assert.equal(list.items[0].snippet,'private reply')
+  await db.message.update({where:{id:'root'},data:{deletedAt:new Date()}})
+  list=await (await reminder('GET')).json();assert.equal(list.items[0].snippet,null)
 }))
