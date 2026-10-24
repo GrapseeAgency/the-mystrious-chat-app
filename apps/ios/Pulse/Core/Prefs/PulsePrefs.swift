@@ -242,7 +242,7 @@ public struct PulsePrefsValues: Equatable, Sendable {
 /// chats-list filter (All / Unread / Groups - persisted like the web).
 /// Wave 8 - adds the server-synced PulsePrefs blob (bubble radius, density,
 /// wallpaper, notification + privacy toggles, reduced motion) with
-/// optimistic local-first writes and a fire-and-forget PATCH funnel, plus
+/// optimistic local-first writes and a journaled, ordered PATCH funnel, plus
 /// the LOCAL-only quiet-hours window and haptics master toggle (web
 /// pulse.settings.v1 parity).
 @MainActor
@@ -320,7 +320,7 @@ public final class PulsePrefs: ObservableObject {
     /// Every server-backed toggle calls this after the optimistic local
     /// write. The session PATCHes { userId, preferences } and reports the
     /// verdict back via `notePatchSettled`.
-    public var patchRemote: ((WirePulsePrefs) -> Void)?
+    public var patchRemote: ((PulseSettingsTicket) -> Void)?
     private var localPreferenceRevision: UInt64 = 0
     private var settingsReadTicket = UUID()
     /// 401 rotation rejections funnel to the session layer (token clear +
@@ -447,6 +447,7 @@ public final class PulsePrefs: ObservableObject {
         } else {
             defaults.removeObject(forKey: Self.viewerKey)
         }
+        if previousId != viewer?.id { notePatchSettled(successful: true, note: nil) }
         // Wave 0 - secure mirror (viewer.identity + token slot for later).
         // Best effort: UserDefaults stays the source of truth.
         PulseKeychain.shared.saveViewer(viewer)
@@ -707,7 +708,9 @@ public final class PulsePrefs: ObservableObject {
         do {
             let server = try await api.settings()
             guard ownsRead(), localPreferenceRevision == revision else { return }
-            applyServer(server)
+            guard let owner = settingsOwnerKey else { return }
+            try settingsJournal.applySnapshot(server, owner: owner, apply: applyServer)
+            notePatchSettled(successful: true, note: nil)
         } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
             guard ownsRead() else { return }
             authRejectionHandler?(failure.message)
@@ -752,20 +755,47 @@ public final class PulsePrefs: ObservableObject {
         }
     }
 
-    /// PATCH verdict from the session funnel: success clears the hint,
-    /// failure keeps the local value + surfaces the honest offline note.
-    public func notePatchSettled(successful: Bool, note: String?) {
-        lastSyncNote = successful ? nil : (note ?? "Saved on this device - the server didn't answer.")
+    private var settingsJournal: PulseSettingsJournal { PulseSettingsJournal(defaults: defaults) }
+    private var settingsOwnerKey: String? {
+        guard let id = viewer?.id,
+              let data = try? JSONEncoder().encode([PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL), id]) else { return nil }
+        return data.base64EncodedString()
     }
-
-    /// Optimistic write funnel: the local field is ALREADY updated; this
-    /// hands the single-field patch to the session's PATCH sender.
+    func currentSettingsPatch(_ ticket: PulseSettingsTicket) throws -> WirePulsePrefs {
+        guard settingsOwnerKey == ticket.owner else { throw CancellationError() }
+        return try settingsJournal.current(ticket)
+    }
+    func acknowledgeSettings(_ ticket: PulseSettingsTicket, sent: WirePulsePrefs, server: WirePulsePrefs) throws {
+        guard settingsOwnerKey == ticket.owner else { throw CancellationError() }
+        try settingsJournal.acknowledge(ticket, sent: sent, server: server, apply: applyServer)
+        localPreferenceRevision &+= 1 // an older GET must not undo this confirmation
+        notePatchSettled(successful: true, note: nil)
+    }
+    public func retryPendingSettings() {
+        guard let owner = settingsOwnerKey else { return }
+        do {
+            let ticket = try settingsJournal.pendingTicket(owner: owner)
+            guard !ticket.fields.isEmpty else { return }
+            patchRemote?(ticket)
+        } catch { lastSyncNote = "Pending settings could not be read. Nothing was discarded." }
+    }
+    /// A successful unrelated request must not erase the remaining failure hint.
+    public func notePatchSettled(successful: Bool, note: String?) {
+        guard let owner = settingsOwnerKey else { lastSyncNote = nil; return }
+        do {
+            lastSyncNote = try settingsJournal.hasPending(owner: owner)
+                ? (note ?? "Changes saved on this device still need server confirmation. Tap Retry.") : nil
+        } catch { lastSyncNote = "Pending settings could not be read. Nothing was discarded." }
+    }
     private func patch(_ configure: (inout WirePulsePrefs) -> Void) {
         localPreferenceRevision &+= 1
-        guard let patchRemote else { return }
-        var wire = WirePulsePrefs()
-        configure(&wire)
-        patchRemote(wire)
+        var wire = WirePulsePrefs(); configure(&wire)
+        guard let owner = settingsOwnerKey else { return }
+        do {
+            let ticket = try settingsJournal.stage(wire, owner: owner)
+            notePatchSettled(successful: false, note: nil)
+            patchRemote?(ticket)
+        } catch { lastSyncNote = "These settings could not be queued. Please retry; existing pending changes were kept." }
     }
 
     // plumbing

@@ -252,6 +252,17 @@ internal fun MirrorSettingsScreen(
             } finally { recoveryBusy.remove(row.clientId) }
         }
     }
+    val pendingSettings by repository.observePendingSettings().collectAsState(initial = false)
+    val pendingSettingsNotice: @Composable () -> Unit = {
+        if (pendingSettings) {
+            androidx.compose.material3.TextButton(onClick = {
+                val target = repository.boundToCurrentAccount()
+                if (target.viewerId == viewerId) session.retryServerPreferences(viewerId, target.attachmentSessionKey())
+            }) {
+                Text("Settings awaiting server confirmation · Retry", color = SubPageInk.Amber400, fontSize = 12.sp)
+            }
+        }
+    }
     val prefsWire by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
     val prefs = prefsWire.resolvedOrDefaults()
     val soundOn by session.soundOn.collectAsState()
@@ -366,6 +377,7 @@ internal fun MirrorSettingsScreen(
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 48.dp),
                 ) {
+                    pendingSettingsNotice()
                     SettingsGroup("Personal") {
                         settingsRootRow(SettingsSection.Account, hints) { section = SettingsSection.Account }
                         settingsRootRow(SettingsSection.Appearance, hints) { section = SettingsSection.Appearance }
@@ -441,6 +453,7 @@ internal fun MirrorSettingsScreen(
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 48.dp),
                 ) {
+                    pendingSettingsNotice()
                     when (def) {
                         SettingsSection.Account -> AccountSection(repository, viewerId, onEditProfile)
                         SettingsSection.Appearance -> AppearanceSection(

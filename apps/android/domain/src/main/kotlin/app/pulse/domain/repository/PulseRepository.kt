@@ -243,6 +243,11 @@ interface PulsePrefsStore {
     suspend fun setVoiceCaptions(value: Boolean)
 }
 
+/** Local staging failed; a network Retry cannot claim this value was retained. */
+class SettingsPersistenceFailure(cause: Throwable) : Exception(
+    "Settings could not be saved on this device. Choose the setting again.", cause,
+)
+
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */
 interface PulseRepository {
     /** Bind the client to a viewer identity (REST userId + socket join). Idempotent per id. */
@@ -281,6 +286,8 @@ interface PulseRepository {
      * failure so the surface can hint at it.
      */
     suspend fun updatePulsePrefs(patch: app.pulse.protocol.WirePulsePrefs): Result<Unit>
+    fun observePendingSettings(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    suspend fun retryPendingSettings(): Result<Unit> = Result.failure(IllegalStateException("Settings retry is unavailable"))
 
     /**
      * POST /api/users/login { name } - reclaim an existing identity and

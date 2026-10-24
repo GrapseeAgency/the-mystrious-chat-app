@@ -8,10 +8,13 @@ import app.pulse.protocol.PulseJson
 import app.pulse.protocol.PulseWave8Logic
 import app.pulse.protocol.PulseWhiteboardDraftLogic
 import app.pulse.protocol.WirePulsePrefs
+import app.pulse.protocol.settingsFields
+import app.pulse.protocol.selectSettingsFields
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonPrimitive
@@ -311,22 +314,90 @@ class PulsePrefsLocalStore internal constructor(
         return PulseJson.encodeToString(JsonObject.serializer(), obj)
     }
 
-    /** Server fetch → full replace (server value wins), re-resolved for tolerance. */
-    suspend fun replaceFromServer(server: WirePulsePrefs) {
-        val resolved = PulseWave8Logic.mergePatch(PulseWave8Logic.DEFAULTS, server)
-        storage.edit {
-            it[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(), resolved)
+    private val settingsPendingKey = stringPreferencesKey("settings.pending.fields.v1")
+    private val settingsRevisionKey = stringPreferencesKey("settings.intent.revision.v1")
+    internal data class SettingsReadTicket(val revision: String?)
+    internal suspend fun settingsReadTicket() = SettingsReadTicket(storage.data.first()[settingsRevisionKey])
+    internal data class SettingsTicket(val patch: WirePulsePrefs, val fields: Map<String, String>)
+
+    private fun pendingFields(p: androidx.datastore.preferences.core.Preferences): Map<String, String> {
+        val raw = p[settingsPendingKey] ?: return emptyMap()
+        val obj = PulseJson.parseToJsonElement(raw) as? JsonObject ?: error("Unreadable pending settings")
+        return obj.mapValues { (_, value) ->
+            val token = value as? JsonPrimitive ?: error("Unreadable pending settings")
+            check(token.isString && token.content.isNotBlank()) { "Unreadable pending settings" }
+            token.content
+        }
+    }
+    private fun storePending(p: androidx.datastore.preferences.core.MutablePreferences, pending: Map<String, String>) {
+        if (pending.isEmpty()) p.remove(settingsPendingKey)
+        else p[settingsPendingKey] = JsonObject(pending.mapValues { JsonPrimitive(it.value) }).toString()
+    }
+    val hasPendingSettings: Flow<Boolean> = storage.data.map { p ->
+        // Corruption is not permission to report all settings synchronized.
+        runCatching { pendingFields(p).isNotEmpty() }.getOrDefault(true)
+    }
+    suspend fun pendingSettingsPatch(): WirePulsePrefs = pendingSettingsTicket().patch
+    internal suspend fun pendingSettingsTicket(): SettingsTicket {
+        val p = storage.data.first()
+        val pending = pendingFields(p)
+        val patch = PulseWave8Logic.mergePrefs(p[Keys.PREFS]).selectSettingsFields(pending.keys)
+        check(patch.settingsFields().keys.containsAll(pending.keys)) { "Unreadable pending settings; nothing was discarded" }
+        return SettingsTicket(patch, pending)
+    }
+
+    /** Persist local intent and per-field receipt identities in ONE transaction. */
+    internal suspend fun stageSettings(patch: WirePulsePrefs, owns: () -> Boolean): SettingsTicket {
+        val fields = patch.settingsFields().keys.associateWith { java.util.UUID.randomUUID().toString() }
+        require(fields.isNotEmpty()) { "No settings changes to save" }
+        storage.edit { p ->
+            if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+            val pending = pendingFields(p) + fields
+            p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(),
+                PulseWave8Logic.mergePatch(PulseWave8Logic.mergePrefs(p[Keys.PREFS]), patch))
+            storePending(p, pending)
+            p[settingsRevisionKey] = java.util.UUID.randomUUID().toString()
+        }
+        return SettingsTicket(patch, fields)
+    }
+    internal suspend fun currentSettingsPatch(ticket: SettingsTicket): WirePulsePrefs {
+        val pending = pendingFields(storage.data.first())
+        return ticket.patch.selectSettingsFields(ticket.fields.filter { (key, id) -> pending[key] == id }.keys)
+    }
+
+    internal suspend fun acknowledgeSettings(ticket: SettingsTicket, sent: WirePulsePrefs, server: WirePulsePrefs, owns: () -> Boolean) {
+        val keys = sent.settingsFields().keys
+        check(server.settingsFields().keys.containsAll(keys)) { "The server did not confirm the requested settings fields" }
+        storage.edit { p ->
+            if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+            val pending = pendingFields(p).toMutableMap()
+            val accepted = keys.filter { pending[it] == ticket.fields[it] }.toSet()
+            val current = PulseWave8Logic.mergePrefs(p[Keys.PREFS])
+            p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(),
+                PulseWave8Logic.mergePatch(current, server.selectSettingsFields(accepted)))
+            accepted.forEach { pending.remove(it) }
+            storePending(p, pending)
+            if (accepted.isNotEmpty()) p[settingsRevisionKey] = java.util.UUID.randomUUID().toString()
         }
     }
 
-    /** Local optimistic toggle - shallow merge over the CURRENT blob. */
+    /** A startup/read snapshot cannot erase local intent awaiting confirmation. */
+    internal suspend fun replaceFromServer(server: WirePulsePrefs, readTicket: SettingsReadTicket? = null, owns: () -> Boolean = { true }) {
+        storage.edit { p ->
+            if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+            if (readTicket != null && p[settingsRevisionKey] != readTicket.revision) return@edit
+            val pending = pendingFields(p)
+            val current = PulseWave8Logic.mergePrefs(p[Keys.PREFS])
+            val safe = server.selectSettingsFields(server.settingsFields().keys - pending.keys)
+            p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(), PulseWave8Logic.mergePatch(current, safe))
+        }
+    }
+
+    /** Non-network local preference callers; server writes use stageSettings. */
     suspend fun applyLocal(patch: WirePulsePrefs) {
         storage.edit { p ->
-            val current = PulseWave8Logic.mergePrefs(p[Keys.PREFS])
-            p[Keys.PREFS] = PulseJson.encodeToString(
-                WirePulsePrefs.serializer(),
-                PulseWave8Logic.mergePatch(current, patch),
-            )
+            p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(),
+                PulseWave8Logic.mergePatch(PulseWave8Logic.mergePrefs(p[Keys.PREFS]), patch))
         }
     }
 

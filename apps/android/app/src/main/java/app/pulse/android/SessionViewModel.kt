@@ -148,7 +148,13 @@ class SessionViewModel @Inject constructor(
 
     /** Settings work belongs to the original session, not a detached UI scope.
      * Inspect the repository Result; local persistence is not a server receipt. */
-    fun updateServerPreferences(ownerId: String, expectedSession: String?, patch: app.pulse.protocol.WirePulsePrefs) {
+    fun updateServerPreferences(ownerId: String, expectedSession: String?, patch: app.pulse.protocol.WirePulsePrefs) =
+        submitServerPreferences(ownerId, expectedSession) { it.updatePulsePrefs(patch) }
+
+    fun retryServerPreferences(ownerId: String, expectedSession: String?) =
+        submitServerPreferences(ownerId, expectedSession) { it.retryPendingSettings() }
+
+    private fun submitServerPreferences(ownerId: String, expectedSession: String?, operation: suspend (PulseRepository) -> Result<Unit>) {
         if (expectedSession == null) return
         val target = repo.boundToCurrentAccount()
         fun current() = target.viewerId == ownerId && target.attachmentSessionKey() == expectedSession
@@ -157,9 +163,9 @@ class SessionViewModel @Inject constructor(
             try {
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (!current()) return@launch
-                target.updatePulsePrefs(patch).getOrThrow()
+                operation(target).getOrThrow()
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) {
-                if (current()) _sessionNotice.value = "The server did not confirm the settings update. Reopen Settings and retry; no automatic retry was queued."
+                if (current()) _sessionNotice.value = "Settings were not confirmed. Review Settings and use Retry."
             }
         }
     }

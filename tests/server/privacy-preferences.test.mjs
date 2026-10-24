@@ -115,8 +115,10 @@ test('settings repair preserves privacy refusals until an explicit boolean opt-i
  const mergePrefs=new Function('sanitizeConvThemeMap',strip(prefSource)+';return mergePrefs')(()=>{throw new Error('Unexpected theme-map branch')})
  const source=await readFile(new URL('../../src/app/api/settings/route.ts',import.meta.url),'utf8')
  let preferences='{broken',writes=0
- const bindings={NextResponse:{json:Response.json},mergePrefs,privacyPreferenceSnapshot,
-  db:{user:{findUnique:async()=>({preferences}),update:async({data})=>{preferences=data.preferences;writes++}}}}
+ const bindings={NextResponse:{json:Response.json},mergePrefs,privacyPreferenceSnapshot,requireActionOwner:async()=>null,
+  db:{user:{findUnique:async()=>({preferences}),updateMany:async({where,data})=>{
+   if(where.preferences!==preferences)return {count:0};preferences=data.preferences;writes++;return {count:1}
+  }}}}
  const {GET,PATCH}=new Function(...Object.keys(bindings),strip(source)+';return {GET,PATCH}')(...Object.values(bindings))
  const get=await GET(new Request('https://settings.test/?userId=owner'))
  assert.equal((await get.json()).preferences.readReceipts,false)

@@ -1254,7 +1254,10 @@ struct SettingsView: View {
             // when the PATCH can't reach the server (server value wins on
             // the next successful fetch instead).
             if let note = prefs.lastSyncNote {
-                Label(note, systemImage: "icloud.slash")
+                Button { prefs.retryPendingSettings() } label: {
+                    Label(note, systemImage: "icloud.slash")
+                }
+                .accessibilityLabel("Retry unconfirmed settings")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(PulseTheme.emberOnline)
                     .padding(.top, 2)

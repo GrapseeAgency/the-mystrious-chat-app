@@ -26,6 +26,10 @@ final class SettingsReadOwnershipTests: XCTestCase {
         try await verifyRead(mode: "owned")
     }
 
+    func testAnAcknowledgementInvalidatesAnOlderFetchEvenAfterItsPendingTokenIsCleared() async throws {
+        try await verifyRead(mode: "confirmed")
+    }
+
     private func verifyRead(mode: String) async throws {
         let suite = "SettingsReadOwnershipTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -34,7 +38,12 @@ final class SettingsReadOwnershipTests: XCTestCase {
         PulseEndpoints.configuredBase = "https://settings-read.test"
         let prefs = PulsePrefs(defaults: defaults)
         prefs.setViewer(PulseViewer(id: "owner", name: "Owner"))
-        prefs.setReadReceipts(false)
+        prefs.applyServer(WirePulsePrefs(readReceipts: false))
+        var pending: PulseSettingsTicket?
+        if mode == "confirmed" {
+            prefs.patchRemote = { pending = $0 }
+            prefs.setReadReceipts(false)
+        }
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SettingsReadOwnershipProtocol.self]
         let transport = URLSession(configuration: config)
@@ -48,6 +57,10 @@ final class SettingsReadOwnershipTests: XCTestCase {
             if validations > 1 {
                 if mode == "retired" { return false }
                 if mode == "edited" { prefs.setReadReceipts(false) }
+                if mode == "confirmed", let pending {
+                    do { try prefs.acknowledgeSettings(pending, sent: pending.patch, server: WirePulsePrefs(readReceipts: false)) }
+                    catch { XCTFail("Acknowledgement failed: \(error)") }
+                }
             }
             return true
         })

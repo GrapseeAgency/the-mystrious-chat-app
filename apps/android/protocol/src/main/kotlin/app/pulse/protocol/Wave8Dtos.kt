@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonObject
  *  - enum fields that arrive as unknown strings are DISCARDED (default wins),
  *    exactly like the web mergePrefs whitelist - never surface junk.
  */
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 data class WirePulsePrefs(
     /** Chat bubble corner style - 'md' | 'lg' | 'pill'. */
@@ -41,6 +42,8 @@ data class WirePulsePrefs(
     /** Reduce non-essential motion (effects/parallax) app-wide. */
     val reducedMotion: Boolean? = null,
     /** WebGL ambient field mode - 'off'|'aurora'|'caustics'|'mesh'|'stars'|'liquid'. */
+    @kotlinx.serialization.SerialName("fx.webglMode")
+    @kotlinx.serialization.json.JsonNames("fxWebglMode")
     val fxWebglMode: String? = null,
 )
 
@@ -92,14 +95,17 @@ fun JsonObject.toWirePrefsOrNull(): WirePulsePrefs? = runCatching {
     PulseJson.decodeFromJsonElement(WirePulsePrefs.serializer(), this)
 }.getOrNull()
 
-/** Server settings response → prefs (tolerant of a missing envelope field). */
+/** Preserve field presence. A missing acknowledgement is not a default-valued
+ * confirmation (especially for privacy flags). Resolve only when projecting UI. */
 fun String.decodeSettingsEnvelope(): SettingsEnvelopeDto = runCatching {
-    val root = PulseJson.parseToJsonElement(this)
-    if (root is JsonObject && root.containsKey("preferences")) {
-        val raw = PulseJson.decodeFromJsonElement(SettingsEnvelopeDto.serializer(), root)
-        SettingsEnvelopeDto(preferences = raw.preferences?.let { PulseWave8Logic.resolved(it) })
-    } else {
-        // Some proxies wrap - accept the prefs object at the root too.
-        SettingsEnvelopeDto(preferences = root.jsonObject.toWirePrefsOrNull()?.let { PulseWave8Logic.resolved(it) })
-    }
-}.getOrDefault(SettingsEnvelopeDto(preferences = null))
+    val root = PulseJson.parseToJsonElement(this) as? JsonObject ?: return@runCatching SettingsEnvelopeDto()
+    val fields = if (root.containsKey("preferences")) root["preferences"] as? JsonObject else root
+    SettingsEnvelopeDto(preferences = fields?.toWirePrefsOrNull())
+}.getOrDefault(SettingsEnvelopeDto())
+
+fun WirePulsePrefs.settingsFields(): JsonObject = toPatchJson("")["preferences"]!!.jsonObject
+
+/** Only fields in this request may be acknowledged, never the entire reply. */
+fun WirePulsePrefs.selectSettingsFields(keys: Set<String>): WirePulsePrefs =
+    JsonObject(settingsFields().filterKeys { it in keys }).toWirePrefsOrNull()
+        ?: error("Invalid settings fields")

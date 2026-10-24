@@ -16,6 +16,7 @@ import app.pulse.domain.repository.PulsePrefsStore
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.PulseWave8Logic
 import app.pulse.protocol.WirePulsePrefs
+import app.pulse.protocol.settingsFields
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.IOException
 import java.net.URL
@@ -68,10 +69,13 @@ class SettingsViewModel @Inject constructor(
     val pulsePrefs: StateFlow<WirePulsePrefs> = repo.pulsePrefs
         .stateIn(viewModelScope, SharingStarted.Eagerly, PulseWave8Logic.DEFAULTS)
 
-    private val _prefsOffline = MutableStateFlow(false)
-
-    /** True when the last PATCH failed - the local change STAYS (honest hint). */
-    val prefsOffline: StateFlow<Boolean> = _prefsOffline.asStateFlow()
+    // Network failures belong to the durable journal, not a sticky view-local
+    // flag: a Retry from another settings surface must clear the same notice.
+    private val unsavedSettingsFields = MutableStateFlow<Set<String>>(emptySet())
+    val prefsLocalFailure: StateFlow<Boolean> = unsavedSettingsFields.map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val prefsOffline: StateFlow<Boolean> = repo.observePendingSettings()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // local-only settings (web pulse.settings.v1 parity)
 
@@ -187,6 +191,7 @@ class SettingsViewModel @Inject constructor(
                     previousOwner = owner
                     _viewerProfile.value = null
                     footprintLoader.reset()
+                    unsavedSettingsFields.value = emptySet()
                 }
                 if (id == null || target.viewerId != id || epoch == null) {
                     _viewerProfile.value = null
@@ -253,7 +258,9 @@ class SettingsViewModel @Inject constructor(
         updatePrefs(WirePulsePrefs(fxWebglMode = value))
     }
 
-    private fun updatePrefs(patch: WirePulsePrefs) {
+    fun retryPreferences() = updatePrefs(null)
+
+    private fun updatePrefs(patch: WirePulsePrefs?) {
         val target = repo.boundToCurrentAccount()
         val owner = target.viewerId ?: return
         val epoch = target.attachmentSessionKey() ?: return
@@ -262,11 +269,19 @@ class SettingsViewModel @Inject constructor(
             try {
                 currentCoroutineContext().ensureActive()
                 if (!current()) return@launch
-                target.updatePulsePrefs(patch).getOrThrow()
+                val result = if (patch == null) target.retryPendingSettings() else target.updatePulsePrefs(patch)
                 currentCoroutineContext().ensureActive()
-                if (current()) _prefsOffline.value = false
+                if (!current()) return@launch
+                val fields = patch?.settingsFields()?.keys.orEmpty()
+                unsavedSettingsFields.value = if (result.exceptionOrNull() is app.pulse.domain.repository.SettingsPersistenceFailure) {
+                    unsavedSettingsFields.value + fields
+                } else {
+                    // Local staging succeeded, including when HTTP later failed.
+                    // Unrelated successes cannot erase a failed local choice.
+                    unsavedSettingsFields.value - fields
+                }
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) {
-                if (current()) _prefsOffline.value = true
+                if (current()) unsavedSettingsFields.value += patch?.settingsFields()?.keys.orEmpty()
             }
         }
     }

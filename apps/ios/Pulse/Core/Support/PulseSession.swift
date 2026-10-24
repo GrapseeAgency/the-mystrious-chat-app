@@ -577,6 +577,7 @@ public final class PulseSession: ObservableObject {
     /// funnel. Idempotent - the closures attach exactly once.
     public func attach(prefs: PulsePrefs) {
         self.prefs = prefs
+        prefs.notePatchSettled(successful: true, note: nil)
         guard prefs.patchRemote == nil else { return }
         prefs.patchRemote = { [weak self] patch in
             self?.sendPrefsPatch(patch)
@@ -587,29 +588,32 @@ public final class PulseSession: ObservableObject {
     }
 
     /// Optimistic settings PATCH: the local value already applied; this
-    /// persists { userId, preferences } and echoes the server-merged blob
-    /// back (server wins on the response). Failure → local value STAYS +
-    /// an honest offline note for the settings surface.
-    private func sendPrefsPatch(_ patch: WirePulsePrefs) {
+    /// queues { userId, preferences } in order and applies only its current,
+    /// explicitly confirmed fields. Failure retains intent for explicit Retry;
+    /// unrelated replies and older GETs must not reset the local choice.
+    private let settingsWrites = PulseSettingsWriteQueue()
+    private func sendPrefsPatch(_ ticket: PulseSettingsTicket) {
         guard let owner = viewer?.id, prefs?.viewer?.id == owner, api.userId == owner else { return }
         let client = api, epoch = generation
-        Task { [weak self] in
+        settingsWrites.enqueue { [weak self] in
             guard let self, !Task.isCancelled, self.generation == epoch,
-                  self.viewer?.id == owner, self.prefs?.viewer?.id == owner else { return }
+                  self.viewer?.id == owner, let prefs = self.prefs, prefs.viewer?.id == owner else { return }
             do {
+                let patch = try prefs.currentSettingsPatch(ticket)
+                if patch.settingsKeys.isEmpty { return } // superseded before dispatch
                 let server = try await client.updateSettings(patch: patch)
                 guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
-                      self.prefs?.viewer?.id == owner else { return }
-                self.prefs?.applyServer(server)
-                self.prefs?.notePatchSettled(successful: true, note: nil)
+                      prefs.viewer?.id == owner else { return }
+                try prefs.acknowledgeSettings(ticket, sent: patch, server: server)
             } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
                 guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
-                      self.prefs?.viewer?.id == owner else { return }
+                      prefs.viewer?.id == owner else { return }
+                prefs.notePatchSettled(successful: false, note: "Settings were not confirmed. Sign in to the original account before retrying.")
                 self.noteAuthFailure(failure.message)
             } catch {
                 guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
-                      self.prefs?.viewer?.id == owner else { return }
-                self.prefs?.notePatchSettled(successful: false, note: "Saved on this device - the server didn't answer.")
+                      prefs.viewer?.id == owner else { return }
+                prefs.notePatchSettled(successful: false, note: "Settings saved on this device were not confirmed by the server. Tap Retry.")
             }
         }
     }
@@ -649,6 +653,7 @@ public final class PulseSession: ObservableObject {
         voiceRooms?.leaveSpace()
         PulsePushNotifications.deactivate()
         generation = UUID()
+        settingsWrites.cancelAll()
         startupTask?.cancel()
         startupTask = nil
         reminderDueTask?.cancel()

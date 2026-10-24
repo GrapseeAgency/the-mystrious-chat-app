@@ -68,7 +68,7 @@ object PulseWave8Logic {
             typingVisible = bool("typingVisible") ?: DEFAULTS.typingVisible,
             reducedMotion = bool("reducedMotion") ?: DEFAULTS.reducedMotion,
             // fx.webglMode is optional on the wire (absent = native keeps its own local FX pref)
-            fxWebglMode = str("fx.webglMode", WEBGL_MODES),
+            fxWebglMode = str("fx.webglMode", WEBGL_MODES) ?: str("fxWebglMode", WEBGL_MODES),
         )
     }
 

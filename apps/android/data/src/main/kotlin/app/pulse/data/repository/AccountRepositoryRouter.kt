@@ -48,7 +48,7 @@ internal class AccountRepositoryRouter(
                             // not a synthetic null that would erase restored drafts.
                             if (!initial) when (method.name) {
                                 "events" -> Unit
-                                "observeConnected" -> emit(false)
+                                "observeConnected", "observePendingSettings" -> emit(false)
                                 "observeThreadAccessDenied" -> emit(true)
                                 "observePresence" -> emit(emptySet<String>())
                                 "observeDraft" -> emit(null)

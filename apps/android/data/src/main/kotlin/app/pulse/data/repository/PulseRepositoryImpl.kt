@@ -88,6 +88,7 @@ import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.FlushOutboxUseCase
 import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.PulseWave8Logic
+import app.pulse.protocol.settingsFields
 import app.pulse.protocol.WirePulsePrefs
 import app.pulse.protocol.CallAnswerDto
 import app.pulse.protocol.AiRecapDto
@@ -308,15 +309,21 @@ class PulseRepositoryImpl constructor(
      * store junk-proof even when a proxy mangles the envelope. Failure is a
      * no-op (offline-first: the local blob stays authoritative).
      */
+    private val settingsReadSequence = java.util.concurrent.atomic.AtomicLong()
     private suspend fun fetchSettings() {
         val id = viewerId ?: return
         val epoch = attachmentSession
+        val readSequence = settingsReadSequence.incrementAndGet()
+        val readTicket = prefsLocalStore.settingsReadTicket()
+        if (viewerId != id || attachmentSession != epoch) return
         val response = api.settings(id)
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         if (viewerId != id || attachmentSession != epoch) return
         when (val r = response) {
             is PulseResult.Success -> {
-                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }
+                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it, readTicket) {
+                    viewerId == id && attachmentSession == epoch && settingsReadSequence.get() == readSequence
+                } }
             }
             is PulseResult.Failure -> Log.i(TAG, "settings fetch skipped: ${r.kind}")
         }
@@ -332,26 +339,44 @@ class PulseRepositoryImpl constructor(
         prefsLocalStore.setConvTheme(conversationId, theme)
     }
 
-    override suspend fun updatePulsePrefs(patch: WirePulsePrefs): Result<Unit> {
+    private val settingsWrites = SettingsWriteQueue(scope)
+    override fun observePendingSettings(): Flow<Boolean> = prefsLocalStore.hasPendingSettings
+    override suspend fun retryPendingSettings(): Result<Unit> = submitSettings(null)
+    override suspend fun updatePulsePrefs(patch: WirePulsePrefs): Result<Unit> = submitSettings(patch)
+
+    private suspend fun submitSettings(patch: WirePulsePrefs?): Result<Unit> {
         val id = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
         val epoch = attachmentSession
+        fun owns() = viewerId == id && attachmentSession == epoch
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        prefsLocalStore.applyLocal(patch)
-        kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        if (viewerId != id || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Settings session ended")
-        val response = api.updateSettings(id, patch)
-        kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        if (viewerId != id || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Settings session ended")
-        return when (val r = response) {
-            is PulseResult.Success -> {
-                // the server response is the authoritative clamp - re-anchor
-                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }
-                Result.success(Unit)
-            }
-            is PulseResult.Failure ->
-                // honest offline parity: the LOCAL change stays, the caller hints
-                Result.failure(IllegalStateException(r.message ?: "Couldn't reach the Pulse server"))
-        }
+        // Preparation and HTTP have separate ordered lanes. New local choices
+        // are durable immediately, even while an earlier request is offline.
+        return settingsWrites.submit(
+            prepare = {
+                if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+                try {
+                    if (patch == null) prefsLocalStore.pendingSettingsTicket()
+                    else prefsLocalStore.stageSettings(patch, ::owns)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                    throw app.pulse.domain.repository.SettingsPersistenceFailure(error)
+                }
+            },
+            send = { ticket ->
+                if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+                val sent = prefsLocalStore.currentSettingsPatch(ticket)
+                if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
+                if (sent.settingsFields().isEmpty()) Result.success(Unit) // superseded before dispatch
+                else when (val response = api.updateSettings(id, sent)) {
+                    is PulseResult.Success -> {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        val confirmed = response.value.preferences ?: error("The server did not confirm these settings")
+                        prefsLocalStore.acknowledgeSettings(ticket, sent, confirmed, ::owns)
+                        Result.success(Unit)
+                    }
+                    is PulseResult.Failure -> Result.failure(IllegalStateException(response.message ?: "Settings were not confirmed"))
+                }
+            },
+        ).await()
     }
 
     override suspend fun login(name: String): Result<User> =
