@@ -4035,6 +4035,7 @@ final class RoomViewModel: ObservableObject {
                 memberWatermarks[member.id] = PulseFormat.date(stamp)
             }
         }
+        partnerLastReadAt = memberWatermarks.values.max()
         if beginAutomaticWork {
             observe(session: session)
             seedLocalState(conversation: conversation, session: session)
@@ -4673,16 +4674,21 @@ final class RoomViewModel: ObservableObject {
     /// PATCH (privacy sheet, DM-block toggle): the river re-veils without a
     /// refetch. Same adoption rules as loadPrivacyState.
     func applyFreshDetail(_ detail: WireConversationSummary) {
+        guard detail.id == conversationId else { return }
         adoptReadMembers(detail)
         roomScreenPrivacy = detail.screenPrivacy
         dmBlocked = !detail.isGroup && detail.dmBlockedNow
     }
 
     private func adoptReadMembers(_ detail: WireConversationSummary) {
+        let previous = memberWatermarks
         memberWatermarks = detail.members.reduce(into: [String: Date]()) { stamps, member in
             guard member.id != session?.viewer?.id, let stamp = member.lastReadAt,
                   let at = PulseFormat.date(stamp) else { return }
-            stamps[member.id] = max(stamps[member.id] ?? .distantPast, at)
+            // Room-info responses can predate a live Seen event. Preserve its
+            // newer positive watermark, but do not retain hidden/absent readers:
+            // the guards above deliberately remove revoked/missing timestamps.
+            stamps[member.id] = max(previous[member.id] ?? .distantPast, at)
         }
         partnerLastReadAt = memberWatermarks.values.max()
     }
