@@ -8,6 +8,9 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -25,7 +28,7 @@ class ReadStateApiTest {
             })
             try {
                 val result = PulseApi(http, gateway = { "https://read.test" }).markRead("room", "me", anchor, "2026-10-22T00:00:05Z")
-                assertEquals(mode, mode == "valid", result is PulseResult.Success)
+                assertEquals("$mode: $result", mode == "valid", result is PulseResult.Success)
             } finally { http.close() }
         }
     }
@@ -46,15 +49,25 @@ class ReadStateApiTest {
                 assertEquals("PATCH", request.method.value)
                 assertEquals("/api/conversations/room/mark-unread", request.url.encodedPath)
                 assertTrue((request.body as TextContent).text.contains("\"on\":$on"))
-                val state = when (mode) { "opposite" -> (!on).toString(); "null" -> "null"; "string" -> "\"$on\""; else -> on.toString() }
-                val field = if (mode == "missing") "" else ",\"manualUnread\":$state"
-                val body = if (mode == "legacy") """{"ok":true}""" else
-                    """{"ok":${mode != "false"},"unreadReceiptVersion":${if (mode == "version") 0 else 1},"conversationId":"${if (mode == "room") "other" else "room"}","userId":"${if (mode == "owner") "other" else "me"}""" + field + "}"
+                val body = buildJsonObject {
+                    put("ok", mode != "false")
+                    if (mode != "legacy") {
+                        put("unreadReceiptVersion", if (mode == "version") 0 else 1)
+                        put("conversationId", if (mode == "room") "other" else "room")
+                        put("userId", if (mode == "owner") "other" else "me")
+                        when (mode) {
+                            "missing" -> Unit
+                            "null" -> put("manualUnread", JsonNull)
+                            "string" -> put("manualUnread", on.toString())
+                            else -> put("manualUnread", if (mode == "opposite") !on else on)
+                        }
+                    }
+                }.toString()
                 respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
             })
             try {
                 val result = PulseApi(http, gateway = { "https://read.test" }).markUnread("room", "me", on)
-                assertEquals(mode, mode == "valid", result is PulseResult.Success)
+                assertEquals("$mode: $result", mode == "valid", result is PulseResult.Success)
             } finally { http.close() }
         }
     }
