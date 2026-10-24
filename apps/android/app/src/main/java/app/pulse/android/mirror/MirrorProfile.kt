@@ -93,24 +93,39 @@ internal fun MirrorProfile(
     androidx.compose.runtime.DisposableEffect(gate) { onDispose { gate.invalidate() } }
     fun note(text: String) { android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show() }
 
-    LaunchedEffect(viewerId) {
+    LaunchedEffect(repository, viewerId) {
         val ticket = gate.beginRead() ?: return@LaunchedEffect
-        try {
-            val loaded = repository.userProfile(viewerId).getOrThrow()
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            if (gate.isCurrent(ticket) && loaded.id == viewerId) profile = loaded
-        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
-            if (gate.isCurrent(ticket)) note("Couldn't refresh the profile")
+        // Independent panels: a slow/failed profile or statistics request must
+        // not prevent the wallet request from starting (or vice versa).
+        launch {
+            try {
+                if (!gate.isCurrent(ticket)) return@launch
+                val loaded = repository.userProfile(viewerId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (gate.isCurrent(ticket) && loaded.id == viewerId) profile = loaded
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                if (gate.isCurrent(ticket)) note("Couldn't refresh the profile")
+            }
         }
-        try {
-            val loaded = repository.userStats(viewerId).getOrThrow()
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            if (repository.attachmentSessionKey() == ticket.owner) stats = loaded
-            val wallet = repository.wallet().getOrThrow()
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            if (repository.attachmentSessionKey() == ticket.owner) coins = wallet.wallet.coins
-        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
-            // Unknown statistics remain unknown; never convert failure to zero.
+        launch {
+            try {
+                if (repository.attachmentSessionKey() != ticket.owner) return@launch
+                val loaded = repository.userStats(viewerId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() == ticket.owner) stats = loaded
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                // Unknown statistics remain unknown; never turn failure into zero.
+            }
+        }
+        launch {
+            try {
+                if (repository.attachmentSessionKey() != ticket.owner) return@launch
+                val wallet = repository.wallet().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() == ticket.owner) coins = wallet.wallet.coins
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                // A failed balance read is independent of the statistics panel.
+            }
         }
     }
 

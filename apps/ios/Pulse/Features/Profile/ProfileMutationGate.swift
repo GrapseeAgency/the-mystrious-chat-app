@@ -4,7 +4,7 @@ import Foundation
 /// write already in flight may finish; stale replies must never replace another
 /// account's preferences or silently replace a newer editor operation.
 struct ProfileMutationGate {
-    struct Owner: Equatable {
+    struct Owner: Hashable {
         let userId: String
         let session: UUID
     }

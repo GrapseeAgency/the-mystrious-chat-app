@@ -7,8 +7,8 @@ lines = []
 for name in ('/tmp/pulse-native-jvm.log', '/tmp/pulse-native-build.log'):
     log = Path(name)
     if log.exists():
-        lines.extend(line for line in log.read_text(errors='replace').splitlines()
-                     if re.match(r'^e: .*\.kt:', line))
+        lines.extend(clean for line in log.read_text(errors='replace').splitlines()
+                     if (clean := re.sub(r'\x1b\[[0-9;]*m', '', line).lstrip()).startswith('e: '))
 reports = list(Path('.').glob('**/build/test-results/**/TEST-*.xml'))
 reports += list(Path('.').glob('**/build/outputs/androidTest-results/**/TEST-*.xml'))
 for report in reports:

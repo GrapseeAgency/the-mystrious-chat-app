@@ -230,6 +230,10 @@ interface PulsePrefsStore {
     suspend fun clearWhiteboardDraft(conversationId: String)
 
     suspend fun setViewer(id: String?, name: String?, color: String? = null)
+    /** Metadata-only acknowledgement: implementations must check owner and session
+     * inside the storage transaction. Null fields are untouched; never changes identity,
+     * credentials or transport. The non-suspending guard must read the live session. */
+    suspend fun updateViewerMetadata(ownerId: String, name: String?, color: String?, isCurrent: () -> Boolean): Boolean = false
     suspend fun setFxMode(mode: String)
     suspend fun setDarkOverride(value: String)
     suspend fun setReducedMotion(value: Boolean)

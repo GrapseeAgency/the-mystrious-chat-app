@@ -423,6 +423,7 @@ internal fun MirrorEditProfilePage(
     viewerId: String,
     onSaved: () -> Unit,
     onDismiss: () -> Unit,
+    onProfileConfirmed: (UserProfile, app.pulse.domain.model.ProfilePatch) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     var profile by remember { mutableStateOf<UserProfile?>(null) }
@@ -486,6 +487,7 @@ internal fun MirrorEditProfilePage(
                 if (!gate.isCurrent(ticket)) return@launch
                 check(confirmed.id == viewerId) { "Profile response did not match this account" }
                 profile = submitted.confirmedBaseline(original, confirmed)
+                onProfileConfirmed(confirmed, patch)
                 if (form() == submitted) onSaved()
                 else notice = "Submitted changes saved. Your newer edits are still here."
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {

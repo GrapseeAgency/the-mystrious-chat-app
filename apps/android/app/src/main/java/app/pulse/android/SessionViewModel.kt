@@ -127,6 +127,24 @@ class SessionViewModel @Inject constructor(
         }
     }
 
+    /** A profile acknowledgement is not an identity switch. Keep the token, socket
+     * and pending outbox intact; only adopt fields that this write actually changed. */
+    fun adoptProfileMetadata(ownerId: String, expectedSession: String?, name: String?, color: String?) {
+        if (expectedSession == null || (name == null && color == null)) return
+        val bound = repo.boundToCurrentAccount()
+        fun current() = bound.viewerId == ownerId && bound.attachmentSessionKey() == expectedSession
+        if (!current()) return
+        viewModelScope.launch {
+            try {
+                prefs.updateViewerMetadata(ownerId, name, color, ::current)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (current()) _sessionNotice.value = "Profile saved. This device's name/color cache could not be refreshed."
+            }
+        }
+    }
+
     fun chooseViewer(id: String, name: String, color: String? = null) {
         viewModelScope.launch {
             // Identity switch - the old identity's credential must not ride along.

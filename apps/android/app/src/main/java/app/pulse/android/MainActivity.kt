@@ -441,6 +441,7 @@ fun PulseRoot(
     val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
     val reduced by session.reducedMotion.collectAsStateWithLifecycle()
     val viewerName by session.viewerName.collectAsStateWithLifecycle()
+    val viewerColor by session.viewerColor.collectAsStateWithLifecycle()
     val storedBase by session.serverBase.collectAsStateWithLifecycle()
     // Cold-start race guard (R54): PulseApplication applies the stored gateway
     // asynchronously - if composition lands first, re-apply the persisted base
@@ -588,9 +589,9 @@ fun PulseRoot(
                 LaunchedEffect(noteVm) {
                     noteVm.player.notices.collect { android.widget.Toast.makeText(noteContext, it, android.widget.Toast.LENGTH_SHORT).show() }
                 }
-                LaunchedEffect(viewerId, viewerName, storedBase) {
-                    roomsVm.setIdentity(viewerId, viewerName, null)
-                    groupCallVm.setIdentity(viewerId, viewerName, null)
+                LaunchedEffect(viewerId, viewerName, viewerColor, storedBase) {
+                    roomsVm.setIdentity(viewerId, viewerName, viewerColor)
+                    groupCallVm.setIdentity(viewerId, viewerName, viewerColor)
                 }
                 var activeCallRoomId by remember { mutableStateOf<String?>(null) }
                 var pendingCallPermission by remember { mutableStateOf<Pair<app.pulse.domain.model.Conversation, Boolean>?>(null) }

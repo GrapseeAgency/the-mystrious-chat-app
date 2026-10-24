@@ -115,9 +115,13 @@ struct ProfileView: View {
             coverTask = nil
             coverGate.invalidate()
         }
-        .task {
-            await loadWallet()
-            await loadStats()
+        .task(id: coverOwner) {
+            guard let owner = coverOwner else { return }
+            await loadWallet(expectedOwner: owner)
+        }
+        .task(id: coverOwner) {
+            guard let owner = coverOwner else { return }
+            await loadStats(expectedOwner: owner)
         }
         // R39 - cover pick flows through the upload pipeline.
         .onChange(of: coverItem) { _, item in
@@ -581,9 +585,9 @@ struct ProfileView: View {
     @State private var statsReadId = UUID()
     @State private var walletReadId = UUID()
 
-    @MainActor private func loadStats() async {
-        guard let owner = session.viewer?.id else { statsFailed = true; return }
-        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+    @MainActor private func loadStats(expectedOwner: ProfileMutationGate.Owner) async {
+        guard !Task.isCancelled, currentCoverOwner == expectedOwner else { return }
+        let owner = expectedOwner.userId, epoch = expectedOwner.session, api = session.api, ticket = UUID()
         statsReadId = ticket; stats = nil; statsFailed = false
         do {
             let fresh = try await api.userStats(owner)
@@ -595,9 +599,9 @@ struct ProfileView: View {
         }
     }
 
-    @MainActor private func loadWallet() async {
-        guard let owner = session.viewer?.id else { walletPhase = .failed; return }
-        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+    @MainActor private func loadWallet(expectedOwner: ProfileMutationGate.Owner) async {
+        guard !Task.isCancelled, currentCoverOwner == expectedOwner else { return }
+        let owner = expectedOwner.userId, epoch = expectedOwner.session, api = session.api, ticket = UUID()
         walletReadId = ticket; walletPhase = .loading
         do {
             let wallet = try await api.wallet()
@@ -740,9 +744,9 @@ struct ProfileView: View {
             emberCardHeader("Wallet")
             Button {
                 // A failed fetch is honest - tap retries (web refetch parity).
-                guard walletPhase == .failed else { return }
+                guard walletPhase == .failed, let owner = coverOwner, currentCoverOwner == owner else { return }
                 walletPhase = .loading
-                Task { await loadWallet() }
+                Task { await loadWallet(expectedOwner: owner) }
             } label: {
                 HStack(spacing: 12) {
                     emberRowIcon("bitcoinsign.circle")

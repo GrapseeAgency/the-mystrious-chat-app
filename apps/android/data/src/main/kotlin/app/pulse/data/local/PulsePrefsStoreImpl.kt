@@ -23,11 +23,12 @@ internal val Context.pulsePrefs by preferencesDataStore(name = "pulse.prefs")
  * encrypted "session.vault" key lives in this same file).
  */
 @Singleton
-class PulsePrefsStoreImpl @Inject constructor(
-    @ApplicationContext private val context: Context,
+class PulsePrefsStoreImpl internal constructor(
+    private val storage: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
     /** R2-C - the rich prefs store (ui-theme / spotlight / whiteboard draft). */
     private val localStore: app.pulse.data.local.PulsePrefsLocalStore,
 ) : PulsePrefsStore {
+    @Inject constructor(@ApplicationContext context: Context, localStore: PulsePrefsLocalStore) : this(context.pulsePrefs, localStore)
 
     private object Keys {
         val VIEWER_ID = stringPreferencesKey("viewer.id")
@@ -52,57 +53,57 @@ class PulsePrefsStoreImpl @Inject constructor(
         val APP_LOCK_ON = booleanPreferencesKey("pulse.settings.appLockOn")
     }
 
-    override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
-    override val viewerName: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_NAME] }
-    override val viewerColor: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_COLOR] }
-    override val fxMode: Flow<String> = context.pulsePrefs.data.map { it[Keys.FX_MODE] ?: "aurora" }
-    override val darkOverride: Flow<String> = context.pulsePrefs.data.map { it[Keys.DARK] ?: "system" }
-    override val reducedMotion: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.REDUCED] ?: false }
-    override val chatsListFilter: Flow<String> = context.pulsePrefs.data.map { it[Keys.CHATS_FILTER] ?: "all" }
-    override val serverBase: Flow<String?> = context.pulsePrefs.data.map { it[Keys.SERVER_BASE]?.takeIf { v -> v.isNotBlank() } }
-    override val voiceRate: Flow<Float> = context.pulsePrefs.data.map { it[Keys.VOICE_RATE] ?: 1f }
-    override val voiceCaptions: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.VOICE_CAPTIONS] ?: false }
+    override val viewerId: Flow<String?> = storage.data.map { it[Keys.VIEWER_ID] }
+    override val viewerName: Flow<String?> = storage.data.map { it[Keys.VIEWER_NAME] }
+    override val viewerColor: Flow<String?> = storage.data.map { it[Keys.VIEWER_COLOR] }
+    override val fxMode: Flow<String> = storage.data.map { it[Keys.FX_MODE] ?: "aurora" }
+    override val darkOverride: Flow<String> = storage.data.map { it[Keys.DARK] ?: "system" }
+    override val reducedMotion: Flow<Boolean> = storage.data.map { it[Keys.REDUCED] ?: false }
+    override val chatsListFilter: Flow<String> = storage.data.map { it[Keys.CHATS_FILTER] ?: "all" }
+    override val serverBase: Flow<String?> = storage.data.map { it[Keys.SERVER_BASE]?.takeIf { v -> v.isNotBlank() } }
+    override val voiceRate: Flow<Float> = storage.data.map { it[Keys.VOICE_RATE] ?: 1f }
+    override val voiceCaptions: Flow<Boolean> = storage.data.map { it[Keys.VOICE_CAPTIONS] ?: false }
 
     // Wave 8 - local-only settings: web defaults off/22:00/07:00, haptics true.
-    override val hapticsOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.HAPTICS_ON] ?: true }
+    override val hapticsOn: Flow<Boolean> = storage.data.map { it[Keys.HAPTICS_ON] ?: true }
 
     // R14 - the device ding master (web pulse-settings.ts soundOn: default true).
-    override val soundOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.SOUND_ON] ?: true }
+    override val soundOn: Flow<Boolean> = storage.data.map { it[Keys.SOUND_ON] ?: true }
 
-    override val quietHoursOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.QUIET_HOURS_ON] ?: false }
-    override val quietStart: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_START] ?: "22:00" }
-    override val quietEnd: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_END] ?: "07:00" }
+    override val quietHoursOn: Flow<Boolean> = storage.data.map { it[Keys.QUIET_HOURS_ON] ?: false }
+    override val quietStart: Flow<String> = storage.data.map { it[Keys.QUIET_START] ?: "22:00" }
+    override val quietEnd: Flow<String> = storage.data.map { it[Keys.QUIET_END] ?: "07:00" }
 
     // R10-a - App lock defaults OFF (an honest opt-in; enabling runs one
     // confirmation BiometricPrompt in Settings).
-    override val appLockEnabled: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.APP_LOCK_ON] ?: false }
+    override val appLockEnabled: Flow<Boolean> = storage.data.map { it[Keys.APP_LOCK_ON] ?: false }
 
     override suspend fun setHapticsOn(value: Boolean) {
-        context.pulsePrefs.edit { it[Keys.HAPTICS_ON] = value }
+        storage.edit { it[Keys.HAPTICS_ON] = value }
     }
 
     override suspend fun setSoundOn(value: Boolean) {
-        context.pulsePrefs.edit { it[Keys.SOUND_ON] = value }
+        storage.edit { it[Keys.SOUND_ON] = value }
     }
 
     override suspend fun setQuietHoursOn(value: Boolean) {
-        context.pulsePrefs.edit { it[Keys.QUIET_HOURS_ON] = value }
+        storage.edit { it[Keys.QUIET_HOURS_ON] = value }
     }
 
     override suspend fun setQuietStart(value: String) {
-        context.pulsePrefs.edit { it[Keys.QUIET_START] = value }
+        storage.edit { it[Keys.QUIET_START] = value }
     }
 
     override suspend fun setQuietEnd(value: String) {
-        context.pulsePrefs.edit { it[Keys.QUIET_END] = value }
+        storage.edit { it[Keys.QUIET_END] = value }
     }
 
     override suspend fun setAppLockEnabled(value: Boolean) {
-        context.pulsePrefs.edit { it[Keys.APP_LOCK_ON] = value }
+        storage.edit { it[Keys.APP_LOCK_ON] = value }
     }
 
     override suspend fun setViewer(id: String?, name: String?, color: String?) {
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             if (id == null) {
                 p.remove(Keys.VIEWER_ID)
                 p.remove(Keys.VIEWER_NAME)
@@ -110,37 +111,50 @@ class PulsePrefsStoreImpl @Inject constructor(
             } else {
                 p[Keys.VIEWER_ID] = id
                 if (name != null) p[Keys.VIEWER_NAME] = name else p.remove(Keys.VIEWER_NAME)
-                if (color != null) p[Keys.VIEWER_COLOR] = color
+                if (color != null) p[Keys.VIEWER_COLOR] = color else p.remove(Keys.VIEWER_COLOR)
             }
         }
     }
 
+    override suspend fun updateViewerMetadata(ownerId: String, name: String?, color: String?, isCurrent: () -> Boolean): Boolean {
+        var updated = false
+        storage.edit { p ->
+            // Checking before edit() is insufficient: an identity/session can change
+            // while this write waits for an earlier DataStore transaction.
+            if (ownerId.isBlank() || p[Keys.VIEWER_ID] != ownerId || !isCurrent()) return@edit
+            if (name != null) p[Keys.VIEWER_NAME] = name
+            if (color != null) p[Keys.VIEWER_COLOR] = color
+            updated = true
+        }
+        return updated
+    }
+
     override suspend fun setFxMode(mode: String) {
-        context.pulsePrefs.edit { it[Keys.FX_MODE] = mode }
+        storage.edit { it[Keys.FX_MODE] = mode }
     }
 
     override suspend fun setDarkOverride(value: String) {
-        context.pulsePrefs.edit { it[Keys.DARK] = value }
+        storage.edit { it[Keys.DARK] = value }
     }
 
     override suspend fun setReducedMotion(value: Boolean) {
-        context.pulsePrefs.edit { it[Keys.REDUCED] = value }
+        storage.edit { it[Keys.REDUCED] = value }
     }
 
     override suspend fun setChatsListFilter(value: String) {
-        context.pulsePrefs.edit { it[Keys.CHATS_FILTER] = value }
+        storage.edit { it[Keys.CHATS_FILTER] = value }
     }
 
     override suspend fun setVoiceRate(value: Float) {
-        context.pulsePrefs.edit { it[Keys.VOICE_RATE] = value }
+        storage.edit { it[Keys.VOICE_RATE] = value }
     }
 
     override suspend fun setVoiceCaptions(value: Boolean) {
-        context.pulsePrefs.edit { it[Keys.VOICE_CAPTIONS] = value }
+        storage.edit { it[Keys.VOICE_CAPTIONS] = value }
     }
 
     override suspend fun setServerBase(value: String?) {
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             val clean = value?.trim()?.trimEnd('/')?.takeIf { v -> v.isNotBlank() }
             if (clean == null) p.remove(Keys.SERVER_BASE) else p[Keys.SERVER_BASE] = clean
         }

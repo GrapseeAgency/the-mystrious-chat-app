@@ -989,9 +989,14 @@ internal fun MirrorRoot(
         if (profileEditOpen) {
             androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey()) {
                 val profileRepository = remember(repository, viewerId, repository.attachmentSessionKey()) { repository.boundToCurrentAccount() }
+                val profileSession = remember(profileRepository) { profileRepository.attachmentSessionKey() }
                 MirrorEditProfilePage(
                     repository = profileRepository,
                     viewerId = viewerId.orEmpty(),
+                    onProfileConfirmed = { confirmed, patch ->
+                        session.adoptProfileMetadata(confirmed.id, profileSession,
+                            confirmed.name.takeIf { patch.name != null }, confirmed.color.takeIf { patch.color != null })
+                    },
                     onSaved = { profileRefresh++; profileEditOpen = false },
                     onDismiss = { profileRefresh++; profileEditOpen = false },
                 )
