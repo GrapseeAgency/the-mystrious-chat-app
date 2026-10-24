@@ -8,7 +8,6 @@ import {
   safeJson,
   strField,
 } from '@/lib/serializers'
-import { bearerToken } from '@/lib/session-token'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   ConversationMetadataError,
@@ -27,10 +26,8 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   const body = await safeJson(req)
   const userId = strField(body.userId)
   if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
-  if (bearerToken(req)) {
-    const denied = await requireActionOwner(req, userId, 'disappearing-message settings')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, userId, 'disappearing-message settings')
+  if (denied) return denied
   try {
     const ttlSeconds = body.ttlSeconds
     requirePreset(ttlSeconds, TTL_PRESETS, 'ttlSeconds')

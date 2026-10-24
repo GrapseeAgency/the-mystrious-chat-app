@@ -50,7 +50,7 @@ class GroupSettingsAcknowledgementTest {
     }
     @Test fun ttlAdoptsNewerServerTruthInsteadOfInventingTheRequestedValue() = runTest {
         val http = HttpClient(MockEngine {
-            respond("""{"conversation":{"id":"room","ttlSeconds":604800}}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+            respond("""{"conversation":{"id":"room","members":[{"id":"me","name":"Me"}],"ttlSeconds":604800}}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
         })
         try {
             val result = PulseApi(http, gateway = { "https://groups.test" }).setDisappearingTtl("room", "me", 86400)

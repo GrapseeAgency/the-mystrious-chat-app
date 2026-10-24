@@ -243,6 +243,7 @@ data class UnreadExpirationDto(val expiresAt: String, val count: Int)
 @Serializable
 data class ConversationSummaryDto(
     val id: String,
+    @Serializable(with = RoomPolicyBoolean::class)
     val isGroup: Boolean = false,
     val name: String? = null,
     val photo: String? = null,
@@ -254,15 +255,20 @@ data class ConversationSummaryDto(
     val updatedAt: String? = null,
     val members: List<ConversationMemberDto> = emptyList(),
     val lastMessage: ChatMessageDto? = null,
+    @Serializable(with = OptionalRoomPolicyInteger::class)
     val unreadCount: Int? = null,
     val unreadExpirations: List<UnreadExpirationDto> = emptyList(),
     val pinnedAt: String? = null,
     val mutedUntil: String? = null,
     val archivedAt: String? = null,
+    @Serializable(with = OptionalRoomPolicyInteger::class)
     val ttlSeconds: Int? = null,
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val broadcastMode: Boolean? = null,
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val isSelf: Boolean? = null,
     val myDraft: String? = null,
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val myManualUnread: Boolean? = null,
     val myStreak: JsonElement? = null,
     val deadStreak: JsonElement? = null,
@@ -272,14 +278,18 @@ data class ConversationSummaryDto(
     /** Shareable join code - groups only, null = no active link. */
     val inviteCode: String? = null,
     /** R44 slow mode - members wait Ns between sends (0 = off). */
+    @Serializable(with = OptionalRoomPolicyInteger::class)
     val slowModeSeconds: Int? = null,
     /** R38 Signal screen security (room-wide flag). */
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val screenPrivacy: Boolean? = null,
     /** R42 per-VIEWER screen security (the personal veil flag; detail rows). */
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val myScreenPrivacy: Boolean? = null,
     // R6 - M5: R47 DM dead-end flag (detail rows, web chat-room.tsx `dmBlocked`):
     // a UserBlock in EITHER direction between the DM pair. Detail-only -
     // summaries tolerate the key (defaulted null) exactly like screenPrivacy.
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val dmBlocked: Boolean? = null,
 )
 

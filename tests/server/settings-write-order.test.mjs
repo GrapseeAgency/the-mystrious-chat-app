@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
+import * as metadata from '../../src/lib/conversation-metadata.ts'
 import { ConversationMetadataError, patchMyScreenPrivacy } from '../../src/lib/conversation-metadata.ts'
 import { privacyPreferenceSnapshot } from '../../src/lib/privacy-preferences.ts'
 const { PrismaClient, Prisma } = createRequire(import.meta.url)('../../prisma/generated-client')
@@ -43,8 +44,8 @@ async function fixture(run, database = db => db) {
     const get = (token='synthetic-owner',userId='owner') => route.GET(new Request(`https://settings.test?userId=${userId}`, {
       headers:token ? {authorization:`Bearer ${token}`} : {},
     }))
-    await db.conversation.create({data:{id:'room',isGroup:true}})
-    await db.conversationParticipant.create({data:{userId:'owner',conversationId:'room',screenPrivacy:true}})
+    await db.conversation.create({data:{id:'room',isGroup:true,screenPrivacy:true}})
+    await db.conversationParticipant.create({data:{userId:'owner',conversationId:'room',screenPrivacy:true,role:'admin'}})
     await db.conversationParticipant.create({data:{userId:'other',conversationId:'room',screenPrivacy:true}})
     const notices=[]
     const privacy=await load('src/app/api/conversations/[id]/screen-privacy/route.ts', {
@@ -54,7 +55,23 @@ async function fixture(run, database = db => db) {
     const setPrivacy=(on,token='synthetic-owner',userId='owner')=>privacy(new Request('https://settings.test/api/conversations/room/screen-privacy', {
       method:'PATCH',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId,on}),
     }), {params:Promise.resolve({id:'room'})})
-    await run({db,patch,get,setPrivacy,notices})
+    const roomDeps={...metadata,db,requireActionOwner,NextResponse:Response,GROUP_NAME_MAX:80,
+      CONVERSATION_FULL_INCLUDE:{participants:true},
+      buildConversationDetail:async row=>({id:row.id,screenPrivacy:row.screenPrivacy,ttlSeconds:row.ttlSeconds}),
+      safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',notifySocket:async(...args)=>notices.push(args),
+    }
+    const details=await load('src/app/api/conversations/[id]/route.ts',roomDeps,'({GET,PATCH})')
+    const ttl=await load('src/app/api/conversations/[id]/disappearing/route.ts',roomDeps,'PATCH')
+    const slow=await load('src/app/api/conversations/[id]/slow-mode/route.ts',roomDeps,'PATCH')
+    const roomAction=(kind,body={},token='synthetic-owner',actor='owner')=>{
+      const read=kind==='detail'
+      const handler=read?details.GET:kind==='metadata'?details.PATCH:kind==='ttl'?ttl:slow
+      return handler(new Request(`https://settings.test/api/conversations/room?userId=${actor}`,{
+        method:read?'GET':'PATCH',headers:token?{authorization:`Bearer ${token}`}:{},
+        ...(read?{}:{body:JSON.stringify({userId:actor,requesterId:actor,...body})}),
+      }),{params:Promise.resolve({id:'room'})})
+    }
+    await run({db,patch,get,setPrivacy,notices,roomAction})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -121,4 +138,25 @@ test('personal room privacy requires its owner credential and repeated desired-s
   assert.ok(notices.every(([,recipients])=>JSON.stringify(recipients)==='["owner"]'))
   await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
   assert.equal((await setPrivacy(true)).status,403)
+}))
+
+
+test('room detail and shared controls require the current participant credential even when the header is absent',()=>fixture(async({db,roomAction,notices})=>{
+  const requests=[['detail',{}],['metadata',{screenPrivacy:false}],['ttl',{ttlSeconds:86400}],['slow',{seconds:5}]]
+  for(const [kind,body] of requests) for(const token of [null,'invalid','synthetic-other']) {
+    assert.equal((await roomAction(kind,body,token)).status,token?403:401)
+  }
+  let stored=await db.conversation.findUnique({where:{id:'room'}})
+  assert.equal(stored.screenPrivacy,true);assert.equal(stored.ttlSeconds,0);assert.equal(stored.slowModeSeconds,0)
+  assert.equal(notices.length,0)
+  for(const [kind,body] of requests) {
+    const response=await roomAction(kind,body)
+    assert.equal(response.status,200)
+    if(kind==='detail')assert.equal(response.headers.get('cache-control'),'private, no-store')
+  }
+  stored=await db.conversation.findUnique({where:{id:'room'}})
+  assert.equal(stored.screenPrivacy,false);assert.equal(stored.ttlSeconds,86400);assert.equal(stored.slowModeSeconds,5)
+  await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
+  assert.equal((await roomAction('detail')).status,404)
+  assert.equal((await roomAction('metadata',{screenPrivacy:true})).status,403)
 }))

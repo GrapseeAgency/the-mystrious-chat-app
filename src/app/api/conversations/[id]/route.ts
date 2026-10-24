@@ -1,7 +1,6 @@
 // /api/conversations/[id] - detail · group rename · photo (R33-b)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { bearerToken } from '@/lib/session-token'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   conversationMetadataPatch,
@@ -36,10 +35,8 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
   }
 
-  if (bearerToken(req)) {
-    const denied = await requireActionOwner(req, userId, 'conversation detail')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, userId, 'conversation detail')
+  if (denied) return denied
   // Include queries share the same authorized snapshot, not a separate preflight
   // that can race removal and then disclose a newer message to a former member.
   const conv = await db.$transaction(
@@ -54,7 +51,9 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
 
-  return NextResponse.json({ conversation: await buildConversationDetail(conv, userId) })
+  return NextResponse.json({ conversation: await buildConversationDetail(conv, userId) }, {
+    headers: { 'Cache-Control': 'private, no-store' },
+  })
 }
 
 /**
@@ -80,10 +79,8 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
   }
 
-  if (bearerToken(req)) {
-    const denied = await requireActionOwner(req, requesterId, 'conversation settings')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, requesterId, 'conversation settings')
+  if (denied) return denied
   try {
     const patch = conversationMetadataPatch(body, GROUP_NAME_MAX)
     const recipients = await patchConversationMetadata(db, id, requesterId, patch)

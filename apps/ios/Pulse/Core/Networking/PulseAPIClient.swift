@@ -1822,6 +1822,9 @@ public struct PulseAPIClient: Sendable {
         broadcast: Bool? = nil,
         screenPrivacy: Bool? = nil,
     ) async throws -> WireConversationSummary {
+        guard !requesterId.isEmpty, requesterId == userId else {
+            throw Failure(kind: .validation, message: "The room settings owner changed. Reopen group info.")
+        }
         var body: [String: Any] = ["requesterId": requesterId]
         if let name { body["name"] = name }
         if let photo { body["photo"] = photo ?? "" } // nil-in-optional = clear ('')
@@ -1829,7 +1832,12 @@ public struct PulseAPIClient: Sendable {
         if let screenPrivacy { body["screenPrivacy"] = screenPrivacy }
         let data = try await patchRaw("/api/conversations/\(q(conversationId))", body: body)
         let result = try WireConversationEnvelope.extract(from: data)
-        guard result.id == conversationId,
+        let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let fields = (root?["conversation"] as? [String: Any]) ?? root
+        guard result.id == conversationId, result.members.contains(where: { $0.id == requesterId }),
+              (name == nil && photo == nil && broadcast == nil) || result.isGroup,
+              name == nil || !(result.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              photo == nil || fields?.keys.contains("photo") == true,
               broadcast == nil || result.broadcastMode != nil,
               screenPrivacy == nil || result.screenPrivacy != nil else {
             throw Failure(kind: .server, message: "Room settings couldn't be confirmed. Refresh group info.")
@@ -1901,12 +1909,15 @@ public struct PulseAPIClient: Sendable {
     /// PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } -
     /// participant-level TTL (presets 0 · 1d · 1w · 30d server-gated).
     public func setDisappearingTtl(_ conversationId: String, userId: String, ttlSeconds: Int) async throws -> WireConversationSummary {
+        guard !userId.isEmpty, userId == self.userId else {
+            throw Failure(kind: .validation, message: "The room settings owner changed. Reopen chat info.")
+        }
         let data = try await patchRaw(
             "/api/conversations/\(q(conversationId))/disappearing",
             body: ["userId": userId, "ttlSeconds": ttlSeconds],
         )
         let result = try WireConversationEnvelope.extract(from: data)
-        guard result.id == conversationId, let applied = result.ttlSeconds,
+        guard result.id == conversationId, result.members.contains(where: { $0.id == userId }), let applied = result.ttlSeconds,
               [0, 86_400, 604_800, 2_592_000].contains(applied) else {
             throw Failure(kind: .server, message: "Disappearing-message setting couldn't be confirmed. Refresh group info.")
         }
@@ -1916,6 +1927,9 @@ public struct PulseAPIClient: Sendable {
     /// PATCH /api/conversations/{id}/slow-mode { userId, seconds } -
     /// admin-only member throttle (presets 0/5/10/30/60/300).
     public func setSlowMode(_ conversationId: String, userId: String, seconds: Int) async throws -> Int {
+        guard !userId.isEmpty, userId == self.userId else {
+            throw Failure(kind: .validation, message: "The room settings owner changed. Reopen chat info.")
+        }
         let data = try await patchRaw(
             "/api/conversations/\(q(conversationId))/slow-mode",
             body: ["userId": userId, "seconds": seconds],

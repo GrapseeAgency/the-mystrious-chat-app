@@ -14,7 +14,7 @@ private final class GroupReplyProtocol: URLProtocol {
                 body = request.httpMethod == "DELETE" ? #"{"ok":false,"memberCount":1}"# : #"{"already":false,"memberCount":0}"#
             } else { body = "{}" }
         } else if path.hasSuffix("/disappearing") {
-            if path.contains("/confirmed/") { body = #"{"conversation":{"id":"confirmed","isGroup":true,"members":[],"ttlSeconds":604800}}"# }
+            if path.contains("/confirmed/") { body = #"{"conversation":{"id":"confirmed","isGroup":true,"members":[{"id":"me","name":"Me","color":"amber"}],"ttlSeconds":604800}}"# }
             else if path.contains("/wrong/") { body = #"{"conversation":{"id":"other","isGroup":true,"members":[],"ttlSeconds":86400}}"# }
             else { body = #"{"conversation":{"id":"missing","isGroup":true,"members":[]}}"# }
         } else if path.contains("/confirmed/") {

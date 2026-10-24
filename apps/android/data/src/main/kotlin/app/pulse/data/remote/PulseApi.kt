@@ -134,6 +134,7 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -693,11 +694,14 @@ class PulseApi(
 
     /** GET /api/conversations/{id}?userId= → { conversation } (detail incl. members with lastReadAt). */
     suspend fun conversationDetail(conversationId: String, userId: String): PulseResult<ConversationSummaryDto> =
-        get("/api/conversations/$conversationId?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+        get("/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8").replace("+", "%20") + "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
                 PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+            ).also { detail ->
+                if (detail.id != conversationId || userId.isBlank() || detail.members.none { member -> member.id == userId })
+                    throw kotlinx.serialization.SerializationException("Room detail did not confirm your membership")
+            }
         }
 
     /** POST /api/conversations/self {userId} - the viewer's Note to Self chat. */
@@ -2272,11 +2276,18 @@ class PulseApi(
                 if (screenPrivacy != null) put("screenPrivacy", screenPrivacy)
             },
         ) {
+            val fields = PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation") as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Room settings detail is missing")
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
-                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
+                fields.toString(),
             ).also { result ->
-                if (result.id != conversationId || (broadcast != null && result.broadcastMode == null) ||
+                if (result.id != conversationId || result.members.none { member -> member.id == requesterId } ||
+                    ((name != null || photo != null || broadcast != null) && !result.isGroup) ||
+                    (name != null && ((fields["name"] as? JsonPrimitive)?.isString != true || result.name.isNullOrBlank())) ||
+                    (photo != null && (!fields.containsKey("photo") ||
+                        (fields["photo"] != JsonNull && (fields["photo"] as? JsonPrimitive)?.isString != true))) ||
+                    (broadcast != null && result.broadcastMode == null) ||
                     (screenPrivacy != null && result.screenPrivacy == null)) {
                     throw kotlinx.serialization.SerializationException("Room settings were not confirmed")
                 }
@@ -2378,7 +2389,7 @@ class PulseApi(
                 PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
             ).also { result ->
                 val applied = result.ttlSeconds
-                if (result.id != conversationId || applied == null || applied !in listOf(0, 86_400, 604_800, 2_592_000)) {
+                if (result.id != conversationId || result.members.none { member -> member.id == userId } || applied == null || applied !in listOf(0, 86_400, 604_800, 2_592_000)) {
                     throw kotlinx.serialization.SerializationException("Disappearing-message setting was not confirmed")
                 }
             }
