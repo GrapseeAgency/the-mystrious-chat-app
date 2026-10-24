@@ -161,6 +161,15 @@ final class StoryViewerMachineTests: XCTestCase {
         XCTAssertEqual(m.state.current?.id, "a0")
     }
 
+    func testFreshFeedRevocationClosesAViewerEvenWhenPlaybackIsPaused() {
+        let m = makeMachine([group(userId: "alice", [story(id: "a0")])])
+        m.setPlaybackBlocked(true, nowMs: now)
+        m.groupsUpdated([], nowMs: now + 1)
+        XCTAssertTrue(m.state.dismissed)
+        XCTAssertNil(m.state.current)
+        XCTAssertNil(m.state.pendingMark)
+    }
+
     func testResumeCannotReleaseAnActiveHold() {
         let m = makeMachine([group(userId: "alice", [story(id: "a0")])])
         m.holdStart(nowMs: 10)

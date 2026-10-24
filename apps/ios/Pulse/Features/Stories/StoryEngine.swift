@@ -319,6 +319,7 @@ final class StoryViewerMachine: ObservableObject {
             // D3: nearest survivor (position clamped), or close when empty.
             if flat.isEmpty {
                 next.flat = flat
+                next.pendingMark = nil
                 next.dismissed = true
             } else {
                 lastTickAt = nil

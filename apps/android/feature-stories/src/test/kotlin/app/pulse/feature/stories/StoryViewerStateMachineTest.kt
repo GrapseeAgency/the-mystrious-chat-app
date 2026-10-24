@@ -257,4 +257,12 @@ class StoryViewerStateMachineTest {
         m.on(StoryViewerInput.HoldEnd(40L))
         assertFalse(m.state.value.paused)
     }
+    @Test fun `a fresh feed removing the selected author closes even while playback is paused`() {
+        val m = machine(group("alice", story("a0")))
+        m.on(StoryViewerInput.PlaybackBlocked(true, now))
+        m.on(StoryViewerInput.GroupsUpdated(emptyList(), now + 1))
+        assertTrue(m.state.value.dismissed)
+        assertNull(m.state.value.current)
+        assertNull(m.state.value.pendingMark)
+    }
 }

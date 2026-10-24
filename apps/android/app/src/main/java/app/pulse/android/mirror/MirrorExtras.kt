@@ -490,6 +490,16 @@ internal fun MirrorStoryViewer(
     onDismiss: () -> Unit,
     playbackEnabled: Boolean = true,
 ) {
+    val owner = repository.attachmentSessionKey()
+    androidx.compose.runtime.key(owner, group.user?.id) {
+        MirrorOwnedStoryViewer(group, repository, onDismiss, playbackEnabled)
+    }
+}
+
+@Composable
+private fun MirrorOwnedStoryViewer(group: StoryGroup, repository: PulseRepository, onDismiss: () -> Unit, playbackEnabled: Boolean) {
+    val owner = remember { repository.attachmentSessionKey() }
+    val account = remember { repository.boundToCurrentAccount() }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val machine = remember(group.user?.id) { StoryViewerStateMachine(group.user?.id) }
     val state by machine.state.collectAsStateWithLifecycle()
@@ -526,7 +536,11 @@ internal fun MirrorStoryViewer(
         val mark = state.pendingMark ?: return@LaunchedEffect
         if (!playbackEnabled) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            repository.markStoryViewed(mark.storyId).fold(
+            if (owner == null || repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+            val result = account.markStoryViewed(mark.storyId)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+            result.fold(
                 onSuccess = { machine.on(StoryViewerInput.ViewMarkOk(mark.storyId, it)) },
                 onFailure = { machine.on(StoryViewerInput.ViewMarkFailed(mark.storyId)) },
             )

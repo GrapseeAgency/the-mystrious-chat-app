@@ -203,7 +203,7 @@ internal fun MirrorRoot(
     var channelsOpen by remember { mutableStateOf(false) }
     var newChatOpen by remember { mutableStateOf(false) }
     var composerOpen by remember { mutableStateOf(false) }
-    var viewingStory by remember { mutableStateOf<StoryGroup?>(null) }
+    var viewingStory by remember(viewerId) { mutableStateOf<StoryGroup?>(null) }
 
     // R64 - kebab destinations + row options (all REAL repository-backed)
     var groupOpen by remember { mutableStateOf(false) }
@@ -462,8 +462,13 @@ internal fun MirrorRoot(
     ) {
         when {
             viewingStory != null -> {
-                viewingStory?.let { group ->
-                    MirrorStoryViewer(group = group, repository = repository, playbackEnabled = readingEnabled, onDismiss = { viewingStory = null })
+                viewingStory?.let { selected ->
+                    val current = stories.firstOrNull { it.user?.id == selected.user?.id }
+                    if (current != null) {
+                        MirrorStoryViewer(group = current, repository = repository, playbackEnabled = readingEnabled, onDismiss = { viewingStory = null })
+                    } else {
+                        LaunchedEffect(selected.user?.id) { viewingStory = null }
+                    }
                 }
             }
             else -> {

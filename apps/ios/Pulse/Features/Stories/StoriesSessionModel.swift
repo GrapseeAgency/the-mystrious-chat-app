@@ -118,10 +118,10 @@ public final class StoriesSessionModel: ObservableObject {
 
     // viewer actions
 
-    /// Optimistic seen-flip (D6) - the POST result lands here; local update
-    /// happens immediately so rings react instantly, server truth reconciles
-    /// on the next fetch.
+    /// Apply a confirmed view receipt to the shared feed. A presentation's
+    /// failed/cancelled attempt must not publish a successful viewed state.
     public func markViewedLocally(storyId: String, viewCount: Int?) {
+        guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
         groups = groups.map { g in
             let stories = (g.stories ?? []).map { s in
                 s.id == storyId
@@ -133,19 +133,19 @@ public final class StoriesSessionModel: ObservableObject {
         }
     }
 
-    /// Optimistic removal; the viewer's machine auto-advances (D3) when the
-    /// refreshed feed reports the story gone.
+    /// Only a confirmed deletion removes the story and advances its viewer.
+    /// An older feed read cannot restore the row after that acknowledgement.
     public func deleteStory(id: String) async -> Bool {
         guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
         let api = session.api
-        removeLocal(id)
         do {
             try await api.deleteStory(id: id)
             guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
-            await refresh(quiet: true)
+            refreshGeneration = UUID()
+            removeLocal(id)
+            persistCache(WireStoriesPage(groups: groups))
             return true
         } catch {
-            await refresh(quiet: true)
             return false
         }
     }

@@ -178,7 +178,7 @@ class StoryViewerStateMachine(
             // clamped), or close when nothing survived.
             found < 0 -> {
                 if (flat.isEmpty()) {
-                    state.copy(groups = groups, flat = flat, dismissed = true)
+                    state.copy(groups = groups, flat = flat, dismissed = true, pendingMark = null)
                 } else {
                     lastTickAt = null
                     val next = state.copy(
