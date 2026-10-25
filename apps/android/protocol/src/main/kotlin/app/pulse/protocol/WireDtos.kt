@@ -445,6 +445,7 @@ data class MentionDto(
     val author: SenderDto? = null,
     val snippet: String = "",
     val createdAt: String = "",
+    val expiresAt: String? = null,
 )
 
 @Serializable

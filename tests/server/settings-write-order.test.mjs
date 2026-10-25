@@ -9,6 +9,8 @@ import { DirectConversationError, openSelfConversation } from '../../src/lib/dir
 import * as reminders from '../../src/lib/reminder-contract.ts'
 import * as reads from '../../src/lib/read-receipt.ts'
 import * as sync from '../../src/lib/message-sync.ts'
+import * as visibility from '../../src/lib/message-visibility.ts'
+import { visibleSearchHit } from '../../src/lib/search-visibility.ts'
 import { clipUtf16 } from '../../src/lib/text-limits.ts'
 import { deriveSafetyNumber } from '../../src/lib/safety.ts'
 import { peerBlock, PeerBlockError } from '../../src/lib/peer-block.ts'
@@ -144,7 +146,15 @@ async function fixture(run, database = db => db) {
     const draft=(method,text,token='synthetic-owner',userId='owner')=>draftRoute[method](new Request(`https://settings.test/api/conversations/room/draft?userId=${userId}`,{
       method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='GET'?{}:{body:JSON.stringify({userId,draft:text})}),
     }),{params:Promise.resolve({id:'room'})})
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft})
+    const feeds={}
+    for(const kind of ['search','mentions']) feeds[kind]=await load(`src/app/api/${kind}/route.ts`,{
+      ...blockDeps,...visibility,clipUtf16,visibleSearchHit,MESSAGE_FULL_INCLUDE:{sender:true},
+      mapMessage:row=>({...row,createdAt:row.createdAt.toISOString(),expiresAt:row.expiresAt?.toISOString()??null}),
+    },'GET')
+    const feed=(kind,token='synthetic-owner',q='private')=>feeds[kind](new Request(`https://settings.test/api/${kind}?userId=owner&q=${encodeURIComponent(q)}`,{
+      headers:token?{authorization:`Bearer ${token}`}:{},
+    }))
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -503,4 +513,34 @@ test('drafts require the exact owner and an oversize write never clips or change
   }
   await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
   assert.equal((await draft('PATCH','lost membership')).status,403)
+}))
+
+
+test('private search and mentions exclude unauthorized readers, expired roots and anonymous identity disclosure',()=>fixture(async({db,feed})=>{
+  const future=new Date(Date.now()+60_000)
+  const add=(id,extra={})=>db.message.create({data:{id,conversationId:'room',senderId:'other',content:'@owner private content',...extra}})
+  await add('live');await add('expired',{expiresAt:new Date(0)});await add('deleted',{deletedAt:new Date()})
+  await add('once',{viewOnce:true});await add('dead-root',{content:'root',expiresAt:new Date(0)})
+  await add('orphan',{parentId:'dead-root'});await add('live-root',{content:'root',expiresAt:future})
+  await add('reply',{parentId:'live-root'});await add('anonymous',{anon:true,anonAlias:'Autumn Fox'})
+  for(const kind of ['search','mentions']) {
+    for(const token of [null,'invalid','synthetic-other']) assert.equal((await feed(kind,token)).status,token?403:401)
+    const response=await feed(kind);assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store')
+    const page=await response.json(), rows=page.messages??page.items
+    assert.deepEqual(rows.map(r=>r.id??r.messageId).sort(),['anonymous','live','reply'])
+    const anonymous=rows.find(r=>(r.id??r.messageId)==='anonymous'), author=anonymous.sender??anonymous.author
+    assert.equal(author.id,'');assert.equal(author.name,'Autumn Fox');assert.equal(author.avatar,null)
+    assert.equal(rows.find(r=>(r.id??r.messageId)==='reply').expiresAt,future.toISOString())
+  }
+  assert.equal((await feed('search','synthetic-owner','a'.repeat(65))).status,400)
+  await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
+  assert.deepEqual((await (await feed('search')).json()).messages,[])
+  assert.deepEqual((await (await feed('mentions')).json()).items,[])
+}))
+
+test('mention snippets do not split Unicode at the display boundary',()=>fixture(async({db,feed})=>{
+  const content='@owner '+'x'.repeat(152)+'🌿tail'
+  await db.message.create({data:{id:'unicode',conversationId:'room',senderId:'other',content}})
+  const row=(await (await feed('mentions')).json()).items[0]
+  assert.equal(row.snippet,'@owner '+'x'.repeat(152));assert.ok(row.snippet.isWellFormed())
 }))

@@ -15,6 +15,11 @@ struct MentionsView: View {
     @State private var entries: [WireMentionEntry] = []
     @State private var loading = true
     @State private var errorText: String?
+    @State private var reloadTick = 0
+    @State private var loadTicket: UUID?
+    @State private var ownerEpoch: UUID?
+    @State private var openingTicket: UUID?
+    @State private var openingTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -23,6 +28,10 @@ struct MentionsView: View {
                     .ignoresSafeArea()
                 ScrollView {
                     LazyVStack(spacing: 8) {
+                        if let errorText, !entries.isEmpty {
+                            Text(errorText).font(.footnote).foregroundStyle(PulseTheme.textSecondary)
+                            Button("Try again") { reloadTick += 1 }
+                        }
                         if loading && entries.isEmpty {
                             ForEach(0..<3, id: \.self) { _ in
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -69,7 +78,21 @@ struct MentionsView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await load() }
+        .task(id: "\(session.sessionGeneration):\(reloadTick)") {
+            await load()
+        }
+        // Independent of transport: a stalled refresh must not extend a preview's lifetime.
+        .task(id: session.sessionGeneration) {
+            while !Task.isCancelled {
+                entries.removeAll { !$0.isVisible() }
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+            }
+        }
+        .onDisappear { openingTicket = nil; openingTask?.cancel(); openingTask = nil }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            if ownerEpoch != session.sessionGeneration { entries = []; errorText = nil }
+            openingTicket = nil; openingTask?.cancel(); openingTask = nil
+        }
     }
 
     private var emptyCard: some View {
@@ -104,7 +127,7 @@ struct MentionsView: View {
                 .font(.system(size: 12.5))
                 .foregroundStyle(PulseTheme.textSecondary)
                 .multilineTextAlignment(.center)
-            Button("Try again") { Task { await load() } }
+            Button("Try again") { reloadTick += 1 }
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(PulseTheme.accent)
         }
@@ -112,35 +135,45 @@ struct MentionsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func load() async {
+    @MainActor private func load() async {
+        let epoch = session.sessionGeneration, client = session.api, ticket = UUID()
+        if ownerEpoch != epoch { entries = []; ownerEpoch = epoch }
+        loadTicket = ticket
         loading = entries.isEmpty
-        defer { loading = false }
-        let fresh = await session.api.mentions(limit: 50)
-        entries = fresh
-        errorText = nil
+        defer { if loadTicket == ticket { loading = false; loadTicket = nil } }
+        do {
+            let fresh = try await client.mentions(limit: 50)
+            guard !Task.isCancelled, session.sessionGeneration == epoch, loadTicket == ticket else { return }
+            entries = fresh.filter { $0.isVisible() }; errorText = nil
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, loadTicket == ticket else { return }
+            if let failure = error as? PulseAPIClient.Failure, [401, 403, 404].contains(failure.status ?? 0) { entries = [] }
+            errorText = "Could not refresh mentions. Please try again."
+        }
     }
 
-    /// Row tap → the conversation. Live summaries resolve instantly; a cold
-    /// entry (push notification walk-in) fetches the summary first.
-    private func open(_ entry: WireMentionEntry) {
-        guard let conversationId = entry.conversationId else { return }
+    @MainActor private func open(_ entry: WireMentionEntry) {
+        guard ownerEpoch == session.sessionGeneration, entry.isVisible(), let conversationId = entry.conversationId else { return }
+        let epoch = session.sessionGeneration, client = session.api, ticket = UUID()
+        openingTask?.cancel(); openingTicket = ticket
+        session.noteRoomNavigationIntent()
+        let navigation = session.roomNavigationGeneration
         PulseHaptics.tap()
-        dismiss()
-        Task {
-            if let conv = await resolve(conversationId) {
-                onOpenConversation(conv)
-            } else {
+        openingTask = Task { @MainActor in
+            defer { if openingTicket == ticket { openingTicket = nil; openingTask = nil } }
+            do {
+                let room = try await client.conversationDetail(id: conversationId, userId: client.userId)
+                guard !Task.isCancelled, openingTicket == ticket, session.sessionGeneration == epoch, session.roomNavigationGeneration == navigation, entry.isVisible() else { return }
+                openingTicket = nil; openingTask = nil
+                dismiss()
+                onOpenConversation(room)
+            } catch {
+                guard !Task.isCancelled, openingTicket == ticket, session.sessionGeneration == epoch else { return }
                 session.toasts.show("That chat isn't available right now")
             }
         }
     }
 
-    private func resolve(_ conversationId: String) async -> WireConversationSummary? {
-        if let page = try? await session.api.conversationDetail(id: conversationId, userId: session.api.userId) {
-            return page
-        }
-        return nil
-    }
 }
 
 /// One mention row - the exact web anatomy: author circle + name, snippet

@@ -157,8 +157,16 @@ public struct WireMentionEntry: Codable, Hashable, Sendable, Identifiable {
     public let snippet: String?
     public let createdAt: String?
 
+    public let expiresAt: String?
+
+    public func isVisible(now: Date = Date()) -> Bool {
+        !(messageId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !(conversationId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        PulseRemediationLogic.isAlive(expiresAt, now: now)
+    }
+
     /// Identifiable over the message id (the feed dedupes on it).
-    public var id: String { messageId ?? UUID().uuidString }
+    public var id: String { messageId ?? "" }
 }
 
 public struct WireMentionEntriesPage: Codable, Sendable {

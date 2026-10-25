@@ -876,6 +876,9 @@ class PulseApi(
         get(
             "/api/mentions?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=50",
         ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            if (root?.get("items") !is kotlinx.serialization.json.JsonArray)
+                throw kotlinx.serialization.SerializationException("Mention feed is missing")
             PulseJson.decodeFromString(MentionsPageDto.serializer(), it)
         }
 

@@ -3017,21 +3017,14 @@ class PulseRepositoryImpl constructor(
     override suspend fun folders(): Result<List<FolderSummary>> =
         ownedAccountRequest { api.folders(it) }.map { page -> page.folders.map { it.toFolderSummary() } }
 
-    override suspend fun mentions(): Result<List<MentionItem>> = when (val r = api.mentions(viewerId ?: "")) {
-        is PulseResult.Success -> Result.success(
-            r.value.items.map { m ->
-                MentionItem(
-                    messageId = m.messageId,
-                    conversationId = m.conversationId,
-                    conversationName = m.conversationName,
-                    authorName = m.author?.name ?: "",
-                    snippet = m.snippet,
-                    createdAt = m.createdAt,
-                )
-            },
-        )
-        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-    }
+    override suspend fun mentions(): Result<List<MentionItem>> =
+        ownedPeerRequest { owner -> api.mentions(owner) }.map { page ->
+            page.items.map { m ->
+                MentionItem(messageId = m.messageId, conversationId = m.conversationId,
+                    conversationName = m.conversationName, authorName = m.author?.name ?: "",
+                    snippet = m.snippet, createdAt = m.createdAt, expiresAt = m.expiresAt)
+            }.filter { it.isVisible() }
+        }
 
     override suspend fun searchMessages(query: String): Result<List<MessageHit>> {
         val id = viewerId ?: return Result.success(emptyList())

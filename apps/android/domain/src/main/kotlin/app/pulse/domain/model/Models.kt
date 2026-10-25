@@ -277,7 +277,12 @@ data class MentionItem(
     val authorName: String = "",
     val snippet: String = "",
     val createdAt: String = "",
-)
+    val expiresAt: String? = null,
+) {
+    fun isVisible(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        messageId.isNotBlank() && conversationId.isNotBlank() && (expiresAt == null ||
+            runCatching { java.time.Instant.parse(expiresAt).toEpochMilli() > nowMillis }.getOrDefault(false))
+}
 
 // Wave 6 - social graph & discovery domain models
 

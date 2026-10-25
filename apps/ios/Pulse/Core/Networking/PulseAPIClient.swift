@@ -758,14 +758,12 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireUserEnvelope.self, from: data).user
     }
 
-    /// GET /api/mentions?userId=&limit= - the FULL 14-day mention feed
-    /// (entries, not just the pill count; tolerant → [] when unreachable).
-    public func mentions(limit: Int = 50) async -> [WireMentionEntry] {
-        guard let page: WireMentionEntriesPage = try? await get(
-            "/api/mentions?userId=\(userId)&limit=\(limit)",
-            as: WireMentionEntriesPage.self,
-        ) else { return [] }
-        return page.items ?? []
+    /// Full feed: transport failures are not an authoritative empty result.
+    public func mentions(limit: Int = 50) async throws -> [WireMentionEntry] {
+        let page: WireMentionEntriesPage = try await get("/api/mentions?userId=\(q(userId))&limit=\(limit)")
+        guard let items = page.items else { throw Failure(kind: .server, message: "Mention feed is missing.") }
+        try Task.checkCancellation()
+        return items.filter { $0.isVisible() }
     }
 
     /// GET /api/channels?userId=[&mine=1] - the broadcast directory
@@ -1019,8 +1017,7 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/mentions?userId= - mention count for the entry pill (nil → 0).
     public func mentionsCount() async -> Int? {
-        guard let page: WireMentionsPage = try? await get("/api/mentions?userId=\(userId)&limit=50", as: WireMentionsPage.self) else { return nil }
-        return page.items?.count
+        (try? await mentions(limit: 50))?.count
     }
 
     /// GET /api/search?userId=&q= - server message search (nil = unreachable;

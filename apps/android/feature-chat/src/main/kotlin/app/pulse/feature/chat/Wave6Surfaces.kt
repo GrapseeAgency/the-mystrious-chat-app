@@ -91,16 +91,35 @@ class MentionsViewModel @Inject constructor(
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
+    private var loading: kotlinx.coroutines.Job? = null
+    private var generation = 0L
+    private var feedEpoch: String? = null
+    fun canOpen(item: MentionItem): Boolean = feedEpoch != null && feedEpoch == repo.attachmentSessionKey() && item.isVisible()
     init {
         refresh()
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                _state.value = if (feedEpoch != repo.attachmentSessionKey()) State(loading = false)
+                    else _state.value.copy(items = _state.value.items.filter { it.isVisible() })
+            }
+        }
     }
 
     fun refresh() {
-        viewModelScope.launch {
-            val result = repo.mentions()
-            _state.value = State(loading = false, items = result.getOrElse { emptyList() }, error = result.isFailure)
+        val epoch = repo.attachmentSessionKey()
+        val account = repo.boundToCurrentAccount()
+        if (feedEpoch != epoch) { _state.value = State(); feedEpoch = epoch }
+        val request = ++generation
+        loading?.cancel()
+        loading = viewModelScope.launch {
+            val result = account.mentions()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (request != generation || epoch == null || repo.attachmentSessionKey() != epoch) return@launch
+            _state.value = State(loading = false, items = result.getOrElse { emptyList() }.filter { it.isVisible() }, error = result.isFailure)
         }
     }
+
 }
 
 /** Mentions feed - the 14-day server feed IS the badge count (no clear-on-open; no ack API exists, web parity). */
@@ -158,7 +177,7 @@ fun MentionsScreen(
 
             else -> LazyColumn(Modifier.fillMaxSize()) {
                 items(state.items, key = { it.messageId }) { item ->
-                    MentionRow(item = item, onClick = { onOpenRoom(item.conversationId) })
+                    MentionRow(item = item, onClick = { if (viewModel.canOpen(item)) onOpenRoom(item.conversationId) })
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
