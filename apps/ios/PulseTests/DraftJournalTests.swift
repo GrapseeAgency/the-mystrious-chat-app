@@ -86,4 +86,19 @@ final class DraftJournalTests: XCTestCase {
         try store.saveDraft(conversationId: "room", text: "External editor")
         XCTAssertFalse(journal.matches(receipt))
     }
+    func testOversizedDraftSurvivesPersistenceReopenAndRejectedSendInRoomAndThread() async throws {
+        let text = String(repeating: "a", count: 1999) + "🌿" + String(repeating: " tail", count: 100)
+        let store = try PulseStore()
+        for parent in [nil, "root"] as [String?] {
+            let journal = PulseDraftJournal(store: store, conversationId: "room", parentId: parent)
+            try await journal.save(text, revision: 1)
+            let reopened = PulseDraftJournal(store: store, conversationId: "room", parentId: parent)
+            XCTAssertEqual(reopened.snapshot, text)
+            XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: PulseViewer(id: "owner", name: "Owner"),
+                conversationId: "room", content: text, parentId: parent, draftJournal: reopened))
+            XCTAssertEqual(reopened.snapshot, text)
+            XCTAssertEqual(try store.countOutbox(), 0)
+        }
+    }
+
 }

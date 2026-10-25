@@ -140,7 +140,11 @@ async function fixture(run, database = db => db) {
         ...(reading?{}:{body:JSON.stringify({userId:'owner',creatorId:'owner',senderId:'owner',...body})}),
       }),{params:Promise.resolve({id:'room'})})
     }
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat})
+    const draftRoute=await load('src/app/api/conversations/[id]/draft/route.ts',blockDeps,'({GET,PATCH})')
+    const draft=(method,text,token='synthetic-owner',userId='owner')=>draftRoute[method](new Request(`https://settings.test/api/conversations/room/draft?userId=${userId}`,{
+      method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='GET'?{}:{body:JSON.stringify({userId,draft:text})}),
+    }),{params:Promise.resolve({id:'room'})})
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -476,4 +480,27 @@ test('history search and sync require credential-derived room membership before 
   await db.user.update({where:{id:'owner'},data:{sessionTokenHash:hashSessionToken('synthetic-owner')}})
   await db.user.update({where:{id:'other'},data:{sessionTokenHash:hashSessionToken('synthetic-owner')}})
   assert.equal((await chat('history')).status,403,'ambiguous credential must fail closed')
+}))
+
+
+test('drafts require the exact owner and an oversize write never clips or changes the previous draft',()=>fixture(async({db,draft})=>{
+  await db.conversationParticipant.updateMany({where:{userId:'owner'},data:{draft:'private unsent text'}})
+  for(const method of ['GET','PATCH']) for(const token of [null,'invalid','synthetic-other']) {
+    const response=await draft(method,'injected',token)
+    assert.equal(response.status,token?403:401)
+    assert.equal(JSON.stringify(await response.json()).includes('private unsent text'),false)
+  }
+  for(const text of ['x'.repeat(2001),'a'.repeat(1999)+'🌿','🌿'.repeat(1001),null,5]) {
+    assert.equal((await draft('PATCH',text)).status,400)
+    assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).draft,'private unsent text')
+  }
+  for(const text of ['🌿'.repeat(1000),'  spaces stay  ','','']) {
+    const written=await draft('PATCH',text);assert.equal(written.status,200)
+    assert.equal(written.headers.get('cache-control'),'private, no-store')
+    assert.deepEqual(await written.json(),{ok:true,draftReceiptVersion:1,conversationId:'room',userId:'owner',draft:text})
+    const fetched=await draft('GET');assert.equal(fetched.headers.get('cache-control'),'private, no-store')
+    assert.deepEqual(await fetched.json(),{draft:text||null})
+  }
+  await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
+  assert.equal((await draft('PATCH','lost membership')).status,403)
 }))

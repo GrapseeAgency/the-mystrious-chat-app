@@ -2092,9 +2092,9 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun setServerDraft(conversationId: String, draft: String) {
         val id = viewerId ?: return
-        runCatching {
-            api.setDraft(conversationId, id, draft.take(MAX_DRAFT))
-        }
+        try {
+            api.setDraft(conversationId, id, draft)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Draft mirror was not confirmed; local text is retained", error) }
         // Fire-and-forget: the local draft wins; the server only seeds
         // cross-device restore - failures are silently ignored.
     }
@@ -2596,8 +2596,7 @@ class PulseRepositoryImpl constructor(
         val owner = viewerId ?: return null
         val key = threadDraftKey(conversationId, rootId)
         val revision = nextDraftVersion(key)
-        val snapshot = revision to text.take(MAX_DRAFT)
-        threadDraftBuffers.compute(key) { _, previous -> if (previous != null && previous.first > revision) previous else snapshot }
+        val snapshot = draftWrites.bufferSnapshot(key, revision, text)
         threadDraftFailures.update { if ((it[key] ?: -1L) <= revision) it - key else it }
         draftWriteScope.launch {
             try {
@@ -2642,14 +2641,16 @@ class PulseRepositoryImpl constructor(
 
     private suspend fun writeLocalDraft(id: String, text: String, version: Long) = draftMutex.withLock {
         if (draftVersions[id]?.get() != version) return@withLock false
-        val value = text.take(MAX_DRAFT)
+        val value = DraftWriteCoordinator.localSnapshot(text)
         // Empty is an explicit local clear, not permission to restore stale server text.
-        draftDao.upsert(DraftEntity(id, if (value.isBlank()) "" else value, java.time.OffsetDateTime.now().toString()))
+        draftDao.upsert(DraftEntity(id, value, java.time.OffsetDateTime.now().toString()))
+        draftWrites.finishSnapshot(id, version)
         true
     }
 
     override fun stageDraft(conversationId: String, text: String) {
         val version = nextDraftVersion(conversationId)
+        draftWrites.bufferSnapshot(conversationId, version, text)
         draftWriteScope.launch {
             try { writeLocalDraft(conversationId, text, version) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Local draft could not be saved", error) }
         }
@@ -2657,7 +2658,7 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun saveDraft(conversationId: String, text: String) {
         val revision = nextDraftVersion(conversationId)
-        threadDraftBuffers.computeIfPresent(conversationId) { _, buffered -> buffered.takeIf { it.first > revision } }
+        draftWrites.bufferSnapshot(conversationId, revision, text)
         if (writeLocalDraft(conversationId, text, revision)) mirrorDraft(conversationId, text, revision)
     }
 
@@ -2673,14 +2674,20 @@ class PulseRepositoryImpl constructor(
         // Serialize attempted mirrors; skip revisions replaced before the request.
         // This is best effort, not server-side cross-device conflict resolution.
         if (!app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId) && draftVersions[conversationId]?.get() == revision) {
-            setServerDraft(conversationId, text.take(MAX_DRAFT))
+            setServerDraft(conversationId, text)
         }
     }
 
     override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")
 
     override fun observeDraft(conversationId: String): Flow<String?> =
-        draftDao.observe(conversationId).map { it?.text }
+        kotlinx.coroutines.flow.combine(draftDao.observe(conversationId), draftWrites.bufferChanges) { _, _ ->
+            draftMutex.withLock {
+                // An earlier Room emission may be queued behind a newer keystroke.
+                // Read again under the journal handoff lock, preferring its front buffer.
+                draftWrites.currentSnapshot(conversationId, draftDao.get(conversationId)?.text)
+            }
+        }
 
     override suspend fun markRead(conversationId: String): Result<Unit> = acknowledgeRead(conversationId, null)
 
@@ -4322,8 +4329,6 @@ class PulseRepositoryImpl constructor(
         /** Web MAX_QUEUE parity - the outbox never holds more rows. */
         const val MAX_OUTBOX = 50
 
-        /** Web MAX_DRAFT parity. */
-        const val MAX_DRAFT = 2000
 
         /** Self-heal beat while a flush is pending (plan §6). */
         const val SELF_HEAL_MS = 20_000L

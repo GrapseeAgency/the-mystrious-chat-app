@@ -513,7 +513,23 @@ public struct PulseAPIClient: Sendable {
     /// mirror ("" clears). The local draft stays authoritative; the mirror
     /// only seeds cross-device. Call sites are allowed to silent-fail this.
     public func setDraft(conversationId: String, userId: String, draft: String) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/draft", body: ["userId": userId, "draft": draft])
+        guard !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !userId.isEmpty, userId == self.userId, draft.utf16.count <= 2000 else {
+            throw Failure(kind: .validation, message: "Draft cannot be mirrored; complete local text is kept.")
+        }
+        struct Receipt: Decodable {
+            let ok: Bool
+            let draftReceiptVersion: Int
+            let conversationId: String
+            let userId: String
+            let draft: String
+        }
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))/draft", body: ["userId": userId, "draft": draft])
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.draftReceiptVersion == 1, receipt.conversationId == conversationId,
+              receipt.userId == userId, receipt.draft.utf16.elementsEqual(draft.utf16) else {
+            throw Failure(kind: .server, message: "Draft mirror was not confirmed.")
+        }
     }
 
     /// GET /api/conversations/{id}?userId= - one conversation. The detail is

@@ -730,8 +730,22 @@ class PulseApi(
     }
 
     /** PATCH /api/conversations/{id}/draft { userId, draft } → { ok, draft } ('' clears). */
-    suspend fun setDraft(conversationId: String, userId: String, draft: String): PulseResult<Unit> =
-        patch("/api/conversations/$conversationId/draft", jsonOf("userId" to userId, "draft" to draft))
+    suspend fun setDraft(conversationId: String, userId: String, draft: String): PulseResult<Unit> {
+        if (conversationId.isBlank() || userId.isBlank() || draft.length > 2000) {
+            return PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "Draft cannot be mirrored; complete local text is kept.")
+        }
+        val room = java.net.URLEncoder.encode(conversationId, "UTF-8").replace("+", "%20")
+        return patch("/api/conversations/$room/draft", jsonOf("userId" to userId, "draft" to draft)) { text ->
+            val receipt = PulseJson.parseToJsonElement(text) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Draft receipt is missing")
+            if (receipt["ok"] != JsonPrimitive(true) || receipt["draftReceiptVersion"] != JsonPrimitive(1) ||
+                receipt["conversationId"] != JsonPrimitive(conversationId) || receipt["userId"] != JsonPrimitive(userId) ||
+                receipt["draft"] != JsonPrimitive(draft)) {
+                throw kotlinx.serialization.SerializationException("Draft mirror was not confirmed")
+            }
+            Unit
+        }
+    }
 
     /** GET /api/conversations/{id}?userId= → { conversation } (detail incl. members with lastReadAt). */
     suspend fun conversationDetail(conversationId: String, userId: String): PulseResult<ConversationSummaryDto> =
