@@ -2680,14 +2680,15 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")
 
-    override fun observeDraft(conversationId: String): Flow<String?> =
-        kotlinx.coroutines.flow.combine(draftDao.observe(conversationId), draftWrites.bufferChanges) { _, _ ->
-            draftMutex.withLock {
-                // An earlier Room emission may be queued behind a newer keystroke.
-                // Read again under the journal handoff lock, preferring its front buffer.
-                draftWrites.currentSnapshot(conversationId, draftDao.get(conversationId)?.text)
-            }
-        }
+    override fun observeDraft(conversationId: String): Flow<String?> = kotlinx.coroutines.flow.flow {
+        suspend fun snapshot() = draftWrites.readSnapshot(conversationId) { draftDao.get(conversationId)?.text }
+        // Rapid reopen must not first wait for a Room query, especially after a
+        // local save error. A staged snapshot is already available in this account.
+        emit(snapshot())
+        emitAll(kotlinx.coroutines.flow.combine(draftDao.observe(conversationId), draftWrites.bufferChanges) { _, _ ->
+            snapshot()
+        })
+    }
 
     override suspend fun markRead(conversationId: String): Result<Unit> = acknowledgeRead(conversationId, null)
 

@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** AccountRepositories reuses a Room handle on return to an account. Its old,
  * finite journal tasks must share ordering with the replacement repository. */
@@ -35,6 +36,12 @@ internal class DraftWriteCoordinator internal constructor() {
     /** Caller holds localMutex while reading SQLite and this buffer together. */
     fun currentSnapshot(key: String, persisted: String?): String? =
         threadBuffers[key]?.takeIf { it.first == versions[key]?.get() }?.second ?: persisted
+
+    suspend fun readSnapshot(key: String, readPersisted: suspend () -> String?): String? = localMutex.withLock {
+        // A failed disk read must not hide an already staged recovery snapshot.
+        // Recheck after an awaited read too: keystrokes reserve revisions synchronously.
+        currentSnapshot(key, null) ?: currentSnapshot(key, readPersisted())
+    }
 
     companion object {
         /** A draft is recovery data, not a sendable message. Never clip it to the wire limit. */

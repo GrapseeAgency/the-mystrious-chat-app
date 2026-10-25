@@ -2,6 +2,7 @@ package app.pulse.data.repository
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.test.runTest
 
 class DraftSnapshotIntegrityTest {
     @Test fun recoverySnapshotsAreNotClippedToTheMessageOrMirrorLimit() {
@@ -27,6 +28,21 @@ class DraftSnapshotIntegrityTest {
         version.set(4) // A durable send/clear invalidated this version.
         assertEquals("", writes.currentSnapshot("room", ""))
         assertNull(writes.currentSnapshot("other-room", null))
+    }
+
+    @Test fun pendingDraftDoesNotDependOnDiskAndReadCompletionCannotHideANewKeystroke() = runTest {
+        val writes = DraftWriteCoordinator()
+        val revision = java.util.concurrent.atomic.AtomicLong(1)
+        writes.versions["room"] = revision
+        writes.bufferSnapshot("room", 1, "recovery text")
+        assertEquals("recovery text", writes.readSnapshot("room") { throw java.io.IOException("disk unavailable") })
+        writes.finishSnapshot("room", 1)
+        assertEquals("typed during disk read", writes.readSnapshot("room") {
+            revision.set(2); writes.bufferSnapshot("room", 2, "typed during disk read")
+            "previous persisted draft"
+        })
+        revision.set(3); writes.bufferSnapshot("room", 3, "")
+        assertEquals("", writes.readSnapshot("room") { error("Explicit clear must not revive disk text") })
     }
 
 }
