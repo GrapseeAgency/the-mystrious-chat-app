@@ -35,15 +35,26 @@ fun visibleReadIntent(repository: PulseRepository, room: String, message: String
 
 /** One mounted reading session owns ONE fence. Scanning another visible row
  * later must not acquire permission to erase another device's manual marker. */
-class VisibleReadScope(repository: PulseRepository, private val room: String) {
+class VisibleReadScope(
+    repository: PulseRepository,
+    private val room: String,
+    private val memberSnapshot: () -> app.pulse.domain.model.ConversationMember?,
+) {
     private val account = repository.boundToCurrentAccount()
     private val mutex = Mutex()
     private var intent: String? = null
     private suspend fun capture(): Result<String> = mutex.withLock {
         intent?.let { return@withLock Result.success(it) }
-        account.captureReadIntent(room).also { result ->
+        // Native surfaces supply their displayed membership synchronously at
+        // qualification. A queued DAO lookup must not borrow a newer manual
+        // intent while the original observation is waiting to be journaled.
+        val member = memberSnapshot.invoke()?.takeIf { it.id == account.viewerId }
+        val membership = member?.readMembershipId?.takeIf { it.isNotBlank() }
+        val result = if (membership == null) Result.failure(IllegalStateException("Waiting for current room membership"))
+            else Result.success(member?.readIntent ?: "offline.$membership")
+        result.also {
             currentCoroutineContext().ensureActive()
-            result.getOrNull()?.let { intent = it }
+            it.getOrNull()?.let { captured -> intent = captured }
         }
     }
     fun message(id: String) = VisibleReadIntent({ capture() }, { account.markReadThrough(room, id, it) })

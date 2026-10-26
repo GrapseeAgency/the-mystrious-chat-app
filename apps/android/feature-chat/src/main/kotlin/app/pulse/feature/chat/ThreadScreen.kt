@@ -306,7 +306,11 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    private val readScope by lazy { app.pulse.domain.sync.VisibleReadScope(repo, conversationId) }
+    private val readScope by lazy {
+        app.pulse.domain.sync.VisibleReadScope(repo, conversationId) {
+            conversation.value?.takeIf { it.id == conversationId }?.members?.firstOrNull { it.id == repo.viewerId }
+        }
+    }
     fun markVisibleRead(messageId: String): app.pulse.domain.sync.VisibleReadIntent =
         readScope.message(messageId)
 

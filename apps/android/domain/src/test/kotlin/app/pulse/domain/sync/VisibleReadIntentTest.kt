@@ -1,6 +1,13 @@
 package app.pulse.domain.sync
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
+import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
+import app.pulse.domain.model.ConversationMember
+import app.pulse.domain.repository.PulseRepository
+import java.lang.reflect.Proxy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
@@ -8,6 +15,63 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class VisibleReadIntentTest {
+    private class Journal {
+        val sent = mutableListOf<String>()
+        val writes = mutableListOf<Continuation<Result<Unit>>>()
+        @Suppress("UNCHECKED_CAST")
+        val repo = Proxy.newProxyInstance(PulseRepository::class.java.classLoader, arrayOf(PulseRepository::class.java)) { proxy, method, args ->
+            when {
+                method.name == "boundToCurrentAccount" -> proxy
+                method.name == "getViewerId" -> "viewer"
+                method.name.startsWith("markReadThrough") -> {
+                    sent += args!![2] as String
+                    writes += args.last() as Continuation<Result<Unit>>
+                    COROUTINE_SUSPENDED
+                }
+                else -> error("Native visible reads must not reacquire asynchronously: ${method.name}")
+            }
+        } as PulseRepository
+    }
+
+    @Test fun `manual unread arriving during journal suspension cannot replace displayed read authority`() = runTest {
+        val journal = Journal()
+        var member = ConversationMember("viewer", "Viewer", readMembershipId = "member", readIntent = "original.member")
+        val scope = VisibleReadScope(journal.repo, "room") { member }
+        val first = async { scope.message("first").send() }
+        runCurrent()
+        assertEquals(listOf("original.member"), journal.sent)
+        member = member.copy(readIntent = "after-manual.member")
+        journal.writes[0].resume(Result.success(Unit))
+        assertTrue(first.await().isSuccess)
+        val later = async { scope.message("later").send() }
+        runCurrent()
+        assertEquals(listOf("original.member", "original.member"), journal.sent)
+        journal.writes[1].resume(Result.success(Unit))
+        assertTrue(later.await().isSuccess)
+        val newVisit = VisibleReadScope(journal.repo, "room") { member }
+        val fresh = async { newVisit.message("first").send() }
+        runCurrent()
+        assertEquals("after-manual.member", journal.sent.last())
+        journal.writes[2].resume(Result.success(Unit))
+        assertTrue(fresh.await().isSuccess)
+    }
+
+    @Test fun `missing or foreign displayed membership cannot fall back to a later database fence`() = runTest {
+        val journal = Journal()
+        var member: ConversationMember? = null
+        val intent = VisibleReadScope(journal.repo, "room") { member }.message("message")
+        assertTrue(intent.send().isFailure)
+        member = ConversationMember("another-viewer", "Other", readMembershipId = "other", readIntent = "fresh.other")
+        assertTrue(intent.send().isFailure)
+        assertTrue(journal.sent.isEmpty())
+        member = ConversationMember("viewer", "Viewer", readMembershipId = "member")
+        val offline = async { intent.send() }
+        runCurrent()
+        assertEquals(listOf("offline.member"), journal.sent)
+        journal.writes.single().resume(Result.success(Unit))
+        assertTrue(offline.await().isSuccess)
+    }
+
     @Test fun `distinct visits do not erase or inherit each others queued authority`() {
         val first = readObservationJournalKey("owner", "message", "first.member")
         val fresh = readObservationJournalKey("owner", "message", "after-manual.member")

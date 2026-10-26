@@ -448,6 +448,7 @@ internal fun MirrorThreadSheet(
     viewerId: String,
     viewerName: String,
     memberNames: List<String>,
+    members: List<app.pulse.domain.model.ConversationMember>,
     jumpMessageId: String? = null,
     readingEnabled: Boolean = false,
     onDismiss: () -> Unit,
@@ -581,7 +582,12 @@ internal fun MirrorThreadSheet(
     val available = !denied && threadRootAvailable(currentRoot, root.conversationId, root.id, now)
     val replies = if (available) cachedReplies.filter { it.conversationId == root.conversationId &&
         it.threadRootId == root.id && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) } else emptyList()
-    val readScope = remember(threadRepository, root.conversationId) { app.pulse.domain.sync.VisibleReadScope(threadRepository, root.conversationId) }
+    val latestReadMembers = androidx.compose.runtime.rememberUpdatedState(members)
+    val readScope = remember(threadRepository, root.conversationId, root.id) {
+        app.pulse.domain.sync.VisibleReadScope(threadRepository, root.conversationId) {
+            latestReadMembers.value.firstOrNull { it.id == viewerId }
+        }
+    }
     app.pulse.feature.chat.ThreadReadReceipts(
         ownerKey = threadRepository,
         enabled = readingEnabled && available && viewOnceGrant == null && discardConfirm == null,

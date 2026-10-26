@@ -657,7 +657,12 @@ internal fun MirrorRoom(
     val windowFocused = readWindow.isWindowFocused
     val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
-    val readScope = remember(repository, viewerId, groupId) { app.pulse.domain.sync.VisibleReadScope(repository, groupId) }
+    val latestReadMembers = androidx.compose.runtime.rememberUpdatedState(members)
+    val readScope = remember(repository, viewerId, groupId) {
+        app.pulse.domain.sync.VisibleReadScope(repository, groupId) {
+            latestReadMembers.value.firstOrNull { it.id == viewerId }
+        }
+    }
     val readIntents = remember(repository, viewerId, groupId) { mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>() }
     val readConnected by remember(repository) { repository.observeConnected() }
         .collectAsStateWithLifecycle(initialValue = false)
@@ -2778,6 +2783,7 @@ internal fun MirrorRoom(
                 viewerId = viewerId,
                 viewerName = viewerName,
                 memberNames = memberNames,
+                members = members,
                 jumpMessageId = threadJumpId,
                 readingEnabled = readingEnabled && !roomPanelOpen,
                 onDismiss = { threadFor = null; threadJumpId = null },

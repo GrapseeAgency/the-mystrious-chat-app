@@ -497,7 +497,11 @@ class ChatRoomViewModel @Inject constructor(
     private var readingAnchors: Set<String> = emptySet()
     private var readingAllowed: () -> Boolean = { true }
 
-    private val readScope by lazy { app.pulse.domain.sync.VisibleReadScope(repo, conversationId) }
+    private val readScope by lazy {
+        app.pulse.domain.sync.VisibleReadScope(repo, conversationId) {
+            conversation.value?.takeIf { it.id == conversationId }?.members?.firstOrNull { it.id == repo.viewerId }
+        }
+    }
     private val readIntents = mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>()
     private val readJobs by lazy {
         app.pulse.domain.sync.VisibleReadJobs(viewModelScope,
