@@ -142,6 +142,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -674,13 +675,11 @@ internal fun MirrorRoom(
                         !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) &&
                         (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }.map { it.id }
                 }
-                androidx.compose.runtime.snapshotFlow { currentBoundary() }.collectLatest { ids ->
-                    kotlinx.coroutines.coroutineScope { ids.forEach { id -> launch {
-                        app.pulse.domain.sync.acknowledgeVisibleRead(
-                            isCurrent = { id in currentBoundary() },
-                            send = readIntents.getOrPut(id) { readScope.message(id) }::send,
-                        )
-                    } } }
+                kotlinx.coroutines.coroutineScope {
+                    val reads = app.pulse.domain.sync.VisibleReadJobs(this,
+                        isCurrent = { it in currentBoundary() },
+                        send = { id -> readIntents.getOrPut(id) { readScope.message(id) }.send() })
+                    androidx.compose.runtime.snapshotFlow { currentBoundary() }.collect { reads.update(it.toSet()) }
                 }
             } finally {
                 releaseAttention()

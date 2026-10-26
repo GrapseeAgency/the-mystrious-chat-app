@@ -21,6 +21,7 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 ### Durability follow-up
 
 - Visible reads now capture only the membership/fence already known in the cached room snapshot. They do not await a newer network preparation after the observation. Missing membership fails closed until room metadata arrives.
+- Dwell now belongs to each visible message identity: an unrelated row entering or leaving the viewport cannot perpetually restart a stable row. Focus/occlusion still restart unfinished dwell; departing/re-entering rows must qualify again. Swift schedules the earliest remaining deadline and can skip a permanently refused row without starving the others.
 - Android shields the short local capture/journal write from navigation cancellation. Swift captures and journals on the main actor without an intervening network await. Durable acceptance is not rendered as server Seen.
 - Read replay no longer occupies Android's outgoing-message dispatch lock. Its independent retry gate respects Retry-After.
 - Android queue observers follow account hydration/switches, and WorkManager awaits both journals. Empty-to-pending transitions append work without cancelling running delivery or losing the completion/enqueue race. Swift's live and cold BGAppRefresh paths both await an original-intent read-journal pass.

@@ -15,8 +15,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.pulse.domain.model.Message
 import app.pulse.domain.sync.hasReadViewportOverlap
 import app.pulse.domain.sync.visibleThreadReadIds
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.coroutineScope
 
 /** A thread is a reading surface, not permission to read every cached reply. */
@@ -54,13 +53,11 @@ fun ThreadReadReceipts(
                 return visibleThreadReadIds(parent, messages, visible)
             }
             try {
-                snapshotFlow { currentBoundary() }.collectLatest { ids ->
-                    coroutineScope { ids.forEach { id -> launch {
-                        app.pulse.domain.sync.acknowledgeVisibleRead(
-                            isCurrent = { id in currentBoundary() },
-                            send = intents.getOrPut(id) { reader(id) }::send,
-                        )
-                    } } }
+                coroutineScope {
+                    val reads = app.pulse.domain.sync.VisibleReadJobs(this,
+                        isCurrent = { it in currentBoundary() },
+                        send = { id -> intents.getOrPut(id) { reader(id) }.send() })
+                    snapshotFlow { currentBoundary() }.collect { reads.update(it.toSet()) }
                 }
             } finally { releaseAttention() }
         }

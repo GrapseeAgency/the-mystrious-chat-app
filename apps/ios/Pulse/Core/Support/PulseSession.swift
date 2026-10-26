@@ -542,11 +542,13 @@ public final class PulseSession: ObservableObject {
             now: ProcessInfo.processInfo.systemUptime) else { return }
         readFailureCount = 0
         readReceiptTask?.cancel()
-        if !messageIds.isEmpty && isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+        if !messageIds.isEmpty && isForeground { scheduleVisibleRead(after: 0) }
     }
 
     private func scheduleVisibleRead(after delay: TimeInterval) {
-        guard let boundary = readGate.boundary else { return }
+        guard let boundary = readGate.boundary,
+              let remaining = readGate.nextDelay(now: ProcessInfo.processInfo.systemUptime) else { return }
+        let delay = max(delay, remaining)
         let epoch = generation, revision = readGate.revision
         readReceiptTask?.cancel()
         readReceiptTask = Task { [weak self] in
@@ -634,6 +636,7 @@ public final class PulseSession: ObservableObject {
             readFailureCount = min(7, readFailureCount + 1)
             guard let wait = PulseVisibleReadRetry.delay(after: error, failures: readFailureCount) else {
                 readGate.deferAttempt(until: .infinity)
+                scheduleVisibleRead(after: 0) // a refused row must not starve independent visible identities
                 return
             }
             readGate.deferAttempt(until: ProcessInfo.processInfo.systemUptime + wait)

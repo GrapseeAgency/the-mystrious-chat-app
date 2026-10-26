@@ -13,9 +13,13 @@ struct PulseReadReceiptGate {
         let boundary: Boundary
     }
     private var candidates: [Boundary] = []
-    var boundary: Boundary? { candidates.first { !acknowledged.contains($0) } }
+    var boundary: Boundary? {
+        candidates.filter { !acknowledged.contains($0) }.min {
+            (eligibleAt[$0] ?? .infinity) < (eligibleAt[$1] ?? .infinity)
+        }
+    }
     private(set) var revision: UInt64 = 0
-    private var eligibleAt: TimeInterval = .infinity
+    private var eligibleAt: [Boundary: TimeInterval] = [:]
     private var acknowledged: Set<Boundary> = []
     private var inFlight: Request?
     private var intents: [Boundary: String] = [:]
@@ -34,7 +38,7 @@ struct PulseReadReceiptGate {
         sessionIntent = nil
         candidates = []
         acknowledged = []
-        eligibleAt = .infinity
+        eligibleAt.removeAll()
         revision &+= 1
         inFlight = nil
     }
@@ -48,24 +52,36 @@ struct PulseReadReceiptGate {
     mutating func setBoundaries(roomId: String, messageIds: [String], now: TimeInterval) -> Bool {
         let next = Set(messageIds).sorted().map { Boundary(roomId: roomId, messageId: $0) }
         guard next != candidates else { return false }
+        let retained = Set(next)
+        eligibleAt = eligibleAt.filter { retained.contains($0.key) }
+        for candidate in next where eligibleAt[candidate] == nil {
+            eligibleAt[candidate] = now + Self.dwell
+        }
         candidates = next
-        restartDwell(now: now)
+        revision &+= 1
+        inFlight = nil
         return true
     }
 
     mutating func restartDwell(now: TimeInterval) {
         revision &+= 1
         inFlight = nil
-        eligibleAt = boundary == nil ? .infinity : now + Self.dwell
+        for candidate in candidates { eligibleAt[candidate] = now + Self.dwell }
     }
 
     mutating func deferAttempt(until deadline: TimeInterval) {
-        eligibleAt = max(eligibleAt, deadline)
+        guard let boundary else { return }
+        eligibleAt[boundary] = max(eligibleAt[boundary] ?? .infinity, deadline)
+    }
+
+    func nextDelay(now: TimeInterval) -> TimeInterval? {
+        guard let boundary, let deadline = eligibleAt[boundary], deadline.isFinite else { return nil }
+        return max(0, deadline - now)
     }
 
     mutating func begin(roomId: String, now: TimeInterval) -> Request? {
         guard let boundary, boundary.roomId == roomId, !acknowledged.contains(boundary),
-              now >= eligibleAt, inFlight == nil else { return nil }
+              now >= (eligibleAt[boundary] ?? .infinity), inFlight == nil else { return nil }
         let request = Request(id: UUID(), revision: revision, boundary: boundary)
         inFlight = request
         return request

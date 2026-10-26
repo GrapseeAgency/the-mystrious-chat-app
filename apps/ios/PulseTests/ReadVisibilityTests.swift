@@ -2,6 +2,40 @@ import XCTest
 @testable import Pulse
 
 final class ReadVisibilityTests: XCTestCase {
+    func testViewportChurnPreservesEachContinuouslyVisibleRowsDwell() throws {
+        var gate = PulseReadReceiptGate()
+        gate.setBoundaries(roomId: "room", messageIds: ["stable", "leaving"], now: 0)
+        gate.setBoundaries(roomId: "room", messageIds: ["stable", "new"], now: 0.3)
+        let stable = try XCTUnwrap(gate.begin(roomId: "room", now: 0.61))
+        XCTAssertEqual(stable.boundary.messageId, "stable")
+        XCTAssertTrue(gate.retainIntent("original.member", for: stable))
+        gate.finish(stable, succeeded: true)
+        XCTAssertEqual(try XCTUnwrap(gate.nextDelay(now: 0.61)), 0.29, accuracy: 0.0001)
+        XCTAssertNil(gate.begin(roomId: "room", now: 0.89))
+        let next = try XCTUnwrap(gate.begin(roomId: "room", now: 0.91))
+        XCTAssertEqual(next.boundary.messageId, "new")
+        XCTAssertEqual(gate.intent(for: next), "original.member")
+        gate.finish(next, succeeded: true)
+        gate.setBoundaries(roomId: "room", messageIds: ["stable", "new", "leaving"], now: 1)
+        XCTAssertNil(gate.begin(roomId: "room", now: 1.59))
+        XCTAssertEqual(gate.begin(roomId: "room", now: 1.61)?.boundary.messageId, "leaving")
+    }
+
+    func testRefusedIdentityDoesNotStarveOtherQualifiedRowsOrCreateATimerLoop() throws {
+        var gate = PulseReadReceiptGate()
+        gate.setBoundaries(roomId: "room", messageIds: ["bad", "good"], now: 0)
+        let bad = try XCTUnwrap(gate.begin(roomId: "room", now: 0.61))
+        XCTAssertEqual(bad.boundary.messageId, "bad")
+        gate.finish(bad, succeeded: false)
+        gate.deferAttempt(until: .infinity)
+        XCTAssertEqual(gate.nextDelay(now: 0.61), 0)
+        let good = try XCTUnwrap(gate.begin(roomId: "room", now: 0.61))
+        XCTAssertEqual(good.boundary.messageId, "good")
+        gate.finish(good, succeeded: true)
+        XCTAssertNil(gate.nextDelay(now: 100))
+        XCTAssertNil(gate.begin(roomId: "room", now: 100))
+    }
+
     func testDelayedBackgroundBadgeSnapshotCannotCrossAnotherFetchOrForegroundPublication() {
         var fence = PulseBadgeSnapshotFence()
         let delayed = fence.reserve()

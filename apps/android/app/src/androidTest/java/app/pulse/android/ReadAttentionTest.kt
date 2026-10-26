@@ -75,6 +75,39 @@ class ReadAttentionTest {
             assertFalse(observed.contains("hidden"))
         }
     }
+    @Test fun arrivingViewportRowDoesNotRestartAnAlreadyVisibleRowsDwell() {
+        var showReply by mutableStateOf(false)
+        val window = object : WindowInfo { override val isWindowFocused = true }
+        val root = Message("stable-root", "room", "peer", "Peer", Message.Kind.TEXT, "Root", "2026-10-26T00:00:00Z")
+        val reply = root.copy(id = "arriving-reply", threadRootId = root.id)
+        val observed = CopyOnWriteArrayList<String>()
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            CompositionLocalProvider(LocalWindowInfo provides window) {
+                val list = rememberLazyListState()
+                LazyColumn(state = list, modifier = Modifier.height(180.dp).fillMaxWidth()) {
+                    item(key = "thread-parent") { Text("Root", Modifier.height(64.dp)) }
+                    if (showReply) item(key = reply.id) { Text("Reply", Modifier.height(64.dp)) }
+                }
+                ThreadReadReceipts(ownerKey = "changing-viewport", enabled = true, connected = true,
+                    root = root, replies = if (showReply) listOf(reply) else emptyList(), listState = list,
+                    onRead = { id -> VisibleReadIntent({ Result.success("original.member") }, {
+                        observed.add(id); Result.success(Unit)
+                    }) })
+            }
+        }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(300)
+        compose.runOnIdle { showReply = true }
+        compose.mainClock.advanceTimeBy(350)
+        compose.runOnIdle {
+            assertTrue("Stable row should complete its own dwell", observed.contains(root.id))
+            assertFalse("Arriving row still needs its own full dwell", observed.contains(reply.id))
+        }
+        compose.mainClock.advanceTimeBy(350)
+        compose.waitUntil(5000) { observed.contains(reply.id) }
+    }
+
     @Test fun realNotificationShadeInterruptsTheDwellUntilTheActualWindowRegainsFocus() {
         val automation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
         val window = java.util.concurrent.atomic.AtomicReference<WindowInfo>()

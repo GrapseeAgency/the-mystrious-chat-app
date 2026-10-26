@@ -469,7 +469,6 @@ class ChatRoomViewModel @Inject constructor(
 
     private var typingJob: Job? = null
     private var draftSaveJob: Job? = null
-    private var readJob: Job? = null
     private var searchJob: Job? = null
     private var activeSearchQuery = ""
     private var pinsJob: Job? = null
@@ -604,25 +603,17 @@ class ChatRoomViewModel @Inject constructor(
     fun setReadingAnchors(messageIds: Set<String>) {
         if (readingAnchors == messageIds) return
         readingAnchors = messageIds
-        readJob?.cancel()
-        scheduleRead()
+        readJobs.update(messageIds)
     }
 
     private val readScope by lazy { app.pulse.domain.sync.VisibleReadScope(repo, conversationId) }
     private val readIntents = mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>()
-    private fun scheduleRead() {
-        val anchors = readingAnchors
-        if (anchors.isEmpty()) return
-        readJob?.cancel()
-        readJob = viewModelScope.launch {
-            anchors.forEach { anchor -> launch {
-                app.pulse.domain.sync.acknowledgeVisibleRead(
-                    isCurrent = { anchor in readingAnchors },
-                    send = readIntents.getOrPut(anchor) { readScope.message(anchor) }::send,
-                )
-            } }
-        }
+    private val readJobs by lazy {
+        app.pulse.domain.sync.VisibleReadJobs(viewModelScope,
+            isCurrent = { it in readingAnchors },
+            send = { id -> readIntents.getOrPut(id) { readScope.message(id) }.send() })
     }
+    private fun scheduleRead() { readJobs.restart(readingAnchors) }
 
     // ── drafts (Wave 0 core) + typing ───────────────────────────
 

@@ -8,7 +8,45 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class VisibleReadRetryTest {
+    @Test fun `viewport churn preserves stable dwell and reentry starts a new dwell`() = runTest {
+        var visible = setOf("stable", "leaving")
+        val sent = mutableListOf<String>()
+        val reads = VisibleReadJobs(backgroundScope, { it in visible }, { sent += it; Result.success(Unit) })
+        reads.update(visible)
+        testScheduler.runCurrent()
+        testScheduler.advanceTimeBy(300)
+        visible = setOf("stable", "new")
+        reads.update(visible)
+        testScheduler.advanceTimeBy(301)
+        testScheduler.runCurrent()
+        assertEquals(listOf("stable"), sent)
+        visible = visible + "leaving"
+        reads.update(visible)
+        testScheduler.advanceTimeBy(300)
+        testScheduler.runCurrent()
+        assertEquals(listOf("stable", "new"), sent)
+        testScheduler.advanceTimeBy(301)
+        testScheduler.runCurrent()
+        assertEquals(listOf("stable", "new", "leaving"), sent)
+    }
+
+    @Test fun `attention loss restarts every unfinished identity dwell`() = runTest {
+        val sent = mutableListOf<String>()
+        val reads = VisibleReadJobs(backgroundScope, { true }, { sent += it; Result.success(Unit) })
+        reads.update(setOf("row"))
+        testScheduler.runCurrent()
+        testScheduler.advanceTimeBy(300)
+        reads.restart(setOf("row"))
+        testScheduler.advanceTimeBy(301)
+        testScheduler.runCurrent()
+        assertTrue(sent.isEmpty())
+        testScheduler.advanceTimeBy(300)
+        testScheduler.runCurrent()
+        assertEquals(listOf("row"), sent)
+    }
+
     @Test fun `temporary outage can recover beyond the old three attempt cutoff`() = runTest {
         val waits = mutableListOf<Long>()
         var sends = 0
