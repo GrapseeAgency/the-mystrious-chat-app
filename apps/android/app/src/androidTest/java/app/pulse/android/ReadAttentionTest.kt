@@ -32,16 +32,18 @@ class ReadAttentionTest {
 
     @Test fun floatingEditMenuStopsReadsWithoutLosingWindowFocus() = nativeEditMenuInterruption(1000)
     @Test fun editMenuOpenedAndClosedInOneFrameStillRestartsDwell() = nativeEditMenuInterruption(0)
+    @Test fun windowFocusLostAndRestoredInOneFrameStillRestartsDwell() = nativeEditMenuInterruption(0, focusCycle = true)
 
     @Test fun threadDialogEditMenuUsesItsOwnWindow() = nativeEditMenuInterruption(1000, inDialog = true)
 
     @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-    private fun nativeEditMenuInterruption(holdFor: Long, inDialog: Boolean = false) {
+    private fun nativeEditMenuInterruption(holdFor: Long, inDialog: Boolean = false, focusCycle: Boolean = false) {
         val view = java.util.concurrent.atomic.AtomicReference<android.view.View>()
         val window = java.util.concurrent.atomic.AtomicReference<WindowInfo>()
         val observed = CopyOnWriteArrayList<String>()
         val root = Message("menu-root", "room", "peer", "Peer", Message.Kind.TEXT, "Root", "2026-10-26T00:00:00Z")
         var mode: android.view.ActionMode? = null
+        var focusWindow: android.view.Window? = null
         var enabled by mutableStateOf(false)
         compose.mainClock.autoAdvance = false
         compose.setContent {
@@ -74,6 +76,16 @@ class ReadAttentionTest {
         compose.mainClock.advanceTimeBy(200)
         try {
             compose.runOnIdle {
+                if (focusCycle) {
+                    var context: android.content.Context = view.get().context
+                    while (context is android.content.ContextWrapper && context !is android.app.Activity) {
+                        context = context.baseContext
+                    }
+                    focusWindow = (context as android.app.Activity).window
+                    focusWindow!!.callback.onWindowFocusChanged(false)
+                    focusWindow!!.callback.onWindowFocusChanged(true)
+                    return@runOnIdle
+                }
                 mode = view.get().startActionMode(object : android.view.ActionMode.Callback2() {
                     override fun onCreateActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
                         menu.add("Copy"); return true
@@ -102,7 +114,10 @@ class ReadAttentionTest {
             compose.runOnIdle { assertTrue("Dismissal requires a full new dwell", observed.isEmpty()) }
             compose.mainClock.advanceTimeBy(300)
             compose.waitUntil(5000) { observed.contains(root.id) }
-        } finally { compose.runOnIdle { mode?.finish() } }
+        } finally { compose.runOnIdle {
+            mode?.finish()
+            focusWindow?.callback?.onWindowFocusChanged(true)
+        } }
     }
 
     @Test fun systemWindowOcclusionAndSheetInterruptionsRestartDwellWithoutReadingOffscreenRows() {

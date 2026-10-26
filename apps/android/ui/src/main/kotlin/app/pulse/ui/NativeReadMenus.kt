@@ -62,6 +62,13 @@ internal class NativeReadMenuCallback(private val delegate: Window.Callback) : W
     private val snapshot = mutableStateOf(NativeReadMenuState())
     val state: State<NativeReadMenuState> get() = snapshot
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        // Preserve the interruption even when focus is lost and restored before
+        // Compose observes a frame. WindowInfo still owns current focus truth.
+        snapshot.value = snapshot.value.copy(revision = snapshot.value.revision + 1)
+        delegate.onWindowFocusChanged(hasFocus)
+    }
+
     override fun onActionModeStarted(mode: ActionMode) {
         modes.add(mode)
         snapshot.value = NativeReadMenuState(true, snapshot.value.revision + 1)
