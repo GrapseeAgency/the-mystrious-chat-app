@@ -35,6 +35,30 @@ final class ComposerAttentionTests: XCTestCase {
         XCTAssertEqual(PulseComposerInput.height(content: 300, line: 20), 100)
     }
 
+    func testWritingToolsOutlivesItsLaunchingMenuAndKeepsTheEditedDraft() throws {
+        guard #available(iOS 18.0, *) else { throw XCTSkip("Writing Tools requires iOS 18") }
+        var draft = "original"
+        let input = PulseComposerInput(text: Binding(get: { draft }, set: { draft = $0 }), focused: .constant(false),
+            placeholder: "Reply", session: PulseSession())
+        let coordinator = input.makeCoordinator()
+        let delegate: UITextViewDelegate = coordinator
+        let text = PulseComposerTextView(frame: .zero, textContainer: nil)
+        let animator = Animator()
+        delegate.textView?(text, willPresentEditMenuWithAnimator: animator)
+        delegate.textViewWritingToolsWillBegin?(text)
+        delegate.textView?(text, willDismissEditMenuWithAnimator: animator)
+        animator.finish()
+        XCTAssertNil(coordinator.menu.ticket)
+        XCTAssertTrue(coordinator.writingToolsActive)
+        text.text = "Edited by the writing tool"
+        delegate.textViewWritingToolsDidEnd?(text)
+        XCTAssertEqual(draft, text.text)
+        XCTAssertFalse(coordinator.writingToolsActive)
+        delegate.textViewWritingToolsWillBegin?(text)
+        PulseComposerInput.dismantleUIView(text, coordinator: coordinator)
+        XCTAssertFalse(coordinator.writingToolsActive)
+    }
+
     func testHostedComposerKeepsAutumnColorAndScrollsAfterFiveLines() throws {
         let content = (1...12).map { "Line \($0)" }.joined(separator: "\n")
         let input = PulseComposerInput(text: .constant(content), focused: .constant(false),

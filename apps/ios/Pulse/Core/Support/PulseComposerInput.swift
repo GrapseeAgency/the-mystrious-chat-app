@@ -74,6 +74,7 @@ struct PulseComposerInput: UIViewRepresentable {
 
     static func dismantleUIView(_ view: PulseComposerTextView, coordinator: Coordinator) {
         coordinator.finishMenu(coordinator.menu.ticket)
+        coordinator.finishWritingTools()
         view.delegate = nil
         view.resignFirstResponder()
     }
@@ -85,6 +86,9 @@ struct PulseComposerInput: UIViewRepresentable {
         private(set) var menu = PulseMenuVisibility()
         private let menuID = UUID()
         private weak var menuSession: PulseSession?
+        private let writingToolsID = UUID()
+        private weak var writingToolsSession: PulseSession?
+        private(set) var writingToolsActive = false
         init(_ parent: PulseComposerInput) { self.parent = parent }
 
         func textViewDidChange(_ textView: UITextView) {
@@ -117,6 +121,26 @@ struct PulseComposerInput: UIViewRepresentable {
             let ticket = menu.ticket
             animator.addCompletion { [weak self] in self?.finishMenu(ticket) }
         }
+        @available(iOS 18.0, *)
+        func textViewWritingToolsWillBegin(_ textView: UITextView) {
+            if writingToolsSession !== parent.session {
+                writingToolsSession?.setTransientReadObscured(writingToolsID, false)
+                writingToolsSession = parent.session
+            }
+            writingToolsActive = true
+            writingToolsSession?.setTransientReadObscured(writingToolsID, true)
+        }
+        @available(iOS 18.0, *)
+        func textViewWritingToolsDidEnd(_ textView: UITextView) {
+            if parent.text != textView.text { textViewDidChange(textView) }
+            finishWritingTools()
+        }
+        func finishWritingTools() {
+            guard writingToolsActive else { return }
+            writingToolsActive = false
+            writingToolsSession?.setTransientReadObscured(writingToolsID, false)
+        }
+
         func finishMenu(_ ticket: UUID?) {
             guard menu.end(ticket) else { return }
             menuSession?.setTransientReadObscured(menuID, false)

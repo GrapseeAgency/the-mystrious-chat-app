@@ -33,29 +33,44 @@ class ReadAttentionTest {
     @Test fun floatingEditMenuStopsReadsWithoutLosingWindowFocus() = nativeEditMenuInterruption(1000)
     @Test fun editMenuOpenedAndClosedInOneFrameStillRestartsDwell() = nativeEditMenuInterruption(0)
 
-    private fun nativeEditMenuInterruption(holdFor: Long) {
+    @Test fun threadDialogEditMenuUsesItsOwnWindow() = nativeEditMenuInterruption(1000, inDialog = true)
+
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+    private fun nativeEditMenuInterruption(holdFor: Long, inDialog: Boolean = false) {
         val view = java.util.concurrent.atomic.AtomicReference<android.view.View>()
         val window = java.util.concurrent.atomic.AtomicReference<WindowInfo>()
         val observed = CopyOnWriteArrayList<String>()
         val root = Message("menu-root", "room", "peer", "Peer", Message.Kind.TEXT, "Root", "2026-10-26T00:00:00Z")
         var mode: android.view.ActionMode? = null
+        var enabled by mutableStateOf(false)
         compose.mainClock.autoAdvance = false
         compose.setContent {
-            val host = androidx.compose.ui.platform.LocalView.current
-            val actualWindow = LocalWindowInfo.current
-            androidx.compose.runtime.SideEffect { view.set(host); window.set(actualWindow) }
-            val list = rememberLazyListState()
-            LazyColumn(state = list, modifier = Modifier.height(120.dp).fillMaxWidth()) {
-                item(key = "thread-parent") { Text("Root", Modifier.height(64.dp)) }
+            val reader: @androidx.compose.runtime.Composable () -> Unit = {
+                val host = androidx.compose.ui.platform.LocalView.current
+                val actualWindow = LocalWindowInfo.current
+                androidx.compose.runtime.SideEffect { view.set(host); window.set(actualWindow) }
+                val list = rememberLazyListState()
+                LazyColumn(state = list, modifier = Modifier.height(120.dp).fillMaxWidth()) {
+                    item(key = "thread-parent") { Text("Root", Modifier.height(64.dp)) }
+                }
+                ThreadReadReceipts(ownerKey = "native-edit-menu", enabled = enabled, connected = true,
+                    root = root, replies = emptyList(), listState = list,
+                    onRead = { id -> VisibleReadIntent({ Result.success("original.member") }, {
+                        observed.add(id); Result.success(Unit)
+                    }) })
             }
-            ThreadReadReceipts(ownerKey = "native-edit-menu", enabled = true, connected = true,
-                root = root, replies = emptyList(), listState = list,
-                onRead = { id -> VisibleReadIntent({ Result.success("original.member") }, {
-                    observed.add(id); Result.success(Unit)
-                }) })
+            if (inDialog) {
+                androidx.compose.material3.ModalBottomSheet(onDismissRequest = {},
+                    sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+                    reader()
+                }
+            } else reader()
         }
         compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(1000) // settle a dialog before starting the observed dwell
         compose.waitUntil(5000) { window.get()?.isWindowFocused == true }
+        compose.runOnIdle { enabled = true }
+        compose.waitForIdle()
         compose.mainClock.advanceTimeBy(200)
         try {
             compose.runOnIdle {
