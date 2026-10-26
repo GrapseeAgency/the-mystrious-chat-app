@@ -138,6 +138,9 @@ internal fun MirrorRoot(
     var closingRoomId by remember(viewerId) { mutableStateOf<String?>(null) }
     var roomOpenRequest by remember(viewerId) { mutableStateOf<MirrorRoomOpenRequest?>(null) }
     var roomOpenSequence by remember(viewerId) { mutableStateOf(0L) }
+    // Exit animations may keep the old room composed during a rapid reopen.
+    // A real new visit must not inherit that departed reader's fence/ACK set.
+    var roomVisitSequence by remember(viewerId) { mutableStateOf(0L) }
     val navigationContext = androidx.compose.ui.platform.LocalContext.current
     val currentCallRoomCallback by androidx.compose.runtime.rememberUpdatedState(onActiveCallRoomChanged)
     androidx.compose.runtime.DisposableEffect(openRoom?.id, closingRoomId) {
@@ -437,6 +440,7 @@ internal fun MirrorRoot(
             if (roomOpenRequest == request && ownsOwner() && tab == request.tab &&
                 openRoom?.id == request.previousRoomId) {
                 pendingJump = request.jumpId?.let { MirrorRoomJump(conversation.id, it) }
+                if (request.previousRoomId != conversation.id) roomVisitSequence = request.ticket
                 openRoom = conversation
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -849,7 +853,7 @@ internal fun MirrorRoot(
                     .filter { it.conversationId == convo.id }
                     .map { it.userName }
                 val roomJump = pendingJump?.forRoom(convo.id, openRoom?.id)
-                androidx.compose.runtime.key(viewerId, convo.id, repository.attachmentSessionKey()) {
+                androidx.compose.runtime.key(viewerId, convo.id, repository.attachmentSessionKey(), roomVisitSequence) {
                     MirrorRoomScaffold(
                         convo = convo,
                         readingEnabled = readingEnabled && openRoom?.id == convo.id && closingRoomId != convo.id &&
