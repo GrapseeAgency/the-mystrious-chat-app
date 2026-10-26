@@ -22,23 +22,31 @@ final class ReadPresentationTests: XCTestCase {
         session.showRoomReadVisit(conversationId: "room", entryID: visit)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
+        let primaryReady = expectation(description: "primary SwiftUI content appeared")
+        var primaryAppeared = false
         let primary = UIHostingController(rootView: Text("Primary reader")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(PulseReadPresentationAnchor(session: session, owner: visit)))
+            .background(PulseReadPresentationAnchor(session: session, owner: visit))
+            .onAppear { if !primaryAppeared { primaryAppeared = true; primaryReady.fulfill() } })
         window.rootViewController = primary
         window.isHidden = false
         defer { window.isHidden = true; previousKey?.makeKey(); session.stop() }
+        window.layoutIfNeeded()
         primary.view.layoutIfNeeded()
+        await fulfillment(of: [primaryReady], timeout: 2)
         XCTAssertFalse(session.nativePresentationBlockedNow, "The real SwiftUI background must resolve to its reading controller")
 
         let owner = try XCTUnwrap(session.beginReadSurface(conversationId: "room", rootId: "root"))
+        let threadReady = expectation(description: "thread SwiftUI content appeared")
+        var threadAppeared = false
         let thread = UIHostingController(rootView: Text("Thread reader")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(PulseReadPresentationAnchor(session: session, owner: owner.id)))
+            .background(PulseReadPresentationAnchor(session: session, owner: owner.id))
+            .onAppear { if !threadAppeared { threadAppeared = true; threadReady.fulfill() } })
         thread.modalPresentationStyle = .pageSheet
         let opened = expectation(description: "thread presented")
         primary.present(thread, animated: false) { opened.fulfill() }
-        await fulfillment(of: [opened], timeout: 2)
+        await fulfillment(of: [opened, threadReady], timeout: 2)
         thread.view.layoutIfNeeded()
         XCTAssertFalse(session.nativePresentationBlockedNow, "The active thread must not be blocked by its own sheet")
 
@@ -54,11 +62,14 @@ final class ReadPresentationTests: XCTestCase {
         thread.present(panel, animated: false) { covered.fulfill() }
         await fulfillment(of: [covered], timeout: 2)
         XCTAssertTrue(session.nativePresentationBlockedNow)
+        await session.markReadIfVisible(conversationId: "room") // samples the real pre-qualification guard; this fixture is not authenticated
+        let coveredRevision = session.readAttentionRevision
         let closed = expectation(description: "UIKit panel dismissed")
         panel.dismiss(animated: false) { closed.fulfill() }
         await fulfillment(of: [closed], timeout: 2)
         session.refreshNativeReadPresentation()
         XCTAssertFalse(session.nativePresentationBlockedNow)
+        XCTAssertGreaterThan(session.readAttentionRevision, coveredRevision)
     }
 
     @MainActor
