@@ -14,6 +14,8 @@ import {
   removeGroupMember,
   setGroupRole,
 } from '../../src/lib/group-membership.ts'
+import { unreadSnapshot, exactMessageReadState } from '../../src/lib/message-visibility.ts'
+import { captureReadIntent, advanceReadReceipt } from '../../src/lib/read-receipt.ts'
 import {
   conversationMetadataPatch,
   patchConversationMetadata,
@@ -25,14 +27,17 @@ async function fixture(run) {
   const db = new PrismaClient({ datasourceUrl: `file:${join(dir, 'test.sqlite')}` })
   try {
     for (const sql of [
-      'CREATE TABLE User(id TEXT PRIMARY KEY)',
+      'CREATE TABLE User(id TEXT PRIMARY KEY, preferences TEXT)',
       'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME, inviteCode TEXT UNIQUE, name TEXT, photo TEXT, screenPrivacy BOOLEAN DEFAULT false, ttlSeconds INTEGER DEFAULT 0, slowModeSeconds INTEGER DEFAULT 0)',
       `CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT,
         role TEXT DEFAULT 'member', joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, lastReadAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME, handRaisedAt DATETIME,
         screenPrivacy BOOLEAN DEFAULT false, manualUnread BOOLEAN DEFAULT false, draft TEXT,
         UNIQUE(userId,conversationId))`,
-      "INSERT INTO User VALUES ('a'),('b'),('c'),('d')",
+      'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,senderId TEXT,createdAt DATETIME,parentId TEXT,topicId TEXT,deletedAt DATETIME,expiresAt DATETIME,viaAutomation BOOLEAN DEFAULT false)',
+      "CREATE TABLE MessageReadObservation(participantId TEXT,messageId TEXT,observedAt DATETIME,source TEXT DEFAULT 'visible',PRIMARY KEY(participantId,messageId),FOREIGN KEY(participantId) REFERENCES ConversationParticipant(id) ON DELETE CASCADE)",
+      'CREATE TABLE ReadIntentState(participantId TEXT PRIMARY KEY,revision TEXT,FOREIGN KEY(participantId) REFERENCES ConversationParticipant(id) ON DELETE CASCADE)',
+      "INSERT INTO User(id) VALUES ('a'),('b'),('c'),('d')",
       "INSERT INTO Conversation(id,isGroup,broadcastMode,updatedAt) VALUES ('group',true,false,CURRENT_TIMESTAMP),('channel',true,true,CURRENT_TIMESTAMP),('dm',false,false,CURRENT_TIMESTAMP)",
       `INSERT INTO ConversationParticipant(id,userId,conversationId,role,joinedAt,lastReadAt) VALUES
         ('ga','a','group','admin',1577836800000,1577836800000),('gb','b','group','member',1577923200000,1577836800000),
@@ -483,4 +488,46 @@ test('committed membership routes wake only affected accounts, including departe
   assert.deepEqual(hints.pop(), ['b','group'])
   assert.equal((await invoke('invite/[code]/join','POST',{userId:'b'},{code:'NATIVE42'})).status,200)
   assert.deepEqual(hints, [])
+}))
+
+
+for (const entry of ['add', 'channel', 'invite']) test(`${entry}: membership creation exempts existing equal-time history, not same-time future arrivals or actual Seen`, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2030-01-02T03:04:05.678Z') })
+  try {
+    await fixture(async db => {
+      const room = entry === 'channel' ? 'channel' : 'group', at = new Date()
+      await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES ('before',${room},'a',${at})`
+      const futureStamp = new Date(at.getTime() + 1)
+      await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES ('existing-skew',${room},'a',${futureStamp})`
+      if (entry === 'invite') await groupInvite(db,room,'a',false,()=>'HISTORY42')
+      const join = () => entry === 'add' ? addGroupMembers(db,room,'a',['d']) : entry === 'channel'
+        ? joinChannel(db,room,'d') : joinGroupInvite(db,'HISTORY42','d')
+      await join()
+      const snapshot = () => unreadSnapshot(db,room,'d',at,at)
+      assert.equal((await snapshot()).unreadCount,0,'Pre-existing messages are history, even at the join timestamp or under clock skew')
+      assert.deepEqual(await exactMessageReadState(db,room,'d','before',at),[],'A history exemption is not Seen')
+      await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES ('after',${room},'a',${at})`
+      await join() // A retry must not reclassify arrivals as old history.
+      assert.equal((await snapshot()).unreadCount,1)
+      assert.equal((await snapshot()).firstUnreadMessageId,'after')
+      const original = await captureReadIntent(db,room,'d')
+      await advanceReadReceipt(db,room,'d','before',original.readIntent)
+      const membership = await db.conversationParticipant.findUnique({where:{userId_conversationId:{userId:'d',conversationId:room}},select:{id:true}})
+      assert.deepEqual(await exactMessageReadState(db,room,'d','before',at),[membership.id],'Actually reading history upgrades only that exact observation')
+      assert.equal((await snapshot()).unreadCount,1,'Reading history cannot sweep the new equal-time arrival')
+      await db.conversationParticipant.delete({where:{id:membership.id},select:{id:true}})
+      await join()
+      assert.equal((await snapshot()).unreadCount,0,'A genuinely new membership gets a new history snapshot')
+      assert.deepEqual(await exactMessageReadState(db,room,'d','before',at),[])
+      await assert.rejects(advanceReadReceipt(db,room,'d','after',original.readIntent),{status:410})
+    })
+  } finally { t.mock.timers.reset() }
+})
+
+test('membership and its boundary exclusions roll back together if history storage is unavailable',()=>fixture(async db=>{
+  await db.$executeRawUnsafe('DROP TABLE MessageReadObservation')
+  await assert.rejects(addGroupMembers(db,'group','a',['d']))
+  assert.equal(await member(db,'group','d'),null)
+  await assert.rejects(joinChannel(db,'channel','d'))
+  assert.equal(await member(db,'channel','d'),null)
 }))

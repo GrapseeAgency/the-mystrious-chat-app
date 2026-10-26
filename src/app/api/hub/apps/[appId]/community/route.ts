@@ -1,3 +1,4 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { MATRIX } from '@/lib/hub-catalog'
@@ -32,6 +33,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   const denied = await requireActionOwner(req, userId, 'app')
   if (denied) return denied
-  try { return NextResponse.json(await joinAppCommunity(db, appId, `#${String(app.n).padStart(3, '0')} · ${app.name} community`, userId), { headers }) }
+  try {
+    const snapshot = await joinAppCommunity(db, appId, `#${String(app.n).padStart(3, '0')} · ${app.name} community`, userId)
+    if (snapshot.conversation) invalidateNativeReadState(userId, snapshot.conversation.id)
+    return NextResponse.json(snapshot, { headers })
+  }
   catch (error) { return hubAppErrorResponse(error) }
 }

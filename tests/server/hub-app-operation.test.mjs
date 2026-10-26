@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
+import { unreadSnapshot } from '../../src/lib/message-visibility.ts'
 import * as actions from '../../src/lib/hub-app-operation.ts'
 import { MATRIX } from '../../src/lib/hub-catalog.ts'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
@@ -21,14 +22,16 @@ async function fixture(run) {
       'CREATE TABLE AppInstall(id TEXT PRIMARY KEY, userId TEXT, appId TEXT, status TEXT DEFAULT "connected", installedAt DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(userId,appId))',
       'CREATE TABLE Conversation(id TEXT PRIMARY KEY, appKey TEXT UNIQUE, isGroup BOOLEAN DEFAULT false, name TEXT, photo TEXT, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME, description TEXT DEFAULT "", inviteCode TEXT, ttlSeconds INTEGER DEFAULT 0, broadcastMode BOOLEAN DEFAULT false, screenPrivacy BOOLEAN DEFAULT false, slowModeSeconds INTEGER DEFAULT 0, isSelf BOOLEAN DEFAULT false)',
       'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT, role TEXT DEFAULT "member", joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, lastReadAt DATETIME DEFAULT CURRENT_TIMESTAMP, pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME, handRaisedAt DATETIME, screenPrivacy BOOLEAN DEFAULT false, manualUnread BOOLEAN DEFAULT false, draft TEXT, UNIQUE(userId,conversationId))',
+      'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,senderId TEXT,createdAt DATETIME,parentId TEXT,topicId TEXT,deletedAt DATETIME,expiresAt DATETIME,viaAutomation BOOLEAN DEFAULT false)',
+      "CREATE TABLE MessageReadObservation(participantId TEXT,messageId TEXT,observedAt DATETIME,source TEXT DEFAULT 'visible',PRIMARY KEY(participantId,messageId),FOREIGN KEY(participantId) REFERENCES ConversationParticipant(id) ON DELETE CASCADE)",
     ]) await db.$executeRawUnsafe(sql)
     for (const id of ['a','b','c']) await db.$executeRawUnsafe('INSERT INTO User VALUES (?,?,?,?,?,?)',id,id,id,'#F2A65A',hashSessionToken(`synthetic-${id}`),'[]')
     const auth = await load('src/lib/wallet-authorization.ts', { db, bearerToken, tokenAccepted }, 'requireActionOwner')
-    const routes = {}
+    const routes = {}, hints = []
     for (const kind of ['install','community']) routes[kind] = await load(`src/app/api/hub/apps/[appId]/${kind}/route.ts`, {
-      db, MATRIX, ...auth, ...actions, NextResponse:{json:Response.json}, safeJson:req=>req.json(),
+      db, MATRIX, ...auth, ...actions, invalidateNativeReadState:(...args)=>hints.push(args), NextResponse:{json:Response.json}, safeJson:req=>req.json(),
     }, kind==='install'?'GET,POST,DELETE':'GET,POST')
-    await run(db,routes)
+    await run(db,routes,hints)
   } finally { await db.$disconnect(); await rm(dir,{recursive:true,force:true}) }
 }
 const ctx = (id='1') => ({params:Promise.resolve({appId:id})})
@@ -109,3 +112,22 @@ test('simultaneous first joins converge on one app room and keep exactly one fou
   assert.equal(await db.conversationParticipant.count(),2)
   assert.equal(await db.conversationParticipant.count({where:{role:'admin'}}),1)
 }))
+
+
+test('community joins share exact historical exclusions and wake only the joining account', async t => {
+  t.mock.timers.enable({apis:['Date'],now:new Date('2030-01-02T03:04:05.678Z')})
+  try { await fixture(async(db,routes,hints)=>{
+    const founder = await (await routes.community.POST(req('POST'),ctx())).json()
+    const room = founder.conversation.id, at = new Date()
+    assert.deepEqual(hints.pop(),['a',room])
+    await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES ('history',${room},'a',${at})`
+    assert.equal((await routes.community.POST(req('POST','b','synthetic-b'),ctx())).status,200)
+    assert.deepEqual(hints.pop(),['b',room])
+    assert.equal((await unreadSnapshot(db,room,'b',at,at)).unreadCount,0)
+    const row = await db.messageReadObservation.findFirst({where:{messageId:'history'},select:{source:true}})
+    assert.equal(row.source,'legacy','History is excluded, not Seen')
+    await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES ('arrival',${room},'a',${at})`
+    assert.equal((await routes.community.POST(req('POST','b','synthetic-b'),ctx())).status,200)
+    assert.equal((await unreadSnapshot(db,room,'b',at,at)).unreadCount,1,'A retry cannot exempt an equal-time arrival')
+  }) } finally { t.mock.timers.reset() }
+})

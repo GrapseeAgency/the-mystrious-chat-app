@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from '../../prisma/generated-client'
+import { preserveJoiningHistory } from './membership-history.ts'
 
 export class GroupMembershipError extends Error {
   constructor(
@@ -160,9 +161,11 @@ export function addGroupMembers(
           userId,
           conversationId: room,
           role: 'member',
+          joinedAt: now,
           lastReadAt: now,
         })),
       })
+      await preserveJoiningHistory(tx, room, added, now)
       await tx.conversation.update({
         where: { id: room },
         data: { updatedAt: now },
@@ -182,9 +185,10 @@ export function joinChannel(db: PrismaClient, room: string, actor: string) {
     if (!existing) {
       const now = new Date()
       await tx.conversationParticipant.create({
-        data: { userId: actor, conversationId: room, role: 'member', lastReadAt: now },
+        data: { userId: actor, conversationId: room, role: 'member', joinedAt: now, lastReadAt: now },
         select: { id: true },
       })
+      await preserveJoiningHistory(tx, room, [actor], now)
       await tx.conversation.update({
         where: { id: room },
         data: { updatedAt: now },
@@ -294,9 +298,10 @@ export function joinGroupInvite(db: PrismaClient, rawCode: string, actor: string
     if (!existing) {
       const now = new Date()
       await tx.conversationParticipant.create({
-        data: { userId: actor, conversationId: conversation.id, role: 'member', lastReadAt: now },
+        data: { userId: actor, conversationId: conversation.id, role: 'member', joinedAt: now, lastReadAt: now },
         select: { id: true },
       })
+      await preserveJoiningHistory(tx, conversation.id, [actor], now)
       await tx.conversation.update({
         where: { id: conversation.id },
         data: { updatedAt: now },

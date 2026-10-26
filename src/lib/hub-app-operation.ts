@@ -1,3 +1,4 @@
+import { preserveJoiningHistory } from './membership-history.ts'
 import type { Prisma, PrismaClient } from '../../prisma/generated-client'
 
 export class HubAppError extends Error {
@@ -65,12 +66,20 @@ export function appCommunitySnapshot(db: PrismaClient, appId: string, userId: st
 }
 export function joinAppCommunity(db: PrismaClient, appId: string, name: string, userId: string) {
   return transaction(db, async tx => {
+    const now = new Date()
     let room = await tx.conversation.findUnique({ where: { appKey: appId }, select: { id: true, isGroup: true } })
     if (!room) room = await tx.conversation.create({ data: { appKey: appId, name, isGroup: true,
-      participants: { create: { userId, role: 'admin' } } }, select: { id: true, isGroup: true } })
+      participants: { create: { userId, role: 'admin', joinedAt: now, lastReadAt: now } } }, select: { id: true, isGroup: true } })
     if (!room.isGroup) throw new HubAppError(409, 'The app community is not a group.')
-    await tx.conversationParticipant.upsert({ where: { userId_conversationId: { userId, conversationId: room.id } },
-      create: { userId, conversationId: room.id, role: 'member' }, update: {}, select: { id: true } })
+    const existing = await tx.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId: room.id } }, select: { id: true },
+    })
+    if (!existing) {
+      await tx.conversationParticipant.create({ data: {
+        userId, conversationId: room.id, role: 'member', joinedAt: now, lastReadAt: now,
+      }, select: { id: true } })
+      await preserveJoiningHistory(tx, room.id, [userId], now)
+    }
     return communitySnapshot(tx, appId, userId)
   })
 }

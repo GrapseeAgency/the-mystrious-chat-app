@@ -14,7 +14,7 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 | 4. Thread/topic independence | Exact observations cannot sweep sibling scopes. Authenticated scoped read-state GET, thread unread headers in both Android surfaces and Swift, durable per-topic unread counts/labels. | Rendered scope transitions and live/offline refresh. |
 | 5. Durable offline replay | Account-owned SQLite journals survive navigation/process restart. Retries retain their original authority; distinct fresh visits have independent journal identities. Offline membership-only authority cannot clear a manual marker; removed/rejoined memberships fail closed. | Process-death/reconnect and credential-switch device runs. |
 | 6. Cross-device order | Serializable explicit intent conflicts; exact monotonic progress; compare-and-delete journal ACKs; socket/cache mutation fences and topic request ownership. | Paired-device acceptance, including response loss. |
-| 7. New-member history | Prejoin messages do not inflate a new member's badges and do not become Seen. Equal-to-join-time messages remain unread unless explicitly observed. Membership removal cascades proof. | Product/device acceptance of documented history policy. |
+| 7. New-member history | Messages already present at membership creation, including equal-time identities, are exempt without becoming Seen. Later equal-time arrivals remain unread. Membership removal cascades proof. | Product/device acceptance of documented history policy. |
 | 8. Obscuring surfaces | Existing lifecycle/lock/modal gates plus missing call/ring/permission/share/invite gates on Android; central call/live-room/lock gates on Swift; measured mirror viewport replaces lazy onAppear; explicit photo/document picker visibility. | OS interruptions, sheet nesting, accessibility, PiP, and rendered geometry. |
 | 9. Convergence | One exact unread aggregate backs inbox counts, expiration schedules and first-unread identity; channel badges use it too. Read events update exact cached Seen and invalidate authoritative inbox/topic state, including the reader's other devices with privacy enabled. | Room/inbox/launcher badges across two devices. |
 
@@ -152,7 +152,7 @@ Prisma's checked-in client was regenerated from the actual schema with the same 
 | 4 | Thread/topic granularity | Open. Requires a consistent per-scope/range model rather than a client-only counter patch. |
 | 5 | Durable offline read intent | Open. Current boundary token lifetime is not persistent. Replay must retain its original intent and authority, not acquire fresh permission after reconnect. |
 | 6 | Cross-device read ordering | Explicit manual/all mutations now have a server conflict fence. Broader read progress, late UI projection and multiple-device acceptance remain open. |
-| 7 | New-member history | Open review. Existing join-time timestamps remain unchanged; same-time/backfill/history policy needs explicit coverage with item 2. |
+| 7 | New-member history | Boundary identity exclusions now cover group adds, channel/invite joins and app-community joins; retry/rejoin and actual-history-read cases are exercised. Product/device acceptance remains open. |
 | 8 | All obscuring surfaces | Existing lifecycle/lock/dwell/thread ownership gates retained; full OS/modal/call/accessibility acceptance not established. |
 | 9 | Badge convergence | Owner read events still trigger authoritative inbox refresh, not blind zeroing. Paired-device/app badge convergence is not certified. |
 
@@ -214,3 +214,25 @@ active/cold background paths refresh canonical badge and delivered-alert state.
 Foreground/reconnect reconciliation remains necessary when the OS suppresses a
 background push. This does not turn a best-effort wake-up into guaranteed delivery
 or claim universal Android launcher badge parity.
+
+
+### Historical membership boundary, including timestamp ties
+
+The three group/channel/invite join paths now capture `joinedAt` and `lastReadAt`
+from the same transaction clock and preserve existing boundary/future-dated
+message identities as non-Seen (`legacy`) exclusions. App-community joining uses
+the same helper. Strictly older history remains compactly excluded by `joinedAt`;
+this does not materialize or duplicate the whole old history for every member.
+A later message with the identical timestamp is absent from that identity snapshot
+and therefore remains unread. Retrying an existing membership never repeats the
+exemption pass. Leaving/rejoining creates a new membership/history snapshot, and
+an old read intent remains retired. Actually viewing an exempt historical message
+upgrades only its exact observation to Seen.
+
+This uses the existing exact-observation migration and needs no new native schema
+or SQL patch. Missing history storage rolls back the membership transaction rather
+than admitting a member with a partial exemption. Android and iOS consume the same
+canonical unread/receipt projections; no native optimistic sweep was introduced.
+The deterministic server cases freeze the join clock and cover existing equal-time
+and forward-skewed history, future equal-time arrivals, retries and retired intents.
+They do not certify arbitrary backwards server-clock jumps after joining.
