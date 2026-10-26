@@ -362,6 +362,20 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// A canonical GET may remove hidden/retired proof as well as add readers.
+    /// Change only this field on the current row, preserving concurrent content.
+    @discardableResult
+    func replaceMessageReadState(conversationId: String, messageId: String, memberships: [String]) throws -> Bool {
+        try dbQueue.write { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [messageId]),
+                  var message = Self.messageRow(from: row), message.conversationId == conversationId,
+                  !message.id.hasPrefix("local_"), (message.readByMembershipIds ?? []) != memberships else { return false }
+            message.readByMembershipIds = memberships
+            try Self.writeMessage(message, db: db)
+            return true
+        }
+    }
+
     func acknowledgeRead(_ observation: PulseQueuedRead) throws {
         try dbQueue.write { db in
             // Drain pre-upgrade records too, but never let their delayed ACK

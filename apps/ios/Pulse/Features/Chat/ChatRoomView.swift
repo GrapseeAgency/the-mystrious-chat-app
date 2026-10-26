@@ -2638,6 +2638,24 @@ private struct MessageInfoSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @EnvironmentObject private var session: PulseSession
+    @State private var proofRefresh = PulseCoalescedRefresh()
+    @State private var infoVisible = false
+
+    private func refreshProof() {
+        guard infoVisible, session.isForeground, session.sessionGeneration == viewModel.readSessionGeneration,
+              let message = viewModel.messageInfo(messageID), !message.id.hasPrefix("local_") else { return }
+        let epoch = session.sessionGeneration, room = message.conversationId
+        proofRefresh.request {
+            guard infoVisible, session.isForeground, epoch == session.sessionGeneration else { return }
+            let available = await session.refreshMessageReadState(conversationId: room, messageId: messageID)
+            guard !Task.isCancelled, infoVisible, epoch == session.sessionGeneration else { return }
+            if available == false { dismiss(); return }
+            // An Info cover owns metadata refresh, not permission to mark Seen.
+            await viewModel.loadPrivacyState(session: session)
+        }
+    }
+
     private func receipts(for message: WireChatMessage) -> PulseRoomParityLogic.ReceiptSplit {
         PulseRoomParityLogic.receiptSplit(
             members: viewModel.readReceiptMembers.map {
@@ -2668,6 +2686,21 @@ private struct MessageInfoSheet: View {
             }
         }
         .presentationDetents([.medium])
+        .task(id: session.sessionGeneration) {
+            // Bounded fallback for lost socket/push hints, only while Info is open.
+            while !Task.isCancelled {
+                refreshProof()
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { break }
+            }
+        }
+        .onReceive(session.$readStateRevisions
+            .map { $0[viewModel.messageInfo(messageID)?.conversationId ?? ""] ?? 0 }.removeDuplicates()) { _ in refreshProof() }
+        .onChange(of: session.isForeground) { _, foreground in
+            if foreground { refreshProof() } else { proofRefresh.cancel() }
+        }
+        .onAppear { infoVisible = true; refreshProof() }
+        .onDisappear { infoVisible = false; proofRefresh.cancel() }
+
         .onChange(of: viewModel.messageInfo(messageID)?.id, initial: true) { _, currentID in
             if currentID == nil { dismiss() }
         }

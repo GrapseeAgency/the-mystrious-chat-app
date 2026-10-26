@@ -2795,6 +2795,44 @@ class PulseRepositoryImpl constructor(
         }
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
+    override suspend fun refreshMessageReadState(conversationId: String, messageId: String): Result<Boolean> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (messageId.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) return Result.success(true)
+        return try {
+            val watermark = messageEventClock.get()
+            val response = api.messageReadState(conversationId, owner, messageId)
+            requireConversationOwner(owner, epoch)
+            val available: Boolean
+            val proof: List<String>
+            when (response) {
+                is PulseResult.Success -> { available = response.value.available; proof = response.value.memberships }
+                is PulseResult.Failure -> return Result.failure(apiExceptionOf(response))
+            }
+            messageCacheMutex.withLock {
+                database.withTransaction {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    // A later exact ACK/event owns this row; never replace it with
+                    // an earlier GET, even if another message has also changed.
+                    if ((messageEventRevisions[messageId] ?: 0L) > watermark)
+                        return@withTransaction false
+                    val current = messageDao.byId(messageId)?.toDomain()
+                    if (current != null && current.conversationId == conversationId && current.readByMembershipIds != proof) {
+                        val updated = current.copy(readByMembershipIds = proof)
+                        messageDao.upsertAll(listOf(MessageEntity.from(updated, reactionsJsonOf(updated))))
+                        messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
+                    }
+                    requireConversationOwner(owner, epoch)
+                    true
+                }.also { messageCacheChanges.value = messageEventClock.get() }
+            }.let { accepted ->
+                if (accepted) Result.success(available)
+                else Result.failure(IllegalStateException("Message read snapshot was superseded"))
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+    }
+
     private suspend fun acknowledgeConfirmedRead(entry: Wave7CacheEntity, read: QueuedRead, epoch: String) {
         messageCacheMutex.withLock {
             database.withTransaction {

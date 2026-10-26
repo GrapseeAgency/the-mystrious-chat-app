@@ -512,6 +512,27 @@ public final class PulseSession: ObservableObject {
         messageVisibilityClock.send(Date())
     }
 
+    /// Read-only Info reconciliation. nil is unknown/superseded, not "unread".
+    func refreshMessageReadState(conversationId: String, messageId: String) async -> Bool? {
+        guard ready, isForeground, let store, !messageId.hasPrefix("local_") else { return nil }
+        let epoch = sessionGeneration, revision = messageRevision, client = api
+        let available: Bool
+        let memberships: [String]
+        do {
+            let proof = try await client.messageReadState(conversationId: conversationId, messageId: messageId)
+            memberships = proof.memberships; available = proof.available
+        } catch { return nil }
+        guard !Task.isCancelled, epoch == sessionGeneration, isForeground,
+              acceptsSyncMessage(messageId, startedAt: revision) else { return nil }
+        do {
+            if try store.replaceMessageReadState(conversationId: conversationId, messageId: messageId, memberships: memberships) {
+                noteMessageRevision(messageId)
+                messageVisibilityClock.send(Date())
+            }
+            return available
+        } catch { return nil }
+    }
+
     private func noteMessageRevision(_ id: String) {
         messageRevision &+= 1
         messageRevisions[id] = messageRevision

@@ -169,3 +169,31 @@ Tracing timestamp consumers exposed another paired projection defect. Swift's se
 Android's alternate room independently OR'd a cached socket watermark into Seen even when fresh membership hid/removed that reader. Rendering now uses only the current member projection, as the repository already invalidates/reloads it on read events. The mounted room also no longer counts every member as a reader when the message timestamp fails parsing to zero. Both Android room renderers and the info sheet share a pure current-reader filter. Kotlin filter regressions and actual Swift room-model privacy-sentinel regressions were added; seven changed/new native files syntax-parse, native execution remains separate.
 
 This improves privacy/badge projection but does **not** solve equal positive timestamp ties. Following item 2 confirmed the required change crosses `unreadSnapshot`, member serialization, persisted native member metadata, live read events, bubble Seen and message-info sheets. A one-sided `>=` → `>` change would wrongly suppress legitimate Seen for the latest read message; it is not presented as a fix. Item 2 still needs the coordinated message-ID-aware progress contract. Items 3–9 remain at the boundaries stated above.
+
+
+### Exact evidence while Message Info is open
+
+`GET /api/messages/:id/read-state?userId=...&conversationId=...` is a read-only,
+versioned, authenticated single-message projection. Membership, root/message
+lifetime, exact observations and receipt privacy are read in one serializable
+transaction. A zero unread count, pre-join exemption and a migrated legacy stamp
+are **not** Seen evidence. No body or cross-room reader metadata is returned.
+A bound `messageAvailable: false` retires the Info surface; an unsupported route,
+transport error or malformed response does not stand in for this verdict.
+
+Android's standard and Mirror Info panels and iOS's standard Message Info sheet
+refresh this projection on opening and scoped invalidations. A five-second
+fallback while Info remains open repairs lost relay/push hints and failed GETs.
+Android collects only while the surface lifecycle is resumed; iOS suspends network
+work in the background and cancels on disappearance. Requests coalesce without
+cancelling an in-flight GET. Metadata refresh belongs to the Info surface and
+never grants its covered room new read authority. The iOS Mirror currently has
+room info, not a separate message-info entry point; its existing room reader
+metadata/window reconciliation remains unchanged by this addition.
+
+Both caches replace only the exact row's reader IDs, rather than unioning a stale
+privacy snapshot or replacing the message body. Session ownership and per-message
+revision fences reject older results crossing a newer ACK/event. Current rosters
+are refreshed separately. Ordinary hints do not trigger whole-history downloads.
+This is not an assertion that every retained cached message is immediately
+reconciled without an open surface, or that paired-device acceptance is complete.

@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.sync.messageReadStateRefreshes
 import app.pulse.domain.sync.MessageHistoryCursor
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ensureActive
@@ -255,6 +256,8 @@ class ChatRoomViewModel @Inject constructor(
             rows.filter { it.threadRootId == null && (topicId == null || it.topicId == topicId) }
         }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun messageInfoReadState(messageId: String) = repo.messageReadStateRefreshes(conversationId, messageId)
 
     val conversation: StateFlow<Conversation?> = repo.observeConversations()
         .map { list -> list.firstOrNull { it.id == conversationId } }

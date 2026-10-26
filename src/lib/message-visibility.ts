@@ -1,3 +1,4 @@
+import { privacyPreferenceEnabled } from './privacy-preferences.ts'
 import type { Prisma } from '../../prisma/generated-client'
 
 /** Evaluate per request, not once when the server module loads. */
@@ -180,4 +181,21 @@ export async function notificationMessageUnread(
     readObservations: { none: { participantId: membership.id } },
     AND: [inboxMessagesWhere(room, at), { OR: [{ senderId: { not: viewer } }, { viaAutomation: true }] }],
   }, select: { id: true } })
+}
+
+/** Canonical exact evidence, not the inverse of an unread badge. No message
+ * bodies, inferred legacy observations, or other rooms' memberships escape. */
+export async function exactMessageReadState(
+  db: Pick<import('../../prisma/generated-client').PrismaClient, 'message'>,
+  room: string, viewer: string, messageId: string, at: Date,
+): Promise<string[] | null> {
+  const message = await db.message.findFirst({ where: {
+    id: messageId, deletedAt: null, AND: [inboxMessagesWhere(room, at)],
+  }, select: { readObservations: {
+    where: { source: { not: 'legacy' }, participant: { conversationId: room } },
+    select: { participant: { select: { id: true, userId: true, user: { select: { preferences: true } } } } },
+  } } })
+  if (!message) return null
+  return message.readObservations.filter(({ participant }) => participant.userId === viewer ||
+    privacyPreferenceEnabled(participant.user.preferences, 'readReceipts')).map(({ participant }) => participant.id).sort()
 }

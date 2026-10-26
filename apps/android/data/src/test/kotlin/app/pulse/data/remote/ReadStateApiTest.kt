@@ -15,6 +15,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReadStateApiTest {
+    @Test fun messageInfoRequiresExactVersionOwnerRoomMessageAvailabilityAndProofArray() = runTest {
+        for (mode in listOf("valid", "empty", "unavailable", "legacy", "owner", "room", "message", "version", "available", "contradiction", "numeric", "blank", "duplicate", "old-server")) {
+            val http = HttpClient(MockEngine { request ->
+                assertEquals("GET", request.method.value)
+                assertEquals("/api/messages/anchor/read-state", request.url.encodedPath)
+                assertEquals("room", request.url.parameters["conversationId"])
+                val proof = when (mode) {
+                    "empty", "unavailable" -> "[]"; "numeric" -> "[1]"; "blank" -> "[\" \"]"
+                    "duplicate" -> "[\"member\",\"member\"]"; else -> "[\"member\"]"
+                }
+                val available = when (mode) { "available" -> "\"true\""; "unavailable", "contradiction" -> "false"; else -> "true" }
+                val body = if (mode == "legacy") "{}" else """{"messageReadStateVersion":${if (mode == "version") 0 else 1},"conversationId":"${if (mode == "room") "other" else "room"}","userId":"${if (mode == "owner") "other" else "me"}","messageId":"${if (mode == "message") "other" else "anchor"}","messageAvailable":$available,"readByMembershipIds":$proof}"""
+                respond(body, if (mode == "old-server") HttpStatusCode.NotFound else HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+            })
+            try {
+                val result = PulseApi(http, gateway = { "https://read.test" }).messageReadState("room", "me", "anchor")
+                assertEquals(mode, mode in listOf("valid", "empty", "unavailable"), result is PulseResult.Success)
+                if (result is PulseResult.Success) assertEquals(mode != "unavailable", result.value.available)
+            } finally { http.close() }
+        }
+    }
+
     @Test fun bothReadIntentsRequireTheExactReceiptInsteadOfAnyHttpSuccess() = runTest {
         for (anchor in listOf("anchor", null)) for (mode in listOf("valid", "legacy", "false", "version", "room", "owner", "anchor", "intent", "date", "behind", "fence")) {
             val intent = if (anchor == null) "all" else "visible"

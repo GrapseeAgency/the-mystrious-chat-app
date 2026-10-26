@@ -1,5 +1,6 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.messageReadStateRefreshes
 import app.pulse.domain.sync.visibleQuote
 import app.pulse.domain.sync.MessageHistoryCursor
 import kotlinx.coroutines.isActive
@@ -2842,6 +2843,13 @@ internal fun MirrorRoom(
         )
     }
     infoFor?.let { target ->
+        LaunchedEffect(target.id, readerLifecycle, repository, viewerId) {
+            readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                repository.messageReadStateRefreshes(groupId, target.id).collect { available ->
+                    if (!available && infoFor?.id == target.id) infoFor = null
+                }
+            }
+        }
         val current = messages.firstOrNull { it.id == target.id }
         if (current == null) {
             LaunchedEffect(target.id) { infoFor = null }

@@ -410,6 +410,25 @@ extension ReadVisibilityTests {
     }
 
     @MainActor
+    func testCanonicalInfoProofReplacesOnlyTheBoundCurrentRowsEvidence() throws {
+        let store = try PulseStore(path: ":memory:")
+        var message = OutboxFixtures.makeMessage(id: "message", conversationId: "room", content: "Edited content")
+        message.readByMembershipIds = ["retired-member"]
+        try store.upsert(messages: [message])
+        XCTAssertFalse(try store.replaceMessageReadState(conversationId: "foreign", messageId: "message", memberships: []))
+        XCTAssertTrue(try store.replaceMessageReadState(conversationId: "room", messageId: "message", memberships: ["current-member"]))
+        XCTAssertEqual(try store.message(id: "message")?.readByMembershipIds, ["current-member"])
+        XCTAssertEqual(try store.message(id: "message")?.content, "Edited content")
+        XCTAssertFalse(try store.replaceMessageReadState(conversationId: "room", messageId: "message", memberships: ["current-member"]))
+        XCTAssertTrue(try store.replaceMessageReadState(conversationId: "room", messageId: "message", memberships: []))
+        XCTAssertEqual(try store.message(id: "message")?.readByMembershipIds, [])
+        XCTAssertFalse(try store.replaceMessageReadState(conversationId: "room", messageId: "absent", memberships: ["member"]))
+        let local = OutboxFixtures.makeMessage(id: "local_queued", conversationId: "room", content: "Pending")
+        try store.upsert(messages: [local])
+        XCTAssertFalse(try store.replaceMessageReadState(conversationId: "room", messageId: local.id, memberships: ["member"]))
+    }
+
+    @MainActor
     func testHTTPReadProofIsPersistedOnlyAfterAcceptanceAndDoesNotRewriteCurrentContent() async throws {
         let store = try PulseStore(path: ":memory:")
         var message = OutboxFixtures.makeMessage(id: "message", conversationId: "room", content: "Current edited body")

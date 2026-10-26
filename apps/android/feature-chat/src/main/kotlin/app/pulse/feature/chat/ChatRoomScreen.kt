@@ -145,6 +145,7 @@ import app.pulse.ui.emberBackdrop
 import app.pulse.ui.pulseReactionGlyph
 import app.pulse.ui.pulseTopicGlyph
 import coil.compose.AsyncImage
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -2257,6 +2258,13 @@ fun ChatRoomScreen(
     }
 
     infoTarget?.let { target ->
+        LaunchedEffect(target.id, lifecycleOwner, viewModel) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                viewModel.messageInfoReadState(target.id).collect { available ->
+                    if (!available && infoTarget?.id == target.id) infoTarget = null
+                }
+            }
+        }
         val current = messages.firstOrNull { it.id == target.id }
         if (current == null) {
             LaunchedEffect(target.id) { infoTarget = null }

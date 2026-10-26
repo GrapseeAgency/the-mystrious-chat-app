@@ -377,6 +377,9 @@ interface PulseRepository {
         Result.failure(UnsupportedOperationException("Read state is unavailable"))
     /** LOCAL-only snapshot. VisibleReadIntent shields capture + persistence from UI cancellation. */
     fun observePendingReads(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    /** Canonical single-row Seen repair; false means definitive loss of access, never unread. */
+    suspend fun refreshMessageReadState(conversationId: String, messageId: String): Result<Boolean> =
+        Result.failure(UnsupportedOperationException("Message read state is unavailable"))
     /** Replayed per-room invalidation after HTTP settlement, independent of socket delivery. */
     fun observeReadStateRevision(conversationId: String): Flow<Long> = kotlinx.coroutines.flow.flowOf(0L)
     /** Push hints request canonical scoped reads; they never carry accepted counts. */

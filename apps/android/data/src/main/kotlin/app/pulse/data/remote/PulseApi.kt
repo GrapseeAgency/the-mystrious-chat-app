@@ -442,6 +442,25 @@ class PulseApi(
         }
     }
 
+    data class MessageReadStateSnapshot(val available: Boolean, val memberships: List<String>)
+
+    suspend fun messageReadState(conversationId: String, userId: String, messageId: String): PulseResult<MessageReadStateSnapshot> {
+        fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
+        return get("/api/messages/${q(messageId)}/read-state?userId=${q(userId)}&conversationId=${q(conversationId)}") { raw ->
+            val fields = PulseJson.parseToJsonElement(raw) as? JsonObject
+            requireReadContract(fields?.get("messageReadStateVersion") == JsonPrimitive(1) &&
+                fields?.get("conversationId") == JsonPrimitive(conversationId) && fields?.get("userId") == JsonPrimitive(userId) &&
+                fields?.get("messageId") == JsonPrimitive(messageId) &&
+                fields?.get("messageAvailable") in listOf(JsonPrimitive(true), JsonPrimitive(false)))
+            val ids = fields?.get("readByMembershipIds") as? kotlinx.serialization.json.JsonArray
+            requireReadContract(ids != null && ids.all { it is JsonPrimitive && it.isString && it.content.isNotBlank() })
+            val proof = checkNotNull(ids).map { (it as JsonPrimitive).content }
+            val available = fields?.get("messageAvailable") == JsonPrimitive(true)
+            requireReadContract(proof.distinct().size == proof.size && (available || proof.isEmpty()))
+            MessageReadStateSnapshot(available, proof)
+        }
+    }
+
     /** Only a bound, explicit negative proof may retire a delivered notification. */
     suspend fun notificationMessageUnread(conversationId: String, userId: String, messageId: String): PulseResult<Boolean> {
         fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")

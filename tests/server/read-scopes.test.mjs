@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
-import { unreadSnapshot, threadRootAvailable, notificationMessageUnread } from '../../src/lib/message-visibility.ts'
+import { unreadSnapshot, threadRootAvailable, notificationMessageUnread, exactMessageReadState } from '../../src/lib/message-visibility.ts'
 import { ReadReceiptError } from '../../src/lib/read-receipt.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 
@@ -17,6 +17,7 @@ async function fixture(run) {
       'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,senderId TEXT,createdAt DATETIME,parentId TEXT,topicId TEXT,deletedAt DATETIME,expiresAt DATETIME,viaAutomation BOOLEAN DEFAULT false)',
       "CREATE TABLE Topic(id TEXT PRIMARY KEY,conversationId TEXT,name TEXT DEFAULT 'Topic',emoji TEXT DEFAULT 'chat',createdById TEXT,createdAt DATETIME DEFAULT 0,lastMessageAt DATETIME DEFAULT 0)",
       'CREATE TABLE Conversation(id TEXT PRIMARY KEY)',
+      'CREATE TABLE User(id TEXT PRIMARY KEY,preferences TEXT)',
 
     ]) await db.$executeRawUnsafe(sql)
     const migration = (await Promise.all(['20261026_read_intent_state.sql', '20261026_exact_read_observations.sql'].map(name =>
@@ -24,6 +25,7 @@ async function fixture(run) {
     await db.$transaction(async tx => {
       for (const sql of migration.replace(/^--.*$/gm, '').split(';').map(s => s.trim()).filter(s => s && !['BEGIN IMMEDIATE','COMMIT'].includes(s))) await tx.$executeRawUnsafe(sql)
     })
+    await db.$executeRawUnsafe("INSERT INTO User VALUES ('reader',NULL),('peer',NULL)")
     await db.$executeRawUnsafe("INSERT INTO ConversationParticipant VALUES ('membership','reader','room',0,0,false)")
     await db.$executeRawUnsafe("INSERT INTO Topic(id,conversationId) VALUES ('topic-a','room'),('topic-b','room'),('foreign-topic','other')")
     await db.$executeRawUnsafe(`INSERT INTO Message(id,conversationId,senderId,createdAt,parentId,topicId) VALUES
@@ -33,7 +35,7 @@ async function fixture(run) {
     await db.$executeRawUnsafe("INSERT INTO MessageReadObservation(participantId,messageId,observedAt) VALUES ('membership','a',20)")
     const source = stripTypeScriptTypes(await readFile(new URL('../../src/app/api/conversations/[id]/read-state/route.ts', import.meta.url), 'utf8'))
       .replace(/^import .*$/gm, '').replace(/export /g, '')
-    const bindings = { db, unreadSnapshot, threadRootAvailable, notificationMessageUnread, ReadReceiptError, NextResponse: { json: Response.json },
+    const bindings = { db, unreadSnapshot, threadRootAvailable, notificationMessageUnread, exactMessageReadState, ReadReceiptError, NextResponse: { json: Response.json },
       strField: v => typeof v === 'string' ? v.trim() : '',
       requireActionOwner: async (req, owner) => req.headers.get('authorization') === 'Bearer synthetic-reader' && owner === 'reader'
         ? null : Response.json({ error: 'denied' }, { status: 403 }),
@@ -49,7 +51,13 @@ async function fixture(run) {
     const topics = (headers = { authorization: 'Bearer synthetic-reader' }) => topicsGet(
       new Request('https://pulse.test/api/conversations/room/topics?userId=reader', { headers }),
       { params: Promise.resolve({id:'room'}) })
-    await run(db, request, topics)
+    const proofSource = stripTypeScriptTypes(await readFile(new URL('../../src/app/api/messages/[id]/read-state/route.ts', import.meta.url), 'utf8'))
+      .replace(/^import .*$/gm, '').replace(/export /g, '')
+    const proofGet = new Function(...Object.keys(bindings), proofSource + ';return GET')(...Object.values(bindings))
+    const proof = (id = 'a', room = 'room', headers = { authorization: 'Bearer synthetic-reader' }) => proofGet(
+      new Request(`https://pulse.test/api/messages/${id}/read-state?userId=reader&conversationId=${room}`, { headers }),
+      { params: Promise.resolve({ id }) })
+    await run(db, request, topics, proof)
   } finally { await db.$disconnect(); await rm(dir, { recursive: true, force: true }) }
 }
 
@@ -113,4 +121,39 @@ test('exact notification state preserves unseen gaps and does not create Seen or
  await db.conversationParticipant.deleteMany({where:{id:'membership'}})
  assert.equal((await (await request('&messageId=b')).json()).messageUnread,false)
  assert.equal((await request()).status,403)
+}))
+
+
+test('exact Info proof is owner/room bound, privacy filtered and does not infer Seen from unread exemption', () => fixture(async (db, _, __, proof) => {
+  await db.$executeRawUnsafe("INSERT INTO ConversationParticipant VALUES ('peer-membership','peer','room',0,9999999999999,false)")
+  await db.$executeRawUnsafe("INSERT INTO MessageReadObservation(participantId,messageId,source) VALUES ('peer-membership','a','visible'),('peer-membership','b','legacy')")
+  await db.conversationParticipant.updateMany({ where: { id: 'membership' }, data: { manualUnread: true } })
+  const response = await proof()
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('cache-control'), 'private, no-store')
+  assert.deepEqual(await response.json(), { messageReadStateVersion: 1, userId: 'reader', conversationId: 'room', messageId: 'a', messageAvailable: true, readByMembershipIds: ['membership','peer-membership'] })
+  for (const preferences of ['{"readReceipts":false}', '{bad', '{"readReceipts":"true"}']) {
+    await db.user.updateMany({ where: { id: 'peer' }, data: { preferences } })
+    assert.deepEqual((await (await proof()).json()).readByMembershipIds, ['membership'])
+  }
+  await db.user.updateMany({ where: { id: 'reader' }, data: { preferences: '{"readReceipts":false}' } })
+  assert.deepEqual((await (await proof()).json()).readByMembershipIds, ['membership'])
+  assert.deepEqual((await (await proof('b')).json()).readByMembershipIds, [])
+  await db.conversationParticipant.updateMany({ where: { id: 'membership' }, data: { joinedAt: new Date(100), lastReadAt: new Date() } })
+  assert.deepEqual((await (await proof('root-a')).json()).readByMembershipIds, [])
+  assert.equal(await db.messageReadObservation.count(), 3)
+  assert.equal((await db.conversationParticipant.findUnique({ where: { id: 'membership' }, select: { manualUnread: true } })).manualUnread, true)
+}))
+
+test('exact Info proof checks authentication, membership, message ownership and root lifetime', () => fixture(async (db, _, __, proof) => {
+  assert.equal((await proof('a','room',{})).status,403)
+  assert.equal((await (await proof('a','other')).json()).messageAvailable,false)
+  assert.equal((await (await proof('foreign-root')).json()).messageAvailable,false)
+  assert.equal((await (await proof('missing')).json()).messageAvailable,false)
+  await db.message.updateMany({ where: { id: 'root-a' }, data: { expiresAt: new Date(0) } })
+  assert.equal((await (await proof('a')).json()).messageAvailable,false)
+  await db.message.updateMany({ where: { id: 'b' }, data: { deletedAt: new Date() } })
+  assert.equal((await (await proof('b')).json()).messageAvailable,false)
+  await db.conversationParticipant.deleteMany({ where: { id: 'membership' } })
+  assert.equal((await (await proof('root-b')).json()).messageAvailable,false)
 }))
