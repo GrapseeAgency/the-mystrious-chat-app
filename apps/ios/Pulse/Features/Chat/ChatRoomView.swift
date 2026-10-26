@@ -155,59 +155,22 @@ private struct RoomMessageRow: View {
                 CapsuleLabel(PulseFormat.dayLabel(message.createdAt))
                     .padding(.vertical, 4)
             }
-            BubbleView(
-                message: message,
-                mine: message.senderId == session.viewer?.id,
-                groupChat: conversation.isGroup,
-                viewerColor: { colorOf(message.senderId) },
-                seen: viewModel.isSeen(message),
-                seenLabel: viewModel.readLabel(message),
-                flashing: viewModel.flashMessageId == message.id,
-                replyCount: viewModel.replyCount(for: message),
-                bubbleRadius: bubbleRadius,
-                onOpenImage: onOpenImage,
-                onOpenFile: onOpenFile,
-                onOpenThread: onOpenThread,
-                viewerId: session.viewer?.id,
-                voicePlayback: viewModel.playback.state,
-                voiceRate: viewModel.voiceRate,
-                onVoicePlayToggle: { viewModel.toggleVoicePlayback(message, session: session) },
-                onVoiceRateCycle: { viewModel.cycleVoiceRate() },
-                onTranscribe: { viewModel.transcribeVoice(message, session: session) },
-                onPollVote: { optionId in
-                    viewModel.votePoll(pollID: message.poll?.id ?? "", optionID: optionId, session: session)
-                },
-                onPollClose: {
-                    if let pollId = message.poll?.id {
-                        viewModel.closePoll(pollID: pollId, session: session)
-                    }
-                },
-                onViewOnceOpen: onViewOnce,
-                wave7: wave7,
-                memberNames: memberNames,
-                onReactionChip: onWhoReacted,
-                onDoubleTapHeart: {
-                    // R47 - double-tap bubble fires the heart quick reaction (web
-                    // chat-room.tsx:7265-7268 onDoubleClick parity). The SAME
-                    // react path the quick-reactions context menu uses; the
-                    // hearts burst rides the VM react path. R19-b: the react
-                    // body carries the stable registry id.
-                    viewModel.react(message, emoji: PulseReactionId.heart.rawValue, session: session)
-                },
-                isClusterHead: cluster.head,
-                onSwipeReply: {
-                    // R7 - swipe past 28pt → the SAME reply path the context
-                    // menu "Reply" uses (web beginReply parity).
-                    viewModel.beginReply(to: message)
-                },
-            )
+            bubble
             // R7 - non-head clustered rows pull the bubble up (negative top
             // padding inside the LazyVStack gap): cozy 6→2, compact 2→1 - the
             // web's mt-px/mt-0.5 clustered rhythm vs the mt-2.5 head gap.
             // Attached to the bubble only (a Group modifier would also hit the
             // optional divider/day-chip children).
             .padding(.top, cluster.head ? 0 : -clusterTighten)
-            .contextMenu { contextMenu }
+            .contextMenu { contextMenu } preview: {
+                bubble
+                    .padding(8)
+                    .background(PulseTheme.emberChrome)
+                    .allowsHitTesting(false)
+                    .onAppear { session.setTransientReadObscured(contextMenuReadID, true) }
+                    .onDisappear { session.setTransientReadObscured(contextMenuReadID, false) }
+            }
+            .onDisappear { session.setTransientReadObscured(contextMenuReadID, false) }
             .onAppear {
                 // Oldest rendered row reaching the viewport = page older
                 // history (the VM gates reentrancy/hasMore).
@@ -216,6 +179,57 @@ private struct RoomMessageRow: View {
                 }
             }
         }
+    }
+
+    @State private var contextMenuReadID = UUID()
+
+    private var bubble: some View {
+    BubbleView(
+        message: message,
+        mine: message.senderId == session.viewer?.id,
+        groupChat: conversation.isGroup,
+        viewerColor: { colorOf(message.senderId) },
+        seen: viewModel.isSeen(message),
+        seenLabel: viewModel.readLabel(message),
+        flashing: viewModel.flashMessageId == message.id,
+        replyCount: viewModel.replyCount(for: message),
+        bubbleRadius: bubbleRadius,
+        onOpenImage: onOpenImage,
+        onOpenFile: onOpenFile,
+        onOpenThread: onOpenThread,
+        viewerId: session.viewer?.id,
+        voicePlayback: viewModel.playback.state,
+        voiceRate: viewModel.voiceRate,
+        onVoicePlayToggle: { viewModel.toggleVoicePlayback(message, session: session) },
+        onVoiceRateCycle: { viewModel.cycleVoiceRate() },
+        onTranscribe: { viewModel.transcribeVoice(message, session: session) },
+        onPollVote: { optionId in
+            viewModel.votePoll(pollID: message.poll?.id ?? "", optionID: optionId, session: session)
+        },
+        onPollClose: {
+            if let pollId = message.poll?.id {
+                viewModel.closePoll(pollID: pollId, session: session)
+            }
+        },
+        onViewOnceOpen: onViewOnce,
+        wave7: wave7,
+        memberNames: memberNames,
+        onReactionChip: onWhoReacted,
+        onDoubleTapHeart: {
+            // R47 - double-tap bubble fires the heart quick reaction (web
+            // chat-room.tsx:7265-7268 onDoubleClick parity). The SAME
+            // react path the quick-reactions context menu uses; the
+            // hearts burst rides the VM react path. R19-b: the react
+            // body carries the stable registry id.
+            viewModel.react(message, emoji: PulseReactionId.heart.rawValue, session: session)
+        },
+        isClusterHead: cluster.head,
+        onSwipeReply: {
+            // R7 - swipe past 28pt → the SAME reply path the context
+            // menu "Reply" uses (web beginReply parity).
+            viewModel.beginReply(to: message)
+        },
+    )
     }
 
     @ViewBuilder
@@ -2398,132 +2412,55 @@ private struct RoomContent: View {
         }
     }
 
+    @State private var attachmentMenuReadID = UUID()
+
     private var attachMenu: some View {
-        Menu {
-            Button {
-                photoPickerOwner = session.sessionGeneration
-                showPhotoPicker = true
-            } label: {
-                Label("Photo Library", systemImage: "photo")
+        PulseAttentionMenu(symbol: viewModel.staged == nil ? "plus" : "minus",
+            enabled: viewModel.editingTarget == nil, makeMenu: { attachmentActions },
+            visibilityChanged: { session.setTransientReadObscured(attachmentMenuReadID, $0) })
+            .frame(width: 48, height: 48)
+    }
+
+    private var attachmentActions: UIMenu {
+        let epoch = session.sessionGeneration
+        func item(_ title: String, _ symbol: String, _ action: @escaping () -> Void) -> UIAction {
+            UIAction(title: title, image: UIImage(systemName: symbol)) { _ in
+                guard session.sessionGeneration == epoch, session.activeRoomId == conversation.id,
+                      viewModel.acceptsAttachmentSession(session, conversationId: conversation.id) else { return }
+                action()
             }
-            // D30 - take a full-resolution shot with the system camera; the
-            // file flows through the same staged upload path as the library.
-            Button {
-                requestCamera()
-            } label: {
-                Label("Camera", systemImage: "camera")
-            }
-            Button {
-                documentPickerOwner = session.sessionGeneration
-                showFileImporter = true
-            } label: {
-                Label("Document", systemImage: "folder")
-            }
-            // R1-W2B F-MD-07 - location share (web composer attach parity,
-            // chat-room.tsx composer palette + '/location').
-            Button {
-                locationOpen = true
-            } label: {
-                Label("Location", systemImage: "location.fill")
-            }
-            // R3-A item 3 - scheduled sends UI: arm the draft (ScheduleSheet)
-            // and manage the pending rows (ScheduledManagerSheet: list +
-            // cancel). Web tray 'Schedule' + manager drawer parity.
-            Button {
-                scheduleOpen = true
-            } label: {
-                Label("Schedule send", systemImage: "calendar.badge.clock")
-            }
-            Button {
-                scheduledManagerOpen = true
-            } label: {
-                Label("Scheduled sends", systemImage: "clock.arrow.circlepath")
-            }
-            Button {
-                pollBuilderOpen = true
-            } label: {
-                Label("New Poll", systemImage: "chart.bar")
-            }
-            // ── Wave 7 palette (web chat-room.tsx:2519-2634) ──
-            Button {
-                wave7.whiteboardOpen = true
-            } label: {
-                Label("Whiteboard", systemImage: "pencil.and.outline")
-            }
-            Button {
-                wave7.redPacketCreateOpen = true
-            } label: {
-                Label("Red packet", systemImage: "gift.fill")
-            }
-            Button {
-                wave7.eventsOpen = true
-            } label: {
-                Label("Events", systemImage: "calendar")
-            }
-            Button {
-                wave7.gameCreateOpen = true
-            } label: {
-                Label("Game", systemImage: "gamecontroller")
-            }
-            Button {
-                if conversation.isGroup {
-                    wave7.tournamentCreateOpen = true
-                } else {
-                    wave7.toast("Tournaments are for groups only", isError: true)
-                }
-            } label: {
-                Label("Tournament", systemImage: "trophy")
-            }
-            Button {
-                wave7.kanbanOpen = true
-            } label: {
-                Label("Kanban", systemImage: "square.stack.3d.up.fill")
-            }
-            // ── R3-A items 2/5/8 - the Express section (web tray 'Express'
-            // group parity): sticker packs, the effect-flagged sends and the
-            // incognito mask (groups only) - every former-dead surface now
-            // has a discoverable entry.
-            Section("Express") {
-                Button {
-                    stickerOpen = true
-                } label: {
-                    Label("Stickers", systemImage: "face.smiling")
-                }
-                Menu {
-                    ForEach(Self.expressEffects, id: \.name) { effect in
-                        Button {
-                            viewModel.sendEffect(effect: effect.name, session: session)
-                        } label: {
-                            Label(effect.name.capitalized, systemImage: effect.icon)
-                        }
-                    }
-                } label: {
-                    Label("Effects", systemImage: "sparkles")
-                }
-                if conversation.isGroup {
-                    Button {
-                        PulseHaptics.tap()
-                        viewModel.anonOn.toggle()
-                    } label: {
-                        Label(
-                            viewModel.anonOn ? "Incognito on - tap to send under your name" : "Incognito",
-                            systemImage: viewModel.anonOn ? "theatermasks.fill" : "theatermasks",
-                        )
-                    }
-                }
-            }
-        } label: {
-            // EMB-I - the attach trigger is a 48pt dark circle with a white
-            // plus (same Menu, same actions).
-            Image(systemName: viewModel.staged == nil ? "plus" : "minus")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(Color.white.opacity(0.08)))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
         }
-        .disabled(viewModel.editingTarget != nil)
-        .accessibilityLabel("Attach")
+        var express: [UIMenuElement] = [
+            item("Stickers", "face.smiling") { stickerOpen = true },
+            UIMenu(title: "Effects", image: UIImage(systemName: "sparkles"), children: Self.expressEffects.map { effect in
+                item(effect.name.capitalized, effect.icon) { viewModel.sendEffect(effect: effect.name, session: session) }
+            }),
+        ]
+        if conversation.isGroup {
+            express.append(item(viewModel.anonOn ? "Incognito on - tap to send under your name" : "Incognito",
+                viewModel.anonOn ? "theatermasks.fill" : "theatermasks") {
+                PulseHaptics.tap(); viewModel.anonOn.toggle()
+            })
+        }
+        return UIMenu(children: [
+            item("Photo Library", "photo") { photoPickerOwner = session.sessionGeneration; showPhotoPicker = true },
+            item("Camera", "camera") { requestCamera() },
+            item("Document", "folder") { documentPickerOwner = session.sessionGeneration; showFileImporter = true },
+            item("Location", "location.fill") { locationOpen = true },
+            item("Schedule send", "calendar.badge.clock") { scheduleOpen = true },
+            item("Scheduled sends", "clock.arrow.circlepath") { scheduledManagerOpen = true },
+            item("New Poll", "chart.bar") { pollBuilderOpen = true },
+            item("Whiteboard", "pencil.and.outline") { wave7.whiteboardOpen = true },
+            item("Red packet", "gift.fill") { wave7.redPacketCreateOpen = true },
+            item("Events", "calendar") { wave7.eventsOpen = true },
+            item("Game", "gamecontroller") { wave7.gameCreateOpen = true },
+            item("Tournament", "trophy") {
+                if conversation.isGroup { wave7.tournamentCreateOpen = true }
+                else { wave7.toast("Tournaments are for groups only", isError: true) }
+            },
+            item("Kanban", "square.stack.3d.up.fill") { wave7.kanbanOpen = true },
+            UIMenu(title: "Express", options: .displayInline, children: express),
+        ])
     }
 
     // ── R1-W2B F-MS-29 - the quick-phrase rail ───────────────

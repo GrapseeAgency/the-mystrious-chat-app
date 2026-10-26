@@ -517,6 +517,7 @@ public final class PulseSession: ObservableObject {
         guard activeRoomId == conversationId else { return nil }
         let owner = readSurfaces.begin(roomId: conversationId, rootId: rootId)
         applyVisibleReadBoundary(conversationId: conversationId)
+        restartReadAttention() // same message in a different surface still needs fresh dwell
         return owner
     }
 
@@ -534,6 +535,7 @@ public final class PulseSession: ObservableObject {
     func endReadSurface(_ owner: PulseReadSurfaces.Owner) {
         guard readSurfaces.end(owner), activeRoomId == owner.roomId else { return }
         applyVisibleReadBoundary(conversationId: owner.roomId)
+        restartReadAttention()
     }
 
     private func applyVisibleReadBoundary(conversationId: String) {
@@ -558,6 +560,12 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    private var transientReadObscurations: Set<UUID> = []
+    func setTransientReadObscured(_ id: UUID, _ obscured: Bool) {
+        let changed = obscured ? transientReadObscurations.insert(id).inserted : transientReadObscurations.remove(id) != nil
+        if changed { restartReadAttention() }
+    }
+
     private var shellObscuresReading = false
     public func setShellReadObscured(_ obscured: Bool) {
         guard shellObscuresReading != obscured else { return }
@@ -566,7 +574,7 @@ public final class PulseSession: ObservableObject {
     }
 
     private var readAttentionBlocked: Bool {
-        (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
+        !transientReadObscurations.isEmpty || (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
             groupCallEngine?.ring != nil || voiceRooms?.surface != nil || PulseAppLock.shared.needsLock ||
             readSurfaces.isObscured(shellPresented: shellObscuresReading, pipOpen: pip.isOpen)
     }

@@ -2,6 +2,19 @@ import XCTest
 @testable import Pulse
 
 final class ReadVisibilityTests: XCTestCase {
+    func testOldMenuDismissalCannotReleaseANewerPresentation() throws {
+        var menu = PulseMenuVisibility()
+        menu.begin()
+        let old = try XCTUnwrap(menu.ticket)
+        menu.begin()
+        let current = try XCTUnwrap(menu.ticket)
+        XCTAssertFalse(menu.end(old))
+        XCTAssertEqual(menu.ticket, current)
+        XCTAssertTrue(menu.end(current))
+        XCTAssertNil(menu.ticket)
+        XCTAssertFalse(menu.end(current))
+    }
+
     func testViewportChurnPreservesEachContinuouslyVisibleRowsDwell() throws {
         var gate = PulseReadReceiptGate()
         gate.setBoundaries(roomId: "room", messageIds: ["stable", "leaving"], now: 0)
