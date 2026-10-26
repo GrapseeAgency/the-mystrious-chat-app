@@ -17,7 +17,9 @@ on:
 
 jobs:
   build-test:
-    runs-on: ${{ inputs.runner || 'macos-15' }}
+    # PR validation uses the standard Intel pool while arm64 allocations are
+    # failing before checkout. Main/tag validation retains the arm64 default.
+    runs-on: ${{ inputs.runner || (github.event_name == 'pull_request' && 'macos-15-intel') || 'macos-15' }}
     defaults:
       run:
         working-directory: apps/ios
@@ -147,7 +149,9 @@ jobs:
   # Wave 0: a valid iOS archive through macOS CI (unsigned — no Apple
   # Developer Program yet; TestFlight lane lands when credentials exist).
   archive:
-    runs-on: ${{ inputs.runner || 'macos-15' }}
+    # PR validation uses the standard Intel pool while arm64 allocations are
+    # failing before checkout. Main/tag validation retains the arm64 default.
+    runs-on: ${{ inputs.runner || (github.event_name == 'pull_request' && 'macos-15-intel') || 'macos-15' }}
     defaults:
       run:
         working-directory: apps/ios
