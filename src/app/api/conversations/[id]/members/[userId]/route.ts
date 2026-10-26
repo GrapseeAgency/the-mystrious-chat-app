@@ -1,3 +1,4 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 // Targeted role/remove aliases use the same guards as the collection endpoint.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -80,7 +81,10 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   }
   try {
     const result = await removeGroupMember(db, id, requesterId, userId)
-    if (result.changed) await notify(id, [...result.recipients, userId])
+    if (result.changed) {
+      invalidateNativeReadState(userId, id)
+      await notify(id, [...result.recipients, userId])
+    }
     return NextResponse.json({ ok: true, remainingMembers: result.recipients.length })
   } catch (error) {
     return failure(error)

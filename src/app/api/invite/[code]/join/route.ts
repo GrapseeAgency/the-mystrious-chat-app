@@ -1,3 +1,4 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 // Invite redemption rechecks the code and membership in the write transaction.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -20,12 +21,14 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
   try {
     const result = await joinGroupInvite(db, code, userId)
-    if (!result.alreadyMember)
+    if (!result.alreadyMember) {
+      invalidateNativeReadState(userId, result.conversationId)
       await notifySocket('conversation:updated', result.recipients, {
         type: 'conversation:updated',
         conversationId: result.conversationId,
         recipientIds: result.recipients,
       })
+    }
     return NextResponse.json({
       conversationId: result.conversationId,
       alreadyMember: result.alreadyMember,

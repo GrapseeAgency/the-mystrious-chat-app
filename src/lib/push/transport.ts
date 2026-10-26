@@ -471,6 +471,8 @@ export function vapidPublicKey(): string {
 
 /** A best-effort wake-up, never read authority. Foreground/reconnect fetches
  * remain necessary because providers/OSes may collapse or suppress delivery. */
-export function invalidateNativeReadState(userId: string, conversationId: string): void {
-  void fanoutPush([userId], { kind: 'read-state', title: '', body: '', conversationId })
+export function invalidateNativeReadState(userIds: string | string[], conversationId: string): void {
+  const recipients = typeof userIds === 'string' ? [userIds] : [...new Set(userIds)]
+  if (recipients.length === 0) return
+  void fanoutPush(recipients, { kind: 'read-state', title: '', body: '', conversationId })
 }

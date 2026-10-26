@@ -1,3 +1,4 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 // Per-participant archive; authority and mutation share one transaction.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -17,6 +18,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (denied) return denied
   try {
     const receipt = await setConversationArchive(db, id, userId, body.archived)
+    invalidateNativeReadState(userId, id)
     await notifySocket('conversation:updated', [userId], { type: 'conversation:updated', conversationId: id, recipientIds: [userId] })
     return NextResponse.json(receipt)
   } catch (error) {

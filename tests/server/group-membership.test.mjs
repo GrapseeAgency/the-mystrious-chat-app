@@ -431,3 +431,56 @@ test('personal privacy writes only the current member and preserves DM comfort/T
       status: 400,
     })
   }))
+
+test('committed membership routes wake only affected accounts, including departed members, without relying on socket delivery', () => fixture(async db => {
+  const hints = [], sockets = []
+  const bindings = {
+    NextResponse: Response, GroupMembershipError,
+    db: { conversation: { findFirst: async () => ({ id: 'group' }) } },
+    CONVERSATION_FULL_INCLUDE: {}, buildConversationDetail: async row => row,
+    safeJson: req => req.json(), strField: value => typeof value === 'string' ? value.trim() : '',
+    bearerToken: req => req.headers.get('authorization'),
+    requireActionOwner: async (req, owner) => req.headers.get('authorization') === `Bearer synthetic-${owner}`
+      ? null : Response.json({ error: 'denied' }, { status: 403 }),
+    invalidateNativeReadState: (owners, room) => hints.push([owners, room]),
+    notifySocket: async (...args) => sockets.push(args),
+    addGroupMembers: (_, ...args) => addGroupMembers(db, ...args),
+    leaveGroup: (_, ...args) => leaveGroup(db, ...args),
+    removeGroupMember: (_, ...args) => removeGroupMember(db, ...args),
+    setGroupRole: (_, ...args) => setGroupRole(db, ...args),
+    joinChannel: (_, ...args) => joinChannel(db, ...args),
+    joinGroupInvite: (_, ...args) => joinGroupInvite(db, ...args),
+  }
+  async function invoke(path, method, body, params, token = body.requesterId ?? body.userId) {
+    const text = (await readFile(new URL(`../../src/app/api/${path}/route.ts`, import.meta.url), 'utf8'))
+      .replace(/^import[\s\S]*?\bfrom ['"][^'"]+['"][ \t]*;?\r?\n/gm, '').replace(/^export /gm, '')
+    const handler = new Function(...Object.keys(bindings), stripTypeScriptTypes(text, {mode:'transform'}) + `;return ${method}`)(...Object.values(bindings))
+    return handler(new Request('https://pulse.test', { method, headers: { authorization: `Bearer synthetic-${token}` }, body: JSON.stringify(body) }), { params: Promise.resolve(params) })
+  }
+  const targeted = 'conversations/[id]/members/[userId]', collection = 'conversations/[id]/members'
+  assert.equal((await invoke(targeted,'DELETE',{requesterId:'a'},{id:'group',userId:'b'},'wrong')).status,403)
+  assert.deepEqual(hints, [])
+  assert.equal((await invoke(targeted,'DELETE',{requesterId:'a'},{id:'group',userId:'b'})).status,200)
+  assert.deepEqual(hints.pop(), ['b','group'])
+  assert.ok(sockets.at(-1)[1].includes('b'), 'The removed member also remains a socket recipient')
+  assert.equal(await member(db,'group','b'), null)
+  assert.equal((await invoke(targeted,'DELETE',{requesterId:'a'},{id:'group',userId:'b'})).status,200)
+  assert.equal((await invoke(targeted,'DELETE',{requesterId:'a'},{id:'group',userId:'a'})).status,400)
+  assert.deepEqual(hints, [], 'No wake-up for unchanged or refused removal')
+  assert.equal((await invoke(collection,'DELETE',{requesterId:'c'},{id:'group'})).status,200)
+  assert.deepEqual(hints.pop(), ['c','group'])
+  assert.equal((await invoke(collection,'POST',{requesterId:'a',userIds:['d','d','a']},{id:'group'})).status,200)
+  assert.deepEqual(hints.pop(), [['d'],'group'], 'Only the newly joined accounts, in one batch')
+  const channel = 'channels/[id]/subscribe'
+  assert.equal((await invoke(channel,'POST',{userId:'d'},{id:'channel'})).status,200)
+  assert.deepEqual(hints.pop(), ['d','channel'])
+  assert.equal((await invoke(channel,'POST',{userId:'d'},{id:'channel'})).status,200)
+  assert.deepEqual(hints, [])
+  assert.equal((await invoke(channel,'DELETE',{userId:'d'},{id:'channel'})).status,200)
+  assert.deepEqual(hints.pop(), ['d','channel'])
+  await groupInvite(db,'group','a',false,()=>'NATIVE42')
+  assert.equal((await invoke('invite/[code]/join','POST',{userId:'b'},{code:'NATIVE42'})).status,200)
+  assert.deepEqual(hints.pop(), ['b','group'])
+  assert.equal((await invoke('invite/[code]/join','POST',{userId:'b'},{code:'NATIVE42'})).status,200)
+  assert.deepEqual(hints, [])
+}))

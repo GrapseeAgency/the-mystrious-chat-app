@@ -197,3 +197,20 @@ revision fences reject older results crossing a newer ACK/event. Current rosters
 are refreshed separately. Ordinary hints do not trigger whole-history downloads.
 This is not an assertion that every retained cached message is immediately
 reconciled without an open surface, or that paired-device acceptance is complete.
+
+
+### Membership and archive badge wake-ups
+
+After committed add/join/invite/leave/removal/archive changes, affected owners now
+receive the same capability-gated native read-state hint as read mutations. The
+removed/leaving owner is explicitly included even though no longer in the room's
+current membership list. Adds batch only genuinely new accounts; refused/no-op
+membership changes do not notify unrelated users. Role changes retain their
+existing socket notifications. Archive/unarchive wakes only the owner.
+
+These hints contain no read proof, count or message body. Android's existing
+owned worker refreshes its canonical conversation snapshot; iOS's existing
+active/cold background paths refresh canonical badge and delivered-alert state.
+Foreground/reconnect reconciliation remains necessary when the OS suppresses a
+background push. This does not turn a best-effort wake-up into guaranteed delivery
+or claim universal Android launcher badge parity.

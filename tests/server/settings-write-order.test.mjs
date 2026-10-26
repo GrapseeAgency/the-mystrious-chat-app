@@ -73,7 +73,9 @@ async function fixture(run, database = db => db) {
     const setPrivacy=(on,token='synthetic-owner',userId='owner')=>privacy(new Request('https://settings.test/api/conversations/room/screen-privacy', {
       method:'PATCH',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId,on}),
     }), {params:Promise.resolve({id:'room'})})
+    const readHints = []
     const roomDeps={...metadata,db,requireActionOwner,NextResponse:Response,GROUP_NAME_MAX:80,
+      invalidateNativeReadState:(...args)=>readHints.push(args),
       CONVERSATION_FULL_INCLUDE:{participants:true},
       buildConversationDetail:async row=>({id:row.id,screenPrivacy:row.screenPrivacy,ttlSeconds:row.ttlSeconds}),
       safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',notifySocket:async(...args)=>notices.push(args),
@@ -170,7 +172,7 @@ async function fixture(run, database = db => db) {
         headers:token?{authorization:`Bearer ${token}`}:{},
         ...(kind==='read-intent'?{}:{body:JSON.stringify({userId,...body})}),
       }),{params:Promise.resolve({id:'room'})})
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed,attention})
+    await run({db,patch,get,setPrivacy,notices,readHints,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed,attention})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -585,4 +587,16 @@ test('read intent routes require owner authority and retain manual choice agains
   assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).manualUnread,false)
   await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
   assert.equal((await attention('read-intent')).status,403)
+}))
+
+
+test('archive badge invalidations reach only the committed owner, never failed or foreign writes',()=>fixture(async({setPersonal,readHints})=>{
+  assert.equal((await setPersonal('archive',{archived:true},'synthetic-other')).status,403)
+  assert.equal((await setPersonal('archive',{archived:'yes'})).status,400)
+  assert.deepEqual(readHints,[])
+  for(const archived of [true,true,false]) {
+    assert.equal((await setPersonal('archive',{archived})).status,200)
+    assert.deepEqual(readHints.pop(),['owner','room'])
+  }
+  assert.deepEqual(readHints,[])
 }))

@@ -1,3 +1,4 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 // Channel aliases share group-governance transactions, including last-admin checks.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -33,7 +34,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
   try {
     const result = await joinChannel(db, id, userId)
-    if (!result.already) await notify(id, result.recipients)
+    if (!result.already) {
+      invalidateNativeReadState(userId, id)
+      await notify(id, result.recipients)
+    }
     return NextResponse.json({ already: result.already, memberCount: result.recipients.length })
   } catch (error) {
     return failure(error)
@@ -50,6 +54,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   }
   try {
     const result = await leaveGroup(db, id, userId, true)
+    invalidateNativeReadState(userId, id)
     await notify(id, [...result.recipients, userId])
     return NextResponse.json({ ok: true, memberCount: result.recipients.length })
   } catch (error) {

@@ -1,3 +1,4 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 // Group membership checks and writes share one serializable snapshot.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -59,7 +60,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
     : []
   try {
     const result = await addGroupMembers(db, id, requesterId, ids)
-    if (result.added.length) await notify(id, result.recipients)
+    if (result.added.length) {
+      invalidateNativeReadState(result.added, id)
+      await notify(id, result.recipients)
+    }
     const conversation = await detail(id, requesterId)
     if (!conversation)
       return NextResponse.json(
@@ -83,6 +87,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   }
   try {
     const result = await leaveGroup(db, id, requesterId)
+    invalidateNativeReadState(requesterId, id)
     await notify(id, [...result.recipients, requesterId])
     return NextResponse.json({
       ok: true,
