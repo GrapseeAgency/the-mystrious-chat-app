@@ -649,9 +649,10 @@ internal fun MirrorRoom(
         menuOpen || trayOpen || roomSearchOpen || pinnedOpen || phraseManagerOpen || pollOpen || stickerOpen ||
         locationOpen || captionFor != null || remindersOpen || scheduledOpen || recapOpen || eventsOpen ||
         kanbanOpen || whiteboardOpen || tournamentOpen || redPacketOpen || trayEffectsOpen || slashHelpOpen ||
-        safetyOpen || scheduleOpen || viewOnceGrant != null
+        safetyOpen || scheduleOpen || viewOnceGrant != null || muteStripOpen || ttlStripOpen || activeEffect != null
     val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
+    val readScope = remember(repository, viewerId, groupId) { app.pulse.domain.sync.VisibleReadScope(repository, groupId) }
     val readIntents = remember(repository, viewerId, groupId) { mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>() }
     val readConnected by remember(repository) { repository.observeConnected() }
         .collectAsStateWithLifecycle(initialValue = false)
@@ -660,21 +661,23 @@ internal fun MirrorRoom(
             if (!readingEnabled || readObscured) return@repeatOnLifecycle
             val releaseAttention = app.pulse.android.notify.IncomingAttention.beginReading(groupId)
             try {
-                fun currentBoundary(): String? {
+                fun currentBoundary(): List<String> {
                     val layout = listState.layoutInfo
                     val visible = layout.visibleItemsInfo.filter {
                         app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
                     }.map { it.key }.toSet()
                     val now = System.currentTimeMillis()
-                    return readRows.value.lastOrNull { it.id in visible && !it.isDeleted &&
+                    return readRows.value.filter { it.id in visible && !it.isDeleted &&
                         !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) &&
-                        (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }?.id
+                        (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }.map { it.id }
                 }
-                androidx.compose.runtime.snapshotFlow { currentBoundary() }.collectLatest { id ->
-                    if (id != null) app.pulse.domain.sync.acknowledgeVisibleRead(
-                        isCurrent = { currentBoundary() == id },
-                        send = readIntents.getOrPut(id) { app.pulse.domain.sync.visibleReadIntent(repository, groupId, id) }::send,
-                    )
+                androidx.compose.runtime.snapshotFlow { currentBoundary() }.collectLatest { ids ->
+                    kotlinx.coroutines.coroutineScope { ids.forEach { id -> launch {
+                        app.pulse.domain.sync.acknowledgeVisibleRead(
+                            isCurrent = { id in currentBoundary() },
+                            send = readIntents.getOrPut(id) { readScope.message(id) }::send,
+                        )
+                    } } }
                 }
             } finally {
                 releaseAttention()
@@ -1711,7 +1714,7 @@ internal fun MirrorRoom(
                             val showReadBy = mine && isGroup &&
                                 entry.message.id == lastOwnId && entry.message.deletedAt == null
                             val created = MirrorRoomEpoch(entry.message.createdAt)
-                            val readers = app.pulse.domain.sync.confirmedReaders(members, viewerId, created)
+                            val readers = app.pulse.domain.sync.confirmedReaders(members, viewerId, created, entry.message.readByMembershipIds)
                             // R73 - the web bubble entrance (chat-room.tsx:7510-7520):
                             // the NEWEST row plays the Telegram squash & stretch on
                             // arrival; history rows render settled.
@@ -4337,7 +4340,7 @@ private fun MirrorTopicRail(
             )
             for (topic in topics) {
                 MirrorTopicChip(
-                    label = topic.name,
+                    label = topic.unreadCount?.takeIf { it > 0 }?.let { "${topic.name} · $it unread" } ?: topic.name,
                     count = topic.messageCount,
                     active = topic.id == activeTopicId,
                     glyph = topicGlyphName(topic.emoji),

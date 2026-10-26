@@ -149,3 +149,43 @@ extension ReadVisibilityTests {
         XCTAssertNil(gate.intent(for: reopened))
     }
 }
+
+extension ReadVisibilityTests {
+    func testEveryDwellQualifiedIdentityRetainsTheOriginalSessionFence() throws {
+        var gate = PulseReadReceiptGate()
+        gate.setBoundaries(roomId: "room", messageIds: ["b", "a", "b"], now: 0)
+        XCTAssertNil(gate.begin(roomId: "room", now: 0.59))
+        let first = try XCTUnwrap(gate.begin(roomId: "room", now: 0.61))
+        XCTAssertEqual(first.boundary.messageId, "a")
+        XCTAssertTrue(gate.retainIntent("original.member", for: first))
+        gate.finish(first, succeeded: true)
+        let second = try XCTUnwrap(gate.begin(roomId: "room", now: 0.62))
+        XCTAssertEqual(second.boundary.messageId, "b")
+        XCTAssertEqual(gate.intent(for: second), "original.member")
+        gate.finish(second, succeeded: true)
+        XCTAssertNil(gate.begin(roomId: "room", now: 1))
+    }
+
+    func testReadJournalSurvivesReopenAndKeepsFirstIntentWithoutCrossOwnerReplay() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("reads.sqlite").path
+        let original = PulseQueuedRead(owner: "owner", room: "room", message: "message",
+            minimumReadAt: "2026-10-26T00:00:00Z", intent: "first.member")
+        let newer = PulseQueuedRead(owner: "owner", room: "room", message: "message",
+            minimumReadAt: original.minimumReadAt, intent: "after-manual.member")
+        do {
+            let store = try PulseStore(path: path)
+            XCTAssertEqual(try store.enqueueRead(original).intent, original.intent)
+            XCTAssertEqual(try store.enqueueRead(newer).intent, original.intent)
+        }
+        let reopened = try PulseStore(path: path)
+        XCTAssertTrue(try reopened.pendingReads(owner: "another-account").isEmpty)
+        XCTAssertEqual(try reopened.pendingReads(owner: "owner").map(\.intent), [original.intent])
+        try reopened.acknowledgeRead(original)
+        _ = try reopened.enqueueRead(newer)
+        try reopened.acknowledgeRead(original) // lost/duplicated old ACK must not delete the new observation
+        XCTAssertEqual(try reopened.pendingReads(owner: "owner").map(\.intent), [newer.intent])
+    }
+}

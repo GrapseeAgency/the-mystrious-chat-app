@@ -492,7 +492,7 @@ class ChatRoomViewModel @Inject constructor(
     private val typingPeers = linkedMapOf<String, String>()
     private val typingExpiry = mutableMapOf<String, Job>()
 
-    private var readingAnchor: String? = null
+    private var readingAnchors: Set<String> = emptySet()
 
     init {
         viewModelScope.launch {
@@ -598,22 +598,26 @@ class ChatRoomViewModel @Inject constructor(
     // ── read receipts (spec row 3): debounced 600ms while the room is open ──
 
 
-    fun setReadingAnchor(messageId: String?) {
-        if (readingAnchor == messageId) return
-        readingAnchor = messageId
+    fun setReadingAnchors(messageIds: Set<String>) {
+        if (readingAnchors == messageIds) return
+        readingAnchors = messageIds
         readJob?.cancel()
         scheduleRead()
     }
 
+    private val readScope by lazy { app.pulse.domain.sync.VisibleReadScope(repo, conversationId) }
     private val readIntents = mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>()
     private fun scheduleRead() {
-        val anchor = readingAnchor ?: return
+        val anchors = readingAnchors
+        if (anchors.isEmpty()) return
         readJob?.cancel()
         readJob = viewModelScope.launch {
-            app.pulse.domain.sync.acknowledgeVisibleRead(
-                isCurrent = { readingAnchor == anchor },
-                send = readIntents.getOrPut(anchor) { app.pulse.domain.sync.visibleReadIntent(repo, conversationId, anchor) }::send,
-            )
+            anchors.forEach { anchor -> launch {
+                app.pulse.domain.sync.acknowledgeVisibleRead(
+                    isCurrent = { anchor in readingAnchors },
+                    send = readIntents.getOrPut(anchor) { readScope.message(anchor) }::send,
+                )
+            } }
         }
     }
 

@@ -59,31 +59,40 @@ export function threadRepliesWhere(rootId: string, roomId: string, at: Date): Pr
 export async function unreadSnapshot(
   db: Pick<import('../../prisma/generated-client').PrismaClient, '$queryRaw'>,
   room: string, viewer: string, readAt: Date, at: Date,
-): Promise<{ unreadCount: number; unreadExpirations: { expiresAt: string; count: number }[] }> {
+  scope?: { threadId?: string; topicId?: string },
+): Promise<{ firstUnreadMessageId: string | null; unreadCount: number; unreadExpirations: { expiresAt: string; count: number }[] }> {
   // SQLite is the production datasource. Aggregate in ONE statement: fetching
   // roots after a child-only count could mix deletion/expiry snapshots. A reply
   // expires for inbox purposes at min(its own deadline, its canonical root's).
   // No message bodies or full history are materialized in the application.
-  const groups = await db.$queryRaw<{ expiresAt: number | null; count: bigint }[]>`
-    SELECT CAST(deadline AS REAL) AS expiresAt, COUNT(*) AS count
-    FROM (
-      SELECT CASE
+  const groups = await db.$queryRaw<{ expiresAt: number | null; count: bigint; firstUnreadMessageId: string }[]>`
+    WITH unread AS (
+      SELECT m.id, m.createdAt, CASE
         WHEN m.parentId IS NULL OR p.expiresAt IS NULL THEN m.expiresAt
         WHEN m.expiresAt IS NULL OR p.expiresAt < m.expiresAt THEN p.expiresAt
         ELSE m.expiresAt END AS deadline
       FROM Message m
       LEFT JOIN Message p ON p.id = m.parentId
+      JOIN ConversationParticipant member ON member.conversationId = m.conversationId AND member.userId = ${viewer}
       WHERE m.conversationId = ${room} AND (m.senderId <> ${viewer} OR m.viaAutomation = 1)
-        AND m.deletedAt IS NULL AND m.createdAt > ${readAt}
+        AND m.deletedAt IS NULL AND m.createdAt >= member.joinedAt
+        AND NOT EXISTS (SELECT 1 FROM MessageReadObservation r WHERE r.participantId = member.id AND r.messageId = m.id)
+        AND (${scope?.threadId ?? null} IS NULL OR m.parentId = ${scope?.threadId ?? null})
+        AND (${scope?.topicId ?? null} IS NULL OR COALESCE(m.topicId, p.topicId) = ${scope?.topicId ?? null})
         AND (m.expiresAt IS NULL OR m.expiresAt > ${at})
         AND (m.parentId IS NULL OR (
           p.id IS NOT NULL AND p.conversationId = m.conversationId
           AND p.parentId IS NULL AND p.deletedAt IS NULL
           AND (p.expiresAt IS NULL OR p.expiresAt > ${at})
         ))
-    ) GROUP BY deadline ORDER BY deadline ASC
+    ), ordered AS (
+      SELECT *, FIRST_VALUE(id) OVER (ORDER BY createdAt, id) AS firstUnreadMessageId FROM unread
+    )
+    SELECT CAST(deadline AS REAL) AS expiresAt, COUNT(*) AS count, MIN(firstUnreadMessageId) AS firstUnreadMessageId
+    FROM ordered GROUP BY deadline ORDER BY deadline ASC
   `
   return {
+    firstUnreadMessageId: groups[0]?.firstUnreadMessageId ?? null,
     unreadCount: groups.reduce((total, group) => total + Number(group.count), 0),
     unreadExpirations: groups.flatMap(group => group.expiresAt === null ? [] : [{
       expiresAt: new Date(group.expiresAt).toISOString(), count: Number(group.count),

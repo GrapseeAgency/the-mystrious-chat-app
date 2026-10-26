@@ -509,6 +509,21 @@ class PulseRepositoryImpl constructor(
                     is PulseSocketClient.Signal.PresenceSnapshot -> onlineIds.value = signal.onlineUserIds.toSet()
                     is PulseSocketClient.Signal.MessageEnvelope -> onMessageEnvelope(signal)
                     is PulseSocketClient.Signal.Read -> {
+                        signal.readerMembershipId?.takeIf { it.isNotBlank() }?.let { membership ->
+                            messageCacheMutex.withLock {
+                                signal.messageIds.distinct().forEach { id ->
+                                    val old = messageDao.byId(id)?.toDomain() ?: return@forEach
+                                    if (old.conversationId != signal.conversationId) return@forEach
+                                    val updated = old.copy(readByMembershipIds = (old.readByMembershipIds + membership).distinct())
+                                    messageEventRevisions[id] = messageEventClock.incrementAndGet()
+                                    messageDao.upsertAll(listOf(MessageEntity.from(updated, reactionsJsonOf(updated))))
+                                }
+                                messageCacheChanges.value = messageEventClock.get()
+                            }
+                        }
+                        scope.launch { refreshTopics(signal.conversationId) }
+                        if (signal.all) scope.launch { refreshMessages(signal.conversationId, limit = 200) }
+
                         conversationSnapshots.invalidate(signal.conversationId)
                         eventsBus.tryEmit(PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.lastReadAt))
                         scheduleConversationsRefresh()
@@ -2561,6 +2576,7 @@ class PulseRepositoryImpl constructor(
             scheduleSelfHeal()
             return@serialized FlushReport(pending = pendingOutboxCount())
         }
+        flushReadJournal()
         val report = FlushOutboxUseCase(this).invoke()
         if (report.pending > 0) scheduleSelfHeal()
         report
@@ -2692,8 +2708,58 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun markRead(conversationId: String): Result<Unit> = acknowledgeRead(conversationId, null)
 
-    override suspend fun captureReadIntent(conversationId: String): Result<String> =
-        ownedPeerRequest { owner -> api.captureReadIntent(conversationId, owner) }
+    override suspend fun readStateSnapshot(conversationId: String, threadId: String?, topicId: String?): Result<Int> =
+        ownedPeerRequest { api.readStateSnapshot(conversationId, it, threadId, topicId) }
+
+    override suspend fun captureReadIntent(conversationId: String): Result<String> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!connectedFlow.value) {
+            val membership = conversationDao.byId(conversationId)?.toDomain()?.members
+                ?.firstOrNull { it.id == owner }?.readMembershipId
+            requireConversationOwner(owner, epoch)
+            if (!membership.isNullOrBlank()) return Result.success("offline.$membership")
+        }
+        val result = ownedPeerRequest { api.captureReadIntent(conversationId, it) }
+        requireConversationOwner(owner, epoch)
+        if (result.isSuccess || app.pulse.domain.sync.visibleReadRetryDelay(result.exceptionOrNull(), 1) == null) return result
+        // Offline observations have NO authority to clear a manual marker. The
+        // immutable membership ID still prevents replay into a later rejoin.
+        val membership = conversationDao.byId(conversationId)?.toDomain()?.members
+            ?.firstOrNull { it.id == owner }?.readMembershipId
+        requireConversationOwner(owner, epoch)
+        return membership?.takeIf { it.isNotBlank() }?.let { Result.success("offline.$it") } ?: result
+    }
+
+    @kotlinx.serialization.Serializable
+    private data class QueuedRead(val owner: String, val room: String, val message: String,
+        val minimumReadAt: String, val intent: String)
+    private val readReplayMutex = Mutex()
+
+    private suspend fun flushReadJournal() = readReplayMutex.withLock {
+        val owner = viewerId ?: return@withLock
+        val epoch = attachmentSession
+        for (entry in wave7Dao.readJournal("read-journal:v1|$owner|")) {
+            requireConversationOwner(owner, epoch)
+            val read = runCatching { PulseJson.decodeFromString(QueuedRead.serializer(), entry.json) }.getOrNull()
+            if (read == null || read.owner != owner) {
+                wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
+                continue
+            }
+            // Replay only the durable original intent, never prepare a fresh fence.
+            val response = api.markRead(read.room, owner, read.message, read.minimumReadAt, read.intent)
+            requireConversationOwner(owner, epoch)
+            val failure = (response as? PulseResult.Failure)?.let { apiExceptionOf(it) }
+            if (response is PulseResult.Success || failure?.status in setOf(400, 403, 404, 410, 422)) {
+                wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
+                conversationSnapshots.invalidate(read.room)
+                scheduleConversationsRefresh()
+            } else {
+                scheduleSelfHeal()
+                break
+            }
+        }
+    }
 
     override suspend fun markReadThrough(conversationId: String, messageId: String, readIntent: String?): Result<Unit> =
         acknowledgeRead(conversationId, messageId, readIntent)
@@ -2714,9 +2780,24 @@ class PulseRepositoryImpl constructor(
                     anchor.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
                 return Result.failure(PulseApiException("VALIDATION", "The displayed read boundary is no longer available.", 400))
             }
+            val journal = if (messageId != null && anchor != null) {
+                val intent = readIntent ?: captureReadIntent(conversationId).getOrThrow()
+                kotlin.coroutines.coroutineContext.ensureActive()
+                requireConversationOwner(owner, epoch)
+                val key = "read-journal:v1|$owner|${intent.substringAfterLast('.')}|$messageId"
+                val json = PulseJson.encodeToString(QueuedRead.serializer(), QueuedRead(owner, conversationId, messageId, anchor.createdAt, intent))
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    wave7Dao.insertReadIntent(Wave7CacheEntity(key, json, System.currentTimeMillis()))
+                    requireNotNull(wave7Dao.get(key))
+                }
+            } else null
+            val durable = journal?.let { PulseJson.decodeFromString(QueuedRead.serializer(), it.json) }
+            // A cancelled UI may leave now; the session-owned journal survives it.
+            if (journal != null) scheduleSelfHeal()
+            requireConversationOwner(owner, epoch)
             conversationSnapshots.invalidate(conversationId)
             val result = try {
-                when (val response = api.markRead(conversationId, owner, messageId, anchor?.createdAt, readIntent)) {
+                when (val response = api.markRead(conversationId, owner, messageId, anchor?.createdAt, durable?.intent ?: readIntent)) {
                     is PulseResult.Success -> Result.success(Unit)
                     is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
                 }
@@ -2726,6 +2807,9 @@ class PulseRepositoryImpl constructor(
             requireConversationOwner(owner, epoch)
             // Do not zero newer arrivals or roll an entire stale conversation back
             // over messages/pins received while the read request was in flight.
+            if (journal != null && (result.isSuccess || (result.exceptionOrNull() as? PulseApiException)?.status in setOf(400, 403, 404, 410, 422))) {
+                wave7Dao.acknowledgeReadIntent(journal.key, journal.json)
+            }
             if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
             result
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
@@ -3371,20 +3455,31 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun unsaveMessage(messageId: String): Result<Boolean> = setMessageSaved(messageId, false)
 
-    override suspend fun refreshTopics(conversationId: String): Result<Unit> =
-        when (val r = api.topics(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                val topics = r.value.topics
-                topicDao.upsertAll(topics.map { TopicEntity.from(conversationId, it.toDomain()) })
-                // Prune rows for this conversation the server no longer lists
-                // (deleted topics drop off the rail without a socket event).
-                val keep = topics.map { it.id }.toSet()
-                val stale = topicDao.all(conversationId).filter { it.id !in keep }.map { it.id }
-                stale.forEach { topicDao.deleteById(it) }
-                Result.success(Unit)
+    private val topicRefreshTickets = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>()
+    private val topicCacheMutex = Mutex()
+    override suspend fun refreshTopics(conversationId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        val clock = topicRefreshTickets.getOrPut(conversationId) { java.util.concurrent.atomic.AtomicLong() }
+        val ticket = clock.incrementAndGet()
+        return try {
+            when (val response = api.topics(conversationId, owner)) {
+                is PulseResult.Success -> topicCacheMutex.withLock {
+                    requireConversationOwner(owner, epoch)
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    if (clock.get() != ticket) return@withLock Result.success(Unit)
+                    val topics = response.value.topics
+                    database.withTransaction {
+                        topicDao.upsertAll(topics.map { TopicEntity.from(conversationId, it.toDomain()) })
+                        val keep = topics.map { it.id }.toSet()
+                        topicDao.all(conversationId).filter { it.id !in keep }.forEach { topicDao.deleteById(it.id) }
+                    }
+                    Result.success(Unit)
+                }
+                is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+    }
 
     override fun observeTopics(conversationId: String): Flow<List<Topic>> =
         topicDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }
@@ -4367,6 +4462,7 @@ fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? =
         // Web row stamp prefers the last message's time, falling back to updatedAt.
         lastActivityAt = last?.createdAt ?: updatedAt,
         unreadCount = unreadCount ?: 0,
+        firstUnreadMessageId = firstUnreadMessageId,
         lastMessageExpiresAtEpochMs = messageExpiryEpochMs(last?.expiresAt),
         unreadExpirations = unreadExpirations.mapNotNull {
             val deadline = messageExpiryEpochMs(it.expiresAt) ?: Long.MIN_VALUE
@@ -4402,6 +4498,7 @@ fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? =
                 color = dto.color,
                 lastReadAt = PulseTime.epochMs(dto.lastReadAt).takeIf { it > 0 },
                 role = dto.role,
+                readMembershipId = dto.readMembershipId,
             )
         },
     )
@@ -4414,6 +4511,7 @@ fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? =
         lastMessageKind = previous.lastMessageKind,
         lastActivityAt = previous.lastActivityAt,
         unreadCount = previous.unreadCount,
+        firstUnreadMessageId = previous.firstUnreadMessageId,
         unreadExpirations = previous.unreadExpirations,
         lastMessageExpiresAtEpochMs = previous.lastMessageExpiresAtEpochMs,
         lastMessageMine = previous.lastMessageMine,
@@ -4491,6 +4589,7 @@ fun FolderDto.toFolderSummary(): FolderSummary = FolderSummary(
 )
 
 fun ChatMessageDto.toDomain(): Message = Message(
+    readByMembershipIds = readByMembershipIds.distinct(),
     id = id,
     conversationId = conversationId,
     authorId = senderId,
@@ -4567,6 +4666,7 @@ fun TopicDto.toDomain(): Topic = Topic(
     emoji = topicIconId(emoji),
     lastMessageAt = PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
     messageCount = messageCount,
+    unreadCount = unreadCount,
 )
 
 /** Wire ScheduledItem row → the domain model (tolerant: blanks stay blank). */

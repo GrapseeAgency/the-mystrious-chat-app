@@ -6,11 +6,17 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { canJoinConversationCall } from '../../src/lib/group-call-access.ts'
 import { advanceReadReceipt, receiptRecipients, setManualUnread, captureReadIntent } from '../../src/lib/read-receipt.ts'
-import { inboxMessagesWhere, visibleInboxPreview, threadRepliesWhere, removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
+import { inboxMessagesWhere, visibleInboxPreview, threadRepliesWhere, removeSavedMessage, unreadSnapshot as exactUnreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation, openSelfConversation } from '../../src/lib/direct-conversation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 const t = n => new Date(`2026-10-20T00:00:${String(n).padStart(2, '0')}.000Z`)
+// Existing expiry assertions deliberately compare the counts projection. Identity
+// assertions below exercise the anchor returned by the very same SQL snapshot.
+async function unreadSnapshot(...args) {
+  const { firstUnreadMessageId, ...counts } = await exactUnreadSnapshot(...args)
+  return counts
+}
 async function fixture(run) {
   const dir = await mkdtemp(join(tmpdir(), 'pulse-chat-behavior-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(dir, 'test.sqlite')}` })
@@ -28,14 +34,25 @@ async function fixture(run) {
         draft TEXT, UNIQUE(userId,conversationId))`,
       await readFile(new URL('../../prisma/patches/20261026_read_intent_state.sql', import.meta.url), 'utf8'),
       `CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, createdAt DATETIME, senderId TEXT,
-        expiresAt DATETIME, deletedAt DATETIME, parentId TEXT, viaAutomation BOOLEAN NOT NULL DEFAULT false)`,
+        expiresAt DATETIME, deletedAt DATETIME, parentId TEXT, topicId TEXT, viaAutomation BOOLEAN NOT NULL DEFAULT false)`,
       `CREATE TABLE UserBlock(id TEXT PRIMARY KEY, blockerId TEXT, blockedId TEXT)`,
     ]) await db.$executeRawUnsafe(sql)
+    await exactMigration(db)
     await run(db)
   } finally { await db.$disconnect(); await rm(dir, { recursive: true, force: true }) }
 }
+async function exactMigration(db) {
+  const sql = await readFile(new URL('../../prisma/patches/20261026_exact_read_observations.sql', import.meta.url), 'utf8')
+  await db.$transaction(async tx => {
+    for (const statement of sql.replace(/^--.*$/gm, '').split(';').map(s => s.trim()).filter(s => s && !['BEGIN IMMEDIATE','COMMIT'].includes(s))) await tx.$executeRawUnsafe(statement)
+  })
+}
+async function seedUnreadMember(db, room = 'room', viewer = 'reader') {
+  await db.$executeRaw`INSERT INTO ConversationParticipant(id,userId,conversationId,joinedAt,lastReadAt)
+    VALUES ('unread-member',${viewer},${room},${new Date(t(0).getTime()+1)},${t(0)})`
+}
 async function seedRead(db) {
-  await db.$executeRaw`INSERT INTO ConversationParticipant(id,userId,conversationId,lastReadAt,manualUnread) VALUES ('p','reader','room',${t(0)},true)`
+  await db.$executeRaw`INSERT INTO ConversationParticipant(id,userId,conversationId,joinedAt,lastReadAt,manualUnread) VALUES ('p','reader','room',${t(0)},${t(0)},true)`
   await db.$executeRaw`INSERT INTO Message(id,conversationId,createdAt) VALUES ('displayed','room',${t(10)}),('not-displayed','room',${t(20)}),('foreign','other',${t(30)})`
 }
 test('reading a displayed row leaves later, undisplayed arrival unread', () => fixture(async db => {
@@ -186,6 +203,7 @@ test('concurrent transactional sends cannot both bypass room slow mode', () => f
 
 
 test('offline unread schedule counts only live incoming unread rows and keeps permanent unread', () => fixture(async db => {
+  await seedUnreadMember(db)
   await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt,deletedAt) VALUES
     ('permanent','room','peer',${t(10)},NULL,NULL),
     ('soon-a','room','peer',${t(11)},${t(30)},NULL),
@@ -229,6 +247,7 @@ test('thread reader excludes foreign-room and expired replies even with a matchi
 
 
 test('unread replies require a live same-room canonical root, including at its expiry boundary', () => fixture(async db => {
+  await seedUnreadMember(db)
   await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt,deletedAt,parentId) VALUES
     ('root','room','reader',${t(0)},${t(30)},NULL,NULL),
     ('reply','room','peer',${t(10)},NULL,NULL,'root'),
@@ -250,6 +269,7 @@ test('unread replies require a live same-room canonical root, including at its e
 }))
 
 test('offline unread buckets use the earlier root/reply deadline without double counting', () => fixture(async db => {
+  await seedUnreadMember(db)
   await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt,parentId) VALUES
     ('root','room','peer',${t(1)},${t(30)},NULL),
     ('early','room','peer',${t(2)},${t(25)},'root'),
@@ -276,6 +296,7 @@ test('offline unread buckets use the earlier root/reply deadline without double 
 
 test('unread aggregation binds room and viewer values rather than interpolating SQL', () => fixture(async db => {
   const room = "room' OR 1=1 --", viewer = "reader' --"
+  await seedUnreadMember(db, room, viewer)
   await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES
     ('mine',${room},${viewer},${t(5)}),('incoming',${room},'peer',${t(6)}),('elsewhere','other','peer',${t(7)})`
   assert.deepEqual(await unreadSnapshot(db, room, viewer, t(0), t(20)), { unreadCount: 1, unreadExpirations: [] })
@@ -352,6 +373,7 @@ test('read transaction contention is retryable, not an access refusal', async ()
 })
 
 test('represented integration sends are incoming for unread without counting human echoes', () => fixture(async db => {
+  await seedUnreadMember(db)
   await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,viaAutomation,expiresAt)
     VALUES ('human','room','reader',${t(10)},false,NULL),
            ('machine','room','reader',${t(11)},true,${t(30)}),
@@ -361,6 +383,7 @@ test('represented integration sends are incoming for unread without counting hum
   assert.deepEqual(await unreadSnapshot(db,'room','reader',t(0),t(20)), {
     unreadCount: 2, unreadExpirations: [{ expiresAt: t(30).toISOString(), count: 1 }],
   })
+  await db.$executeRaw`INSERT INTO MessageReadObservation(participantId,messageId,observedAt) VALUES ('unread-member','machine',${t(11)})`
   assert.deepEqual(await unreadSnapshot(db,'room','reader',t(11),t(20)), { unreadCount: 1, unreadExpirations: [] })
   assert.equal(await db.message.count({ where: unreadMessages('room','reader',t(0),t(30)) }), 1)
   await db.$executeRaw`UPDATE Message SET deletedAt = ${t(20)} WHERE id = 'machine'`
@@ -454,7 +477,7 @@ test('legacy unfenced reads cannot erase manual unread; removed membership canno
   await db.conversationParticipant.create({data:{id:'replacement',userId:'reader',conversationId:'room',manualUnread:true,lastReadAt:t(0)}})
   const fresh = (await captureReadIntent(db,'room','reader')).readIntent
   assert.notEqual(old,fresh)
-  await advanceReadReceipt(db,'room','reader','not-displayed',old)
+  await assert.rejects(advanceReadReceipt(db,'room','reader','not-displayed',old), {status:410})
   assert.equal((await db.conversationParticipant.findUnique({where:{id:'replacement'}})).manualUnread,true)
 }))
 
@@ -469,4 +492,97 @@ test('read-intent migration is additive and rerunnable; membership removal retir
   assert.equal(await db.readIntentState.count(),0)
   await db.conversationParticipant.create({data:{id:'p',userId:'reader',conversationId:'room',manualUnread:true,lastReadAt:t(0)}})
   assert.notEqual((await captureReadIntent(db,'room','reader')).readIntent,first.readIntent)
+}))
+
+
+test('equal timestamps and unseen older gaps require independent observations', () => fixture(async db => {
+  await seedUnreadMember(db)
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES
+    ('gap','room','peer',${t(5)}),('shown','room','peer',${t(10)}),('tie','room','peer',${t(10)})`
+  const intent = (await captureReadIntent(db,'room','reader')).readIntent
+  await advanceReadReceipt(db,'room','reader','shown',intent)
+  assert.equal((await unreadSnapshot(db,'room','reader',t(59),t(20))).unreadCount,2)
+  assert.deepEqual((await db.messageReadObservation.findMany()).map(r => r.messageId),['shown'])
+  await advanceReadReceipt(db,'room','reader','gap',intent)
+  assert.equal((await unreadSnapshot(db,'room','reader',t(59),t(20))).unreadCount,1)
+  await advanceReadReceipt(db,'room','reader','tie',intent)
+  assert.equal((await unreadSnapshot(db,'room','reader',t(0),t(20))).unreadCount,0)
+}))
+
+test('mark-all snapshots identities; a subsequent equal-time arrival remains unread', () => fixture(async db => {
+  await seedUnreadMember(db)
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES ('first','room','peer',${t(10)})`
+  const intent = (await captureReadIntent(db,'room','reader')).readIntent
+  await advanceReadReceipt(db,'room','reader',undefined,intent)
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES ('late','room','peer',${t(10)})`
+  assert.equal((await unreadSnapshot(db,'room','reader',t(10),t(20))).unreadCount,1)
+  assert.deepEqual((await db.messageReadObservation.findMany()).map(r=>r.messageId),['first'])
+}))
+
+test('thread and topic observations do not consume sibling scopes', () => fixture(async db => {
+  await seedUnreadMember(db)
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,parentId,topicId) VALUES
+    ('root-a','room','peer',${t(5)},NULL,'topic-a'),('root-b','room','peer',${t(5)},NULL,'topic-b'),
+    ('a','room','peer',${t(10)},'root-a',NULL),('b','room','peer',${t(10)},'root-b',NULL)`
+  await advanceReadReceipt(db,'room','reader','a', (await captureReadIntent(db,'room','reader')).readIntent)
+  const count = async scope => (await unreadSnapshot(db,'room','reader',t(0),t(20),scope)).unreadCount
+  assert.equal(await count({threadId:'root-a'}),0)
+  assert.equal(await count({threadId:'root-b'}),1)
+  assert.equal(await count({topicId:'topic-a'}),1)
+  assert.equal(await count({topicId:'topic-b'}),2)
+  assert.equal(await count(),3)
+}))
+
+test('offline membership proof cannot clear a manual marker or survive leave/rejoin', () => fixture(async db => {
+  await seedRead(db)
+  await advanceReadReceipt(db,'room','reader','displayed','offline.p')
+  assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,true)
+  assert.equal(await db.messageReadObservation.count(),1)
+  await db.conversationParticipant.delete({where:{id:'p'}})
+  assert.equal(await db.messageReadObservation.count(),0)
+  await db.conversationParticipant.create({data:{id:'rejoin',userId:'reader',conversationId:'room',joinedAt:t(15),lastReadAt:t(15)}})
+  await assert.rejects(advanceReadReceipt(db,'room','reader','not-displayed','offline.p'), {status:410})
+  await db.$executeRaw`UPDATE Message SET senderId='peer' WHERE conversationId='room'`
+  assert.equal((await unreadSnapshot(db,'room','reader',t(0),t(30))).unreadCount,1)
+  assert.equal(await db.messageReadObservation.count(),0)
+}))
+
+test('new members exclude prejoin history from badges without fabricating Seen; join-time ties remain unread', () => fixture(async db => {
+  await seedUnreadMember(db)
+  await db.conversationParticipant.update({where:{id:'unread-member'},data:{joinedAt:t(10)}})
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES
+    ('history','room','peer',${t(5)}),('at-join','room','peer',${t(10)}),('new','room','peer',${t(15)})`
+  assert.equal((await unreadSnapshot(db,'room','reader',t(59),t(20))).unreadCount,2)
+  assert.equal(await db.messageReadObservation.count(),0)
+}))
+
+test('migration preserves old badge exclusions once, never converts later timestamp gaps to Seen', () => fixture(async db => {
+  await db.readLedgerMigration.deleteMany()
+  await seedUnreadMember(db)
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES
+    ('old','room','peer',${t(5)}),('gap','room','peer',${t(10)})`
+  await db.conversationParticipant.update({where:{id:'unread-member'},data:{lastReadAt:t(5)}})
+  await exactMigration(db)
+  const before = await db.messageReadObservation.findMany()
+  assert.equal(before.length,1); assert.equal(before[0].messageId,'old'); assert.equal(before[0].source,'legacy')
+  await db.conversationParticipant.update({where:{id:'unread-member'},data:{lastReadAt:t(20)}})
+  await exactMigration(db)
+  assert.deepEqual(await db.messageReadObservation.findMany(),before)
+  assert.equal((await unreadSnapshot(db,'room','reader',t(20),t(30))).unreadCount,1)
+}))
+
+test('unread anchor is an exact identity, including after reading later equal-time rows', () => fixture(async db => {
+  await seedUnreadMember(db)
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES
+    ('a','room','peer',${t(10)}),('b','room','peer',${t(10)})`
+  await advanceReadReceipt(db,'room','reader','b',(await captureReadIntent(db,'room','reader')).readIntent)
+  assert.equal((await exactUnreadSnapshot(db,'room','reader',t(59),t(20))).firstUnreadMessageId,'a')
+}))
+
+test('unfenced legacy entrypoints cannot fabricate exact Seen or consume unseen gaps', () => fixture(async db => {
+  await seedRead(db)
+  await advanceReadReceipt(db,'room','reader','displayed')
+  await advanceReadReceipt(db,'room','reader')
+  assert.equal(await db.messageReadObservation.count(),0)
+  assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,true)
 }))

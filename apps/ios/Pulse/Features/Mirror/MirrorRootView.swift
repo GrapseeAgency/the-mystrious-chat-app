@@ -1483,6 +1483,7 @@ struct MirrorRoomView: View {
     @ObservedObject var session: PulseSession
     let onBack: () -> Void
     @State private var isReadingTail = false
+    @State private var visibleReadIDs: Set<String> = []
     @State private var didInitialScroll = false
     @State private var readRevision = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -1520,6 +1521,7 @@ struct MirrorRoomView: View {
     @State private var anonNext = false
     @State private var docPickerOpen = false
     @State private var pendingAttachment: (dataUrl: String, envelope: PulseOutboxForward)?
+    @State private var photoPickerOpen = false
     @State private var photoItem: PhotosPickerItem?
     @State private var recording = false
     @State private var voiceRecorder: VoiceRecorder?
@@ -1573,6 +1575,7 @@ struct MirrorRoomView: View {
             if roomOperations.pending.contains("game-create") {
                 ProgressView("Confirming challenge…").font(.caption)
             }
+            GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -1601,14 +1604,27 @@ struct MirrorRoomView: View {
                                 )
                                 .padding(.top, head ? 10 : 2)
                                 .id(message.id)
+                                .background(GeometryReader { geometry in
+                                    Color.clear.preference(key: PulseRoomViewportKey.self,
+                                        value: PulseRoomViewport(messages: [message.id: geometry.frame(in: .named("mirror-read-viewport"))]))
+                                })
                             }
                         }
                         Color.clear.frame(height: 1).id("read-tail")
-                            .onAppear { isReadingTail = true; updateReadBoundary() }
-                            .onDisappear { isReadingTail = false; updateReadBoundary() }
+                            .background(GeometryReader { geometry in
+                                Color.clear.preference(key: PulseRoomViewportKey.self,
+                                    value: PulseRoomViewport(tail: geometry.frame(in: .named("mirror-read-viewport"))))
+                            })
                     }
                     .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 8)
                 }
+                .coordinateSpace(name: "mirror-read-viewport")
+                .onPreferenceChange(PulseRoomViewportKey.self) { layout in
+                    visibleReadIDs = PulseReadViewport.visibleIDs(layout.messages, height: viewport.size.height)
+                    isReadingTail = PulseReadViewport.tailVisible(layout.tail, height: viewport.size.height)
+                    updateReadBoundary()
+                }
+                .onDisappear { visibleReadIDs = []; updateReadBoundary() }
                 .onChange(of: messages.last?.id) { _ in
                     if !didInitialScroll || isReadingTail || messages.last?.senderId == session.viewer?.id {
                         if !messages.isEmpty { proxy.scrollTo("read-tail", anchor: .bottom); didInitialScroll = true }
@@ -1616,7 +1632,7 @@ struct MirrorRoomView: View {
                     updateReadBoundary()
                 }
                 .onChange(of: trayOpen) { _ in updateReadBoundary() }
-                .onChange(of: activeSheet != nil || menuOpen || trayEffectsOpen) { _ in updateReadBoundary() }
+                .onChange(of: activeSheet != nil || menuOpen || trayEffectsOpen || docPickerOpen || photoPickerOpen) { _ in updateReadBoundary() }
                 // R102 tap-away scrim (web 5113-5131): a transparent catcher
                 // over the message list closes the tray; the tray + composer
                 // themselves stay interactive.
@@ -1627,6 +1643,8 @@ struct MirrorRoomView: View {
                             .onTapGesture { withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { trayOpen = false } }
                     }
                 }
+            }
+
             }
 
             // R102 - armed pills (web 4974): the armed effect and the armed
@@ -1694,7 +1712,7 @@ struct MirrorRoomView: View {
                             .lineLimit(1...5)
                             .padding(.vertical, 6)
                             .focused($composerFocused)
-                        PhotosPicker(selection: $photoItem, matching: .images) {
+                        Button { photoPickerOpen = true } label: {
                             Image(systemName: "camera").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
                                 .frame(width: 36, height: 36)
                         }
@@ -1774,6 +1792,7 @@ struct MirrorRoomView: View {
         }
         // R102 - real tray surfaces: documents via the system picker, photos
         // via PhotosPicker, and the 1s recording ticker.
+        .photosPicker(isPresented: $photoPickerOpen, selection: $photoItem, matching: .images)
         .fileImporter(
             isPresented: $docPickerOpen,
             allowedContentTypes: PulseMediaSupport.documentTypes,
@@ -1813,7 +1832,12 @@ struct MirrorRoomView: View {
                 if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
                 else { refreshRevision &+= 1 }
                 readRevision &+= 1
-            case .messageRead(let id, let reader, _):
+            case .messageRead(let id, let reader, _, let ids, _, _):
+                if id == row.id {
+                    for messageId in ids {
+                        if let message = try? session.store?.message(id: messageId) { acceptCarrier(message) }
+                    }
+                }
                 if id == row.id && reader != session.viewer?.id { refreshRevision &+= 1 }
             case .messageDeleted(let id, let raw):
                 guard id == row.id else { return }
@@ -1887,8 +1911,11 @@ struct MirrorRoomView: View {
     }
 
     private func updateReadBoundary() {
-        session.setVisibleReadBoundary(conversationId: row.id,
-            messageId: isReadingTail && !trayOpen && activeSheet == nil && !menuOpen && !trayEffectsOpen ? messages.last(where: { !$0.id.hasPrefix("local_") })?.id : nil)
+        let ids = !trayOpen && activeSheet == nil && !menuOpen && !trayEffectsOpen && !docPickerOpen && !photoPickerOpen ? messages.filter {
+            visibleReadIDs.contains($0.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
+                PulseRemediationLogic.isAlive($0.expiresAt)
+        }.map(\.id) : []
+        session.setVisibleReadBoundaries(conversationId: row.id, messageIds: ids)
     }
 
     private func acceptCarrier(_ message: WireChatMessage) {
@@ -2376,8 +2403,8 @@ struct MirrorBubble: View {
     private var receiptStatus: String {
         if message.id.hasPrefix("local_") { return "Queued" }
         let split = PulseRoomParityLogic.receiptSplit(
-            members: receiptMembers.map { .init(id: $0.id, lastReadAtIso: $0.lastReadAt) },
-            viewerId: viewerId, createdAtIso: message.createdAt)
+            members: receiptMembers.map { .init(id: $0.id, lastReadAtIso: $0.lastReadAt, readMembershipId: $0.readMembershipId) },
+            viewerId: viewerId, createdAtIso: message.createdAt, readByMembershipIds: message.readByMembershipIds ?? [])
         guard !split.seenBy.isEmpty else { return "Sent" }
         return isGroup && !split.deliveredTo.isEmpty ? "Read by \(split.seenBy.count)" : "Seen"
     }

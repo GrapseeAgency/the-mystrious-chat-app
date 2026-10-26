@@ -19,7 +19,8 @@ public final class PulseSocketClient {
         case messageDeleted(conversationId: String, raw: [String: Any])
         /// N3-b - payload is { type, message (fresh reactions), ... }.
         case messageReact(conversationId: String, raw: [String: Any])
-        case messageRead(conversationId: String, userId: String, lastReadAt: String?)
+        case messageRead(conversationId: String, userId: String, lastReadAt: String?,
+                         messageIds: [String] = [], readerMembershipId: String? = nil, all: Bool = false)
         /// Wave 0 - the rest of the message:* relay family (edited / pinned /
         /// viewed / poll:voted / link:preview / translation:added). The payload
         /// is the same SocketMessageEvent envelope; features decode it later.
@@ -175,6 +176,9 @@ public final class PulseSocketClient {
                 conversationId: obj["conversationId"] as? String ?? "",
                 userId: obj["userId"] as? String ?? "",
                 lastReadAt: obj["lastReadAt"] as? String,
+                messageIds: obj["messageIds"] as? [String] ?? [],
+                readerMembershipId: obj["readerMembershipId"] as? String,
+                all: obj["all"] as? Bool ?? false,
             ))
         }
         socket.on("typing") { [weak self] data, _ in

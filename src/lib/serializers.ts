@@ -198,6 +198,9 @@ export function groupReactions(reactions: ReactionRow[]): MessageReactionGroup[]
 
 /** Deep include reused by every message fetch (history, last-message, single). */
 export const MESSAGE_FULL_INCLUDE = {
+  readObservations: { where: { source: { not: 'legacy' } }, select: {
+    participant: { select: { id: true, userId: true, user: { select: { preferences: true } } } },
+  } },
   sender: true,
   reactions: { select: { emoji: true, userId: true } },
   replyTo: { select: {
@@ -252,6 +255,9 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
   }
 
   return redactDeletedMessage({
+    readByMembershipIds: (message.readObservations ?? []).filter(r =>
+      r.participant.userId === viewerId || privacyPreferenceEnabled(r.participant.user.preferences, 'readReceipts')
+    ).map(r => r.participant.id),
     id: message.id,
     conversationId: message.conversationId,
     senderId: message.senderId,
@@ -340,8 +346,8 @@ export function mapAutomation(automation: {
 }
 
 /** Participant row (+user) → AppUser with read watermark + group role. */
-export function mapMember(participant: { lastReadAt: Date; user: UserRow; role: string }): AppUser & { lastReadAt: string; role: 'admin' | 'member' } {
-  return { ...mapUser(participant.user), lastReadAt: participant.lastReadAt.toISOString(), role: mapRole(participant.role) }
+export function mapMember(participant: { id?: string; lastReadAt: Date; user: UserRow; role: string }): AppUser & { lastReadAt: string; role: 'admin' | 'member'; readMembershipId?: string } {
+  return { ...mapUser(participant.user), readMembershipId: participant.id, lastReadAt: participant.lastReadAt.toISOString(), role: mapRole(participant.role) }
 }
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
@@ -352,6 +358,7 @@ const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompar
 const EPOCH_ISO = '1970-01-01T00:00:00.000Z'
 
 interface ParticipantRowForMap {
+  id?: string
   lastReadAt: Date
   role: string
   user: UserRow

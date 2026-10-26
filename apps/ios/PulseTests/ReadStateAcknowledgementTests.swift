@@ -7,7 +7,7 @@ private final class ReadStateProtocol: URLProtocol {
     override func startLoading() {
         let mode = request.value(forHTTPHeaderField: "X-Read-Test") ?? "valid"
         let visible = request.value(forHTTPHeaderField: "X-Read-Intent") == "visible"
-        var body: [String: Any] = ["ok": mode != "false", "readReceiptVersion": mode == "version" ? 0 : 2,
+        var body: [String: Any] = ["ok": mode != "false", "readReceiptVersion": mode == "version" ? 0 : 3,
             "readIntent": mode == "fence" ? "other-fence" : "fence", "conversationId": mode == "room" ? "other" : "room", "userId": mode == "owner" ? "other" : "me",
             "mode": mode == "intent" ? "wrong" : visible ? "visible" : "all",
             "lastReadAt": mode == "date" ? "invalid" : mode == "behind" ? "2026-10-22T00:00:00Z" : "2026-10-22T00:00:10Z"]
@@ -16,7 +16,7 @@ private final class ReadStateProtocol: URLProtocol {
         // A legacy-path fallback cannot return a valid versioned receipt here.
         if request.url?.path != "/api/conversations/room/read-state" { body = ["ok": true] }
         if request.url?.path.hasSuffix("/read-intent") == true {
-            body = ["readIntentVersion": 1, "conversationId": "room", "userId": "me", "readIntent": "fence"]
+            body = ["readIntentVersion": 2, "conversationId": "room", "userId": "me", "readIntent": "fence"]
             switch mode {
             case "prepare-missing": body = [:]
             case "prepare-owner": body["userId"] = "other"
@@ -86,7 +86,7 @@ private final class ManualUnreadProtocol: URLProtocol {
             XCTAssertEqual(request.url?.path, "/api/conversations/room/mark-unread")
         }
         if request.url?.path.hasSuffix("/read-intent") == true {
-            body = ["readIntentVersion": 1, "conversationId": "room", "userId": "me", "readIntent": "fence"]
+            body = ["readIntentVersion": 2, "conversationId": "room", "userId": "me", "readIntent": "fence"]
         }
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
             httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)

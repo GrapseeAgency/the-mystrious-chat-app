@@ -303,7 +303,8 @@ fun ChatRoomScreen(
     // R2-A item 5 - the composer draft staged for the /schedule armer.
     var scheduleDraft by remember(conversationId, viewerId) { mutableStateOf<String?>(null) }
     // R2-A item 4 - the frozen pre-open read watermark (unread divider).
-    var unreadAnchorMs by remember(conversationId) { mutableStateOf<Long?>(null) }
+    var firstUnreadMessageId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var unreadAnchorCaptured by remember(conversationId) { mutableStateOf(false) }
 
     // Wave 6 - broadcast channel lock (role from the server detail).
     val isChannel = conversation?.kind == Conversation.Kind.CHANNEL
@@ -324,8 +325,8 @@ fun ChatRoomScreen(
     // reverseLayout list - index 0 is the newest row, the anchor for tails.
     // R2-A item 4 - an "unread" divider row is inserted at the first OTHER
     // person's message after the frozen watermark (web chat-room.tsx:1398-1424).
-    val rows = remember(messages, unreadAnchorMs, viewerId) {
-        buildTimelineRows(messages, unreadAnchorMs, viewerId)
+    val rows = remember(messages, firstUnreadMessageId, viewerId) {
+        buildTimelineRows(messages, viewerId = viewerId, firstUnreadMessageId = firstUnreadMessageId)
     }
     val rowsReversed = remember(rows) { rows.asReversed() }
     // R7 item 1 - cluster rhythm (web chat-room.tsx:7275-7278: cozy head
@@ -373,13 +374,11 @@ fun ChatRoomScreen(
     // time): only when unreadCount > 0, else no divider. markRead on entry
     // zeroes the summary shortly after, so this runs exactly once.
     LaunchedEffect(conversation) {
-        if (unreadAnchorMs != null) return@LaunchedEffect
+        if (unreadAnchorCaptured) return@LaunchedEffect
         val conv = conversation ?: return@LaunchedEffect
-        unreadAnchorMs = if (conv.unreadCount > 0) {
-            conv.members.firstOrNull { it.id == viewerId }?.lastReadAt
-        } else {
-            null
-        }
+        unreadAnchorCaptured = true
+        firstUnreadMessageId = conv.firstUnreadMessageId.takeIf { conv.unreadCount > 0 }
+
     }
 
     // The pill counts real incoming IDs, not day separators/history rows.
@@ -438,12 +437,12 @@ fun ChatRoomScreen(
                     val visible = layout.visibleItemsInfo.filter {
                         app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
                     }.map { it.key }.toSet()
-                    if (privacyHidden || readObscured || (pipFocusedId != null && pipFocusedId != conversation?.id)) null
-                    else readRows.value.filterIsInstance<TimelineRow.Msg>().firstOrNull {
+                    if (privacyHidden || readObscured || (pipFocusedId != null && pipFocusedId != conversation?.id)) emptySet<String>()
+                    else readRows.value.filterIsInstance<TimelineRow.Msg>().filter {
                         it.key in visible && !it.message.isDeleted && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
-                    }?.message?.id
-                }.collect { viewModel.setReadingAnchor(it) }
-            } finally { viewModel.setReadingAnchor(null) }
+                    }.map { it.message.id }.toSet()
+                }.collect { viewModel.setReadingAnchors(it) }
+            } finally { viewModel.setReadingAnchors(emptySet()) }
         }
     }
 
@@ -2346,10 +2345,11 @@ internal fun buildTimelineRows(
     messages: List<Message>,
     unreadAnchorMs: Long? = null,
     viewerId: String? = null,
+    firstUnreadMessageId: String? = null,
 ): List<TimelineRow> {
     val rows = mutableListOf<TimelineRow>()
     var lastIso: String? = null
-    var dividerPlaced = unreadAnchorMs == null
+    var dividerPlaced = unreadAnchorMs == null && firstUnreadMessageId == null
     // R7 item 1 - the pure clustering kernel (web chat-room.tsx:1376-1393):
     // head = sender-label row, tail = closes the run. Thread replies are
     // already excluded upstream (ChatRoomViewModel filters threadRootId !=
@@ -2375,8 +2375,8 @@ internal fun buildTimelineRows(
         if (!dividerPlaced &&
             !message.isOutgoingFor(viewerId) &&
             !message.isDeleted &&
-            unreadAnchorMs != null &&
-            (PulseTime.parse(message.createdAt)?.toInstant()?.toEpochMilli() ?: 0L) > unreadAnchorMs
+            (if (firstUnreadMessageId != null) message.id == firstUnreadMessageId else
+                unreadAnchorMs != null && (PulseTime.parse(message.createdAt)?.toInstant()?.toEpochMilli() ?: 0L) > unreadAnchorMs)
         ) {
             rows += TimelineRow.Unread
             dividerPlaced = true
@@ -3868,7 +3868,7 @@ private fun MessageRow(
                 val others = conversation?.members?.filter { it.id != viewerId }.orEmpty()
                 // Live signals trigger an owned repository refresh. Never let an
                 // unscoped old timestamp bypass a newly hidden/removed member.
-                val confirmed = app.pulse.domain.sync.confirmedReaders(others, viewerId, createdAtMs)
+                val confirmed = app.pulse.domain.sync.confirmedReaders(others, viewerId, createdAtMs, message.readByMembershipIds)
                 val seen = confirmed.isNotEmpty()
                 val readCount = confirmed.size
                 val readLabel = if (conversation?.kind == Conversation.Kind.GROUP || conversation?.kind == Conversation.Kind.CHANNEL) {
@@ -4934,7 +4934,7 @@ private fun TopicBar(
                 topics.forEach { topic ->
                     TopicChip(
                         emoji = topicIconId(topic.emoji),
-                        label = topic.name,
+                        label = topic.unreadCount?.takeIf { it > 0 }?.let { "${topic.name} · $it unread" } ?: topic.name,
                         count = topic.messageCount,
                         active = activeTopicId == topic.id,
                         onClick = {

@@ -4,6 +4,7 @@
 // POST = create a channel (creator becomes the admin) + first post.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { unreadSnapshot } from '@/lib/message-visibility'
 import { createConversationOnce, ConversationCreationError } from '@/lib/conversation-creation'
 import { notifySocket, safeJson, strField, CONVERSATION_FULL_INCLUDE, buildConversationSummary } from '@/lib/serializers'
 import type { ChannelSummary } from '@/lib/types'
@@ -43,6 +44,8 @@ export async function GET(req: Request) {
       { status: 400 },
     )
   }
+  const denied = await requireActionOwner(req, userId, 'channel read state')
+  if (denied) return denied
   const mineOnly = url.searchParams.get('mine') === '1'
 
   const convs = await db.conversation.findMany({
@@ -62,15 +65,11 @@ export async function GET(req: Request) {
     },
   })
 
-  const channels: ChannelSummary[] = convs.map((conv) => {
+  const channels: ChannelSummary[] = await Promise.all(convs.map(async (conv) => {
     const mine = conv.participants.find((p) => p.userId === userId)
     const last = conv.messages[0] ?? null
-    const unread =
-      mine !== undefined &&
-      last !== null &&
-      !last.deletedAt &&
-      last.senderId !== userId &&
-      last.createdAt > mine.lastReadAt
+    const unread = mine !== undefined &&
+      (await unreadSnapshot(db, conv.id, userId, mine.lastReadAt, new Date())).unreadCount > 0
     return {
       ...channelIdentity(conv.id),
       name: conv.name ?? 'Channel',
@@ -82,7 +81,7 @@ export async function GET(req: Request) {
       preview: last && !last.deletedAt ? snippet(last.content) : null,
       photo: conv.photo ?? null,
     }
-  })
+  }))
 
   channels.sort((a, b) => {
     if (b.memberCount !== a.memberCount) return b.memberCount - a.memberCount

@@ -137,6 +137,46 @@ public final class PulseSession: ObservableObject {
     private var readSurfaces = PulseReadSurfaces()
     private var readFailureCount = 0
     private var readReceiptTask: Task<Void, Never>?
+    private var readReplayTask: Task<Void, Never>?
+    private var readReplayID = UUID()
+
+    private func replayReadJournal() {
+        guard readReplayTask == nil, let store, let owner = viewer?.id, ready else { return }
+        let client = api, epoch = generation, job = UUID()
+        readReplayID = job
+        readReplayTask = Task { [weak self] in
+            defer { if self?.readReplayID == job { self?.readReplayTask = nil } }
+            var failures = 0
+            while let self, self.generation == epoch, !Task.isCancelled {
+                guard let reads = try? store.pendingReads(owner: owner), !reads.isEmpty else { return }
+                var retry: TimeInterval?
+                for read in reads {
+                    guard self.generation == epoch, !Task.isCancelled else { return }
+                    do {
+                        try await client.markRead(conversationId: read.room, messageId: read.message,
+                            minimumReadAt: read.minimumReadAt, readIntent: read.intent)
+                        try store.acknowledgeRead(read)
+                        guard self.generation == epoch else { return }
+                        self.noteInboxChanged()
+                        failures = 0
+                    } catch {
+                        if [400, 403, 404, 410, 422].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                            try? store.acknowledgeRead(read)
+                        } else {
+                            failures += 1
+                            guard let wait = PulseVisibleReadRetry.delay(after: error, failures: failures) else { return }
+                            retry = wait
+                            break
+                        }
+                    }
+                }
+                if let retry {
+                    do { try await Task.sleep(nanoseconds: UInt64(retry * 1_000_000_000)) } catch { return }
+                }
+            }
+        }
+    }
+
     /// Wave 8 - weak handoff to the RootView-owned PulsePrefs (incoming
     /// attention gating + the settings PATCH funnel + quiet-gate refresh).
     public private(set) weak var prefs: PulsePrefs?
@@ -459,7 +499,12 @@ public final class PulseSession: ObservableObject {
 
     public func setVisibleReadBoundary(conversationId: String, messageId: String?) {
         guard activeRoomId == conversationId else { return }
-        readSurfaces.setPrimary(roomId: conversationId, messageId: messageId)
+        setVisibleReadBoundaries(conversationId: conversationId, messageIds: messageId.map { [$0] } ?? [])
+    }
+
+    public func setVisibleReadBoundaries(conversationId: String, messageIds: [String]) {
+        guard activeRoomId == conversationId else { return }
+        readSurfaces.setPrimary(roomId: conversationId, messageIds: messageIds)
         applyVisibleReadBoundary(conversationId: conversationId)
     }
 
@@ -472,7 +517,12 @@ public final class PulseSession: ObservableObject {
 
     func setVisibleReadBoundary(owner: PulseReadSurfaces.Owner, messageId: String?) {
         guard activeRoomId == owner.roomId else { return }
-        readSurfaces.setOverlay(owner, messageId: messageId)
+        setVisibleReadBoundaries(owner: owner, messageIds: messageId.map { [$0] } ?? [])
+    }
+
+    func setVisibleReadBoundaries(owner: PulseReadSurfaces.Owner, messageIds: [String]) {
+        guard activeRoomId == owner.roomId else { return }
+        readSurfaces.setOverlay(owner, messageIds: messageIds)
         applyVisibleReadBoundary(conversationId: owner.roomId)
     }
 
@@ -482,12 +532,12 @@ public final class PulseSession: ObservableObject {
     }
 
     private func applyVisibleReadBoundary(conversationId: String) {
-        let messageId = readSurfaces.boundary?.messageId
-        guard readGate.setBoundary(roomId: conversationId, messageId: messageId,
+        let messageIds = readSurfaces.boundaries.map(\.messageId)
+        guard readGate.setBoundaries(roomId: conversationId, messageIds: messageIds,
             now: ProcessInfo.processInfo.systemUptime) else { return }
         readFailureCount = 0
         readReceiptTask?.cancel()
-        if messageId != nil && isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+        if !messageIds.isEmpty && isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
     }
 
     private func scheduleVisibleRead(after delay: TimeInterval) {
@@ -501,9 +551,20 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    private var readAttentionBlocked: Bool {
+        (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
+            groupCallEngine?.ring != nil || voiceRooms?.surface != nil || PulseAppLock.shared.needsLock
+    }
+
+    private func restartReadAttention() {
+        readReceiptTask?.cancel()
+        readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
+        if isForeground && !readAttentionBlocked { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+    }
+
     public func markReadIfVisible(conversationId: String?) async {
         guard let conversationId, ready, isForeground,
-              activeRoomId == conversationId, !PulseAppLock.shared.needsLock,
+              activeRoomId == conversationId, !readAttentionBlocked,
               let request = readGate.begin(roomId: conversationId, now: ProcessInfo.processInfo.systemUptime) else { return }
         if let owner = readSurfaces.owner, let rootId = owner.rootId {
             // The expiry timer can tick AFTER the 600ms dwell. Recheck the
@@ -528,24 +589,39 @@ public final class PulseSession: ObservableObject {
         let epoch = generation
         do {
             guard let anchor = try store?.message(id: request.boundary.messageId), anchor.conversationId == conversationId,
-                  anchor.deletedAt == nil, !anchor.id.hasPrefix("local_") else {
+                  anchor.deletedAt == nil, PulseRemediationLogic.isAlive(anchor.expiresAt), !anchor.id.hasPrefix("local_") else {
                 throw PulseAPIClient.Failure(kind: .validation, message: "The displayed read boundary is no longer available.")
             }
             try Task.checkCancellation()
             let intent: String
             if let retained = readGate.intent(for: request) { intent = retained }
             else {
-                intent = try await client.captureReadIntent(conversationId: conversationId)
+                do {
+                    if !connected, let cached = try store?.cachedConversation(id: conversationId),
+                       let membership = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id })?.readMembershipId {
+                        intent = "offline.\(membership)"
+                    } else { intent = try await client.captureReadIntent(conversationId: conversationId) }
+                }
+                catch {
+                    guard PulseVisibleReadRetry.delay(after: error, failures: 1) != nil,
+                          let cached = try store?.cachedConversation(id: conversationId),
+                          let membership = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id })?.readMembershipId else { throw error }
+                    intent = "offline.\(membership)"
+                }
                 guard generation == epoch, readGate.retainIntent(intent, for: request) else { return }
             }
             try Task.checkCancellation()
-            try await client.markRead(conversationId: conversationId, messageId: request.boundary.messageId,
-                minimumReadAt: anchor.createdAt, readIntent: intent)
+            guard let store, let owner = viewer?.id else { return }
+            _ = try store.enqueueRead(PulseQueuedRead(owner: owner, room: conversationId,
+                message: request.boundary.messageId, minimumReadAt: anchor.createdAt, intent: intent))
+            replayReadJournal()
             guard generation == epoch else { return }
-            if readGate.finish(request, succeeded: true) { readFailureCount = 0 }
-            // An older visible boundary can still have been accepted by the server;
-            // refresh the inbox, but never let its completion acknowledge the new screen.
-            noteInboxChanged()
+            if readGate.finish(request, succeeded: true) {
+                readFailureCount = 0
+                if readGate.boundary != nil { scheduleVisibleRead(after: 0) }
+            }
+            // The observation is durable, not necessarily delivered. The replay
+            // owner refreshes badges only after the server's exact acknowledgement.
         } catch {
             guard generation == epoch, readGate.finish(request, succeeded: false),
                   !Task.isCancelled, isForeground, activeRoomId == conversationId else { return }
@@ -680,6 +756,9 @@ public final class PulseSession: ObservableObject {
         voiceRooms?.leaveSpace()
         PulsePushNotifications.deactivate()
         generation = UUID()
+        readReplayID = UUID()
+        readReplayTask?.cancel()
+        readReplayTask = nil
         settingsWrites.cancelAll()
         startupTask?.cancel()
         startupTask = nil
@@ -888,6 +967,9 @@ public final class PulseSession: ObservableObject {
             toasts: toasts,
         )
         groupCallEngine = groupEngine
+        engine.$state.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.restartReadAttention() }.store(in: &cancellables)
+        groupEngine.$uiState.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.restartReadAttention() }.store(in: &cancellables)
+        groupEngine.$ring.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.restartReadAttention() }.store(in: &cancellables)
 
         // 3-d - CallKit OS-call integration: the coordinator observes BOTH
         // engines and reports every call to the system CXProvider (incoming
@@ -912,6 +994,8 @@ public final class PulseSession: ObservableObject {
     /// audio engine live here; the socket stays session-owned.
     private func startVoiceRooms(viewer: PulseViewer) {
         voiceRooms = VoiceRoomSessionModel(session: self)
+        voiceRooms?.$surface.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.restartReadAttention() }.store(in: &cancellables)
+        PulseAppLock.shared.$needsLock.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.restartReadAttention() }.store(in: &cancellables)
     }
 
     /// The rooms owner's emit funnel - the socket is session-owned
@@ -969,6 +1053,7 @@ public final class PulseSession: ObservableObject {
 
     /// Flush trigger for surfaces: app foreground, socket reconnect, enqueue.
     public func flushOutbox() {
+        replayReadJournal()
         guard let outbox else { return }
         Task { await outbox.flush() }
     }
@@ -1036,6 +1121,7 @@ public final class PulseSession: ObservableObject {
     }
 
     private func flushOutboxNow() async {
+        replayReadJournal()
         guard let outbox else { return }
         await outbox.flush()
     }
@@ -1189,7 +1275,15 @@ public final class PulseSession: ObservableObject {
             // translation:added - live surfaces re-fetch on this tick.
             realtimeRefreshTick += 1
             cacheMessage(from: raw)
-        case .messageRead:
+        case .messageRead(let room, _, _, let ids, let membership, _):
+            if let membership, !membership.isEmpty {
+                for id in Set(ids) {
+                    guard var message = try? store?.message(id: id), message.conversationId == room else { continue }
+                    message.readByMembershipIds = Array(Set((message.readByMembershipIds ?? []) + [membership]))
+                    noteMessageRevision(id)
+                    try? store?.upsert(messages: [message])
+                }
+            }
             // Includes the viewer's other devices, even with receipt privacy on.
             noteInboxChanged()
             realtimeRefreshTick += 1

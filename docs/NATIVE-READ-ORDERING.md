@@ -1,5 +1,49 @@
 # Seen / unread / read-ordering workstream
 
+## Current candidate — exact observations (2026-10-26)
+
+This section supersedes the timestamp-only limitations in the historical notes below.
+It records implemented runtime paths, **not a physical-device acceptance certificate**.
+Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment is authorized.
+
+| Selected item | Implemented runtime path | Acceptance still required |
+|---|---|---|
+| 1. Delayed read versus manual unread | Membership/revision fence; one original fence per mounted read session; retries and durable replay never prepare fresh authority. | Exact-candidate native execution and paired-device races. |
+| 2. Equal timestamps | Membership/message observation primary key; Seen uses exact membership IDs, not timestamp comparison. Explicit mark-all snapshots real IDs, including timestamp ties. | Native storage/rendering execution. |
+| 3. Unseen gaps | All dwell-qualified viewport identities are reported independently. Unread aggregates exclude only exact observations; the divider uses the exact first-unread ID from the same aggregate snapshot. | Scroll/pagination acceptance on both apps. |
+| 4. Thread/topic independence | Exact observations cannot sweep sibling scopes. Authenticated scoped read-state GET, thread unread headers in both Android surfaces and Swift, durable per-topic unread counts/labels. | Rendered scope transitions and live/offline refresh. |
+| 5. Durable offline replay | Account-owned SQLite journals survive navigation/process restart. First intent wins for a queued identity. Offline membership-only authority cannot clear a manual marker; removed/rejoined memberships fail closed. | Process-death/reconnect and credential-switch device runs. |
+| 6. Cross-device order | Serializable explicit intent conflicts; exact monotonic progress; compare-and-delete journal ACKs; socket/cache mutation fences and topic request ownership. | Paired-device acceptance, including response loss. |
+| 7. New-member history | Prejoin messages do not inflate a new member's badges and do not become Seen. Equal-to-join-time messages remain unread unless explicitly observed. Membership removal cascades proof. | Product/device acceptance of documented history policy. |
+| 8. Obscuring surfaces | Existing lifecycle/lock/modal gates plus missing call/ring/permission/share/invite gates on Android; central call/live-room/lock gates on Swift; measured mirror viewport replaces lazy onAppear; explicit photo/document picker visibility. | OS interruptions, sheet nesting, accessibility, PiP, and rendered geometry. |
+| 9. Convergence | One exact unread aggregate backs inbox counts, expiration schedules and first-unread identity; channel badges use it too. Read events update exact cached Seen and invalidate authoritative inbox/topic state, including the reader's other devices with privacy enabled. | Room/inbox/launcher badges across two devices. |
+
+### Wire and storage contracts
+
+- Capture response is **readIntentVersion 2**, visible/all acceptance is **readReceiptVersion 3**; manual marker acceptance remains **unreadReceiptVersion 2**. Both native transports reject timestamp-only read acknowledgements.
+- `readMembershipId` identifies the current participant row. `readByMembershipIds` on messages contains exact proof for currently eligible readers (plus a viewer's own proof). Rejoining with the same user ID cannot revive proof belonging to the retired membership.
+- Read observation timestamps are informational, never cumulative cursors. The retained `lastReadAt` compatibility field is NOT Seen/count evidence in the new native paths.
+- Legacy unfenced read entrypoints cannot create exact observations or clear a manual dot. They cannot poison the new Seen model.
+- Offline `offline.<membership>` receipts can record visible identities only; they cannot win an explicit marker conflict or mark-all. Replays are bound to the original account, origin, membership, message and intent.
+- SQLite journals are protected from disposable cache cleanup. Successful/permanently refused observations are removed using their original payload/intent, so a delayed ACK cannot remove a newer journal entry.
+- Android Room **16 → 17** adds the first-unread identity and topic unread count; full member identity is retained in `membersJson`, exact message proof in reserved locally-owned metadata (never trusted from caller payload). Swift GRDB **v13 → v14** adds topic unread count; message/conversation wireJson already persists additive fields.
+
+### Deployment order (not executed)
+
+1. Back up the database. Apply `20261026_read_intent_state.sql` if not already applied.
+2. Apply `20261026_exact_read_observations.sql` as one transaction on one SQLite connection. Its one-time migration marker prevents subsequent reruns from turning new gaps into read progress. Legacy timestamp exclusions preserve badge state but are **not** advertised as exact Seen.
+3. Deploy the generated Prisma client and matching backend, then the matching native builds. Older clients must not silently fall back to cumulative read semantics. Web read callers require their own coordinated migration; this is the native workstream.
+4. Execute the native and paired-device acceptance matrix above. Migration/source checks do not replace that step.
+
+### Executed checks before publication
+
+- Full backend suite: **427 passing** before the additional scoped-route tests; scoped-route plus chat suite: **43 passing** afterwards. Final aggregate rerun is recorded in the PR follow-up.
+- Strict TypeScript check of the affected backend graph passed.
+- Changed native production/test files syntax-parsed. Native compilation, simulator/emulator results and paired-device acceptance are tracked separately; no previous green build is borrowed as evidence.
+
+## Historical implementation notes — superseded where they describe remaining timestamp-only behavior
+
+
 Scope: the nine items selected by the user, Android + iOS + backend. This is not a completion certificate.
 
 ## First repair: explicit manual intent versus delayed viewport receipts (2026-10-26)

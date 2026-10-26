@@ -294,7 +294,7 @@ struct TopicBar: View {
                             HStack(spacing: 5) {
                                 Image(systemName: PulseTopicIconId.normalize(topic.emoji).symbolName)
                                     .font(.caption.weight(.semibold))
-                                Text(topic.name)
+                                Text(topic.unreadCount.map { $0 > 0 ? "\(topic.name) · \($0) unread" : topic.name } ?? topic.name)
                                     .font(.caption.weight(.semibold))
                                     .lineLimit(1)
                                 if let count = topic.messageCount, count > 0 {

@@ -18,6 +18,8 @@
 //          a fresh row is 201 TopicSummary.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { unreadSnapshot } from '@/lib/message-visibility'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { safeJson, strField } from '@/lib/serializers'
 import { topicIconId } from '@/lib/icon-ids'
 
@@ -36,13 +38,14 @@ function serializeTopic(row: {
   name: string
   emoji: string
   lastMessageAt: Date
-}, messageCount: number) {
+}, messageCount: number, unreadCount: number | null = null) {
   return {
     id: row.id,
     name: row.name,
     emoji: row.emoji,
     lastMessageAt: row.lastMessageAt.toISOString(),
     messageCount,
+    unreadCount,
   }
 }
 
@@ -54,6 +57,8 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
+  const denied = await requireActionOwner(req, userId, 'topic read state')
+  if (denied) return denied
   const [conv, participant] = await Promise.all([
     db.conversation.findUnique({ where: { id }, select: { id: true } }),
     db.conversationParticipant.findUnique({
@@ -80,6 +85,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   const withCounts = await Promise.all(
     topics.map(async (row) => ({
       row,
+      unreadCount: (await unreadSnapshot(db, id, userId, new Date(0), new Date(), { topicId: row.id })).unreadCount,
       messageCount: await db.message.count({
         where: { conversationId: id, topicId: row.id, deletedAt: null },
       }),
@@ -91,7 +97,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   )
 
   return NextResponse.json(
-    { topics: withCounts.map(({ row, messageCount }) => serializeTopic(row, messageCount)) },
+    { topics: withCounts.map(({ row, messageCount, unreadCount }) => serializeTopic(row, messageCount, unreadCount)) },
     { headers: { 'Cache-Control': 'no-store' } },
   )
 }

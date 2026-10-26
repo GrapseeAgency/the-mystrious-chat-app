@@ -41,6 +41,10 @@ async function fixture(run, database = db => db) {
       })
       await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
     }
+    const readSQL = await readFile(new URL('../../prisma/patches/20261026_exact_read_observations.sql', import.meta.url), 'utf8')
+    await db.$transaction(async tx => {
+      for (const statement of readSQL.replace(/^--.*$/gm, '').split(';').map(s => s.trim()).filter(s => s && !['BEGIN IMMEDIATE','COMMIT'].includes(s))) await tx.$executeRawUnsafe(statement)
+    })
     await db.$executeRawUnsafe('CREATE UNIQUE INDEX "UserBlock_pair" ON "UserBlock" ("blockerId", "blockedId")')
     await db.$executeRawUnsafe('CREATE UNIQUE INDEX "AccountReport_pair_reason" ON "AccountReport" ("reporterId", "reportedId", "reason")')
     await db.$executeRawUnsafe('CREATE UNIQUE INDEX "UserVerification_pair" ON "UserVerification" ("ownerId", "peerId")')

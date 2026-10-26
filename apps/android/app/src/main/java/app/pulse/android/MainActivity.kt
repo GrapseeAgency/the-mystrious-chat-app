@@ -581,6 +581,9 @@ fun PulseRoot(
                 val noteVm: app.pulse.feature.chat.VoicePlaybackViewModel = hiltViewModel()
                 val noteContext = androidx.compose.ui.platform.LocalContext.current
                 val liveSurface by roomsVm.surface.collectAsStateWithLifecycle()
+                val readCallState by callVm.snapshot.collectAsStateWithLifecycle()
+                val readGroupCallState by groupCallVm.snapshot.collectAsStateWithLifecycle()
+                val readShareIn by shareInFlow.collectAsStateWithLifecycle()
                 LaunchedEffect(roomsVm) {
                     roomsVm.audioIssue.collect { issue ->
                         if (issue != null) android.widget.Toast.makeText(noteContext, issue, android.widget.Toast.LENGTH_LONG).show()
@@ -635,7 +638,10 @@ fun PulseRoot(
                         }
                     },
                     session = session,
-                    readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value && liveSurface == null,
+                    readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value && liveSurface == null &&
+                        readCallState.state == app.pulse.domain.model.CallState.IDLE &&
+                        readGroupCallState.phase == app.pulse.feature.calls.GroupCallEngine.UiPhase.IDLE &&
+                        readGroupCallState.ring == null && pendingCallPermission == null && readShareIn == null && pendingInvite == null,
                     repository = repository,
                     onActiveCallRoomChanged = { convo ->
                         activeCallRoomId = convo?.id

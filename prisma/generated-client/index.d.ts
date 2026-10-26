@@ -317,6 +317,16 @@ export type ScheduledCreationOperation = $Result.DefaultSelection<Prisma.$Schedu
  *
  */
 export type ReadIntentState = $Result.DefaultSelection<Prisma.$ReadIntentStatePayload>
+/**
+ * Model MessageReadObservation
+ *
+ */
+export type MessageReadObservation = $Result.DefaultSelection<Prisma.$MessageReadObservationPayload>
+/**
+ * Model ReadLedgerMigration
+ *
+ */
+export type ReadLedgerMigration = $Result.DefaultSelection<Prisma.$ReadLedgerMigrationPayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -925,6 +935,26 @@ export class PrismaClient<
     * ```
     */
   get readIntentState(): Prisma.ReadIntentStateDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.messageReadObservation`: Exposes CRUD operations for the **MessageReadObservation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more MessageReadObservations
+    * const messageReadObservations = await prisma.messageReadObservation.findMany()
+    * ```
+    */
+  get messageReadObservation(): Prisma.MessageReadObservationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.readLedgerMigration`: Exposes CRUD operations for the **ReadLedgerMigration** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ReadLedgerMigrations
+    * const readLedgerMigrations = await prisma.readLedgerMigration.findMany()
+    * ```
+    */
+  get readLedgerMigration(): Prisma.ReadLedgerMigrationDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1414,7 +1444,9 @@ export namespace Prisma {
     WalletOperation: 'WalletOperation',
     ConversationCreationOperation: 'ConversationCreationOperation',
     ScheduledCreationOperation: 'ScheduledCreationOperation',
-    ReadIntentState: 'ReadIntentState'
+    ReadIntentState: 'ReadIntentState',
+    MessageReadObservation: 'MessageReadObservation',
+    ReadLedgerMigration: 'ReadLedgerMigration'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1433,7 +1465,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -5063,6 +5095,154 @@ export namespace Prisma {
           }
         }
       }
+      MessageReadObservation: {
+        payload: Prisma.$MessageReadObservationPayload<ExtArgs>
+        fields: Prisma.MessageReadObservationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.MessageReadObservationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.MessageReadObservationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>
+          }
+          findFirst: {
+            args: Prisma.MessageReadObservationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.MessageReadObservationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>
+          }
+          findMany: {
+            args: Prisma.MessageReadObservationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>[]
+          }
+          create: {
+            args: Prisma.MessageReadObservationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>
+          }
+          createMany: {
+            args: Prisma.MessageReadObservationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.MessageReadObservationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>[]
+          }
+          delete: {
+            args: Prisma.MessageReadObservationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>
+          }
+          update: {
+            args: Prisma.MessageReadObservationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>
+          }
+          deleteMany: {
+            args: Prisma.MessageReadObservationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.MessageReadObservationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.MessageReadObservationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>[]
+          }
+          upsert: {
+            args: Prisma.MessageReadObservationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageReadObservationPayload>
+          }
+          aggregate: {
+            args: Prisma.MessageReadObservationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateMessageReadObservation>
+          }
+          groupBy: {
+            args: Prisma.MessageReadObservationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<MessageReadObservationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.MessageReadObservationCountArgs<ExtArgs>
+            result: $Utils.Optional<MessageReadObservationCountAggregateOutputType> | number
+          }
+        }
+      }
+      ReadLedgerMigration: {
+        payload: Prisma.$ReadLedgerMigrationPayload<ExtArgs>
+        fields: Prisma.ReadLedgerMigrationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ReadLedgerMigrationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ReadLedgerMigrationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>
+          }
+          findFirst: {
+            args: Prisma.ReadLedgerMigrationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ReadLedgerMigrationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>
+          }
+          findMany: {
+            args: Prisma.ReadLedgerMigrationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>[]
+          }
+          create: {
+            args: Prisma.ReadLedgerMigrationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>
+          }
+          createMany: {
+            args: Prisma.ReadLedgerMigrationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ReadLedgerMigrationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>[]
+          }
+          delete: {
+            args: Prisma.ReadLedgerMigrationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>
+          }
+          update: {
+            args: Prisma.ReadLedgerMigrationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>
+          }
+          deleteMany: {
+            args: Prisma.ReadLedgerMigrationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ReadLedgerMigrationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ReadLedgerMigrationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>[]
+          }
+          upsert: {
+            args: Prisma.ReadLedgerMigrationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadLedgerMigrationPayload>
+          }
+          aggregate: {
+            args: Prisma.ReadLedgerMigrationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateReadLedgerMigration>
+          }
+          groupBy: {
+            args: Prisma.ReadLedgerMigrationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ReadLedgerMigrationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ReadLedgerMigrationCountArgs<ExtArgs>
+            result: $Utils.Optional<ReadLedgerMigrationCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -5208,6 +5388,8 @@ export namespace Prisma {
     conversationCreationOperation?: ConversationCreationOperationOmit
     scheduledCreationOperation?: ScheduledCreationOperationOmit
     readIntentState?: ReadIntentStateOmit
+    messageReadObservation?: MessageReadObservationOmit
+    readLedgerMigration?: ReadLedgerMigrationOmit
   }
 
   /* Types for Logging */
@@ -5647,6 +5829,37 @@ export namespace Prisma {
 
 
   /**
+   * Count Type ConversationParticipantCountOutputType
+   */
+
+  export type ConversationParticipantCountOutputType = {
+    readObservations: number
+  }
+
+  export type ConversationParticipantCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    readObservations?: boolean | ConversationParticipantCountOutputTypeCountReadObservationsArgs
+  }
+
+  // Custom InputTypes
+  /**
+   * ConversationParticipantCountOutputType without action
+   */
+  export type ConversationParticipantCountOutputTypeDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationParticipantCountOutputType
+     */
+    select?: ConversationParticipantCountOutputTypeSelect<ExtArgs> | null
+  }
+
+  /**
+   * ConversationParticipantCountOutputType without action
+   */
+  export type ConversationParticipantCountOutputTypeCountReadObservationsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: MessageReadObservationWhereInput
+  }
+
+
+  /**
    * Count Type MessageCountOutputType
    */
 
@@ -5656,6 +5869,7 @@ export namespace Prisma {
     reactions: number
     translations: number
     savedBy: number
+    readObservations: number
   }
 
   export type MessageCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -5664,6 +5878,7 @@ export namespace Prisma {
     reactions?: boolean | MessageCountOutputTypeCountReactionsArgs
     translations?: boolean | MessageCountOutputTypeCountTranslationsArgs
     savedBy?: boolean | MessageCountOutputTypeCountSavedByArgs
+    readObservations?: boolean | MessageCountOutputTypeCountReadObservationsArgs
   }
 
   // Custom InputTypes
@@ -5710,6 +5925,13 @@ export namespace Prisma {
    */
   export type MessageCountOutputTypeCountSavedByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: SavedMessageWhereInput
+  }
+
+  /**
+   * MessageCountOutputType without action
+   */
+  export type MessageCountOutputTypeCountReadObservationsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: MessageReadObservationWhereInput
   }
 
 
@@ -29122,6 +29344,8 @@ export namespace Prisma {
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
     readIntentState?: boolean | ConversationParticipant$readIntentStateArgs<ExtArgs>
+    readObservations?: boolean | ConversationParticipant$readObservationsArgs<ExtArgs>
+    _count?: boolean | ConversationParticipantCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["conversationParticipant"]>
 
   export type ConversationParticipantSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
@@ -29181,6 +29405,8 @@ export namespace Prisma {
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
     readIntentState?: boolean | ConversationParticipant$readIntentStateArgs<ExtArgs>
+    readObservations?: boolean | ConversationParticipant$readObservationsArgs<ExtArgs>
+    _count?: boolean | ConversationParticipantCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type ConversationParticipantIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
@@ -29197,6 +29423,7 @@ export namespace Prisma {
       user: Prisma.$UserPayload<ExtArgs>
       conversation: Prisma.$ConversationPayload<ExtArgs>
       readIntentState: Prisma.$ReadIntentStatePayload<ExtArgs> | null
+      readObservations: Prisma.$MessageReadObservationPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -29609,6 +29836,7 @@ export namespace Prisma {
     user<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
     conversation<T extends ConversationDefaultArgs<ExtArgs> = {}>(args?: Subset<T, ConversationDefaultArgs<ExtArgs>>): Prisma__ConversationClient<$Result.GetResult<Prisma.$ConversationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
     readIntentState<T extends ConversationParticipant$readIntentStateArgs<ExtArgs> = {}>(args?: Subset<T, ConversationParticipant$readIntentStateArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+    readObservations<T extends ConversationParticipant$readObservationsArgs<ExtArgs> = {}>(args?: Subset<T, ConversationParticipant$readObservationsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -30064,6 +30292,30 @@ export namespace Prisma {
   }
 
   /**
+   * ConversationParticipant.readObservations
+   */
+  export type ConversationParticipant$readObservationsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    where?: MessageReadObservationWhereInput
+    orderBy?: MessageReadObservationOrderByWithRelationInput | MessageReadObservationOrderByWithRelationInput[]
+    cursor?: MessageReadObservationWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: MessageReadObservationScalarFieldEnum | MessageReadObservationScalarFieldEnum[]
+  }
+
+  /**
    * ConversationParticipant without action
    */
   export type ConversationParticipantDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -30505,6 +30757,7 @@ export namespace Prisma {
     translations?: boolean | Message$translationsArgs<ExtArgs>
     linkPreview?: boolean | Message$linkPreviewArgs<ExtArgs>
     savedBy?: boolean | Message$savedByArgs<ExtArgs>
+    readObservations?: boolean | Message$readObservationsArgs<ExtArgs>
     _count?: boolean | MessageCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["message"]>
 
@@ -30637,6 +30890,7 @@ export namespace Prisma {
     translations?: boolean | Message$translationsArgs<ExtArgs>
     linkPreview?: boolean | Message$linkPreviewArgs<ExtArgs>
     savedBy?: boolean | Message$savedByArgs<ExtArgs>
+    readObservations?: boolean | Message$readObservationsArgs<ExtArgs>
     _count?: boolean | MessageCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type MessageIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -30672,6 +30926,7 @@ export namespace Prisma {
       translations: Prisma.$MessageTranslationPayload<ExtArgs>[]
       linkPreview: Prisma.$LinkPreviewPayload<ExtArgs> | null
       savedBy: Prisma.$SavedMessagePayload<ExtArgs>[]
+      readObservations: Prisma.$MessageReadObservationPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -31112,6 +31367,7 @@ export namespace Prisma {
     translations<T extends Message$translationsArgs<ExtArgs> = {}>(args?: Subset<T, Message$translationsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageTranslationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     linkPreview<T extends Message$linkPreviewArgs<ExtArgs> = {}>(args?: Subset<T, Message$linkPreviewArgs<ExtArgs>>): Prisma__LinkPreviewClient<$Result.GetResult<Prisma.$LinkPreviewPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
     savedBy<T extends Message$savedByArgs<ExtArgs> = {}>(args?: Subset<T, Message$savedByArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SavedMessagePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    readObservations<T extends Message$readObservationsArgs<ExtArgs> = {}>(args?: Subset<T, Message$readObservationsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -31797,6 +32053,30 @@ export namespace Prisma {
     take?: number
     skip?: number
     distinct?: SavedMessageScalarFieldEnum | SavedMessageScalarFieldEnum[]
+  }
+
+  /**
+   * Message.readObservations
+   */
+  export type Message$readObservationsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    where?: MessageReadObservationWhereInput
+    orderBy?: MessageReadObservationOrderByWithRelationInput | MessageReadObservationOrderByWithRelationInput[]
+    cursor?: MessageReadObservationWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: MessageReadObservationScalarFieldEnum | MessageReadObservationScalarFieldEnum[]
   }
 
   /**
@@ -60826,6 +61106,1998 @@ export namespace Prisma {
 
 
   /**
+   * Model MessageReadObservation
+   */
+
+  export type AggregateMessageReadObservation = {
+    _count: MessageReadObservationCountAggregateOutputType | null
+    _min: MessageReadObservationMinAggregateOutputType | null
+    _max: MessageReadObservationMaxAggregateOutputType | null
+  }
+
+  export type MessageReadObservationMinAggregateOutputType = {
+    participantId: string | null
+    messageId: string | null
+    observedAt: Date | null
+    source: string | null
+  }
+
+  export type MessageReadObservationMaxAggregateOutputType = {
+    participantId: string | null
+    messageId: string | null
+    observedAt: Date | null
+    source: string | null
+  }
+
+  export type MessageReadObservationCountAggregateOutputType = {
+    participantId: number
+    messageId: number
+    observedAt: number
+    source: number
+    _all: number
+  }
+
+
+  export type MessageReadObservationMinAggregateInputType = {
+    participantId?: true
+    messageId?: true
+    observedAt?: true
+    source?: true
+  }
+
+  export type MessageReadObservationMaxAggregateInputType = {
+    participantId?: true
+    messageId?: true
+    observedAt?: true
+    source?: true
+  }
+
+  export type MessageReadObservationCountAggregateInputType = {
+    participantId?: true
+    messageId?: true
+    observedAt?: true
+    source?: true
+    _all?: true
+  }
+
+  export type MessageReadObservationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which MessageReadObservation to aggregate.
+     */
+    where?: MessageReadObservationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of MessageReadObservations to fetch.
+     */
+    orderBy?: MessageReadObservationOrderByWithRelationInput | MessageReadObservationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: MessageReadObservationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` MessageReadObservations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` MessageReadObservations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned MessageReadObservations
+    **/
+    _count?: true | MessageReadObservationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: MessageReadObservationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: MessageReadObservationMaxAggregateInputType
+  }
+
+  export type GetMessageReadObservationAggregateType<T extends MessageReadObservationAggregateArgs> = {
+        [P in keyof T & keyof AggregateMessageReadObservation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateMessageReadObservation[P]>
+      : GetScalarType<T[P], AggregateMessageReadObservation[P]>
+  }
+
+
+
+
+  export type MessageReadObservationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: MessageReadObservationWhereInput
+    orderBy?: MessageReadObservationOrderByWithAggregationInput | MessageReadObservationOrderByWithAggregationInput[]
+    by: MessageReadObservationScalarFieldEnum[] | MessageReadObservationScalarFieldEnum
+    having?: MessageReadObservationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: MessageReadObservationCountAggregateInputType | true
+    _min?: MessageReadObservationMinAggregateInputType
+    _max?: MessageReadObservationMaxAggregateInputType
+  }
+
+  export type MessageReadObservationGroupByOutputType = {
+    participantId: string
+    messageId: string
+    observedAt: Date
+    source: string
+    _count: MessageReadObservationCountAggregateOutputType | null
+    _min: MessageReadObservationMinAggregateOutputType | null
+    _max: MessageReadObservationMaxAggregateOutputType | null
+  }
+
+  type GetMessageReadObservationGroupByPayload<T extends MessageReadObservationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<MessageReadObservationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof MessageReadObservationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], MessageReadObservationGroupByOutputType[P]>
+            : GetScalarType<T[P], MessageReadObservationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type MessageReadObservationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    participantId?: boolean
+    messageId?: boolean
+    observedAt?: boolean
+    source?: boolean
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+    message?: boolean | MessageDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["messageReadObservation"]>
+
+  export type MessageReadObservationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    participantId?: boolean
+    messageId?: boolean
+    observedAt?: boolean
+    source?: boolean
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+    message?: boolean | MessageDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["messageReadObservation"]>
+
+  export type MessageReadObservationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    participantId?: boolean
+    messageId?: boolean
+    observedAt?: boolean
+    source?: boolean
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+    message?: boolean | MessageDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["messageReadObservation"]>
+
+  export type MessageReadObservationSelectScalar = {
+    participantId?: boolean
+    messageId?: boolean
+    observedAt?: boolean
+    source?: boolean
+  }
+
+  export type MessageReadObservationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"participantId" | "messageId" | "observedAt" | "source", ExtArgs["result"]["messageReadObservation"]>
+  export type MessageReadObservationInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+    message?: boolean | MessageDefaultArgs<ExtArgs>
+  }
+  export type MessageReadObservationIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+    message?: boolean | MessageDefaultArgs<ExtArgs>
+  }
+  export type MessageReadObservationIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+    message?: boolean | MessageDefaultArgs<ExtArgs>
+  }
+
+  export type $MessageReadObservationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "MessageReadObservation"
+    objects: {
+      participant: Prisma.$ConversationParticipantPayload<ExtArgs>
+      message: Prisma.$MessagePayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      participantId: string
+      messageId: string
+      observedAt: Date
+      source: string
+    }, ExtArgs["result"]["messageReadObservation"]>
+    composites: {}
+  }
+
+  type MessageReadObservationGetPayload<S extends boolean | null | undefined | MessageReadObservationDefaultArgs> = $Result.GetResult<Prisma.$MessageReadObservationPayload, S>
+
+  type MessageReadObservationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<MessageReadObservationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: MessageReadObservationCountAggregateInputType | true
+    }
+
+  export interface MessageReadObservationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['MessageReadObservation'], meta: { name: 'MessageReadObservation' } }
+    /**
+     * Find zero or one MessageReadObservation that matches the filter.
+     * @param {MessageReadObservationFindUniqueArgs} args - Arguments to find a MessageReadObservation
+     * @example
+     * // Get one MessageReadObservation
+     * const messageReadObservation = await prisma.messageReadObservation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends MessageReadObservationFindUniqueArgs>(args: SelectSubset<T, MessageReadObservationFindUniqueArgs<ExtArgs>>): Prisma__MessageReadObservationClient<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one MessageReadObservation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {MessageReadObservationFindUniqueOrThrowArgs} args - Arguments to find a MessageReadObservation
+     * @example
+     * // Get one MessageReadObservation
+     * const messageReadObservation = await prisma.messageReadObservation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends MessageReadObservationFindUniqueOrThrowArgs>(args: SelectSubset<T, MessageReadObservationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__MessageReadObservationClient<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first MessageReadObservation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageReadObservationFindFirstArgs} args - Arguments to find a MessageReadObservation
+     * @example
+     * // Get one MessageReadObservation
+     * const messageReadObservation = await prisma.messageReadObservation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends MessageReadObservationFindFirstArgs>(args?: SelectSubset<T, MessageReadObservationFindFirstArgs<ExtArgs>>): Prisma__MessageReadObservationClient<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first MessageReadObservation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageReadObservationFindFirstOrThrowArgs} args - Arguments to find a MessageReadObservation
+     * @example
+     * // Get one MessageReadObservation
+     * const messageReadObservation = await prisma.messageReadObservation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends MessageReadObservationFindFirstOrThrowArgs>(args?: SelectSubset<T, MessageReadObservationFindFirstOrThrowArgs<ExtArgs>>): Prisma__MessageReadObservationClient<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more MessageReadObservations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageReadObservationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all MessageReadObservations
+     * const messageReadObservations = await prisma.messageReadObservation.findMany()
+     *
+     * // Get first 10 MessageReadObservations
+     * const messageReadObservations = await prisma.messageReadObservation.findMany({ take: 10 })
+     *
+     * // Only select the `participantId`
+     * const messageReadObservationWithParticipantIdOnly = await prisma.messageReadObservation.findMany({ select: { participantId: true } })
+     *
+     */
+    findMany<T extends MessageReadObservationFindManyArgs>(args?: SelectSubset<T, MessageReadObservationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a MessageReadObservation.
+     * @param {MessageReadObservationCreateArgs} args - Arguments to create a MessageReadObservation.
+     * @example
+     * // Create one MessageReadObservation
+     * const MessageReadObservation = await prisma.messageReadObservation.create({
+     *   data: {
+     *     // ... data to create a MessageReadObservation
+     *   }
+     * })
+     *
+     */
+    create<T extends MessageReadObservationCreateArgs>(args: SelectSubset<T, MessageReadObservationCreateArgs<ExtArgs>>): Prisma__MessageReadObservationClient<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many MessageReadObservations.
+     * @param {MessageReadObservationCreateManyArgs} args - Arguments to create many MessageReadObservations.
+     * @example
+     * // Create many MessageReadObservations
+     * const messageReadObservation = await prisma.messageReadObservation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends MessageReadObservationCreateManyArgs>(args?: SelectSubset<T, MessageReadObservationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many MessageReadObservations and returns the data saved in the database.
+     * @param {MessageReadObservationCreateManyAndReturnArgs} args - Arguments to create many MessageReadObservations.
+     * @example
+     * // Create many MessageReadObservations
+     * const messageReadObservation = await prisma.messageReadObservation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many MessageReadObservations and only return the `participantId`
+     * const messageReadObservationWithParticipantIdOnly = await prisma.messageReadObservation.createManyAndReturn({
+     *   select: { participantId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends MessageReadObservationCreateManyAndReturnArgs>(args?: SelectSubset<T, MessageReadObservationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a MessageReadObservation.
+     * @param {MessageReadObservationDeleteArgs} args - Arguments to delete one MessageReadObservation.
+     * @example
+     * // Delete one MessageReadObservation
+     * const MessageReadObservation = await prisma.messageReadObservation.delete({
+     *   where: {
+     *     // ... filter to delete one MessageReadObservation
+     *   }
+     * })
+     *
+     */
+    delete<T extends MessageReadObservationDeleteArgs>(args: SelectSubset<T, MessageReadObservationDeleteArgs<ExtArgs>>): Prisma__MessageReadObservationClient<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one MessageReadObservation.
+     * @param {MessageReadObservationUpdateArgs} args - Arguments to update one MessageReadObservation.
+     * @example
+     * // Update one MessageReadObservation
+     * const messageReadObservation = await prisma.messageReadObservation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends MessageReadObservationUpdateArgs>(args: SelectSubset<T, MessageReadObservationUpdateArgs<ExtArgs>>): Prisma__MessageReadObservationClient<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more MessageReadObservations.
+     * @param {MessageReadObservationDeleteManyArgs} args - Arguments to filter MessageReadObservations to delete.
+     * @example
+     * // Delete a few MessageReadObservations
+     * const { count } = await prisma.messageReadObservation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends MessageReadObservationDeleteManyArgs>(args?: SelectSubset<T, MessageReadObservationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more MessageReadObservations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageReadObservationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many MessageReadObservations
+     * const messageReadObservation = await prisma.messageReadObservation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends MessageReadObservationUpdateManyArgs>(args: SelectSubset<T, MessageReadObservationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more MessageReadObservations and returns the data updated in the database.
+     * @param {MessageReadObservationUpdateManyAndReturnArgs} args - Arguments to update many MessageReadObservations.
+     * @example
+     * // Update many MessageReadObservations
+     * const messageReadObservation = await prisma.messageReadObservation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more MessageReadObservations and only return the `participantId`
+     * const messageReadObservationWithParticipantIdOnly = await prisma.messageReadObservation.updateManyAndReturn({
+     *   select: { participantId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends MessageReadObservationUpdateManyAndReturnArgs>(args: SelectSubset<T, MessageReadObservationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one MessageReadObservation.
+     * @param {MessageReadObservationUpsertArgs} args - Arguments to update or create a MessageReadObservation.
+     * @example
+     * // Update or create a MessageReadObservation
+     * const messageReadObservation = await prisma.messageReadObservation.upsert({
+     *   create: {
+     *     // ... data to create a MessageReadObservation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the MessageReadObservation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends MessageReadObservationUpsertArgs>(args: SelectSubset<T, MessageReadObservationUpsertArgs<ExtArgs>>): Prisma__MessageReadObservationClient<$Result.GetResult<Prisma.$MessageReadObservationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of MessageReadObservations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageReadObservationCountArgs} args - Arguments to filter MessageReadObservations to count.
+     * @example
+     * // Count the number of MessageReadObservations
+     * const count = await prisma.messageReadObservation.count({
+     *   where: {
+     *     // ... the filter for the MessageReadObservations we want to count
+     *   }
+     * })
+    **/
+    count<T extends MessageReadObservationCountArgs>(
+      args?: Subset<T, MessageReadObservationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], MessageReadObservationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a MessageReadObservation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageReadObservationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends MessageReadObservationAggregateArgs>(args: Subset<T, MessageReadObservationAggregateArgs>): Prisma.PrismaPromise<GetMessageReadObservationAggregateType<T>>
+
+    /**
+     * Group by MessageReadObservation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageReadObservationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends MessageReadObservationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: MessageReadObservationGroupByArgs['orderBy'] }
+        : { orderBy?: MessageReadObservationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, MessageReadObservationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetMessageReadObservationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the MessageReadObservation model
+   */
+  readonly fields: MessageReadObservationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for MessageReadObservation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__MessageReadObservationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    participant<T extends ConversationParticipantDefaultArgs<ExtArgs> = {}>(args?: Subset<T, ConversationParticipantDefaultArgs<ExtArgs>>): Prisma__ConversationParticipantClient<$Result.GetResult<Prisma.$ConversationParticipantPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    message<T extends MessageDefaultArgs<ExtArgs> = {}>(args?: Subset<T, MessageDefaultArgs<ExtArgs>>): Prisma__MessageClient<$Result.GetResult<Prisma.$MessagePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the MessageReadObservation model
+   */
+  interface MessageReadObservationFieldRefs {
+    readonly participantId: FieldRef<"MessageReadObservation", 'String'>
+    readonly messageId: FieldRef<"MessageReadObservation", 'String'>
+    readonly observedAt: FieldRef<"MessageReadObservation", 'DateTime'>
+    readonly source: FieldRef<"MessageReadObservation", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * MessageReadObservation findUnique
+   */
+  export type MessageReadObservationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * Filter, which MessageReadObservation to fetch.
+     */
+    where: MessageReadObservationWhereUniqueInput
+  }
+
+  /**
+   * MessageReadObservation findUniqueOrThrow
+   */
+  export type MessageReadObservationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * Filter, which MessageReadObservation to fetch.
+     */
+    where: MessageReadObservationWhereUniqueInput
+  }
+
+  /**
+   * MessageReadObservation findFirst
+   */
+  export type MessageReadObservationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * Filter, which MessageReadObservation to fetch.
+     */
+    where?: MessageReadObservationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of MessageReadObservations to fetch.
+     */
+    orderBy?: MessageReadObservationOrderByWithRelationInput | MessageReadObservationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for MessageReadObservations.
+     */
+    cursor?: MessageReadObservationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` MessageReadObservations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` MessageReadObservations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of MessageReadObservations.
+     */
+    distinct?: MessageReadObservationScalarFieldEnum | MessageReadObservationScalarFieldEnum[]
+  }
+
+  /**
+   * MessageReadObservation findFirstOrThrow
+   */
+  export type MessageReadObservationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * Filter, which MessageReadObservation to fetch.
+     */
+    where?: MessageReadObservationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of MessageReadObservations to fetch.
+     */
+    orderBy?: MessageReadObservationOrderByWithRelationInput | MessageReadObservationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for MessageReadObservations.
+     */
+    cursor?: MessageReadObservationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` MessageReadObservations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` MessageReadObservations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of MessageReadObservations.
+     */
+    distinct?: MessageReadObservationScalarFieldEnum | MessageReadObservationScalarFieldEnum[]
+  }
+
+  /**
+   * MessageReadObservation findMany
+   */
+  export type MessageReadObservationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * Filter, which MessageReadObservations to fetch.
+     */
+    where?: MessageReadObservationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of MessageReadObservations to fetch.
+     */
+    orderBy?: MessageReadObservationOrderByWithRelationInput | MessageReadObservationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing MessageReadObservations.
+     */
+    cursor?: MessageReadObservationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` MessageReadObservations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` MessageReadObservations.
+     */
+    skip?: number
+    distinct?: MessageReadObservationScalarFieldEnum | MessageReadObservationScalarFieldEnum[]
+  }
+
+  /**
+   * MessageReadObservation create
+   */
+  export type MessageReadObservationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * The data needed to create a MessageReadObservation.
+     */
+    data: XOR<MessageReadObservationCreateInput, MessageReadObservationUncheckedCreateInput>
+  }
+
+  /**
+   * MessageReadObservation createMany
+   */
+  export type MessageReadObservationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many MessageReadObservations.
+     */
+    data: MessageReadObservationCreateManyInput | MessageReadObservationCreateManyInput[]
+  }
+
+  /**
+   * MessageReadObservation createManyAndReturn
+   */
+  export type MessageReadObservationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * The data used to create many MessageReadObservations.
+     */
+    data: MessageReadObservationCreateManyInput | MessageReadObservationCreateManyInput[]
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * MessageReadObservation update
+   */
+  export type MessageReadObservationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * The data needed to update a MessageReadObservation.
+     */
+    data: XOR<MessageReadObservationUpdateInput, MessageReadObservationUncheckedUpdateInput>
+    /**
+     * Choose, which MessageReadObservation to update.
+     */
+    where: MessageReadObservationWhereUniqueInput
+  }
+
+  /**
+   * MessageReadObservation updateMany
+   */
+  export type MessageReadObservationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update MessageReadObservations.
+     */
+    data: XOR<MessageReadObservationUpdateManyMutationInput, MessageReadObservationUncheckedUpdateManyInput>
+    /**
+     * Filter which MessageReadObservations to update
+     */
+    where?: MessageReadObservationWhereInput
+    /**
+     * Limit how many MessageReadObservations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * MessageReadObservation updateManyAndReturn
+   */
+  export type MessageReadObservationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * The data used to update MessageReadObservations.
+     */
+    data: XOR<MessageReadObservationUpdateManyMutationInput, MessageReadObservationUncheckedUpdateManyInput>
+    /**
+     * Filter which MessageReadObservations to update
+     */
+    where?: MessageReadObservationWhereInput
+    /**
+     * Limit how many MessageReadObservations to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * MessageReadObservation upsert
+   */
+  export type MessageReadObservationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * The filter to search for the MessageReadObservation to update in case it exists.
+     */
+    where: MessageReadObservationWhereUniqueInput
+    /**
+     * In case the MessageReadObservation found by the `where` argument doesn't exist, create a new MessageReadObservation with this data.
+     */
+    create: XOR<MessageReadObservationCreateInput, MessageReadObservationUncheckedCreateInput>
+    /**
+     * In case the MessageReadObservation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<MessageReadObservationUpdateInput, MessageReadObservationUncheckedUpdateInput>
+  }
+
+  /**
+   * MessageReadObservation delete
+   */
+  export type MessageReadObservationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+    /**
+     * Filter which MessageReadObservation to delete.
+     */
+    where: MessageReadObservationWhereUniqueInput
+  }
+
+  /**
+   * MessageReadObservation deleteMany
+   */
+  export type MessageReadObservationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which MessageReadObservations to delete
+     */
+    where?: MessageReadObservationWhereInput
+    /**
+     * Limit how many MessageReadObservations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * MessageReadObservation without action
+   */
+  export type MessageReadObservationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageReadObservation
+     */
+    select?: MessageReadObservationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageReadObservation
+     */
+    omit?: MessageReadObservationOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: MessageReadObservationInclude<ExtArgs> | null
+  }
+
+
+  /**
+   * Model ReadLedgerMigration
+   */
+
+  export type AggregateReadLedgerMigration = {
+    _count: ReadLedgerMigrationCountAggregateOutputType | null
+    _min: ReadLedgerMigrationMinAggregateOutputType | null
+    _max: ReadLedgerMigrationMaxAggregateOutputType | null
+  }
+
+  export type ReadLedgerMigrationMinAggregateOutputType = {
+    id: string | null
+  }
+
+  export type ReadLedgerMigrationMaxAggregateOutputType = {
+    id: string | null
+  }
+
+  export type ReadLedgerMigrationCountAggregateOutputType = {
+    id: number
+    _all: number
+  }
+
+
+  export type ReadLedgerMigrationMinAggregateInputType = {
+    id?: true
+  }
+
+  export type ReadLedgerMigrationMaxAggregateInputType = {
+    id?: true
+  }
+
+  export type ReadLedgerMigrationCountAggregateInputType = {
+    id?: true
+    _all?: true
+  }
+
+  export type ReadLedgerMigrationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ReadLedgerMigration to aggregate.
+     */
+    where?: ReadLedgerMigrationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ReadLedgerMigrations to fetch.
+     */
+    orderBy?: ReadLedgerMigrationOrderByWithRelationInput | ReadLedgerMigrationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: ReadLedgerMigrationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ReadLedgerMigrations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ReadLedgerMigrations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned ReadLedgerMigrations
+    **/
+    _count?: true | ReadLedgerMigrationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: ReadLedgerMigrationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: ReadLedgerMigrationMaxAggregateInputType
+  }
+
+  export type GetReadLedgerMigrationAggregateType<T extends ReadLedgerMigrationAggregateArgs> = {
+        [P in keyof T & keyof AggregateReadLedgerMigration]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateReadLedgerMigration[P]>
+      : GetScalarType<T[P], AggregateReadLedgerMigration[P]>
+  }
+
+
+
+
+  export type ReadLedgerMigrationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ReadLedgerMigrationWhereInput
+    orderBy?: ReadLedgerMigrationOrderByWithAggregationInput | ReadLedgerMigrationOrderByWithAggregationInput[]
+    by: ReadLedgerMigrationScalarFieldEnum[] | ReadLedgerMigrationScalarFieldEnum
+    having?: ReadLedgerMigrationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ReadLedgerMigrationCountAggregateInputType | true
+    _min?: ReadLedgerMigrationMinAggregateInputType
+    _max?: ReadLedgerMigrationMaxAggregateInputType
+  }
+
+  export type ReadLedgerMigrationGroupByOutputType = {
+    id: string
+    _count: ReadLedgerMigrationCountAggregateOutputType | null
+    _min: ReadLedgerMigrationMinAggregateOutputType | null
+    _max: ReadLedgerMigrationMaxAggregateOutputType | null
+  }
+
+  type GetReadLedgerMigrationGroupByPayload<T extends ReadLedgerMigrationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ReadLedgerMigrationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ReadLedgerMigrationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ReadLedgerMigrationGroupByOutputType[P]>
+            : GetScalarType<T[P], ReadLedgerMigrationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ReadLedgerMigrationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+  }, ExtArgs["result"]["readLedgerMigration"]>
+
+  export type ReadLedgerMigrationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+  }, ExtArgs["result"]["readLedgerMigration"]>
+
+  export type ReadLedgerMigrationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+  }, ExtArgs["result"]["readLedgerMigration"]>
+
+  export type ReadLedgerMigrationSelectScalar = {
+    id?: boolean
+  }
+
+  export type ReadLedgerMigrationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id", ExtArgs["result"]["readLedgerMigration"]>
+
+  export type $ReadLedgerMigrationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ReadLedgerMigration"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+    }, ExtArgs["result"]["readLedgerMigration"]>
+    composites: {}
+  }
+
+  type ReadLedgerMigrationGetPayload<S extends boolean | null | undefined | ReadLedgerMigrationDefaultArgs> = $Result.GetResult<Prisma.$ReadLedgerMigrationPayload, S>
+
+  type ReadLedgerMigrationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ReadLedgerMigrationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ReadLedgerMigrationCountAggregateInputType | true
+    }
+
+  export interface ReadLedgerMigrationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ReadLedgerMigration'], meta: { name: 'ReadLedgerMigration' } }
+    /**
+     * Find zero or one ReadLedgerMigration that matches the filter.
+     * @param {ReadLedgerMigrationFindUniqueArgs} args - Arguments to find a ReadLedgerMigration
+     * @example
+     * // Get one ReadLedgerMigration
+     * const readLedgerMigration = await prisma.readLedgerMigration.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ReadLedgerMigrationFindUniqueArgs>(args: SelectSubset<T, ReadLedgerMigrationFindUniqueArgs<ExtArgs>>): Prisma__ReadLedgerMigrationClient<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ReadLedgerMigration that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ReadLedgerMigrationFindUniqueOrThrowArgs} args - Arguments to find a ReadLedgerMigration
+     * @example
+     * // Get one ReadLedgerMigration
+     * const readLedgerMigration = await prisma.readLedgerMigration.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ReadLedgerMigrationFindUniqueOrThrowArgs>(args: SelectSubset<T, ReadLedgerMigrationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ReadLedgerMigrationClient<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ReadLedgerMigration that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadLedgerMigrationFindFirstArgs} args - Arguments to find a ReadLedgerMigration
+     * @example
+     * // Get one ReadLedgerMigration
+     * const readLedgerMigration = await prisma.readLedgerMigration.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ReadLedgerMigrationFindFirstArgs>(args?: SelectSubset<T, ReadLedgerMigrationFindFirstArgs<ExtArgs>>): Prisma__ReadLedgerMigrationClient<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ReadLedgerMigration that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadLedgerMigrationFindFirstOrThrowArgs} args - Arguments to find a ReadLedgerMigration
+     * @example
+     * // Get one ReadLedgerMigration
+     * const readLedgerMigration = await prisma.readLedgerMigration.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ReadLedgerMigrationFindFirstOrThrowArgs>(args?: SelectSubset<T, ReadLedgerMigrationFindFirstOrThrowArgs<ExtArgs>>): Prisma__ReadLedgerMigrationClient<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ReadLedgerMigrations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadLedgerMigrationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ReadLedgerMigrations
+     * const readLedgerMigrations = await prisma.readLedgerMigration.findMany()
+     *
+     * // Get first 10 ReadLedgerMigrations
+     * const readLedgerMigrations = await prisma.readLedgerMigration.findMany({ take: 10 })
+     *
+     * // Only select the `id`
+     * const readLedgerMigrationWithIdOnly = await prisma.readLedgerMigration.findMany({ select: { id: true } })
+     *
+     */
+    findMany<T extends ReadLedgerMigrationFindManyArgs>(args?: SelectSubset<T, ReadLedgerMigrationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ReadLedgerMigration.
+     * @param {ReadLedgerMigrationCreateArgs} args - Arguments to create a ReadLedgerMigration.
+     * @example
+     * // Create one ReadLedgerMigration
+     * const ReadLedgerMigration = await prisma.readLedgerMigration.create({
+     *   data: {
+     *     // ... data to create a ReadLedgerMigration
+     *   }
+     * })
+     *
+     */
+    create<T extends ReadLedgerMigrationCreateArgs>(args: SelectSubset<T, ReadLedgerMigrationCreateArgs<ExtArgs>>): Prisma__ReadLedgerMigrationClient<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ReadLedgerMigrations.
+     * @param {ReadLedgerMigrationCreateManyArgs} args - Arguments to create many ReadLedgerMigrations.
+     * @example
+     * // Create many ReadLedgerMigrations
+     * const readLedgerMigration = await prisma.readLedgerMigration.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends ReadLedgerMigrationCreateManyArgs>(args?: SelectSubset<T, ReadLedgerMigrationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ReadLedgerMigrations and returns the data saved in the database.
+     * @param {ReadLedgerMigrationCreateManyAndReturnArgs} args - Arguments to create many ReadLedgerMigrations.
+     * @example
+     * // Create many ReadLedgerMigrations
+     * const readLedgerMigration = await prisma.readLedgerMigration.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many ReadLedgerMigrations and only return the `id`
+     * const readLedgerMigrationWithIdOnly = await prisma.readLedgerMigration.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends ReadLedgerMigrationCreateManyAndReturnArgs>(args?: SelectSubset<T, ReadLedgerMigrationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ReadLedgerMigration.
+     * @param {ReadLedgerMigrationDeleteArgs} args - Arguments to delete one ReadLedgerMigration.
+     * @example
+     * // Delete one ReadLedgerMigration
+     * const ReadLedgerMigration = await prisma.readLedgerMigration.delete({
+     *   where: {
+     *     // ... filter to delete one ReadLedgerMigration
+     *   }
+     * })
+     *
+     */
+    delete<T extends ReadLedgerMigrationDeleteArgs>(args: SelectSubset<T, ReadLedgerMigrationDeleteArgs<ExtArgs>>): Prisma__ReadLedgerMigrationClient<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ReadLedgerMigration.
+     * @param {ReadLedgerMigrationUpdateArgs} args - Arguments to update one ReadLedgerMigration.
+     * @example
+     * // Update one ReadLedgerMigration
+     * const readLedgerMigration = await prisma.readLedgerMigration.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends ReadLedgerMigrationUpdateArgs>(args: SelectSubset<T, ReadLedgerMigrationUpdateArgs<ExtArgs>>): Prisma__ReadLedgerMigrationClient<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ReadLedgerMigrations.
+     * @param {ReadLedgerMigrationDeleteManyArgs} args - Arguments to filter ReadLedgerMigrations to delete.
+     * @example
+     * // Delete a few ReadLedgerMigrations
+     * const { count } = await prisma.readLedgerMigration.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends ReadLedgerMigrationDeleteManyArgs>(args?: SelectSubset<T, ReadLedgerMigrationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ReadLedgerMigrations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadLedgerMigrationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ReadLedgerMigrations
+     * const readLedgerMigration = await prisma.readLedgerMigration.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends ReadLedgerMigrationUpdateManyArgs>(args: SelectSubset<T, ReadLedgerMigrationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ReadLedgerMigrations and returns the data updated in the database.
+     * @param {ReadLedgerMigrationUpdateManyAndReturnArgs} args - Arguments to update many ReadLedgerMigrations.
+     * @example
+     * // Update many ReadLedgerMigrations
+     * const readLedgerMigration = await prisma.readLedgerMigration.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more ReadLedgerMigrations and only return the `id`
+     * const readLedgerMigrationWithIdOnly = await prisma.readLedgerMigration.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends ReadLedgerMigrationUpdateManyAndReturnArgs>(args: SelectSubset<T, ReadLedgerMigrationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ReadLedgerMigration.
+     * @param {ReadLedgerMigrationUpsertArgs} args - Arguments to update or create a ReadLedgerMigration.
+     * @example
+     * // Update or create a ReadLedgerMigration
+     * const readLedgerMigration = await prisma.readLedgerMigration.upsert({
+     *   create: {
+     *     // ... data to create a ReadLedgerMigration
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ReadLedgerMigration we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ReadLedgerMigrationUpsertArgs>(args: SelectSubset<T, ReadLedgerMigrationUpsertArgs<ExtArgs>>): Prisma__ReadLedgerMigrationClient<$Result.GetResult<Prisma.$ReadLedgerMigrationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ReadLedgerMigrations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadLedgerMigrationCountArgs} args - Arguments to filter ReadLedgerMigrations to count.
+     * @example
+     * // Count the number of ReadLedgerMigrations
+     * const count = await prisma.readLedgerMigration.count({
+     *   where: {
+     *     // ... the filter for the ReadLedgerMigrations we want to count
+     *   }
+     * })
+    **/
+    count<T extends ReadLedgerMigrationCountArgs>(
+      args?: Subset<T, ReadLedgerMigrationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ReadLedgerMigrationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ReadLedgerMigration.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadLedgerMigrationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ReadLedgerMigrationAggregateArgs>(args: Subset<T, ReadLedgerMigrationAggregateArgs>): Prisma.PrismaPromise<GetReadLedgerMigrationAggregateType<T>>
+
+    /**
+     * Group by ReadLedgerMigration.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadLedgerMigrationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends ReadLedgerMigrationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ReadLedgerMigrationGroupByArgs['orderBy'] }
+        : { orderBy?: ReadLedgerMigrationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ReadLedgerMigrationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetReadLedgerMigrationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ReadLedgerMigration model
+   */
+  readonly fields: ReadLedgerMigrationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ReadLedgerMigration.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ReadLedgerMigrationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ReadLedgerMigration model
+   */
+  interface ReadLedgerMigrationFieldRefs {
+    readonly id: FieldRef<"ReadLedgerMigration", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * ReadLedgerMigration findUnique
+   */
+  export type ReadLedgerMigrationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReadLedgerMigration to fetch.
+     */
+    where: ReadLedgerMigrationWhereUniqueInput
+  }
+
+  /**
+   * ReadLedgerMigration findUniqueOrThrow
+   */
+  export type ReadLedgerMigrationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReadLedgerMigration to fetch.
+     */
+    where: ReadLedgerMigrationWhereUniqueInput
+  }
+
+  /**
+   * ReadLedgerMigration findFirst
+   */
+  export type ReadLedgerMigrationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReadLedgerMigration to fetch.
+     */
+    where?: ReadLedgerMigrationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ReadLedgerMigrations to fetch.
+     */
+    orderBy?: ReadLedgerMigrationOrderByWithRelationInput | ReadLedgerMigrationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ReadLedgerMigrations.
+     */
+    cursor?: ReadLedgerMigrationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ReadLedgerMigrations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ReadLedgerMigrations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ReadLedgerMigrations.
+     */
+    distinct?: ReadLedgerMigrationScalarFieldEnum | ReadLedgerMigrationScalarFieldEnum[]
+  }
+
+  /**
+   * ReadLedgerMigration findFirstOrThrow
+   */
+  export type ReadLedgerMigrationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReadLedgerMigration to fetch.
+     */
+    where?: ReadLedgerMigrationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ReadLedgerMigrations to fetch.
+     */
+    orderBy?: ReadLedgerMigrationOrderByWithRelationInput | ReadLedgerMigrationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ReadLedgerMigrations.
+     */
+    cursor?: ReadLedgerMigrationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ReadLedgerMigrations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ReadLedgerMigrations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ReadLedgerMigrations.
+     */
+    distinct?: ReadLedgerMigrationScalarFieldEnum | ReadLedgerMigrationScalarFieldEnum[]
+  }
+
+  /**
+   * ReadLedgerMigration findMany
+   */
+  export type ReadLedgerMigrationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReadLedgerMigrations to fetch.
+     */
+    where?: ReadLedgerMigrationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ReadLedgerMigrations to fetch.
+     */
+    orderBy?: ReadLedgerMigrationOrderByWithRelationInput | ReadLedgerMigrationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing ReadLedgerMigrations.
+     */
+    cursor?: ReadLedgerMigrationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ReadLedgerMigrations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ReadLedgerMigrations.
+     */
+    skip?: number
+    distinct?: ReadLedgerMigrationScalarFieldEnum | ReadLedgerMigrationScalarFieldEnum[]
+  }
+
+  /**
+   * ReadLedgerMigration create
+   */
+  export type ReadLedgerMigrationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ReadLedgerMigration.
+     */
+    data: XOR<ReadLedgerMigrationCreateInput, ReadLedgerMigrationUncheckedCreateInput>
+  }
+
+  /**
+   * ReadLedgerMigration createMany
+   */
+  export type ReadLedgerMigrationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ReadLedgerMigrations.
+     */
+    data: ReadLedgerMigrationCreateManyInput | ReadLedgerMigrationCreateManyInput[]
+  }
+
+  /**
+   * ReadLedgerMigration createManyAndReturn
+   */
+  export type ReadLedgerMigrationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * The data used to create many ReadLedgerMigrations.
+     */
+    data: ReadLedgerMigrationCreateManyInput | ReadLedgerMigrationCreateManyInput[]
+  }
+
+  /**
+   * ReadLedgerMigration update
+   */
+  export type ReadLedgerMigrationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ReadLedgerMigration.
+     */
+    data: XOR<ReadLedgerMigrationUpdateInput, ReadLedgerMigrationUncheckedUpdateInput>
+    /**
+     * Choose, which ReadLedgerMigration to update.
+     */
+    where: ReadLedgerMigrationWhereUniqueInput
+  }
+
+  /**
+   * ReadLedgerMigration updateMany
+   */
+  export type ReadLedgerMigrationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ReadLedgerMigrations.
+     */
+    data: XOR<ReadLedgerMigrationUpdateManyMutationInput, ReadLedgerMigrationUncheckedUpdateManyInput>
+    /**
+     * Filter which ReadLedgerMigrations to update
+     */
+    where?: ReadLedgerMigrationWhereInput
+    /**
+     * Limit how many ReadLedgerMigrations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ReadLedgerMigration updateManyAndReturn
+   */
+  export type ReadLedgerMigrationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * The data used to update ReadLedgerMigrations.
+     */
+    data: XOR<ReadLedgerMigrationUpdateManyMutationInput, ReadLedgerMigrationUncheckedUpdateManyInput>
+    /**
+     * Filter which ReadLedgerMigrations to update
+     */
+    where?: ReadLedgerMigrationWhereInput
+    /**
+     * Limit how many ReadLedgerMigrations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ReadLedgerMigration upsert
+   */
+  export type ReadLedgerMigrationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ReadLedgerMigration to update in case it exists.
+     */
+    where: ReadLedgerMigrationWhereUniqueInput
+    /**
+     * In case the ReadLedgerMigration found by the `where` argument doesn't exist, create a new ReadLedgerMigration with this data.
+     */
+    create: XOR<ReadLedgerMigrationCreateInput, ReadLedgerMigrationUncheckedCreateInput>
+    /**
+     * In case the ReadLedgerMigration was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ReadLedgerMigrationUpdateInput, ReadLedgerMigrationUncheckedUpdateInput>
+  }
+
+  /**
+   * ReadLedgerMigration delete
+   */
+  export type ReadLedgerMigrationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+    /**
+     * Filter which ReadLedgerMigration to delete.
+     */
+    where: ReadLedgerMigrationWhereUniqueInput
+  }
+
+  /**
+   * ReadLedgerMigration deleteMany
+   */
+  export type ReadLedgerMigrationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ReadLedgerMigrations to delete
+     */
+    where?: ReadLedgerMigrationWhereInput
+    /**
+     * Limit how many ReadLedgerMigrations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ReadLedgerMigration without action
+   */
+  export type ReadLedgerMigrationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadLedgerMigration
+     */
+    select?: ReadLedgerMigrationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadLedgerMigration
+     */
+    omit?: ReadLedgerMigrationOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -61480,6 +63752,23 @@ export namespace Prisma {
   };
 
   export type ReadIntentStateScalarFieldEnum = (typeof ReadIntentStateScalarFieldEnum)[keyof typeof ReadIntentStateScalarFieldEnum]
+
+
+  export const MessageReadObservationScalarFieldEnum: {
+    participantId: 'participantId',
+    messageId: 'messageId',
+    observedAt: 'observedAt',
+    source: 'source'
+  };
+
+  export type MessageReadObservationScalarFieldEnum = (typeof MessageReadObservationScalarFieldEnum)[keyof typeof MessageReadObservationScalarFieldEnum]
+
+
+  export const ReadLedgerMigrationScalarFieldEnum: {
+    id: 'id'
+  };
+
+  export type ReadLedgerMigrationScalarFieldEnum = (typeof ReadLedgerMigrationScalarFieldEnum)[keyof typeof ReadLedgerMigrationScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -63021,6 +65310,7 @@ export namespace Prisma {
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
     readIntentState?: XOR<ReadIntentStateNullableScalarRelationFilter, ReadIntentStateWhereInput> | null
+    readObservations?: MessageReadObservationListRelationFilter
   }
 
   export type ConversationParticipantOrderByWithRelationInput = {
@@ -63040,6 +65330,7 @@ export namespace Prisma {
     user?: UserOrderByWithRelationInput
     conversation?: ConversationOrderByWithRelationInput
     readIntentState?: ReadIntentStateOrderByWithRelationInput
+    readObservations?: MessageReadObservationOrderByRelationAggregateInput
   }
 
   export type ConversationParticipantWhereUniqueInput = Prisma.AtLeast<{
@@ -63063,6 +65354,7 @@ export namespace Prisma {
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
     readIntentState?: XOR<ReadIntentStateNullableScalarRelationFilter, ReadIntentStateWhereInput> | null
+    readObservations?: MessageReadObservationListRelationFilter
   }, "id" | "userId_conversationId">
 
   export type ConversationParticipantOrderByWithAggregationInput = {
@@ -63151,6 +65443,7 @@ export namespace Prisma {
     translations?: MessageTranslationListRelationFilter
     linkPreview?: XOR<LinkPreviewNullableScalarRelationFilter, LinkPreviewWhereInput> | null
     savedBy?: SavedMessageListRelationFilter
+    readObservations?: MessageReadObservationListRelationFilter
   }
 
   export type MessageOrderByWithRelationInput = {
@@ -63198,6 +65491,7 @@ export namespace Prisma {
     translations?: MessageTranslationOrderByRelationAggregateInput
     linkPreview?: LinkPreviewOrderByWithRelationInput
     savedBy?: SavedMessageOrderByRelationAggregateInput
+    readObservations?: MessageReadObservationOrderByRelationAggregateInput
   }
 
   export type MessageWhereUniqueInput = Prisma.AtLeast<{
@@ -63248,6 +65542,7 @@ export namespace Prisma {
     translations?: MessageTranslationListRelationFilter
     linkPreview?: XOR<LinkPreviewNullableScalarRelationFilter, LinkPreviewWhereInput> | null
     savedBy?: SavedMessageListRelationFilter
+    readObservations?: MessageReadObservationListRelationFilter
   }, "id">
 
   export type MessageOrderByWithAggregationInput = {
@@ -64992,6 +67287,92 @@ export namespace Prisma {
     revision?: StringWithAggregatesFilter<"ReadIntentState"> | string
   }
 
+  export type MessageReadObservationWhereInput = {
+    AND?: MessageReadObservationWhereInput | MessageReadObservationWhereInput[]
+    OR?: MessageReadObservationWhereInput[]
+    NOT?: MessageReadObservationWhereInput | MessageReadObservationWhereInput[]
+    participantId?: StringFilter<"MessageReadObservation"> | string
+    messageId?: StringFilter<"MessageReadObservation"> | string
+    observedAt?: DateTimeFilter<"MessageReadObservation"> | Date | string
+    source?: StringFilter<"MessageReadObservation"> | string
+    participant?: XOR<ConversationParticipantScalarRelationFilter, ConversationParticipantWhereInput>
+    message?: XOR<MessageScalarRelationFilter, MessageWhereInput>
+  }
+
+  export type MessageReadObservationOrderByWithRelationInput = {
+    participantId?: SortOrder
+    messageId?: SortOrder
+    observedAt?: SortOrder
+    source?: SortOrder
+    participant?: ConversationParticipantOrderByWithRelationInput
+    message?: MessageOrderByWithRelationInput
+  }
+
+  export type MessageReadObservationWhereUniqueInput = Prisma.AtLeast<{
+    participantId_messageId?: MessageReadObservationParticipantIdMessageIdCompoundUniqueInput
+    AND?: MessageReadObservationWhereInput | MessageReadObservationWhereInput[]
+    OR?: MessageReadObservationWhereInput[]
+    NOT?: MessageReadObservationWhereInput | MessageReadObservationWhereInput[]
+    participantId?: StringFilter<"MessageReadObservation"> | string
+    messageId?: StringFilter<"MessageReadObservation"> | string
+    observedAt?: DateTimeFilter<"MessageReadObservation"> | Date | string
+    source?: StringFilter<"MessageReadObservation"> | string
+    participant?: XOR<ConversationParticipantScalarRelationFilter, ConversationParticipantWhereInput>
+    message?: XOR<MessageScalarRelationFilter, MessageWhereInput>
+  }, "participantId_messageId">
+
+  export type MessageReadObservationOrderByWithAggregationInput = {
+    participantId?: SortOrder
+    messageId?: SortOrder
+    observedAt?: SortOrder
+    source?: SortOrder
+    _count?: MessageReadObservationCountOrderByAggregateInput
+    _max?: MessageReadObservationMaxOrderByAggregateInput
+    _min?: MessageReadObservationMinOrderByAggregateInput
+  }
+
+  export type MessageReadObservationScalarWhereWithAggregatesInput = {
+    AND?: MessageReadObservationScalarWhereWithAggregatesInput | MessageReadObservationScalarWhereWithAggregatesInput[]
+    OR?: MessageReadObservationScalarWhereWithAggregatesInput[]
+    NOT?: MessageReadObservationScalarWhereWithAggregatesInput | MessageReadObservationScalarWhereWithAggregatesInput[]
+    participantId?: StringWithAggregatesFilter<"MessageReadObservation"> | string
+    messageId?: StringWithAggregatesFilter<"MessageReadObservation"> | string
+    observedAt?: DateTimeWithAggregatesFilter<"MessageReadObservation"> | Date | string
+    source?: StringWithAggregatesFilter<"MessageReadObservation"> | string
+  }
+
+  export type ReadLedgerMigrationWhereInput = {
+    AND?: ReadLedgerMigrationWhereInput | ReadLedgerMigrationWhereInput[]
+    OR?: ReadLedgerMigrationWhereInput[]
+    NOT?: ReadLedgerMigrationWhereInput | ReadLedgerMigrationWhereInput[]
+    id?: StringFilter<"ReadLedgerMigration"> | string
+  }
+
+  export type ReadLedgerMigrationOrderByWithRelationInput = {
+    id?: SortOrder
+  }
+
+  export type ReadLedgerMigrationWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    AND?: ReadLedgerMigrationWhereInput | ReadLedgerMigrationWhereInput[]
+    OR?: ReadLedgerMigrationWhereInput[]
+    NOT?: ReadLedgerMigrationWhereInput | ReadLedgerMigrationWhereInput[]
+  }, "id">
+
+  export type ReadLedgerMigrationOrderByWithAggregationInput = {
+    id?: SortOrder
+    _count?: ReadLedgerMigrationCountOrderByAggregateInput
+    _max?: ReadLedgerMigrationMaxOrderByAggregateInput
+    _min?: ReadLedgerMigrationMinOrderByAggregateInput
+  }
+
+  export type ReadLedgerMigrationScalarWhereWithAggregatesInput = {
+    AND?: ReadLedgerMigrationScalarWhereWithAggregatesInput | ReadLedgerMigrationScalarWhereWithAggregatesInput[]
+    OR?: ReadLedgerMigrationScalarWhereWithAggregatesInput[]
+    NOT?: ReadLedgerMigrationScalarWhereWithAggregatesInput | ReadLedgerMigrationScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"ReadLedgerMigration"> | string
+  }
+
   export type UserCreateInput = {
     id?: string
     name: string
@@ -66558,6 +68939,7 @@ export namespace Prisma {
     user: UserCreateNestedOneWithoutParticipationsInput
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
     readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutParticipantInput
   }
 
   export type ConversationParticipantUncheckedCreateInput = {
@@ -66575,6 +68957,7 @@ export namespace Prisma {
     manualUnread?: boolean
     draft?: string | null
     readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput
   }
 
   export type ConversationParticipantUpdateInput = {
@@ -66592,6 +68975,7 @@ export namespace Prisma {
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
     readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateInput = {
@@ -66609,6 +68993,7 @@ export namespace Prisma {
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantCreateManyInput = {
@@ -66696,6 +69081,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateInput = {
@@ -66737,6 +69123,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUpdateInput = {
@@ -66778,6 +69165,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateInput = {
@@ -66819,6 +69207,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageCreateManyInput = {
@@ -68635,6 +71024,81 @@ export namespace Prisma {
     revision?: StringFieldUpdateOperationsInput | string
   }
 
+  export type MessageReadObservationCreateInput = {
+    observedAt?: Date | string
+    source?: string
+    participant: ConversationParticipantCreateNestedOneWithoutReadObservationsInput
+    message: MessageCreateNestedOneWithoutReadObservationsInput
+  }
+
+  export type MessageReadObservationUncheckedCreateInput = {
+    participantId: string
+    messageId: string
+    observedAt?: Date | string
+    source?: string
+  }
+
+  export type MessageReadObservationUpdateInput = {
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+    participant?: ConversationParticipantUpdateOneRequiredWithoutReadObservationsNestedInput
+    message?: MessageUpdateOneRequiredWithoutReadObservationsNestedInput
+  }
+
+  export type MessageReadObservationUncheckedUpdateInput = {
+    participantId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MessageReadObservationCreateManyInput = {
+    participantId: string
+    messageId: string
+    observedAt?: Date | string
+    source?: string
+  }
+
+  export type MessageReadObservationUpdateManyMutationInput = {
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MessageReadObservationUncheckedUpdateManyInput = {
+    participantId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReadLedgerMigrationCreateInput = {
+    id: string
+  }
+
+  export type ReadLedgerMigrationUncheckedCreateInput = {
+    id: string
+  }
+
+  export type ReadLedgerMigrationUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReadLedgerMigrationUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReadLedgerMigrationCreateManyInput = {
+    id: string
+  }
+
+  export type ReadLedgerMigrationUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReadLedgerMigrationUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -69855,6 +72319,16 @@ export namespace Prisma {
     isNot?: ReadIntentStateWhereInput | null
   }
 
+  export type MessageReadObservationListRelationFilter = {
+    every?: MessageReadObservationWhereInput
+    some?: MessageReadObservationWhereInput
+    none?: MessageReadObservationWhereInput
+  }
+
+  export type MessageReadObservationOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
   export type ConversationParticipantUserIdConversationIdCompoundUniqueInput = {
     userId: string
     conversationId: string
@@ -71072,6 +73546,44 @@ export namespace Prisma {
   export type ReadIntentStateMinOrderByAggregateInput = {
     participantId?: SortOrder
     revision?: SortOrder
+  }
+
+  export type MessageReadObservationParticipantIdMessageIdCompoundUniqueInput = {
+    participantId: string
+    messageId: string
+  }
+
+  export type MessageReadObservationCountOrderByAggregateInput = {
+    participantId?: SortOrder
+    messageId?: SortOrder
+    observedAt?: SortOrder
+    source?: SortOrder
+  }
+
+  export type MessageReadObservationMaxOrderByAggregateInput = {
+    participantId?: SortOrder
+    messageId?: SortOrder
+    observedAt?: SortOrder
+    source?: SortOrder
+  }
+
+  export type MessageReadObservationMinOrderByAggregateInput = {
+    participantId?: SortOrder
+    messageId?: SortOrder
+    observedAt?: SortOrder
+    source?: SortOrder
+  }
+
+  export type ReadLedgerMigrationCountOrderByAggregateInput = {
+    id?: SortOrder
+  }
+
+  export type ReadLedgerMigrationMaxOrderByAggregateInput = {
+    id?: SortOrder
+  }
+
+  export type ReadLedgerMigrationMinOrderByAggregateInput = {
+    id?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {
@@ -72830,10 +75342,24 @@ export namespace Prisma {
     connect?: ReadIntentStateWhereUniqueInput
   }
 
+  export type MessageReadObservationCreateNestedManyWithoutParticipantInput = {
+    create?: XOR<MessageReadObservationCreateWithoutParticipantInput, MessageReadObservationUncheckedCreateWithoutParticipantInput> | MessageReadObservationCreateWithoutParticipantInput[] | MessageReadObservationUncheckedCreateWithoutParticipantInput[]
+    connectOrCreate?: MessageReadObservationCreateOrConnectWithoutParticipantInput | MessageReadObservationCreateOrConnectWithoutParticipantInput[]
+    createMany?: MessageReadObservationCreateManyParticipantInputEnvelope
+    connect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+  }
+
   export type ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput = {
     create?: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
     connectOrCreate?: ReadIntentStateCreateOrConnectWithoutParticipantInput
     connect?: ReadIntentStateWhereUniqueInput
+  }
+
+  export type MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput = {
+    create?: XOR<MessageReadObservationCreateWithoutParticipantInput, MessageReadObservationUncheckedCreateWithoutParticipantInput> | MessageReadObservationCreateWithoutParticipantInput[] | MessageReadObservationUncheckedCreateWithoutParticipantInput[]
+    connectOrCreate?: MessageReadObservationCreateOrConnectWithoutParticipantInput | MessageReadObservationCreateOrConnectWithoutParticipantInput[]
+    createMany?: MessageReadObservationCreateManyParticipantInputEnvelope
+    connect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
   }
 
   export type UserUpdateOneRequiredWithoutParticipationsNestedInput = {
@@ -72862,6 +75388,20 @@ export namespace Prisma {
     update?: XOR<XOR<ReadIntentStateUpdateToOneWithWhereWithoutParticipantInput, ReadIntentStateUpdateWithoutParticipantInput>, ReadIntentStateUncheckedUpdateWithoutParticipantInput>
   }
 
+  export type MessageReadObservationUpdateManyWithoutParticipantNestedInput = {
+    create?: XOR<MessageReadObservationCreateWithoutParticipantInput, MessageReadObservationUncheckedCreateWithoutParticipantInput> | MessageReadObservationCreateWithoutParticipantInput[] | MessageReadObservationUncheckedCreateWithoutParticipantInput[]
+    connectOrCreate?: MessageReadObservationCreateOrConnectWithoutParticipantInput | MessageReadObservationCreateOrConnectWithoutParticipantInput[]
+    upsert?: MessageReadObservationUpsertWithWhereUniqueWithoutParticipantInput | MessageReadObservationUpsertWithWhereUniqueWithoutParticipantInput[]
+    createMany?: MessageReadObservationCreateManyParticipantInputEnvelope
+    set?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    disconnect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    delete?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    connect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    update?: MessageReadObservationUpdateWithWhereUniqueWithoutParticipantInput | MessageReadObservationUpdateWithWhereUniqueWithoutParticipantInput[]
+    updateMany?: MessageReadObservationUpdateManyWithWhereWithoutParticipantInput | MessageReadObservationUpdateManyWithWhereWithoutParticipantInput[]
+    deleteMany?: MessageReadObservationScalarWhereInput | MessageReadObservationScalarWhereInput[]
+  }
+
   export type ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput = {
     create?: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
     connectOrCreate?: ReadIntentStateCreateOrConnectWithoutParticipantInput
@@ -72870,6 +75410,20 @@ export namespace Prisma {
     delete?: ReadIntentStateWhereInput | boolean
     connect?: ReadIntentStateWhereUniqueInput
     update?: XOR<XOR<ReadIntentStateUpdateToOneWithWhereWithoutParticipantInput, ReadIntentStateUpdateWithoutParticipantInput>, ReadIntentStateUncheckedUpdateWithoutParticipantInput>
+  }
+
+  export type MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput = {
+    create?: XOR<MessageReadObservationCreateWithoutParticipantInput, MessageReadObservationUncheckedCreateWithoutParticipantInput> | MessageReadObservationCreateWithoutParticipantInput[] | MessageReadObservationUncheckedCreateWithoutParticipantInput[]
+    connectOrCreate?: MessageReadObservationCreateOrConnectWithoutParticipantInput | MessageReadObservationCreateOrConnectWithoutParticipantInput[]
+    upsert?: MessageReadObservationUpsertWithWhereUniqueWithoutParticipantInput | MessageReadObservationUpsertWithWhereUniqueWithoutParticipantInput[]
+    createMany?: MessageReadObservationCreateManyParticipantInputEnvelope
+    set?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    disconnect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    delete?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    connect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    update?: MessageReadObservationUpdateWithWhereUniqueWithoutParticipantInput | MessageReadObservationUpdateWithWhereUniqueWithoutParticipantInput[]
+    updateMany?: MessageReadObservationUpdateManyWithWhereWithoutParticipantInput | MessageReadObservationUpdateManyWithWhereWithoutParticipantInput[]
+    deleteMany?: MessageReadObservationScalarWhereInput | MessageReadObservationScalarWhereInput[]
   }
 
   export type UserCreateNestedOneWithoutMessagesInput = {
@@ -72955,6 +75509,13 @@ export namespace Prisma {
     connect?: SavedMessageWhereUniqueInput | SavedMessageWhereUniqueInput[]
   }
 
+  export type MessageReadObservationCreateNestedManyWithoutMessageInput = {
+    create?: XOR<MessageReadObservationCreateWithoutMessageInput, MessageReadObservationUncheckedCreateWithoutMessageInput> | MessageReadObservationCreateWithoutMessageInput[] | MessageReadObservationUncheckedCreateWithoutMessageInput[]
+    connectOrCreate?: MessageReadObservationCreateOrConnectWithoutMessageInput | MessageReadObservationCreateOrConnectWithoutMessageInput[]
+    createMany?: MessageReadObservationCreateManyMessageInputEnvelope
+    connect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+  }
+
   export type MessageUncheckedCreateNestedManyWithoutReplyToInput = {
     create?: XOR<MessageCreateWithoutReplyToInput, MessageUncheckedCreateWithoutReplyToInput> | MessageCreateWithoutReplyToInput[] | MessageUncheckedCreateWithoutReplyToInput[]
     connectOrCreate?: MessageCreateOrConnectWithoutReplyToInput | MessageCreateOrConnectWithoutReplyToInput[]
@@ -73000,6 +75561,13 @@ export namespace Prisma {
     connectOrCreate?: SavedMessageCreateOrConnectWithoutMessageInput | SavedMessageCreateOrConnectWithoutMessageInput[]
     createMany?: SavedMessageCreateManyMessageInputEnvelope
     connect?: SavedMessageWhereUniqueInput | SavedMessageWhereUniqueInput[]
+  }
+
+  export type MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput = {
+    create?: XOR<MessageReadObservationCreateWithoutMessageInput, MessageReadObservationUncheckedCreateWithoutMessageInput> | MessageReadObservationCreateWithoutMessageInput[] | MessageReadObservationUncheckedCreateWithoutMessageInput[]
+    connectOrCreate?: MessageReadObservationCreateOrConnectWithoutMessageInput | MessageReadObservationCreateOrConnectWithoutMessageInput[]
+    createMany?: MessageReadObservationCreateManyMessageInputEnvelope
+    connect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
   }
 
   export type NullableIntFieldUpdateOperationsInput = {
@@ -73156,6 +75724,20 @@ export namespace Prisma {
     deleteMany?: SavedMessageScalarWhereInput | SavedMessageScalarWhereInput[]
   }
 
+  export type MessageReadObservationUpdateManyWithoutMessageNestedInput = {
+    create?: XOR<MessageReadObservationCreateWithoutMessageInput, MessageReadObservationUncheckedCreateWithoutMessageInput> | MessageReadObservationCreateWithoutMessageInput[] | MessageReadObservationUncheckedCreateWithoutMessageInput[]
+    connectOrCreate?: MessageReadObservationCreateOrConnectWithoutMessageInput | MessageReadObservationCreateOrConnectWithoutMessageInput[]
+    upsert?: MessageReadObservationUpsertWithWhereUniqueWithoutMessageInput | MessageReadObservationUpsertWithWhereUniqueWithoutMessageInput[]
+    createMany?: MessageReadObservationCreateManyMessageInputEnvelope
+    set?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    disconnect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    delete?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    connect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    update?: MessageReadObservationUpdateWithWhereUniqueWithoutMessageInput | MessageReadObservationUpdateWithWhereUniqueWithoutMessageInput[]
+    updateMany?: MessageReadObservationUpdateManyWithWhereWithoutMessageInput | MessageReadObservationUpdateManyWithWhereWithoutMessageInput[]
+    deleteMany?: MessageReadObservationScalarWhereInput | MessageReadObservationScalarWhereInput[]
+  }
+
   export type MessageUncheckedUpdateManyWithoutReplyToNestedInput = {
     create?: XOR<MessageCreateWithoutReplyToInput, MessageUncheckedCreateWithoutReplyToInput> | MessageCreateWithoutReplyToInput[] | MessageUncheckedCreateWithoutReplyToInput[]
     connectOrCreate?: MessageCreateOrConnectWithoutReplyToInput | MessageCreateOrConnectWithoutReplyToInput[]
@@ -73244,6 +75826,20 @@ export namespace Prisma {
     update?: SavedMessageUpdateWithWhereUniqueWithoutMessageInput | SavedMessageUpdateWithWhereUniqueWithoutMessageInput[]
     updateMany?: SavedMessageUpdateManyWithWhereWithoutMessageInput | SavedMessageUpdateManyWithWhereWithoutMessageInput[]
     deleteMany?: SavedMessageScalarWhereInput | SavedMessageScalarWhereInput[]
+  }
+
+  export type MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput = {
+    create?: XOR<MessageReadObservationCreateWithoutMessageInput, MessageReadObservationUncheckedCreateWithoutMessageInput> | MessageReadObservationCreateWithoutMessageInput[] | MessageReadObservationUncheckedCreateWithoutMessageInput[]
+    connectOrCreate?: MessageReadObservationCreateOrConnectWithoutMessageInput | MessageReadObservationCreateOrConnectWithoutMessageInput[]
+    upsert?: MessageReadObservationUpsertWithWhereUniqueWithoutMessageInput | MessageReadObservationUpsertWithWhereUniqueWithoutMessageInput[]
+    createMany?: MessageReadObservationCreateManyMessageInputEnvelope
+    set?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    disconnect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    delete?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    connect?: MessageReadObservationWhereUniqueInput | MessageReadObservationWhereUniqueInput[]
+    update?: MessageReadObservationUpdateWithWhereUniqueWithoutMessageInput | MessageReadObservationUpdateWithWhereUniqueWithoutMessageInput[]
+    updateMany?: MessageReadObservationUpdateManyWithWhereWithoutMessageInput | MessageReadObservationUpdateManyWithWhereWithoutMessageInput[]
+    deleteMany?: MessageReadObservationScalarWhereInput | MessageReadObservationScalarWhereInput[]
   }
 
   export type MessageCreateNestedOneWithoutPollInput = {
@@ -73894,6 +76490,34 @@ export namespace Prisma {
     update?: XOR<XOR<ConversationParticipantUpdateToOneWithWhereWithoutReadIntentStateInput, ConversationParticipantUpdateWithoutReadIntentStateInput>, ConversationParticipantUncheckedUpdateWithoutReadIntentStateInput>
   }
 
+  export type ConversationParticipantCreateNestedOneWithoutReadObservationsInput = {
+    create?: XOR<ConversationParticipantCreateWithoutReadObservationsInput, ConversationParticipantUncheckedCreateWithoutReadObservationsInput>
+    connectOrCreate?: ConversationParticipantCreateOrConnectWithoutReadObservationsInput
+    connect?: ConversationParticipantWhereUniqueInput
+  }
+
+  export type MessageCreateNestedOneWithoutReadObservationsInput = {
+    create?: XOR<MessageCreateWithoutReadObservationsInput, MessageUncheckedCreateWithoutReadObservationsInput>
+    connectOrCreate?: MessageCreateOrConnectWithoutReadObservationsInput
+    connect?: MessageWhereUniqueInput
+  }
+
+  export type ConversationParticipantUpdateOneRequiredWithoutReadObservationsNestedInput = {
+    create?: XOR<ConversationParticipantCreateWithoutReadObservationsInput, ConversationParticipantUncheckedCreateWithoutReadObservationsInput>
+    connectOrCreate?: ConversationParticipantCreateOrConnectWithoutReadObservationsInput
+    upsert?: ConversationParticipantUpsertWithoutReadObservationsInput
+    connect?: ConversationParticipantWhereUniqueInput
+    update?: XOR<XOR<ConversationParticipantUpdateToOneWithWhereWithoutReadObservationsInput, ConversationParticipantUpdateWithoutReadObservationsInput>, ConversationParticipantUncheckedUpdateWithoutReadObservationsInput>
+  }
+
+  export type MessageUpdateOneRequiredWithoutReadObservationsNestedInput = {
+    create?: XOR<MessageCreateWithoutReadObservationsInput, MessageUncheckedCreateWithoutReadObservationsInput>
+    connectOrCreate?: MessageCreateOrConnectWithoutReadObservationsInput
+    upsert?: MessageUpsertWithoutReadObservationsInput
+    connect?: MessageWhereUniqueInput
+    update?: XOR<XOR<MessageUpdateToOneWithWhereWithoutReadObservationsInput, MessageUpdateWithoutReadObservationsInput>, MessageUncheckedUpdateWithoutReadObservationsInput>
+  }
+
   export type NestedStringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -74325,6 +76949,7 @@ export namespace Prisma {
     draft?: string | null
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
     readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutParticipantInput
   }
 
   export type ConversationParticipantUncheckedCreateWithoutUserInput = {
@@ -74341,6 +76966,7 @@ export namespace Prisma {
     manualUnread?: boolean
     draft?: string | null
     readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput
   }
 
   export type ConversationParticipantCreateOrConnectWithoutUserInput = {
@@ -74390,6 +77016,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutSenderInput = {
@@ -74430,6 +77057,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutSenderInput = {
@@ -78096,6 +80724,7 @@ export namespace Prisma {
     draft?: string | null
     user: UserCreateNestedOneWithoutParticipationsInput
     readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutParticipantInput
   }
 
   export type ConversationParticipantUncheckedCreateWithoutConversationInput = {
@@ -78112,6 +80741,7 @@ export namespace Prisma {
     manualUnread?: boolean
     draft?: string | null
     readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput
   }
 
   export type ConversationParticipantCreateOrConnectWithoutConversationInput = {
@@ -78161,6 +80791,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutConversationInput = {
@@ -78201,6 +80832,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutConversationInput = {
@@ -79645,6 +82277,27 @@ export namespace Prisma {
     create: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
   }
 
+  export type MessageReadObservationCreateWithoutParticipantInput = {
+    observedAt?: Date | string
+    source?: string
+    message: MessageCreateNestedOneWithoutReadObservationsInput
+  }
+
+  export type MessageReadObservationUncheckedCreateWithoutParticipantInput = {
+    messageId: string
+    observedAt?: Date | string
+    source?: string
+  }
+
+  export type MessageReadObservationCreateOrConnectWithoutParticipantInput = {
+    where: MessageReadObservationWhereUniqueInput
+    create: XOR<MessageReadObservationCreateWithoutParticipantInput, MessageReadObservationUncheckedCreateWithoutParticipantInput>
+  }
+
+  export type MessageReadObservationCreateManyParticipantInputEnvelope = {
+    data: MessageReadObservationCreateManyParticipantInput | MessageReadObservationCreateManyParticipantInput[]
+  }
+
   export type UserUpsertWithoutParticipationsInput = {
     update: XOR<UserUpdateWithoutParticipationsInput, UserUncheckedUpdateWithoutParticipationsInput>
     create: XOR<UserCreateWithoutParticipationsInput, UserUncheckedCreateWithoutParticipationsInput>
@@ -79820,6 +82473,32 @@ export namespace Prisma {
 
   export type ReadIntentStateUncheckedUpdateWithoutParticipantInput = {
     revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MessageReadObservationUpsertWithWhereUniqueWithoutParticipantInput = {
+    where: MessageReadObservationWhereUniqueInput
+    update: XOR<MessageReadObservationUpdateWithoutParticipantInput, MessageReadObservationUncheckedUpdateWithoutParticipantInput>
+    create: XOR<MessageReadObservationCreateWithoutParticipantInput, MessageReadObservationUncheckedCreateWithoutParticipantInput>
+  }
+
+  export type MessageReadObservationUpdateWithWhereUniqueWithoutParticipantInput = {
+    where: MessageReadObservationWhereUniqueInput
+    data: XOR<MessageReadObservationUpdateWithoutParticipantInput, MessageReadObservationUncheckedUpdateWithoutParticipantInput>
+  }
+
+  export type MessageReadObservationUpdateManyWithWhereWithoutParticipantInput = {
+    where: MessageReadObservationScalarWhereInput
+    data: XOR<MessageReadObservationUpdateManyMutationInput, MessageReadObservationUncheckedUpdateManyWithoutParticipantInput>
+  }
+
+  export type MessageReadObservationScalarWhereInput = {
+    AND?: MessageReadObservationScalarWhereInput | MessageReadObservationScalarWhereInput[]
+    OR?: MessageReadObservationScalarWhereInput[]
+    NOT?: MessageReadObservationScalarWhereInput | MessageReadObservationScalarWhereInput[]
+    participantId?: StringFilter<"MessageReadObservation"> | string
+    messageId?: StringFilter<"MessageReadObservation"> | string
+    observedAt?: DateTimeFilter<"MessageReadObservation"> | Date | string
+    source?: StringFilter<"MessageReadObservation"> | string
   }
 
   export type UserCreateWithoutMessagesInput = {
@@ -80006,6 +82685,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutRepliesInput = {
@@ -80046,6 +82726,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutRepliesInput = {
@@ -80091,6 +82772,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutReplyToInput = {
@@ -80131,6 +82813,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutReplyToInput = {
@@ -80180,6 +82863,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutThreadRepliesInput = {
@@ -80220,6 +82904,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutThreadRepliesInput = {
@@ -80265,6 +82950,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutParentInput = {
@@ -80305,6 +82991,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutParentInput = {
@@ -80481,6 +83168,27 @@ export namespace Prisma {
 
   export type SavedMessageCreateManyMessageInputEnvelope = {
     data: SavedMessageCreateManyMessageInput | SavedMessageCreateManyMessageInput[]
+  }
+
+  export type MessageReadObservationCreateWithoutMessageInput = {
+    observedAt?: Date | string
+    source?: string
+    participant: ConversationParticipantCreateNestedOneWithoutReadObservationsInput
+  }
+
+  export type MessageReadObservationUncheckedCreateWithoutMessageInput = {
+    participantId: string
+    observedAt?: Date | string
+    source?: string
+  }
+
+  export type MessageReadObservationCreateOrConnectWithoutMessageInput = {
+    where: MessageReadObservationWhereUniqueInput
+    create: XOR<MessageReadObservationCreateWithoutMessageInput, MessageReadObservationUncheckedCreateWithoutMessageInput>
+  }
+
+  export type MessageReadObservationCreateManyMessageInputEnvelope = {
+    data: MessageReadObservationCreateManyMessageInput | MessageReadObservationCreateManyMessageInput[]
   }
 
   export type UserUpsertWithoutMessagesInput = {
@@ -80690,6 +83398,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutRepliesInput = {
@@ -80730,6 +83439,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUpsertWithWhereUniqueWithoutReplyToInput = {
@@ -80797,6 +83507,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutThreadRepliesInput = {
@@ -80837,6 +83548,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUpsertWithWhereUniqueWithoutParentInput = {
@@ -81049,6 +83761,22 @@ export namespace Prisma {
     data: XOR<SavedMessageUpdateManyMutationInput, SavedMessageUncheckedUpdateManyWithoutMessageInput>
   }
 
+  export type MessageReadObservationUpsertWithWhereUniqueWithoutMessageInput = {
+    where: MessageReadObservationWhereUniqueInput
+    update: XOR<MessageReadObservationUpdateWithoutMessageInput, MessageReadObservationUncheckedUpdateWithoutMessageInput>
+    create: XOR<MessageReadObservationCreateWithoutMessageInput, MessageReadObservationUncheckedCreateWithoutMessageInput>
+  }
+
+  export type MessageReadObservationUpdateWithWhereUniqueWithoutMessageInput = {
+    where: MessageReadObservationWhereUniqueInput
+    data: XOR<MessageReadObservationUpdateWithoutMessageInput, MessageReadObservationUncheckedUpdateWithoutMessageInput>
+  }
+
+  export type MessageReadObservationUpdateManyWithWhereWithoutMessageInput = {
+    where: MessageReadObservationScalarWhereInput
+    data: XOR<MessageReadObservationUpdateManyMutationInput, MessageReadObservationUncheckedUpdateManyWithoutMessageInput>
+  }
+
   export type MessageCreateWithoutPollInput = {
     id?: string
     content: string
@@ -81087,6 +83815,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutPollInput = {
@@ -81127,6 +83856,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutPollInput = {
@@ -81206,6 +83936,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutPollInput = {
@@ -81246,6 +83977,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type PollOptionUpsertWithWhereUniqueWithoutPollInput = {
@@ -81541,6 +84273,7 @@ export namespace Prisma {
     redPacket?: RedPacketCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutSavedByInput = {
@@ -81581,6 +84314,7 @@ export namespace Prisma {
     poll?: PollUncheckedCreateNestedOneWithoutMessageInput
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutSavedByInput = {
@@ -81730,6 +84464,7 @@ export namespace Prisma {
     redPacket?: RedPacketUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutSavedByInput = {
@@ -81770,6 +84505,7 @@ export namespace Prisma {
     poll?: PollUncheckedUpdateOneWithoutMessageNestedInput
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type ConversationCreateWithoutScheduledMessagesInput = {
@@ -81934,6 +84670,7 @@ export namespace Prisma {
     redPacket?: RedPacketCreateNestedOneWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutTranslationsInput = {
@@ -81974,6 +84711,7 @@ export namespace Prisma {
     poll?: PollUncheckedCreateNestedOneWithoutMessageInput
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutTranslationsInput = {
@@ -82030,6 +84768,7 @@ export namespace Prisma {
     redPacket?: RedPacketUpdateOneWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutTranslationsInput = {
@@ -82070,6 +84809,7 @@ export namespace Prisma {
     poll?: PollUncheckedUpdateOneWithoutMessageNestedInput
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageCreateWithoutLinkPreviewInput = {
@@ -82110,6 +84850,7 @@ export namespace Prisma {
     redPacket?: RedPacketCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutLinkPreviewInput = {
@@ -82150,6 +84891,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutLinkPreviewInput = {
@@ -82215,6 +84957,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutReactionsInput = {
@@ -82255,6 +84998,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutReactionsInput = {
@@ -82311,6 +85055,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutReactionsInput = {
@@ -82351,6 +85096,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type ConversationCreateWithoutTopicsInput = {
@@ -82450,6 +85196,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutTopicInput = {
@@ -82490,6 +85237,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutTopicInput = {
@@ -83422,6 +86170,7 @@ export namespace Prisma {
     translations?: MessageTranslationCreateNestedManyWithoutMessageInput
     linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
     savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutMessageInput
   }
 
   export type MessageUncheckedCreateWithoutRedPacketInput = {
@@ -83462,6 +86211,7 @@ export namespace Prisma {
     poll?: PollUncheckedCreateNestedOneWithoutMessageInput
     translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
     savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutMessageInput
   }
 
   export type MessageCreateOrConnectWithoutRedPacketInput = {
@@ -83541,6 +86291,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutRedPacketInput = {
@@ -83581,6 +86332,7 @@ export namespace Prisma {
     poll?: PollUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type RedPacketGrabUpsertWithWhereUniqueWithoutPacketInput = {
@@ -84177,6 +86929,7 @@ export namespace Prisma {
     draft?: string | null
     user: UserCreateNestedOneWithoutParticipationsInput
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
+    readObservations?: MessageReadObservationCreateNestedManyWithoutParticipantInput
   }
 
   export type ConversationParticipantUncheckedCreateWithoutReadIntentStateInput = {
@@ -84193,6 +86946,7 @@ export namespace Prisma {
     screenPrivacy?: boolean
     manualUnread?: boolean
     draft?: string | null
+    readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput
   }
 
   export type ConversationParticipantCreateOrConnectWithoutReadIntentStateInput = {
@@ -84225,6 +86979,7 @@ export namespace Prisma {
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateWithoutReadIntentStateInput = {
@@ -84241,6 +86996,271 @@ export namespace Prisma {
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput
+  }
+
+  export type ConversationParticipantCreateWithoutReadObservationsInput = {
+    id?: string
+    role?: string
+    joinedAt?: Date | string
+    lastReadAt?: Date | string
+    pinnedAt?: Date | string | null
+    mutedUntil?: Date | string | null
+    archivedAt?: Date | string | null
+    handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
+    manualUnread?: boolean
+    draft?: string | null
+    user: UserCreateNestedOneWithoutParticipationsInput
+    conversation: ConversationCreateNestedOneWithoutParticipantsInput
+    readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
+  }
+
+  export type ConversationParticipantUncheckedCreateWithoutReadObservationsInput = {
+    id?: string
+    userId: string
+    conversationId: string
+    role?: string
+    joinedAt?: Date | string
+    lastReadAt?: Date | string
+    pinnedAt?: Date | string | null
+    mutedUntil?: Date | string | null
+    archivedAt?: Date | string | null
+    handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
+    manualUnread?: boolean
+    draft?: string | null
+    readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
+  }
+
+  export type ConversationParticipantCreateOrConnectWithoutReadObservationsInput = {
+    where: ConversationParticipantWhereUniqueInput
+    create: XOR<ConversationParticipantCreateWithoutReadObservationsInput, ConversationParticipantUncheckedCreateWithoutReadObservationsInput>
+  }
+
+  export type MessageCreateWithoutReadObservationsInput = {
+    id?: string
+    content: string
+    deletedAt?: Date | string | null
+    imagePath?: string | null
+    audioPath?: string | null
+    durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
+    editedAt?: Date | string | null
+    pinnedAt?: Date | string | null
+    pinnedBy?: string | null
+    anon?: boolean
+    viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
+    anonAlias?: string | null
+    viewOnce?: boolean
+    viewedAt?: Date | string | null
+    viewedBy?: string | null
+    expiresAt?: Date | string | null
+    kind?: string
+    payload?: string | null
+    createdAt?: Date | string
+    sender: UserCreateNestedOneWithoutMessagesInput
+    conversation: ConversationCreateNestedOneWithoutMessagesInput
+    replyTo?: MessageCreateNestedOneWithoutRepliesInput
+    replies?: MessageCreateNestedManyWithoutReplyToInput
+    parent?: MessageCreateNestedOneWithoutThreadRepliesInput
+    threadReplies?: MessageCreateNestedManyWithoutParentInput
+    reactions?: ReactionCreateNestedManyWithoutMessageInput
+    poll?: PollCreateNestedOneWithoutMessageInput
+    topic?: TopicCreateNestedOneWithoutMessagesInput
+    redPacket?: RedPacketCreateNestedOneWithoutMessageInput
+    translations?: MessageTranslationCreateNestedManyWithoutMessageInput
+    linkPreview?: LinkPreviewCreateNestedOneWithoutMessagesInput
+    savedBy?: SavedMessageCreateNestedManyWithoutMessageInput
+  }
+
+  export type MessageUncheckedCreateWithoutReadObservationsInput = {
+    id?: string
+    conversationId: string
+    senderId: string
+    content: string
+    deletedAt?: Date | string | null
+    replyToId?: string | null
+    imagePath?: string | null
+    audioPath?: string | null
+    durationMs?: number | null
+    filePath?: string | null
+    fileName?: string | null
+    fileSize?: number | null
+    editedAt?: Date | string | null
+    pinnedAt?: Date | string | null
+    pinnedBy?: string | null
+    parentId?: string | null
+    topicId?: string | null
+    anon?: boolean
+    viaAutomation?: boolean
+    transcript?: string | null
+    transcribedAt?: Date | string | null
+    transcribedById?: string | null
+    anonAlias?: string | null
+    viewOnce?: boolean
+    viewedAt?: Date | string | null
+    viewedBy?: string | null
+    expiresAt?: Date | string | null
+    linkUrl?: string | null
+    kind?: string
+    payload?: string | null
+    createdAt?: Date | string
+    replies?: MessageUncheckedCreateNestedManyWithoutReplyToInput
+    threadReplies?: MessageUncheckedCreateNestedManyWithoutParentInput
+    reactions?: ReactionUncheckedCreateNestedManyWithoutMessageInput
+    poll?: PollUncheckedCreateNestedOneWithoutMessageInput
+    redPacket?: RedPacketUncheckedCreateNestedOneWithoutMessageInput
+    translations?: MessageTranslationUncheckedCreateNestedManyWithoutMessageInput
+    savedBy?: SavedMessageUncheckedCreateNestedManyWithoutMessageInput
+  }
+
+  export type MessageCreateOrConnectWithoutReadObservationsInput = {
+    where: MessageWhereUniqueInput
+    create: XOR<MessageCreateWithoutReadObservationsInput, MessageUncheckedCreateWithoutReadObservationsInput>
+  }
+
+  export type ConversationParticipantUpsertWithoutReadObservationsInput = {
+    update: XOR<ConversationParticipantUpdateWithoutReadObservationsInput, ConversationParticipantUncheckedUpdateWithoutReadObservationsInput>
+    create: XOR<ConversationParticipantCreateWithoutReadObservationsInput, ConversationParticipantUncheckedCreateWithoutReadObservationsInput>
+    where?: ConversationParticipantWhereInput
+  }
+
+  export type ConversationParticipantUpdateToOneWithWhereWithoutReadObservationsInput = {
+    where?: ConversationParticipantWhereInput
+    data: XOR<ConversationParticipantUpdateWithoutReadObservationsInput, ConversationParticipantUncheckedUpdateWithoutReadObservationsInput>
+  }
+
+  export type ConversationParticipantUpdateWithoutReadObservationsInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    role?: StringFieldUpdateOperationsInput | string
+    joinedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastReadAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draft?: NullableStringFieldUpdateOperationsInput | string | null
+    user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
+    conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
+    readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
+  }
+
+  export type ConversationParticipantUncheckedUpdateWithoutReadObservationsInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    role?: StringFieldUpdateOperationsInput | string
+    joinedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastReadAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draft?: NullableStringFieldUpdateOperationsInput | string | null
+    readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
+  }
+
+  export type MessageUpsertWithoutReadObservationsInput = {
+    update: XOR<MessageUpdateWithoutReadObservationsInput, MessageUncheckedUpdateWithoutReadObservationsInput>
+    create: XOR<MessageCreateWithoutReadObservationsInput, MessageUncheckedCreateWithoutReadObservationsInput>
+    where?: MessageWhereInput
+  }
+
+  export type MessageUpdateToOneWithWhereWithoutReadObservationsInput = {
+    where?: MessageWhereInput
+    data: XOR<MessageUpdateWithoutReadObservationsInput, MessageUncheckedUpdateWithoutReadObservationsInput>
+  }
+
+  export type MessageUpdateWithoutReadObservationsInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    content?: StringFieldUpdateOperationsInput | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    imagePath?: NullableStringFieldUpdateOperationsInput | string | null
+    audioPath?: NullableStringFieldUpdateOperationsInput | string | null
+    durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
+    editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
+    anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
+    anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
+    viewOnce?: BoolFieldUpdateOperationsInput | boolean
+    viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    viewedBy?: NullableStringFieldUpdateOperationsInput | string | null
+    expiresAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    kind?: StringFieldUpdateOperationsInput | string
+    payload?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    sender?: UserUpdateOneRequiredWithoutMessagesNestedInput
+    conversation?: ConversationUpdateOneRequiredWithoutMessagesNestedInput
+    replyTo?: MessageUpdateOneWithoutRepliesNestedInput
+    replies?: MessageUpdateManyWithoutReplyToNestedInput
+    parent?: MessageUpdateOneWithoutThreadRepliesNestedInput
+    threadReplies?: MessageUpdateManyWithoutParentNestedInput
+    reactions?: ReactionUpdateManyWithoutMessageNestedInput
+    poll?: PollUpdateOneWithoutMessageNestedInput
+    topic?: TopicUpdateOneWithoutMessagesNestedInput
+    redPacket?: RedPacketUpdateOneWithoutMessageNestedInput
+    translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
+    linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
+    savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+  }
+
+  export type MessageUncheckedUpdateWithoutReadObservationsInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    senderId?: StringFieldUpdateOperationsInput | string
+    content?: StringFieldUpdateOperationsInput | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    replyToId?: NullableStringFieldUpdateOperationsInput | string | null
+    imagePath?: NullableStringFieldUpdateOperationsInput | string | null
+    audioPath?: NullableStringFieldUpdateOperationsInput | string | null
+    durationMs?: NullableIntFieldUpdateOperationsInput | number | null
+    filePath?: NullableStringFieldUpdateOperationsInput | string | null
+    fileName?: NullableStringFieldUpdateOperationsInput | string | null
+    fileSize?: NullableIntFieldUpdateOperationsInput | number | null
+    editedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    pinnedBy?: NullableStringFieldUpdateOperationsInput | string | null
+    parentId?: NullableStringFieldUpdateOperationsInput | string | null
+    topicId?: NullableStringFieldUpdateOperationsInput | string | null
+    anon?: BoolFieldUpdateOperationsInput | boolean
+    viaAutomation?: BoolFieldUpdateOperationsInput | boolean
+    transcript?: NullableStringFieldUpdateOperationsInput | string | null
+    transcribedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    transcribedById?: NullableStringFieldUpdateOperationsInput | string | null
+    anonAlias?: NullableStringFieldUpdateOperationsInput | string | null
+    viewOnce?: BoolFieldUpdateOperationsInput | boolean
+    viewedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    viewedBy?: NullableStringFieldUpdateOperationsInput | string | null
+    expiresAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    linkUrl?: NullableStringFieldUpdateOperationsInput | string | null
+    kind?: StringFieldUpdateOperationsInput | string
+    payload?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    replies?: MessageUncheckedUpdateManyWithoutReplyToNestedInput
+    threadReplies?: MessageUncheckedUpdateManyWithoutParentNestedInput
+    reactions?: ReactionUncheckedUpdateManyWithoutMessageNestedInput
+    poll?: PollUncheckedUpdateOneWithoutMessageNestedInput
+    redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
+    translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
+    savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type AppInstallCreateManyUserInput = {
@@ -84628,6 +87648,7 @@ export namespace Prisma {
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
     readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateWithoutUserInput = {
@@ -84644,6 +87665,7 @@ export namespace Prisma {
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateManyWithoutUserInput = {
@@ -84699,6 +87721,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutSenderInput = {
@@ -84739,6 +87762,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateManyWithoutSenderInput = {
@@ -85242,6 +88266,7 @@ export namespace Prisma {
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateWithoutConversationInput = {
@@ -85258,6 +88283,7 @@ export namespace Prisma {
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateManyWithoutConversationInput = {
@@ -85313,6 +88339,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutConversationInput = {
@@ -85353,6 +88380,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateManyWithoutConversationInput = {
@@ -85697,6 +88725,30 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
+  export type MessageReadObservationCreateManyParticipantInput = {
+    messageId: string
+    observedAt?: Date | string
+    source?: string
+  }
+
+  export type MessageReadObservationUpdateWithoutParticipantInput = {
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+    message?: MessageUpdateOneRequiredWithoutReadObservationsNestedInput
+  }
+
+  export type MessageReadObservationUncheckedUpdateWithoutParticipantInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MessageReadObservationUncheckedUpdateManyWithoutParticipantInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+  }
+
   export type MessageCreateManyReplyToInput = {
     id?: string
     conversationId: string
@@ -85783,6 +88835,12 @@ export namespace Prisma {
     savedAt?: Date | string
   }
 
+  export type MessageReadObservationCreateManyMessageInput = {
+    participantId: string
+    observedAt?: Date | string
+    source?: string
+  }
+
   export type MessageUpdateWithoutReplyToInput = {
     id?: StringFieldUpdateOperationsInput | string
     content?: StringFieldUpdateOperationsInput | string
@@ -85821,6 +88879,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutReplyToInput = {
@@ -85861,6 +88920,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateManyWithoutReplyToInput = {
@@ -85934,6 +88994,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutParentInput = {
@@ -85974,6 +89035,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateManyWithoutParentInput = {
@@ -86067,6 +89129,24 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     userId?: StringFieldUpdateOperationsInput | string
     savedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type MessageReadObservationUpdateWithoutMessageInput = {
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+    participant?: ConversationParticipantUpdateOneRequiredWithoutReadObservationsNestedInput
+  }
+
+  export type MessageReadObservationUncheckedUpdateWithoutMessageInput = {
+    participantId?: StringFieldUpdateOperationsInput | string
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MessageReadObservationUncheckedUpdateManyWithoutMessageInput = {
+    participantId?: StringFieldUpdateOperationsInput | string
+    observedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    source?: StringFieldUpdateOperationsInput | string
   }
 
   export type PollOptionCreateManyPollInput = {
@@ -86194,6 +89274,7 @@ export namespace Prisma {
     redPacket?: RedPacketUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutLinkPreviewInput = {
@@ -86234,6 +89315,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateManyWithoutLinkPreviewInput = {
@@ -86340,6 +89422,7 @@ export namespace Prisma {
     translations?: MessageTranslationUpdateManyWithoutMessageNestedInput
     linkPreview?: LinkPreviewUpdateOneWithoutMessagesNestedInput
     savedBy?: SavedMessageUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateWithoutTopicInput = {
@@ -86380,6 +89463,7 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+    readObservations?: MessageReadObservationUncheckedUpdateManyWithoutMessageNestedInput
   }
 
   export type MessageUncheckedUpdateManyWithoutTopicInput = {

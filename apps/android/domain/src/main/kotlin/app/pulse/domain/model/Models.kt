@@ -46,6 +46,7 @@ data class ConversationMember(
     val lastReadAt: Long? = null,
     /** Wire role - "admin" | "member". */
     val role: String? = null,
+    val readMembershipId: String? = null,
 )
 
 @Serializable
@@ -63,6 +64,7 @@ data class Conversation(
     val lastMessageKind: String? = null,
     val lastActivityAt: String? = null,
     val unreadCount: Int = 0,
+    val firstUnreadMessageId: String? = null,
     val isPinned: Boolean = false,
     val isMuted: Boolean = false,
     val isArchived: Boolean = false,
@@ -188,6 +190,7 @@ data class Topic(
     val emoji: String = app.pulse.protocol.TOPIC_ICON_DEFAULT,
     val lastMessageAt: Long? = null,
     val messageCount: Int = 0,
+    val unreadCount: Int? = null,
 )
 
 /** Outcome of POST /api/messages/{id}/transcribe (cached: server ASR cache hit). */
@@ -516,6 +519,7 @@ data class Message(
     val threadRootId: String? = null,
     val pinnedAt: String? = null,
     val viewedOnce: Boolean = false,
+    val readByMembershipIds: List<String> = emptyList(),
     val reactions: List<Reaction> = emptyList(),
     /** Denormalized for rendering without a join. */
     val replyToBody: String? = null,

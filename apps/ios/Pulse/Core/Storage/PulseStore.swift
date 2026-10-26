@@ -268,6 +268,9 @@ public final class PulseStore: Sendable {
             }
             try Self.repairCachedQuotes(db: db, changedId: nil)
         }
+        m.registerMigration("v14") { db in
+            try db.alter(table: "topics") { t in t.add(column: "unreadCount", .integer) }
+        }
         return m
     }
 
@@ -318,6 +321,33 @@ public final class PulseStore: Sendable {
             )
             guard let row else { return nil }
             return (json: row["json"] as String, updatedAt: row["updatedAt"] as Int64)
+        }
+    }
+
+    func enqueueRead(_ observation: PulseQueuedRead) throws -> PulseQueuedRead {
+        let json = String(decoding: try JSONEncoder().encode(observation), as: UTF8.self)
+        return try dbQueue.write { db in
+            try db.execute(sql: "INSERT OR IGNORE INTO wave7Cache (key, json, updatedAt) VALUES (?, ?, ?)",
+                arguments: [observation.key, json, Int64(Date().timeIntervalSince1970 * 1000)])
+            let retained = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key = ?", arguments: [observation.key])!
+            return try JSONDecoder().decode(PulseQueuedRead.self, from: Data(retained.utf8))
+        }
+    }
+
+    func pendingReads(owner: String) throws -> [PulseQueuedRead] {
+        try dbQueue.read { db in
+            let prefix = "read-journal:v1|\(owner)|"
+            return try String.fetchAll(db, sql: "SELECT json FROM wave7Cache WHERE substr(key, 1, length(?)) = ? ORDER BY updatedAt, key",
+                arguments: [prefix, prefix]).compactMap { try? JSONDecoder().decode(PulseQueuedRead.self, from: Data($0.utf8)) }
+        }
+    }
+
+    func acknowledgeRead(_ observation: PulseQueuedRead) throws {
+        try dbQueue.write { db in
+            if let json = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key = ?", arguments: [observation.key]),
+               let current = try? JSONDecoder().decode(PulseQueuedRead.self, from: Data(json.utf8)), current.intent == observation.intent {
+                try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [observation.key])
+            }
         }
     }
 
@@ -876,16 +906,16 @@ public final class PulseStore: Sendable {
             for topic in topics {
                 try db.execute(
                     sql: """
-                    INSERT INTO topics (id, conversationId, name, emoji, lastMessageAt, messageCount)
-                    VALUES (:id, :cid, :name, :emoji, :lastMessageAt, :messageCount)
+                    INSERT INTO topics (id, conversationId, name, emoji, lastMessageAt, messageCount, unreadCount)
+                    VALUES (:id, :cid, :name, :emoji, :lastMessageAt, :messageCount, :unreadCount)
                     ON CONFLICT(id) DO UPDATE SET
                       conversationId=:cid, name=:name, emoji=:emoji,
-                      lastMessageAt=:lastMessageAt, messageCount=:messageCount
+                      lastMessageAt=:lastMessageAt, messageCount=:messageCount, unreadCount=:unreadCount
                     """,
                     arguments: [
                         "id": topic.id, "cid": conversationId, "name": topic.name,
                         "emoji": topic.emoji ?? "chat", "lastMessageAt": topic.lastMessageAt,
-                        "messageCount": topic.messageCount ?? 0,
+                        "messageCount": topic.messageCount ?? 0, "unreadCount": topic.unreadCount,
                     ],
                 )
             }
@@ -910,7 +940,7 @@ public final class PulseStore: Sendable {
         let emoji: String? = row["emoji"]
         let lastMessageAt: String? = row["lastMessageAt"]
         let messageCount: Int? = row["messageCount"]
-        return WireTopic(id: id, name: name, emoji: emoji, lastMessageAt: lastMessageAt, messageCount: messageCount)
+        return WireTopic(unreadCount: row["unreadCount"], id: id, name: name, emoji: emoji, lastMessageAt: lastMessageAt, messageCount: messageCount)
     }
 
     // saved library cache (W2-DATA-B - GET /users/{id}/saved mirror)

@@ -22,7 +22,7 @@ export async function captureReadIntent(db: PrismaClient, room: string, owner: s
       if (!member) throw new ReadReceiptError(403, 'You are not a participant of this conversation.')
       const state = await tx.readIntentState.upsert({ where: { participantId: member.id },
         create: { participantId: member.id, revision: randomUUID() }, update: {}, select: { revision: true } })
-      return { readIntentVersion: 1, conversationId: room, userId: owner, readIntent: state.revision }
+      return { readIntentVersion: 2, conversationId: room, userId: owner, readIntent: `${state.revision}.${member.id}` }
     }, { isolationLevel: 'Serializable' })
   } catch (error) {
     if (['P1008', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? ''))
@@ -41,7 +41,9 @@ export async function advanceReadReceipt(db: PrismaClient, room: string, owner: 
       })
       if (!participant) throw new ReadReceiptError(403, 'You are not a participant of this conversation.')
       const state = await tx.readIntentState.findUnique({ where: { participantId: participant.id } })
-      const ownsIntent = readIntent !== undefined && state?.revision === readIntent
+      const ownsIntent = state !== null && readIntent !== undefined && `${state?.revision}.${participant.id}` === readIntent
+      if (messageId && readIntent !== undefined && !readIntent.endsWith(`.${participant.id}`))
+        throw new ReadReceiptError(410, 'This observation belongs to a retired membership.')
       // A stale explicit action must not clear a newer manual choice. A visible
       // receipt may still advance real progress, but never clears that choice.
       if (!messageId && readIntent !== undefined && !ownsIntent)
@@ -61,6 +63,30 @@ export async function advanceReadReceipt(db: PrismaClient, room: string, owner: 
       if (messageId && (!message || message.deletedAt !== null ||
           (message.expiresAt !== null && message.expiresAt <= now) || unavailableParent)) {
         throw new ReadReceiptError(404, 'The displayed message is no longer available in this conversation.')
+      }
+      // Persist only the identity that passed the visibility check. Equal-time
+      // neighbours and older gaps are intentionally not covered by this write.
+      if (messageId && readIntent !== undefined) {
+        await tx.messageReadObservation.upsert({
+          where: { participantId_messageId: { participantId: participant.id, messageId } },
+          create: { participantId: participant.id, messageId, observedAt: now, source: 'visible' },
+          // A migrated exclusion is not evidence until an actual observation.
+          update: { source: 'visible', observedAt: now },
+        })
+      } else if (!messageId && ownsIntent) {
+        // Explicit mark-all is a snapshot of actual identities, NOT a timestamp
+        // range that also consumes messages arriving afterwards at the same time.
+        await tx.$executeRaw`
+          INSERT INTO MessageReadObservation (participantId, messageId, observedAt, source)
+          SELECT ${participant.id}, m.id, ${now}, 'all' FROM Message m
+          LEFT JOIN Message p ON p.id = m.parentId
+          WHERE m.conversationId = ${room} AND m.deletedAt IS NULL
+            AND (m.expiresAt IS NULL OR m.expiresAt > ${now})
+            AND (m.parentId IS NULL OR (p.conversationId = m.conversationId AND p.parentId IS NULL
+              AND p.deletedAt IS NULL AND (p.expiresAt IS NULL OR p.expiresAt > ${now})))
+          ON CONFLICT(participantId, messageId) DO UPDATE SET source = CASE
+            WHEN MessageReadObservation.source = 'legacy' THEN 'all' ELSE MessageReadObservation.source END
+        `
       }
       const boundary = message?.createdAt ?? participant.lastReadAt
       // A late response from an older screen/device must not move the watermark backwards.
@@ -99,7 +125,7 @@ export async function setManualUnread(db: PrismaClient, room: string, owner: str
       })
       if (!participant) throw new ReadReceiptError(403, 'You are not a participant of this conversation.')
       const state = await tx.readIntentState.findUnique({ where: { participantId: participant.id } })
-      if (readIntent !== undefined && state?.revision !== readIntent)
+      if (readIntent !== undefined && `${state?.revision}.${participant.id}` !== readIntent)
         throw new ReadReceiptError(409, 'A newer read/unread action won. Refresh before trying again.')
       // Rotate even for repeated desired values: this is a fresh explicit intent.
       await tx.readIntentState.upsert({ where: { participantId: participant.id },

@@ -20,12 +20,12 @@ class ReadStateApiTest {
             val intent = if (anchor == null) "all" else "visible"
             val http = HttpClient(MockEngine { request ->
                 if (request.url.encodedPath.endsWith("/read-intent")) return@MockEngine respond(
-                    """{"readIntentVersion":1,"conversationId":"room","userId":"me","readIntent":"fence"}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+                    """{"readIntentVersion":2,"conversationId":"room","userId":"me","readIntent":"fence"}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
                 assertEquals("/api/conversations/room/read-state", request.url.encodedPath)
                 assertTrue((request.body as TextContent).text.contains("\"mode\":\"$intent\""))
                 val stamp = when (mode) { "date" -> "invalid"; "behind" -> "2026-10-22T00:00:00Z"; else -> "2026-10-22T00:00:10Z" }
                 val message = if (mode == "anchor") "\"other\"" else anchor?.let { "\"$it\"" } ?: "null"
-                val body = if (mode == "legacy") """{"ok":true}""" else """{"ok":${mode != "false"},"readReceiptVersion":${if (mode == "version") 0 else 2},"readIntent":"${if (mode == "fence") "other-fence" else "fence"}","conversationId":"${if (mode == "room") "other" else "room"}","userId":"${if (mode == "owner") "other" else "me"}","messageId":$message,"mode":"${if (mode == "intent") "wrong" else intent}","lastReadAt":"$stamp"}"""
+                val body = if (mode == "legacy") """{"ok":true}""" else """{"ok":${mode != "false"},"readReceiptVersion":${if (mode == "version") 0 else 3},"readIntent":"${if (mode == "fence") "other-fence" else "fence"}","conversationId":"${if (mode == "room") "other" else "room"}","userId":"${if (mode == "owner") "other" else "me"}","messageId":$message,"mode":"${if (mode == "intent") "wrong" else intent}","lastReadAt":"$stamp"}"""
                 respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
             })
             try {
@@ -49,7 +49,7 @@ class ReadStateApiTest {
         for (on in listOf(true, false)) for (mode in listOf("valid", "legacy", "false", "version", "room", "owner", "opposite", "missing", "null", "string", "ok-string", "version-string", "numeric-owner")) {
             val http = HttpClient(MockEngine { request ->
                 if (request.url.encodedPath.endsWith("/read-intent")) return@MockEngine respond(
-                    """{"readIntentVersion":1,"conversationId":"room","userId":"me","readIntent":"fence"}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+                    """{"readIntentVersion":2,"conversationId":"room","userId":"me","readIntent":"fence"}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
                 assertEquals("PATCH", request.method.value)
                 assertEquals("/api/conversations/room/mark-unread", request.url.encodedPath)
                 assertTrue((request.body as TextContent).text.contains("\"on\":$on"))
@@ -86,7 +86,7 @@ class ReadStateApiTest {
                 val receipt = buildJsonObject {
                     if (mode != "missing") {
                         if (mode == "version-string") put("readIntentVersion", "1")
-                        else put("readIntentVersion", if (mode == "version") 2 else 1)
+                        else put("readIntentVersion", if (mode == "version") 1 else 2)
                         put("conversationId", if (mode == "room") "other" else "room")
                         put("userId", if (mode == "owner") "other" else "me")
                         if (mode == "numeric-token") put("readIntent", 1) else put("readIntent", if (mode == "blank") " " else "fence")

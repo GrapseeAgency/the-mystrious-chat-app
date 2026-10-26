@@ -617,6 +617,17 @@ exports.Prisma.ReadIntentStateScalarFieldEnum = {
   revision: 'revision'
 };
 
+exports.Prisma.MessageReadObservationScalarFieldEnum = {
+  participantId: 'participantId',
+  messageId: 'messageId',
+  observedAt: 'observedAt',
+  source: 'source'
+};
+
+exports.Prisma.ReadLedgerMigrationScalarFieldEnum = {
+  id: 'id'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -677,7 +688,9 @@ exports.Prisma.ModelName = {
   WalletOperation: 'WalletOperation',
   ConversationCreationOperation: 'ConversationCreationOperation',
   ScheduledCreationOperation: 'ScheduledCreationOperation',
-  ReadIntentState: 'ReadIntentState'
+  ReadIntentState: 'ReadIntentState',
+  MessageReadObservation: 'MessageReadObservation',
+  ReadLedgerMigration: 'ReadLedgerMigration'
 };
 
 /**

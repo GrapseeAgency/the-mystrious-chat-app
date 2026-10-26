@@ -83,6 +83,7 @@ data class ChatMessageDto(
     val anon: Boolean? = null,
     val anonAlias: String? = null,
     val expiresAt: String? = null,
+    val readByMembershipIds: List<String> = emptyList(),
 )
 
 @Serializable
@@ -240,6 +241,7 @@ data class ConversationMemberDto(
     val statusText: String? = null,
     val lastReadAt: String? = null,
     val role: String? = null,
+    val readMembershipId: String? = null,
 )
 
 @Serializable
@@ -262,6 +264,7 @@ data class ConversationSummaryDto(
     val lastMessage: ChatMessageDto? = null,
     @Serializable(with = OptionalRoomPolicyInteger::class)
     val unreadCount: Int? = null,
+    val firstUnreadMessageId: String? = null,
     val unreadExpirations: List<UnreadExpirationDto> = emptyList(),
     val pinnedAt: String? = null,
     val mutedUntil: String? = null,
@@ -599,6 +602,7 @@ data class TopicDto(
     val emoji: String = TOPIC_ICON_DEFAULT,
     val lastMessageAt: String? = null,
     val messageCount: Int = 0,
+    val unreadCount: Int? = null,
 )
 
 /** GET /api/conversations/{id}/topics?userId= → { topics: [...] }. */
@@ -711,3 +715,8 @@ fun JsonElement.unwrapOrRoot(key: String): JsonElement =
 
 /** Serializer handle for the Room reactions column (shared by data mappers). */
 val ReactionListSerializer = kotlinx.serialization.builtins.ListSerializer(ReactionDto.serializer())
+
+@Serializable
+data class ReadStateSnapshotDto(val readStateVersion: Int, val conversationId: String, val userId: String,
+    val threadId: String? = null, val topicId: String? = null, val unreadCount: Int,
+    val firstUnreadMessageId: String? = null)

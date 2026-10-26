@@ -408,6 +408,7 @@ model ConversationParticipant {
   @@index([conversationId])
   @@index([userId])
   readIntentState ReadIntentState?
+  readObservations MessageReadObservation[]
 
 }
 
@@ -456,6 +457,7 @@ model Message {
   translations   MessageTranslation[]
   linkPreview    LinkPreview?         @relation(fields: [linkUrl], references: [url])
   savedBy        SavedMessage[]
+  readObservations MessageReadObservation[]
 
   @@index([conversationId, createdAt])
   @@index([replyToId])
@@ -856,4 +858,20 @@ model ReadIntentState {
   participantId String @id
   revision String
   participant ConversationParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+}
+
+// Exact, membership-owned observations; timestamps are informational, not cursors.
+model MessageReadObservation {
+  participantId String
+  messageId String
+  observedAt DateTime @default(now())
+  source String @default("visible")
+  participant ConversationParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  @@id([participantId, messageId])
+  @@index([messageId])
+}
+
+model ReadLedgerMigration {
+  id String @id
 }

@@ -252,6 +252,7 @@ public struct PulseSendResult: Sendable {
 }
 
 public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
+    public var readByMembershipIds: [String]? = nil
     public let id: String
     public let conversationId: String
     public let senderId: String
@@ -445,6 +446,7 @@ public struct WireSavedPage: Codable, Hashable, Sendable {
 /// Zulip-style topic. "General" is NOT a row - it is the unfiltered room;
 /// only real Topic rows ride this shape.
 public struct WireTopic: Codable, Hashable, Sendable, Identifiable {
+    public var unreadCount: Int? = nil
     public let id: String
     public let name: String
     public let emoji: String?
@@ -551,6 +553,7 @@ public struct WirePhraseEnvelope: Codable, Sendable {
 }
 
 public struct WireConversationMember: Codable, Hashable, Sendable {
+    public var readMembershipId: String? = nil
     public let id: String
     public let name: String
     public let username: String?
@@ -593,6 +596,7 @@ public struct WireStreak: Codable, Hashable, Sendable {
 }
 
 public struct WireConversationSummary: Codable, Hashable, Sendable {
+    public var firstUnreadMessageId: String? = nil
     public var creationClientId: String? = nil
     public var creationReplayed: Bool? = nil
     public let id: String

@@ -39,7 +39,7 @@ test('read receipt binds version, owner, room, intent, boundary and committed ti
   for (const mode of ['visible', 'all']) {
     const body = { mode, ...(mode === 'visible' ? { messageId: 'anchor' } : {}) }
     const response = await f.request(body)
-    assert.deepEqual(await response.json(), { ok: true, readReceiptVersion: 2, readIntent: 'fence', userId: 'reader', conversationId: 'room',
+    assert.deepEqual(await response.json(), { ok: true, readReceiptVersion: 3, readIntent: 'fence', userId: 'reader', conversationId: 'room',
       mode, messageId: mode === 'visible' ? 'anchor' : null, lastReadAt: '2026-10-22T00:00:10.000Z' })
     assert.deepEqual(f.calls.at(-1), { room: 'room', owner: 'reader', anchor: mode === 'visible' ? 'anchor' : undefined, intent:'fence' })
   }

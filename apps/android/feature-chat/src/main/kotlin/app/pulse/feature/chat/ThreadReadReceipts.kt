@@ -14,8 +14,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import app.pulse.domain.model.Message
 import app.pulse.domain.sync.hasReadViewportOverlap
-import app.pulse.domain.sync.visibleThreadReadBoundary
+import app.pulse.domain.sync.visibleThreadReadIds
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
 
 /** A thread is a reading surface, not permission to read every cached reply. */
 @Composable
@@ -39,22 +41,23 @@ fun ThreadReadReceipts(
         lifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (!enabled || rows.first == null) return@repeatOnLifecycle
             val releaseAttention = acquireAttention()
-            fun currentBoundary(): String? {
+            fun currentBoundary(): List<String> {
                 val (parent, messages) = rows
                 val layout = listState.layoutInfo
                 val visible = layout.visibleItemsInfo.filter {
                     hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset,
                         layout.viewportEndOffset, minimumPixels)
                 }.mapNotNull { if (it.key == "thread-parent") parent?.id else it.key as? String }.toSet()
-                return visibleThreadReadBoundary(parent, messages, visible)
+                return visibleThreadReadIds(parent, messages, visible)
             }
             try {
-                snapshotFlow { currentBoundary() }.collectLatest { id ->
-                    if (id == null) return@collectLatest
-                    app.pulse.domain.sync.acknowledgeVisibleRead(
-                        isCurrent = { currentBoundary() == id },
-                        send = intents.getOrPut(id) { reader(id) }::send,
-                    )
+                snapshotFlow { currentBoundary() }.collectLatest { ids ->
+                    coroutineScope { ids.forEach { id -> launch {
+                        app.pulse.domain.sync.acknowledgeVisibleRead(
+                            isCurrent = { id in currentBoundary() },
+                            send = intents.getOrPut(id) { reader(id) }::send,
+                        )
+                    } } }
                 }
             } finally { releaseAttention() }
         }

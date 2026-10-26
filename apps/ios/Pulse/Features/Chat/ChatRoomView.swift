@@ -2712,10 +2712,10 @@ private struct MessageInfoSheet: View {
     private var receipts: PulseRoomParityLogic.ReceiptSplit {
         PulseRoomParityLogic.receiptSplit(
             members: conversation.members.map {
-                PulseRoomParityLogic.ReceiptMember(id: $0.id, lastReadAtIso: $0.lastReadAt)
+                PulseRoomParityLogic.ReceiptMember(id: $0.id, lastReadAtIso: $0.lastReadAt, readMembershipId: $0.readMembershipId)
             },
             viewerId: viewerId,
-            createdAtIso: message.createdAt,
+            createdAtIso: message.createdAt, readByMembershipIds: message.readByMembershipIds ?? [],
         )
     }
 
@@ -2811,7 +2811,7 @@ private struct MessageInfoSheet: View {
                 Text(summary?.name ?? "Member")
                     .font(.subheadline)
                 Text(seen
-                    ? "Read at \(PulseFormat.listStamp(member.lastReadAtIso))"
+                    ? "Read confirmed"
                     : "No read confirmation")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -3852,7 +3852,7 @@ final class RoomViewModel: ObservableObject {
     /// R30-c - the tap-time unread anchor (web chats-tab.tsx:431-435 freeze):
     /// MY lastReadAt from the route-carried summary when the row showed an
     /// unread badge, else nil - nil means the divider never places.
-    private let unreadAnchorMs: Double?
+    private let firstUnreadMessageId: String?
     /// Count distinct incoming arrivals, never changes in rendered history length.
     @Published private(set) var missedCount = 0
     private var missedMessages = PulseMissedMessages()
@@ -3863,6 +3863,7 @@ final class RoomViewModel: ObservableObject {
     }
     @Published var readSurfaceObscured = false { didSet { noteRiverChanged() } }
 
+    private var readerMemberships: [String: String] = [:]
     private var visibleReadIDs: Set<String> = []
 
     func updateReadViewport(visibleIDs: Set<String>, tailVisible: Bool) {
@@ -3874,11 +3875,11 @@ final class RoomViewModel: ObservableObject {
 
     func updateReadBoundary() {
         guard let session, session.sessionGeneration == readSessionGeneration else { return }
-        let boundary = readSurfaceObscured ? nil : messages.last {
+        let boundaries = readSurfaceObscured ? [] : messages.filter {
             visibleReadIDs.contains($0.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
                 PulseRemediationLogic.isAlive($0.expiresAt)
-        }?.id
-        session.setVisibleReadBoundary(conversationId: conversationId, messageId: boundary)
+        }.map(\.id)
+        session.setVisibleReadBoundaries(conversationId: conversationId, messageIds: boundaries)
     }
 
     /// Web showJump - armed when a new tail lands while scrolled away,
@@ -4034,12 +4035,10 @@ final class RoomViewModel: ObservableObject {
         // R2-B R30-c - freeze the unread anchor from the list summary the
         // route carried (web freezes the same values at tap time).
         let viewerId = session.viewer?.id
-        self.unreadAnchorMs = PulseRoomParityLogic.unreadAnchorMs(
-            myLastReadAtIso: conversation.members.first(where: { $0.id == viewerId })?.lastReadAt,
-            unreadCount: conversation.unreadCount,
-        )
+        self.firstUnreadMessageId = conversation.firstUnreadMessageId
         self.roomScreenPrivacy = conversation.screenPrivacy
         for member in conversation.members where member.id != viewerId {
+            readerMemberships[member.id] = member.readMembershipId
             if let stamp = member.lastReadAt, let at = PulseFormat.date(stamp), at.timeIntervalSince1970 > 0 {
                 memberWatermarks[member.id] = at
             }
@@ -4162,8 +4161,13 @@ final class RoomViewModel: ObservableObject {
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     upsert(message)
                     try? session.store?.upsert(messages: [message])
-                case .messageRead(let convId, let userId, let lastReadAt):
-                    guard convId == self.conversationId, userId != session.viewer?.id else { return }
+                case .messageRead(let convId, let userId, let lastReadAt, let ids, _, let all):
+                    guard convId == self.conversationId else { return }
+                    loadTopics(session: session)
+                    for id in ids {
+                        if let message = try? session.store?.message(id: id) { upsert(message) }
+                    }
+                    if all { Task { await self.refresh(session: session) } }
                     // Missing or reordered receipts cannot invent/regress Seen.
                     guard memberWatermarks[userId] != nil,
                           let at = lastReadAt.flatMap({ PulseFormat.date($0) }), at.timeIntervalSince1970 > 0 else { return }
@@ -4616,11 +4620,8 @@ final class RoomViewModel: ObservableObject {
     /// R30-c - the index the unread divider row sits BEFORE (web
     /// buildItems parity). Nil = anchor absent or nothing qualifies.
     func unreadDividerRow(viewerId: String?) -> Int? {
-        PulseRoomParityLogic.unreadDividerIndex(
-            messages: messages,
-            viewerId: viewerId,
-            anchorMs: unreadAnchorMs,
-        )
+        guard let firstUnreadMessageId else { return nil }
+        return messages.firstIndex { $0.id == firstUnreadMessageId }
     }
 
     // ── R2-B R34-b - AI recap ──
@@ -4693,6 +4694,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     private func adoptReadMembers(_ detail: WireConversationSummary) {
+        readerMemberships = detail.members.reduce(into: [:]) { result, member in result[member.id] = member.readMembershipId }
         let previous = memberWatermarks
         memberWatermarks = detail.members.reduce(into: [String: Date]()) { stamps, member in
             guard member.id != session?.viewer?.id, let stamp = member.lastReadAt,
@@ -5229,7 +5231,7 @@ final class RoomViewModel: ObservableObject {
 
     func readLabel(_ message: WireChatMessage) -> String {
         let count = PulseRoomParityLogic.peerReadCount(watermarks: memberWatermarks,
-            viewerId: session?.viewer?.id, createdAtIso: message.createdAt)
+            viewerId: session?.viewer?.id, createdAtIso: message.createdAt, memberships: readerMemberships, readByMembershipIds: message.readByMembershipIds ?? [])
         return isGroupRoom ? "Read by \(count)" : "Seen"
     }
 
@@ -5238,7 +5240,7 @@ final class RoomViewModel: ObservableObject {
               let last = messages.last(where: { $0.senderId == session?.viewer?.id }) else { return false }
         guard last.id == message.id else { return false }
         return PulseRoomParityLogic.peerReadCount(watermarks: memberWatermarks,
-            viewerId: session?.viewer?.id, createdAtIso: message.createdAt) > 0
+            viewerId: session?.viewer?.id, createdAtIso: message.createdAt, memberships: readerMemberships, readByMembershipIds: message.readByMembershipIds ?? []) > 0
     }
 
     // ── Wave 1 message actions ─────────────────────────────
@@ -5838,20 +5840,23 @@ final class RoomViewModel: ObservableObject {
 
     /// Open + after own sends + the 15 s ticker - api.topics → store upsert →
     /// read back (the cached rail renders even when the next fetch fails).
+    private var topicsReadRevision = UUID()
     func loadTopics(session: PulseSession) {
         guard isGroupRoom, let viewer = session.viewer else { return }
         let epoch = session.sessionGeneration
         let client = session.api, store = session.store
+        let revision = UUID()
+        topicsReadRevision = revision
         Task { [weak self] in
             guard let self else { return }
             do {
                 let fresh = try await client.topics(conversationId: conversationId, userId: viewer.id)
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch, topicsReadRevision == revision else { return }
                 try? store?.upsert(topics: fresh, conversationId: conversationId)
             } catch {
                 // Offline - the cached rail below still renders.
             }
-            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            guard !Task.isCancelled, session.sessionGeneration == epoch, topicsReadRevision == revision else { return }
             if let store {
                 topics = (try? store.topics(conversationId: conversationId)) ?? topics
             }

@@ -63,13 +63,16 @@ suspend fun resolveThreadJump(repo: app.pulse.domain.repository.PulseRepository,
 
 
 /** Only live server-backed rows actually intersecting the thread viewport count. */
-fun visibleThreadReadBoundary(root: Message?, replies: List<Message>, visibleIds: Set<String>,
-    now: Long = System.currentTimeMillis()): String? {
-    root ?: return null
-    if (!threadRootAvailable(root, root.conversationId, root.id, now)) return null
-    return (listOf(root) + replies).lastOrNull {
+fun visibleThreadReadIds(root: Message?, replies: List<Message>, visibleIds: Set<String>,
+    now: Long = System.currentTimeMillis()): List<String> {
+    root ?: return emptyList()
+    if (!threadRootAvailable(root, root.conversationId, root.id, now)) return emptyList()
+    return (listOf(root) + replies).filter {
         it.id in visibleIds && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) && !it.isDeleted &&
             it.conversationId == root.conversationId && (it.id == root.id || it.threadRootId == root.id) &&
             (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false)
-    }?.id
+    }.map { it.id }
 }
+
+fun visibleThreadReadBoundary(root: Message?, replies: List<Message>, visibleIds: Set<String>,
+    now: Long = System.currentTimeMillis()): String? = visibleThreadReadIds(root, replies, visibleIds, now).lastOrNull()

@@ -365,6 +365,8 @@ interface PulseRepository {
         Result.failure(IllegalStateException("Open the original account to reply"))
     suspend fun markRead(conversationId: String): Result<Unit>
     /** Displayed server message boundary; never acknowledge unseen arrivals. */
+    suspend fun readStateSnapshot(conversationId: String, threadId: String? = null, topicId: String? = null): Result<Int> =
+        Result.failure(UnsupportedOperationException("Read state is unavailable"))
     suspend fun captureReadIntent(conversationId: String): Result<String> = Result.failure(UnsupportedOperationException("Read intent is unavailable"))
     suspend fun markReadThrough(conversationId: String, messageId: String, readIntent: String? = null): Result<Unit> =
         Result.failure(UnsupportedOperationException("Visible read is unavailable"))

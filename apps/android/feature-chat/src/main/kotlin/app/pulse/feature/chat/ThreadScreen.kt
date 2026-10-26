@@ -169,6 +169,16 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
+    private val _unreadCount = MutableStateFlow<Int?>(null)
+    val unreadCount: StateFlow<Int?> = _unreadCount.asStateFlow()
+    private var unreadJob: kotlinx.coroutines.Job? = null
+    private fun refreshUnread() {
+        unreadJob?.cancel()
+        unreadJob = viewModelScope.launch {
+            _unreadCount.value = repo.readStateSnapshot(conversationId, threadId = rootId).getOrNull()
+        }
+    }
+
     private var composerRevision = 0L
     private var threadDraftToken: app.pulse.domain.model.ComposerDraftToken? = null
 
@@ -196,6 +206,7 @@ class ThreadViewModel @Inject constructor(
         }
         viewModelScope.launch {
             repo.events().collect { event ->
+                if (event is PulseEvent.MessageRead && event.conversationId == conversationId) refreshUnread()
                 if (event is PulseEvent.OutboxDropped && event.conversationId == conversationId && event.threadRootId == rootId) {
                     _state.value = _state.value.copy(
                         notice = RoomNotice(event.reason, isError = true),
@@ -241,6 +252,7 @@ class ThreadViewModel @Inject constructor(
     }
 
     fun retry() {
+        refreshUnread()
         if (_state.value.loading) return
         _state.value = _state.value.copy(loading = true, error = null, offlineJumpId = null)
         viewModelScope.launch {
@@ -274,8 +286,9 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
+    private val readScope by lazy { app.pulse.domain.sync.VisibleReadScope(repo, conversationId) }
     fun markVisibleRead(messageId: String): app.pulse.domain.sync.VisibleReadIntent =
-        app.pulse.domain.sync.visibleReadIntent(repo, conversationId, messageId)
+        readScope.message(messageId)
 
     fun notify(text: String, isError: Boolean = false) {
         _state.value = _state.value.copy(notice = RoomNotice(text, isError))
@@ -357,6 +370,7 @@ fun ThreadScreen(
     jumpMessageId: String? = viewModel.initialJumpMessageId,
     readingEnabled: Boolean = false, // host must grant foreground/unlocked reading eligibility
 ) {
+    val unreadCount by viewModel.unreadCount.collectAsStateWithLifecycle()
     val cachedParent by viewModel.parent.collectAsStateWithLifecycle()
     val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -515,7 +529,7 @@ fun ThreadScreen(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Thread",
+                        unreadCount?.takeIf { it > 0 }?.let { "Thread · $it unread" } ?: "Thread",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )

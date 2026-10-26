@@ -419,14 +419,25 @@ class PulseApi(
             row
         }
 
+    suspend fun readStateSnapshot(conversationId: String, userId: String, threadId: String? = null, topicId: String? = null): PulseResult<Int> {
+        fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
+        val query = "userId=${q(userId)}" + (threadId?.let { "&threadId=${q(it)}" } ?: "") + (topicId?.let { "&topicId=${q(it)}" } ?: "")
+        return get("/api/conversations/${q(conversationId)}/read-state?$query") { raw ->
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.ReadStateSnapshotDto.serializer(), raw)
+            require(receipt.readStateVersion == 1 && receipt.conversationId == conversationId && receipt.userId == userId &&
+                receipt.threadId == threadId && receipt.topicId == topicId && receipt.unreadCount >= 0)
+            receipt.unreadCount
+        }
+    }
+
     suspend fun captureReadIntent(conversationId: String, userId: String): PulseResult<String> =
         get("/api/conversations/${java.net.URLEncoder.encode(conversationId, "UTF-8")}/read-intent?userId=${java.net.URLEncoder.encode(userId, "UTF-8")}") { raw ->
             val strict = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
             val fields = strict.parseToJsonElement(raw) as? JsonObject
-            require(fields?.get("readIntentVersion") == JsonPrimitive(1) &&
+            require(fields?.get("readIntentVersion") == JsonPrimitive(2) &&
                 listOf("conversationId", "userId", "readIntent").all { (fields?.get(it) as? JsonPrimitive)?.isString == true }) { "Read intent identity or version is missing" }
             val receipt = strict.decodeFromString(app.pulse.protocol.ReadIntentDto.serializer(), raw)
-            require(receipt.readIntentVersion == 1 && receipt.conversationId == conversationId && receipt.userId == userId &&
+            require(receipt.readIntentVersion == 2 && receipt.conversationId == conversationId && receipt.userId == userId &&
                 receipt.readIntent.isNotBlank() && receipt.readIntent.length <= 128) { "Read intent was not confirmed" }
             receipt.readIntent
         }
@@ -475,10 +486,10 @@ class PulseApi(
             "mode" to if (messageId == null) "all" else "visible", "messageId" to messageId, "readIntent" to intent)) { raw ->
             val strict = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
             val fields = requireNotNull(strict.parseToJsonElement(raw) as? JsonObject)
-            require(fields["readReceiptVersion"] == JsonPrimitive(2) && fields["ok"] == JsonPrimitive(true) &&
+            require(fields["readReceiptVersion"] == JsonPrimitive(3) && fields["ok"] == JsonPrimitive(true) &&
                 fields["readIntent"] == JsonPrimitive(intent)) { "Read receipt tokens are invalid" }
             val receipt = strict.decodeFromString(app.pulse.protocol.ReadReceiptDto.serializer(), raw)
-            require(receipt.ok && receipt.readReceiptVersion == 2 && receipt.readIntent == intent && receipt.conversationId == conversationId &&
+            require(receipt.ok && receipt.readReceiptVersion == 3 && receipt.readIntent == intent && receipt.conversationId == conversationId &&
                 receipt.userId == userId && receipt.messageId == messageId &&
                 receipt.mode == if (messageId == null) "all" else "visible") { "Read state was not confirmed." }
             val acknowledged = java.time.Instant.parse(receipt.lastReadAt)

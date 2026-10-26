@@ -28,6 +28,8 @@ struct ThreadView: View {
     @State private var highlightedReplyId: String?
     @State private var nearTail = true
     @State private var visibleReadIDs: Set<String> = []
+    @State private var scopeUnread: Int?
+    @State private var scopeReadRevision = 0
     @State private var readOwner: PulseReadSurfaces.Owner?
     @Environment(\.scenePhase) private var readScenePhase
     @State private var tailScrollRevision = 0
@@ -55,20 +57,20 @@ struct ThreadView: View {
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rootUnavailable &&
         draftJournal?.isCurrentOwner == true && draftSession == session.sessionGeneration }
 
-    private var readCandidate: String? {
+    private var readCandidate: [String] {
         guard phase == .loaded, !rootUnavailable, lightbox == nil, discardReply == nil,
               readScenePhase == .active, !session.threadAccessDenied(rootId: root.id),
-              PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return nil }
-        return ([parent ?? root] + replies).last {
+              PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return [] }
+        return ([parent ?? root] + replies).filter {
             visibleReadIDs.contains($0.id) && $0.conversationId == conversation.id &&
                 ($0.id == root.id || $0.parentId == root.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
                 PulseRemediationLogic.isAlive($0.expiresAt)
-        }?.id
+        }.map(\.id)
     }
 
     private func updateReadBoundary() {
         guard let readOwner else { return }
-        session.setVisibleReadBoundary(owner: readOwner, messageId: readCandidate)
+        session.setVisibleReadBoundaries(owner: readOwner, messageIds: readCandidate)
     }
 
     var body: some View {
@@ -130,7 +132,7 @@ struct ThreadView: View {
                 } else { composer }
             }
             .background(PulseTheme.pageWash.ignoresSafeArea())
-            .navigationTitle("Thread")
+            .navigationTitle(scopeUnread.map { $0 > 0 ? "Thread · \($0) unread" : "Thread" } ?? "Thread")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
@@ -155,11 +157,18 @@ struct ThreadView: View {
             highlightedReplyId = nil
         }
         .onReceive(session.signals) { handle(signal: $0) }
+        .task(id: scopeReadRevision) {
+            let epoch = session.sessionGeneration
+            let count = try? await session.api.unreadCount(conversationId: conversation.id, threadId: root.id)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            scopeUnread = count
+        }
         .onReceive(session.messageVisibilityClock) { now in pruneExpired(now: now); updateReadBoundary() }
         .onReceive(session.outboxEvents) { event in
             switch event {
             case .delivered(let message, let room, let clientId):
                 guard room == conversation.id else { return }
+        scopeReadRevision &+= 1
                 replies.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
                 if message.parentId == root.id { appendReply(message) }
             case .dropped(let clientId, let room):
@@ -443,6 +452,12 @@ struct ThreadView: View {
         let room: String
         let message: WireChatMessage
         switch signal {
+        case .messageRead(let id, _, _, _, _, _):
+            if id == conversation.id { scopeReadRevision &+= 1 }
+            return
+        case .connectionState:
+            scopeReadRevision &+= 1
+            return
         case .messageNew(let id, let raw), .messageReact(let id, let raw), .messageEnvelope(_, let id, let raw):
             guard let decoded = PulseSession.decodeMessage(from: raw) else { return }
             room = id; message = decoded

@@ -83,6 +83,7 @@ export interface MessageTranslationEntry {
 }
 
 export interface ChatMessage {
+  readByMembershipIds?: string[]
   id: string
   conversationId: string
   senderId: string
@@ -132,6 +133,7 @@ export interface ChatMessage {
 
 /** Row of the conversations list */
 export interface ConversationSummary {
+  firstUnreadMessageId?: string | null
   id: string
   isGroup: boolean
   name: string | null // group title; null for DMs (UI derives other member's name)

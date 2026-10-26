@@ -404,7 +404,7 @@ internal fun MessageInfoSheet(
 ) {
     val createdAtMs = PulseTime.epochMs(message.createdAt)
     val others = conversation?.members?.filter { it.id != viewerId }.orEmpty()
-    val seenBy = app.pulse.domain.sync.confirmedReaders(others, viewerId, createdAtMs)
+    val seenBy = app.pulse.domain.sync.confirmedReaders(others, viewerId, createdAtMs, message.readByMembershipIds)
     val deliveredTo = others.filterNot { it in seenBy }
     val nameOf = { id: String ->
         conversation?.members?.firstOrNull { it.id == id }?.name ?: id

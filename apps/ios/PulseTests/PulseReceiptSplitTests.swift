@@ -8,10 +8,10 @@ import XCTest
 final class PulseReceiptSplitTests: XCTestCase {
 
     private func member(_ id: String, readAt: String?) -> PulseRoomParityLogic.ReceiptMember {
-        PulseRoomParityLogic.ReceiptMember(id: id, lastReadAtIso: readAt)
+        PulseRoomParityLogic.ReceiptMember(id: id, lastReadAtIso: readAt, readMembershipId: "membership-" + id)
     }
 
-    func testSeenRequiresWatermarkAtOrAfterCreatedAt() {
+    func testSeenRequiresExactMembershipEvidenceNotTimestampOrder() {
         let split = PulseRoomParityLogic.receiptSplit(
             members: [
                 member("u1", readAt: "2026-01-05T10:00:05.000Z"), // after → seen
@@ -20,6 +20,7 @@ final class PulseReceiptSplitTests: XCTestCase {
             ],
             viewerId: "me",
             createdAtIso: "2026-01-05T10:00:00.000Z",
+            readByMembershipIds: ["membership-u1", "membership-u2"],
         )
         XCTAssertEqual(split.seenBy.map(\.id), ["u1", "u2"])
         XCTAssertEqual(split.deliveredTo.map(\.id), ["u3"])
@@ -33,6 +34,7 @@ final class PulseReceiptSplitTests: XCTestCase {
             ],
             viewerId: "me",
             createdAtIso: "2026-01-05T10:00:00.000Z",
+            readByMembershipIds: ["membership-u1", "membership-u2"],
         )
         XCTAssertTrue(split.seenBy.allSatisfy { $0.id != "me" })
         XCTAssertTrue(split.deliveredTo.allSatisfy { $0.id != "me" })
@@ -48,6 +50,7 @@ final class PulseReceiptSplitTests: XCTestCase {
             ],
             viewerId: "me",
             createdAtIso: "2026-01-05T10:00:00.000Z",
+            readByMembershipIds: ["membership-u1", "membership-u2"],
         )
         XCTAssertTrue(split.seenBy.isEmpty)
         XCTAssertEqual(split.deliveredTo.map(\.id), ["u1", "u2", "u3"])
@@ -75,9 +78,10 @@ final class PulseReceiptSplitTests: XCTestCase {
             ],
             viewerId: nil,
             createdAtIso: "2026-01-05T10:00:00.000Z",
+            readByMembershipIds: ["membership-u1", "membership-u2"],
         )
-        XCTAssertEqual(split.seenBy.map(\.id), ["u2"])
-        XCTAssertEqual(split.deliveredTo.map(\.id), ["me"])
+        XCTAssertEqual(split.seenBy.map(\.id), [])
+        XCTAssertEqual(split.deliveredTo.map(\.id), ["me", "u2"])
     }
 
     func testEmptyMembersProduceEmptySplits() {
@@ -85,6 +89,7 @@ final class PulseReceiptSplitTests: XCTestCase {
             members: [],
             viewerId: "me",
             createdAtIso: "2026-01-05T10:00:00.000Z",
+            readByMembershipIds: ["membership-u1", "membership-u2"],
         )
         XCTAssertTrue(split.seenBy.isEmpty)
         XCTAssertTrue(split.deliveredTo.isEmpty)
@@ -98,6 +103,7 @@ final class PulseReceiptSplitTests: XCTestCase {
             members: members,
             viewerId: nil,
             createdAtIso: "2026-01-05T10:00:00.000Z",
+            readByMembershipIds: ["membership-u1", "membership-u2"],
         )
         let total = split.seenBy.count + split.deliveredTo.count
         XCTAssertEqual(total, members.count)
@@ -108,9 +114,21 @@ final class PulseReceiptSplitTests: XCTestCase {
     func testOwnWatermarkCannotProvePeerRead() throws {
         let at = try XCTUnwrap(PulseFormat.date("2026-10-20T10:00:00.000Z"))
         XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["me": at], viewerId: "me", createdAtIso: "2026-10-20T09:00:00.000Z"), 0)
-        XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["me": at, "peer": at], viewerId: "me", createdAtIso: "2026-10-20T09:00:00.000Z"), 1)
+        XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["me": at, "peer": at], viewerId: "me", createdAtIso: "2026-10-20T09:00:00.000Z", memberships: ["peer": "member"], readByMembershipIds: ["member"]), 1)
         XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["me": at], viewerId: nil, createdAtIso: "2026-10-20T09:00:00.000Z"), 0)
         XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["peer": at], viewerId: "me", createdAtIso: "broken"), 0)
     }
 
+}
+
+extension PulseReceiptSplitTests {
+    func testEqualTimeUnobservedSiblingAndRejoinedMembershipCannotBecomeSeen() {
+        let members = [member("peer", readAt: "2026-01-05T10:00:00.000Z")]
+        XCTAssertTrue(PulseRoomParityLogic.receiptSplit(members: members, viewerId: "me",
+            createdAtIso: "2026-01-05T10:00:00.000Z").seenBy.isEmpty)
+        XCTAssertTrue(PulseRoomParityLogic.receiptSplit(members: members, viewerId: "me",
+            createdAtIso: "2026-01-05T10:00:00.000Z", readByMembershipIds: ["retired-member"]).seenBy.isEmpty)
+        XCTAssertEqual(PulseRoomParityLogic.receiptSplit(members: members, viewerId: "me",
+            createdAtIso: "2026-01-05T10:00:00.000Z", readByMembershipIds: ["membership-peer"]).seenBy.count, 1)
+    }
 }

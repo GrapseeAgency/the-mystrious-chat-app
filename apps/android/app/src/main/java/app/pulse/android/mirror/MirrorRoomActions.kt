@@ -467,8 +467,19 @@ internal fun MirrorThreadSheet(
     }
     val cachedReplies by replyFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val currentRoot by rootFlow.collectAsStateWithLifecycle(initialValue = null)
+    var scopeUnread by remember(threadRepository, root.id) { mutableStateOf<Int?>(null) }
+    var scopeReadRevision by remember(threadRepository, root.id) { mutableStateOf(0) }
+    LaunchedEffect(threadRepository, root.id) {
+        threadRepository.events().collect { event ->
+            if (event is app.pulse.domain.repository.PulseEvent.MessageRead && event.conversationId == root.conversationId) scopeReadRevision++
+            if (event is app.pulse.domain.repository.PulseEvent.MessageReceived && event.conversationId == root.conversationId) scopeReadRevision++
+        }
+    }
     val connectedFlow = remember(threadRepository) { threadRepository.observeConnected() }
     val connected by connectedFlow.collectAsStateWithLifecycle(initialValue = false)
+    LaunchedEffect(threadRepository, root.id, connected, scopeReadRevision) {
+        scopeUnread = threadRepository.readStateSnapshot(root.conversationId, threadId = root.id).getOrNull()
+    }
     var draftToken by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }
     val composer = remember(threadRepository, root.id) {
         RoomComposerDraft { draftToken = threadRepository.stageThreadDraft(root.conversationId, root.id, it) }
@@ -548,6 +559,7 @@ internal fun MirrorThreadSheet(
     val available = !denied && threadRootAvailable(currentRoot, root.conversationId, root.id, now)
     val replies = if (available) cachedReplies.filter { it.conversationId == root.conversationId &&
         it.threadRootId == root.id && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) } else emptyList()
+    val readScope = remember(threadRepository, root.conversationId) { app.pulse.domain.sync.VisibleReadScope(threadRepository, root.conversationId) }
     app.pulse.feature.chat.ThreadReadReceipts(
         ownerKey = threadRepository,
         enabled = readingEnabled && available && viewOnceGrant == null && discardConfirm == null,
@@ -555,7 +567,7 @@ internal fun MirrorThreadSheet(
         root = currentRoot,
         replies = replies,
         listState = listState,
-        onRead = { app.pulse.domain.sync.visibleReadIntent(threadRepository, root.conversationId, it) },
+        onRead = { readScope.message(it) },
         onActive = { app.pulse.android.notify.IncomingAttention.beginReading(root.conversationId) },
     )
     LaunchedEffect(jumpMessageId, replies, available, loading, fetchedReplies) {
@@ -600,7 +612,7 @@ internal fun MirrorThreadSheet(
             }) { Text("Discard", color = MirrorArt.Accent) } },
         )
     }
-    MirrorSheet(title = "Thread", onDismiss = onDismiss) {
+    MirrorSheet(title = scopeUnread?.takeIf { it > 0 }?.let { "Thread · $it unread" } ?: "Thread", onDismiss = onDismiss) {
         Column(Modifier.heightIn(max = 430.dp)) {
             draftError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp) }
             error?.let { text ->

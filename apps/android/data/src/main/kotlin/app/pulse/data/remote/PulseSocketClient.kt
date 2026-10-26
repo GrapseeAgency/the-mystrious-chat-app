@@ -95,7 +95,8 @@ class PulseSocketClient(
          * wire event name, [dto] the authoritative (already decoded) row.
          */
         data class MessageEnvelope(val event: String, val conversationId: String, val dto: ChatMessageDto?) : Signal
-        data class Read(val conversationId: String, val userId: String, val lastReadAt: String?) : Signal
+        data class Read(val conversationId: String, val userId: String, val lastReadAt: String?,
+            val messageIds: List<String> = emptyList(), val readerMembershipId: String? = null, val all: Boolean = false) : Signal
         data class ConversationUpdated(val conversationId: String) : Signal
         data class Typing(val conversationId: String, val userId: String, val userName: String, val isTyping: Boolean) : Signal
         data class VoiceRoster(val conversationId: String, val roster: List<VoicePeerDto>) : Signal
@@ -282,7 +283,7 @@ class PulseSocketClient(
         }
         sock.on(SocketEvents.MESSAGE_READ) { args ->
             decode<ReadEventPayload>(args)?.let {
-                _signals.tryEmit(Signal.Read(it.conversationId, it.userId, it.lastReadAt))
+                _signals.tryEmit(Signal.Read(it.conversationId, it.userId, it.lastReadAt, it.messageIds, it.readerMembershipId, it.all))
             }
         }
         sock.on(SocketEvents.CONVERSATION_UPDATED) { args ->

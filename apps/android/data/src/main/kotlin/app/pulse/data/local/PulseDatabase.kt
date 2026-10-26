@@ -64,6 +64,7 @@ data class ConversationEntity(
     val lastMessageKind: String?,
     val lastActivityAt: String?,
     val unreadCount: Int,
+    val firstUnreadMessageId: String? = null,
     val isPinned: Boolean,
     val isMuted: Boolean,
     val isArchived: Boolean,
@@ -99,6 +100,7 @@ data class ConversationEntity(
         lastMessageKind = lastMessageKind,
         lastActivityAt = lastActivityAt,
         unreadCount = unreadCount,
+        firstUnreadMessageId = firstUnreadMessageId,
         isPinned = isPinned,
         isMuted = isMuted,
         isArchived = isArchived,
@@ -135,7 +137,8 @@ data class ConversationEntity(
             lastMessageAuthorName = m.lastMessageAuthorName,
             lastMessageKind = m.lastMessageKind,
             lastActivityAt = m.lastActivityAt,
-            unreadCount = m.unreadCount, isPinned = m.isPinned,
+            unreadCount = m.unreadCount,
+            firstUnreadMessageId = m.firstUnreadMessageId, isPinned = m.isPinned,
             isMuted = m.isMuted, isArchived = m.isArchived,
             memberIdsCsv = m.memberIds.joinToString(","),
             memberNamesCsv = m.memberNames.joinToString(","),
@@ -252,6 +255,12 @@ data class MessageEntity(
                 }.getOrNull()
             },
             topicId = topicId,
+            readByMembershipIds = runCatching {
+                val obj = app.pulse.protocol.PulseJson.parseToJsonElement(payloadJson ?: "{}") as? kotlinx.serialization.json.JsonObject
+                (obj?.get(KEY_READERS) as? kotlinx.serialization.json.JsonArray)?.mapNotNull {
+                    (it as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { value -> value.isString }?.content
+                }.orEmpty()
+            }.getOrDefault(emptyList()),
             payload = payloadClean,
             anon = anon,
             anonAlias = anonAlias,
@@ -264,6 +273,7 @@ data class MessageEntity(
         // incognito + disappearing fields persist inside payloadJson as
         // "pulse:*" keys. Every payload consumer (web + natives) reads known
         // keys only and ignores the rest, so the extras are inert on the wire.
+        private const val KEY_READERS = "pulse:readMemberships"
         private const val KEY_ANON = "pulse:anon"
         private const val KEY_ALIAS = "pulse:anonAlias"
         private const val KEY_EXPIRES = "pulse:expiresAtMs"
@@ -283,7 +293,7 @@ data class MessageEntity(
             val expires = if (KEY_EXPIRES in obj)
                 (obj[KEY_EXPIRES] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull ?: Long.MIN_VALUE
             else null
-            val clean = kotlinx.serialization.json.JsonObject(obj - KEY_ANON - KEY_ALIAS - KEY_EXPIRES)
+            val clean = kotlinx.serialization.json.JsonObject(obj - KEY_ANON - KEY_ALIAS - KEY_EXPIRES - KEY_READERS)
                 .let { if (it.isEmpty()) null else it.toString() }
             Tuple4(clean, anon, alias, expires)
         }
@@ -304,8 +314,9 @@ data class MessageEntity(
             } ?: kotlinx.serialization.json.JsonObject(emptyMap())
             val withKeys = kotlinx.serialization.json.buildJsonObject {
                 base.forEach { (k, v) ->
-                    if (k !in setOf(KEY_ANON, KEY_ALIAS, KEY_EXPIRES)) put(k, v)
+                    if (k !in setOf(KEY_ANON, KEY_ALIAS, KEY_EXPIRES, KEY_READERS)) put(k, v)
                 }
+                put(KEY_READERS, kotlinx.serialization.json.JsonArray(m.readByMembershipIds.distinct().map { kotlinx.serialization.json.JsonPrimitive(it) }))
                 if (m.anon) put(KEY_ANON, kotlinx.serialization.json.JsonPrimitive(true))
                 if (!m.anonAlias.isNullOrBlank()) put(KEY_ALIAS, kotlinx.serialization.json.JsonPrimitive(m.anonAlias))
                 m.expiresAtEpochMs?.let {
@@ -425,6 +436,7 @@ data class TopicEntity(
     @ColumnInfo(defaultValue = "chat") val emoji: String = app.pulse.protocol.TOPIC_ICON_DEFAULT,
     val lastMessageAt: String?,
     @ColumnInfo(defaultValue = "0") val messageCount: Int = 0,
+    val unreadCount: Int? = null,
 ) {
     fun toDomain(): app.pulse.domain.model.Topic = app.pulse.domain.model.Topic(
         id = id,
@@ -432,6 +444,7 @@ data class TopicEntity(
         emoji = app.pulse.protocol.topicIconId(emoji),
         lastMessageAt = app.pulse.core.time.PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
         messageCount = messageCount,
+        unreadCount = unreadCount,
     )
 
     companion object {
@@ -443,6 +456,7 @@ data class TopicEntity(
             emoji = app.pulse.protocol.topicIconId(t.emoji),
             lastMessageAt = t.lastMessageAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
             messageCount = t.messageCount,
+            unreadCount = t.unreadCount,
         )
     }
 }
@@ -1075,6 +1089,15 @@ data class Wave7CacheEntity(
 
 @Dao
 interface Wave7Dao {
+    @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
+    suspend fun insertReadIntent(item: Wave7CacheEntity)
+
+    @Query("SELECT * FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix ORDER BY updatedAt, `key`")
+    suspend fun readJournal(prefix: String): List<Wave7CacheEntity>
+
+    @Query("DELETE FROM wave7_cache WHERE `key` = :key AND json = :json")
+    suspend fun acknowledgeReadIntent(key: String, json: String)
+
     @Upsert
     suspend fun upsert(item: Wave7CacheEntity)
 
@@ -1088,7 +1111,7 @@ interface Wave7Dao {
     suspend fun delete(key: String)
 
     // Access refusals are durable metadata, not disposable feature snapshots.
-    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|'")
+    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|' AND substr(`key`, 1, 16) != 'read-journal:v1|' AND substr(`key`, 1, 15) != 'read-fence:v1|'")
     suspend fun clearAll()
 }
 
@@ -1106,7 +1129,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1251,6 +1274,23 @@ abstract class PulseDatabase : RoomDatabase() {
 
         /** Index reverse quote dependencies; retire previously cached quotes
          * whose source/root is already known deleted, without deleting replies. */
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val exists = db.query("PRAGMA table_info(conversations)").use { cursor ->
+                    var found = false
+                    while (cursor.moveToNext()) if (cursor.getString(1) == "firstUnreadMessageId") found = true
+                    found
+                }
+                if (!exists) db.execSQL("ALTER TABLE conversations ADD COLUMN firstUnreadMessageId TEXT")
+                val topicExists = db.query("PRAGMA table_info(topics)").use { cursor ->
+                    var found = false
+                    while (cursor.moveToNext()) if (cursor.getString(1) == "unreadCount") found = true
+                    found
+                }
+                if (!topicExists) db.execSQL("ALTER TABLE topics ADD COLUMN unreadCount INTEGER")
+            }
+        }
+
         val MIGRATION_15_16: Migration = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_replyToId ON messages(replyToId)")
