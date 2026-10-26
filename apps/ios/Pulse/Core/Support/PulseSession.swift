@@ -1184,14 +1184,25 @@ public final class PulseSession: ObservableObject {
         notificationRefreshTask = Task { [weak self] in
             guard let self else { return }
             defer { if self.generation == epoch { self.notificationRefreshTask = nil } }
+            var failures = 0
             repeat {
+                guard !Task.isCancelled, self.ready, self.isForeground, self.generation == epoch else { return }
                 let revision = self.notificationRefreshRevision
-                await PulsePushNotifications.reconcileDeliveredMessages(using: client, isCurrent: {
-                    self.ready && self.generation == epoch && self.viewer?.id == client.userId
-                })
-                guard !Task.isCancelled, self.ready, self.isForeground, self.generation == epoch,
-                      revision != self.notificationRefreshRevision else { return }
+                let result = await PulsePushNotifications.reconcileDeliveredMessages(using: client, isCurrent: {
+                    self.ready && self.isForeground && self.generation == epoch && self.viewer?.id == client.userId
+                }, failures: failures + 1)
+                guard !Task.isCancelled, self.ready, self.isForeground, self.generation == epoch else { return }
+                if !result.complete, let delay = result.retryDelay {
+                    failures = min(failures + 1, 7)
+                    // A concurrent invalidation stays coalesced, but must not
+                    // bypass a server Retry-After deadline.
+                    do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+                    catch { return }
+                    continue
+                }
+                guard revision != self.notificationRefreshRevision else { return }
                 // A read arriving during the previous proof cannot be lost to coalescing.
+                failures = 0
             } while true
         }
     }

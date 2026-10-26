@@ -182,10 +182,10 @@ public final class PulseOutboxEngine: ObservableObject {
         guard !Task.isCancelled, !stopped else { return false }
         let reads = await onReadJournalFlush?() ?? false
         guard !Task.isCancelled, !stopped else { return false }
-        // Badge permission is optional; refusing it must not penalize OS scheduling
-        // of successfully drained message/read journals.
-        _ = await onBadgeRefresh?()
-        return messages && reads && !Task.isCancelled && !stopped
+        // The adapter treats optional OS badge permission as best effort, but
+        // failed server snapshots / exact-alert proofs must remain incomplete.
+        let projections = await onBadgeRefresh?() ?? true
+        return messages && reads && projections && !Task.isCancelled && !stopped
     }
     /// Session fallback still blocks dispatch if recording a denial on disk failed.
     public var additionalThreadAccessDenied: ((String) -> Bool)?

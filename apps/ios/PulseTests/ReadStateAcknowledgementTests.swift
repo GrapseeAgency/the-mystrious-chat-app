@@ -152,3 +152,35 @@ extension ReadStateAcknowledgementTests {
         }
     }
 }
+
+extension ReadStateAcknowledgementTests {
+    func testDeliveredAlertFailuresRetainUnknownRowsAndScheduleOnlyAuthorizedRetries() async throws {
+        func alert(_ id: String, owner: String = "me") -> PulseDeliveredMessageAlert? {
+            PulseDeliveredMessageAlert(identifier: "request-" + id,
+                userInfo: ["kind": "message", "recipientUserId": owner, "conversationId": "room", "messageId": id], owner: "me")
+        }
+        XCTAssertNil(alert("another-account", owner: "other"))
+        var removed: [String] = []
+        let alerts = try [XCTUnwrap(alert("read")), XCTUnwrap(alert("gap")), XCTUnwrap(alert("unknown"))]
+        let first = await PulsePushNotifications.reconcileDeliveredMessageAlerts(alerts, isCurrent: { true },
+            unread: { room, message in
+                XCTAssertEqual(room, "room")
+                if message == "unknown" {
+                    throw PulseAPIClient.Failure(kind: .network, message: "Retry later", status: 429, retryAfter: 45)
+                }
+                return message == "gap"
+            }, remove: { removed.append($0) })
+        XCTAssertFalse(first.complete)
+        XCTAssertEqual(first.retryDelay, 45)
+        XCTAssertEqual(removed, ["request-read"])
+        let retry = await PulsePushNotifications.reconcileDeliveredMessageAlerts([alerts[2]], isCurrent: { true },
+            unread: { _, _ in false }, remove: { removed.append($0) })
+        XCTAssertTrue(retry.complete)
+        XCTAssertEqual(removed, ["request-read", "request-unknown"])
+        var current = true
+        let switched = await PulsePushNotifications.reconcileDeliveredMessageAlerts([alerts[1]], isCurrent: { current },
+            unread: { _, _ in current = false; return false }, remove: { removed.append($0) })
+        XCTAssertFalse(switched.complete)
+        XCTAssertEqual(removed, ["request-read", "request-unknown"])
+    }
+}

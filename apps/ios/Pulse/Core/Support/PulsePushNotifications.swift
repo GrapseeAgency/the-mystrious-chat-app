@@ -64,26 +64,51 @@ public enum PulsePushNotifications {
                 .reduce(0) { $0 + $1.removingExpiredSummary().badgeUnreadCount }
             setUnreadBadge(count)
             await badgeTask?.value
-            await reconcileDeliveredMessages(using: client, isCurrent: isCurrent)
-            return !Task.isCancelled && isCurrent() && appliedBadge == desiredBadge
+            let alerts = await reconcileDeliveredMessages(using: client, isCurrent: isCurrent)
+            // Badge permission is optional. Failed server/proof refreshes are not.
+            return !Task.isCancelled && isCurrent() && alerts.complete
         } catch { return false }
     }
 
     @MainActor
-    static func reconcileDeliveredMessages(using client: PulseAPIClient, isCurrent: () -> Bool) async {
+    static func reconcileDeliveredMessages(using client: PulseAPIClient, isCurrent: () -> Bool,
+                                            failures: Int = 1) async -> PulseMessageAlertReconciliation {
         let center = UNUserNotificationCenter.current()
-        for notification in await center.deliveredNotifications() {
-            guard !Task.isCancelled, isCurrent() else { return }
-            let info = notification.request.content.userInfo
-            guard info["kind"] as? String == "message", info["recipientUserId"] as? String == client.userId,
-                  let room = info["conversationId"] as? String, let message = info["messageId"] as? String else { continue }
-            // Empty room caches, timestamps and aggregate counts cannot prove
-            // whether THIS alert is obsolete; a new unseen gap must survive.
-            if let unread = try? await client.notificationMessageUnread(conversationId: room, messageId: message), !unread {
-                guard !Task.isCancelled, isCurrent() else { return }
-                center.removeDeliveredNotifications(withIdentifiers: [notification.request.identifier])
+        let alerts = await center.deliveredNotifications().compactMap {
+            PulseDeliveredMessageAlert(identifier: $0.request.identifier,
+                userInfo: $0.request.content.userInfo, owner: client.userId)
+        }
+        return await reconcileDeliveredMessageAlerts(alerts, isCurrent: isCurrent, failures: failures,
+            unread: { room, message in
+                try await client.notificationMessageUnread(conversationId: room, messageId: message)
+            }, remove: { center.removeDeliveredNotifications(withIdentifiers: [$0]) })
+    }
+
+    @MainActor
+    static func reconcileDeliveredMessageAlerts(_ alerts: [PulseDeliveredMessageAlert],
+        isCurrent: () -> Bool, failures: Int = 1,
+        unread: (String, String) async throws -> Bool,
+        remove: (String) -> Void) async -> PulseMessageAlertReconciliation {
+        var result = PulseMessageAlertReconciliation(complete: true, retryDelay: nil)
+        for alert in alerts {
+            guard !Task.isCancelled, isCurrent() else {
+                return PulseMessageAlertReconciliation(complete: false, retryDelay: nil)
+            }
+            do {
+                // Aggregate counts never prove that THIS alert is obsolete.
+                let remainsUnread = try await unread(alert.room, alert.message)
+                guard !Task.isCancelled, isCurrent() else {
+                    return PulseMessageAlertReconciliation(complete: false, retryDelay: nil)
+                }
+                if !remainsUnread { remove(alert.identifier) }
+            } catch {
+                result.complete = false
+                if let delay = PulseVisibleReadRetry.delay(after: error, failures: failures) {
+                    result.retryDelay = max(result.retryDelay ?? 0, delay)
+                }
             }
         }
+        return result
     }
 
     @MainActor
@@ -438,4 +463,24 @@ struct PulseBadgeSnapshotFence {
     private var revision: UInt64 = 0
     mutating func reserve() -> UInt64 { revision &+= 1; return revision }
     func owns(_ ticket: UInt64) -> Bool { revision == ticket }
+}
+
+/// Identity is extracted before reconciliation; unrelated/local notifications
+/// and another account's messages are never guessed away.
+struct PulseDeliveredMessageAlert {
+    let identifier: String
+    let room: String
+    let message: String
+
+    init?(identifier: String, userInfo: [AnyHashable: Any], owner: String) {
+        guard userInfo["kind"] as? String == "message", userInfo["recipientUserId"] as? String == owner,
+              let room = userInfo["conversationId"] as? String, !room.isEmpty,
+              let message = userInfo["messageId"] as? String, !message.isEmpty else { return nil }
+        self.identifier = identifier; self.room = room; self.message = message
+    }
+}
+
+struct PulseMessageAlertReconciliation {
+    var complete: Bool
+    var retryDelay: TimeInterval?
 }

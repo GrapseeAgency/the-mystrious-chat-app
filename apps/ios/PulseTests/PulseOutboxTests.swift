@@ -170,6 +170,19 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(try store.outboxAll().map(\.clientId),["operation"])
     }
 
+    func testBackgroundCompletionRequiresUnreadProjectionAsWellAsDurableQueues() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let engine = makeEngine(store, StubSender(behaviors: [:]))
+        defer { engine.stop() }
+        engine.onReadJournalFlush = { true }
+        engine.onBadgeRefresh = { false }
+        let incomplete = await engine.flushBackgroundQueues()
+        XCTAssertFalse(incomplete)
+        engine.onBadgeRefresh = { true }
+        let complete = await engine.flushBackgroundQueues()
+        XCTAssertTrue(complete)
+    }
+
     // engine helper
 
     private func makeEngine(_ store: PulseStore, _ sender: StubSender?) -> PulseOutboxEngine {
