@@ -638,7 +638,7 @@ public final class PulseSession: ObservableObject {
         return nativeReadAnchors.object(forKey: owner as NSUUID)
     }
 
-    private var nativePresentationBlockedNow: Bool {
+    var nativePresentationBlockedNow: Bool {
         guard let view = activeNativeReadView, let window = view.window,
               !window.isHidden, let scene = window.windowScene,
               scene.activationState == .foregroundActive, !nativeInactiveScenes.contains(scene) else { return true }
