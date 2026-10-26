@@ -496,17 +496,25 @@ internal fun MirrorThreadSheet(
         threadRepository.observeReadStateRevision(root.conversationId)
     }
     val readRevision by readRevisionFlow.collectAsStateWithLifecycle(initialValue = 0L)
-    LaunchedEffect(threadRepository, root.id, connected, scopeReadRevision, readRevision) {
-        val result = threadRepository.readScopeState(root.conversationId, threadId = root.id)
-        kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        result.getOrNull()?.let { snapshot ->
-            scopeSnapshot = snapshot
-            if (!scopeAnchorCaptured) { scopeAnchorCaptured = true; firstUnreadMessageId = snapshot.firstUnreadMessageId }
-        }
-        if ((result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.status in setOf(400, 403, 404, 410)) {
-            scopeSnapshot = null; scopeUnread = null
+    val scope = rememberCoroutineScope()
+    val unreadRefresh = remember(threadRepository, root.id) {
+        app.pulse.domain.sync.CoalescedRefresh(scope) {
+            val epoch = threadRepository.attachmentSessionKey()
+            val result = threadRepository.readScopeState(root.conversationId, threadId = root.id)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (threadRepository.attachmentSessionKey() == epoch) {
+                result.getOrNull()?.let { snapshot ->
+                    scopeSnapshot = snapshot
+                    if (!scopeAnchorCaptured) { scopeAnchorCaptured = true; firstUnreadMessageId = snapshot.firstUnreadMessageId }
+                }
+                if ((result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.status in setOf(400, 403, 404, 410)) {
+                    scopeSnapshot = null; scopeUnread = null
+                }
+            }
         }
     }
+    androidx.compose.runtime.DisposableEffect(unreadRefresh) { onDispose { unreadRefresh.cancel() } }
+    LaunchedEffect(unreadRefresh, connected, scopeReadRevision, readRevision) { unreadRefresh.request() }
     var draftToken by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }
     val composer = remember(threadRepository, root.id) {
         RoomComposerDraft { draftToken = threadRepository.stageThreadDraft(root.conversationId, root.id, it) }
@@ -524,7 +532,6 @@ internal fun MirrorThreadSheet(
     var jumpResolved by remember(root.id, jumpMessageId) { mutableStateOf(false) }
     var flashId by remember(root.id) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val revealLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var viewOnceGrant by remember(root.id) { mutableStateOf<Message?>(null) }
     var openingViewOnce by remember(root.id) { mutableStateOf(false) }

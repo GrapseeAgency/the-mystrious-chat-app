@@ -176,12 +176,12 @@ class ThreadViewModel @Inject constructor(
     val firstUnreadMessageId: StateFlow<String?> = firstUnread.asStateFlow()
     val unreadCount: StateFlow<Int?> = unreadScopeSnapshot.withReadScopeExpiry()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    private var unreadJob: kotlinx.coroutines.Job? = null
-    private fun refreshUnread() {
-        unreadJob?.cancel()
-        unreadJob = viewModelScope.launch {
-            val result = repo.readScopeState(conversationId, threadId = rootId)
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+    private val unreadRepository = repo.boundToCurrentAccount()
+    private val unreadRefresh = app.pulse.domain.sync.CoalescedRefresh(viewModelScope) {
+        val epoch = unreadRepository.attachmentSessionKey()
+        val result = unreadRepository.readScopeState(conversationId, threadId = rootId)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (unreadRepository.attachmentSessionKey() == epoch) {
             result.getOrNull()?.let { next ->
                 unreadScopeSnapshot.value = next
                 if (!scopeAnchorCaptured) { scopeAnchorCaptured = true; firstUnread.value = next.firstUnreadMessageId }
@@ -191,6 +191,7 @@ class ThreadViewModel @Inject constructor(
             }
         }
     }
+    private fun refreshUnread() = unreadRefresh.request()
 
     private var composerRevision = 0L
     private var threadDraftToken: app.pulse.domain.model.ComposerDraftToken? = null

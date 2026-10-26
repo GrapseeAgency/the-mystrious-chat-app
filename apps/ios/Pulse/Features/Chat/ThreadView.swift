@@ -33,6 +33,8 @@ struct ThreadView: View {
     @State private var firstUnreadMessageId: String?
     @State private var scopeAnchorCaptured = false
     @State private var scopeReadRevision = 0
+    @State private var scopeRefresh = PulseCoalescedRefresh()
+    @State private var scopeVisible = false
     @State private var readOwner: PulseReadSurfaces.Owner?
     let readAuthority: PulseReadAuthority
     @Environment(\.scenePhase) private var readScenePhase
@@ -161,6 +163,8 @@ struct ThreadView: View {
             MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt, singleUse: target.singleUse)
         }
         .onAppear {
+            scopeVisible = true
+            requestScopeRefresh()
             readOwner = session.beginReadSurface(conversationId: conversation.id, rootId: root.id, authority: readAuthority)
             updateReadBoundary()
         }
@@ -171,20 +175,11 @@ struct ThreadView: View {
             highlightedReplyId = nil
         }
         .onReceive(session.signals) { handle(signal: $0) }
-        .task(id: "\(scopeReadRevision):\(session.readStateRevision(conversation.id))") {
-            guard session.ready else { return }
-            let epoch = session.sessionGeneration
-            do {
-                let snapshot = try await session.api.readScopeState(conversationId: conversation.id, threadId: root.id)
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                scopeSnapshot = snapshot; scopeUnread = snapshot.unread()
-                if !scopeAnchorCaptured { scopeAnchorCaptured = true; firstUnreadMessageId = snapshot.firstUnreadMessageId }
-            } catch {
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                if [400, 403, 404, 410].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
-                    scopeSnapshot = nil; scopeUnread = nil
-                }
-            }
+        .onChange(of: scopeReadRevision) { _, _ in requestScopeRefresh() }
+        .onChange(of: session.readStateRevision(conversation.id)) { _, _ in requestScopeRefresh() }
+        .onChange(of: session.connected) { _, connected in if connected { requestScopeRefresh() } }
+        .onChange(of: session.isForeground) { _, foreground in
+            if foreground { requestScopeRefresh() } else { scopeRefresh.cancel() }
         }
         .onReceive(session.messageVisibilityClock) { now in
             scopeUnread = scopeSnapshot?.unread(at: now)
@@ -225,6 +220,8 @@ struct ThreadView: View {
             }
         } message: { Text("This removes the saved outgoing reply from this device. It does not erase your current draft.") }
         .onDisappear {
+            scopeVisible = false
+            scopeRefresh.cancel()
             if let readOwner { session.endReadSurface(readOwner) }
             readOwner = nil
             // Keep measured geometry while a temporary cover hides this same
@@ -233,6 +230,25 @@ struct ThreadView: View {
             loadGeneration = UUID()
             recoveryObservation?.cancel()
             recoveryObservation = nil
+        }
+    }
+
+    private func requestScopeRefresh() {
+        guard scopeVisible, session.ready, session.isForeground else { return }
+        let epoch = session.sessionGeneration
+        scopeRefresh.request {
+            guard scopeVisible, session.ready, session.isForeground, session.sessionGeneration == epoch else { return }
+            do {
+                let snapshot = try await session.api.readScopeState(conversationId: conversation.id, threadId: root.id)
+                guard !Task.isCancelled, scopeVisible, session.isForeground, session.sessionGeneration == epoch else { return }
+                scopeSnapshot = snapshot; scopeUnread = snapshot.unread()
+                if !scopeAnchorCaptured { scopeAnchorCaptured = true; firstUnreadMessageId = snapshot.firstUnreadMessageId }
+            } catch {
+                guard !Task.isCancelled, scopeVisible, session.isForeground, session.sessionGeneration == epoch else { return }
+                if [400, 403, 404, 410].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                    scopeSnapshot = nil; scopeUnread = nil
+                }
+            }
         }
     }
 
