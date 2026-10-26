@@ -47,11 +47,13 @@ class MessageNotificationReconciliationTest {
             arrayOf(PulseRepository::class.java)) { _, _, _ -> null } as PulseRepository
         var current = true
         var switchDuringProof = false
+        var proofUnavailable = true
         val repository = object : PulseRepository by fallback {
             override val viewerId: String = owner
             override fun attachmentSessionKey(): String = "test-epoch"
             override suspend fun notificationMessageUnread(conversationId: String, messageId: String): Result<Boolean> {
                 assertEquals("test-room", conversationId)
+                if (proofUnavailable) return Result.failure(IllegalStateException("transient proof failure"))
                 if (messageId == "read") {
                     if (switchDuringProof) current = false else post("newer")
                 }
@@ -61,12 +63,15 @@ class MessageNotificationReconciliationTest {
         try {
             post("read"); post("gap")
             await { present("read") && present("gap") }
-            PulseMessageNotifications.reconcile(context, repository) { current }
+            assertFalse(PulseMessageNotifications.reconcile(context, repository) { current })
+            assertTrue(present("read")); assertTrue(present("gap"))
+            proofUnavailable = false
+            assertTrue(PulseMessageNotifications.reconcile(context, repository) { current })
             await { !present("read") && present("newer") }
             assertTrue(present("gap"))
             switchDuringProof = true
             post("read"); await { present("read") }
-            PulseMessageNotifications.reconcile(context, repository) { current }
+            assertFalse(PulseMessageNotifications.reconcile(context, repository) { current })
             assertTrue(present("read"))
             assertTrue(present("gap"))
         } finally {

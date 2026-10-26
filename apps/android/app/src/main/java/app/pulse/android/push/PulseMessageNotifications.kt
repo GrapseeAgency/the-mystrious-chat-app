@@ -16,7 +16,9 @@ object PulseMessageNotifications {
         val owner = repository.viewerId ?: return false
         val epoch = repository.attachmentSessionKey() ?: return false
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val alerts = runCatching { manager.activeNotifications.toList() }.getOrDefault(emptyList())
+        // A failed system-service query is not evidence of an empty tray.
+        // Keep the durable worker pending just as for an unknown server proof.
+        val alerts = runCatching { manager.activeNotifications.toList() }.getOrElse { return false }
         var complete = true
         for (alert in alerts) {
             currentCoroutineContext().ensureActive()
