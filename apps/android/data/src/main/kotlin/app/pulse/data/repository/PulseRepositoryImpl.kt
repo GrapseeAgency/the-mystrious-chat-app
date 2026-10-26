@@ -719,8 +719,9 @@ class PulseRepositoryImpl constructor(
     )
 
     /**
-     * Every message:* envelope carries the authoritative row - upsert it and
-     * fan the event out. message:deleted keeps its tombstone semantics.
+     * Broadcast message rows carry public receipt projections, not an owner's
+     * private negative proof. Preserve only already-confirmed own membership;
+     * message:deleted keeps its tombstone semantics.
      */
     private val messageCacheMutex = Mutex()
     private val messageEventClock = java.util.concurrent.atomic.AtomicLong()
@@ -730,13 +731,22 @@ class PulseRepositoryImpl constructor(
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
         val dto = signal.dto ?: return
         if (dto.conversationId != signal.conversationId) return
+        val owner = viewerId ?: return
+        val epoch = attachmentSession
         val message = messageCacheMutex.withLock {
-            val message = dto.toDomain()
-            messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
-            // Persist tombstones too; an event-only deletion resurrects after restart.
-            messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-            messageCacheChanges.value = messageEventClock.get()
-            checkNotNull(messageDao.byId(message.id)).toDomain()
+            database.withTransaction {
+                requireConversationOwner(owner, epoch)
+                val membership = conversationDao.byId(signal.conversationId)?.toDomain()?.members
+                    ?.firstOrNull { it.id == owner }?.readMembershipId
+                val message = app.pulse.domain.sync.retainOwnSocketReadObservation(
+                    messageDao.byId(dto.id)?.toDomain(), dto.toDomain(), membership)
+                requireConversationOwner(owner, epoch)
+                messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
+                // Persist tombstones too; an event-only deletion resurrects after restart.
+                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                requireConversationOwner(owner, epoch)
+                checkNotNull(messageDao.byId(message.id)).toDomain()
+            }.also { messageCacheChanges.value = messageEventClock.get() }
         }
         app.pulse.domain.sync.messageEnvelopeEvent(signal.event, signal.conversationId, message)?.let {
             eventsBus.tryEmit(it)

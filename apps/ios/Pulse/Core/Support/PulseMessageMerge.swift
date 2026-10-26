@@ -3,6 +3,20 @@ import Foundation
 /// Delayed HTTP/socket envelopes cannot revive a tombstone or an unopened gate.
 /// These monotonic fields are not a total ordering for reactions/pins.
 enum PulseMessageMerge {
+    /// A broadcast is not an owner-scoped negative receipt: it intentionally
+    /// omits private readers. Only retain the current owner's existing proof.
+    static func retainOwnSocketReadState(_ current: WireChatMessage?, incoming: WireChatMessage,
+                                         membership: String?) -> WireChatMessage {
+        guard let membership, !membership.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let current, current.id == incoming.id, current.conversationId == incoming.conversationId,
+              !incoming.id.hasPrefix("local_"), current.deletedAt == nil, incoming.deletedAt == nil,
+              (current.readByMembershipIds ?? []).contains(membership),
+              !(incoming.readByMembershipIds ?? []).contains(membership) else { return incoming }
+        var result = incoming
+        result.readByMembershipIds = (incoming.readByMembershipIds ?? []) + [membership]
+        return result
+    }
+
     /// The edit ACK may advance text without rolling unrelated events backward.
     static func acceptEdit(_ current: WireChatMessage, incoming: WireChatMessage) -> WireChatMessage {
         guard current.id == incoming.id, current.conversationId == incoming.conversationId, current.deletedAt == nil else { return current }

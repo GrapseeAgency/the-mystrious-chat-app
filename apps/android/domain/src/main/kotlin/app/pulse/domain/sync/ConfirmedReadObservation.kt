@@ -10,3 +10,14 @@ fun confirmedReadObservation(current: Message?, room: String, messageId: String,
         parts.size != 2 || parts.any { it.isBlank() } || parts[1] in current.readByMembershipIds) return null
     return current.copy(readByMembershipIds = current.readByMembershipIds + parts[1])
 }
+
+/** Broadcast DTOs omit private reader evidence; omission is not an owner-scoped
+ * negative proof. Retain ONLY the current owner's already-confirmed membership.
+ * Never use this for canonical GETs or union arbitrary cached peer arrays. */
+fun retainOwnSocketReadObservation(current: Message?, incoming: Message, membership: String?): Message {
+    if (membership.isNullOrBlank() || current == null || current.id != incoming.id ||
+        current.conversationId != incoming.conversationId || incoming.id.startsWith(TEMP_MESSAGE_PREFIX) ||
+        current.deletedAt != null || incoming.deletedAt != null ||
+        membership !in current.readByMembershipIds || membership in incoming.readByMembershipIds) return incoming
+    return incoming.copy(readByMembershipIds = incoming.readByMembershipIds + membership)
+}

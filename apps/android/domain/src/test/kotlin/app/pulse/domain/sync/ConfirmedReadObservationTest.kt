@@ -9,6 +9,23 @@ class ConfirmedReadObservationTest {
         "Current edited body", "2026-10-26T00:00:00Z", editedAt = "2026-10-26T00:01:00Z",
         readByMembershipIds = listOf("other-member"))
 
+    @Test fun `public socket omission cannot erase own private proof or preserve unrelated peer proof`() {
+        val stored = current.copy(readByMembershipIds = listOf("own-member", "stale-peer"))
+        val incoming = current.copy(body = "New socket content", readByMembershipIds = listOf("public-peer"))
+        val retained = retainOwnSocketReadObservation(stored, incoming, "own-member")
+        assertEquals(listOf("public-peer", "own-member"), retained.readByMembershipIds)
+        assertEquals(incoming, retained.copy(readByMembershipIds = incoming.readByMembershipIds))
+        for (membership in listOf(null, "", " ", "rejoined-member")) {
+            assertEquals(incoming, retainOwnSocketReadObservation(stored, incoming, membership))
+        }
+        assertEquals(incoming, retainOwnSocketReadObservation(null, incoming, "own-member"))
+        assertEquals(incoming, retainOwnSocketReadObservation(stored.copy(conversationId = "other"), incoming, "own-member"))
+        assertEquals(incoming, retainOwnSocketReadObservation(stored.copy(id = "other"), incoming, "own-member"))
+        assertEquals(incoming, retainOwnSocketReadObservation(current, incoming, "own-member"))
+        val deleted = incoming.copy(deletedAt = "2026-10-26T00:02:00Z")
+        assertEquals(deleted, retainOwnSocketReadObservation(stored, deleted, "own-member"))
+    }
+
     @Test fun `confirmed observation changes only exact membership proof`() {
         val updated = confirmedReadObservation(current, "room", "message", "original.member")!!
         assertEquals(listOf("other-member", "member"), updated.readByMembershipIds)

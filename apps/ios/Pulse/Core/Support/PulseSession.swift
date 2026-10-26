@@ -1493,7 +1493,10 @@ public final class PulseSession: ObservableObject {
     }
 
     // inbound
-    private func handle(_ signal: PulseSocketClient.Signal) {
+    private func handle(_ incomingSignal: PulseSocketClient.Signal) {
+        // Normalize before storage AND fanout: room/thread/Mirror models keep
+        // their own arrays and must see the same preserved owner-only proof.
+        let signal = preservingOwnSocketReadState(incomingSignal)
         switch signal {
         case .joined(let ids), .presenceSnapshot(let ids):
             // Presence broadcasts can precede our own accepted join. Only the
@@ -1528,16 +1531,15 @@ public final class PulseSession: ObservableObject {
         case .typing(let conversationId, let userId, let userName, let isTyping):
             registerTyping(conversationId: conversationId, userId: userId, userName: userName, isTyping: isTyping)
         case .messageNew(let conversationId, let raw):
-            cacheMessage(from: raw)
+            cacheMessage(from: raw, conversationId: conversationId)
             noteIncomingAttention(conversationId: conversationId, raw: raw)
-        case .messageDeleted(_, let raw), .messageReact(_, let raw):
-            cacheMessage(from: raw)
-        case .messageEnvelope(_, _, let raw):
-            cacheMessage(from: raw)
+        case .messageDeleted(let room, let raw), .messageReact(let room, let raw):
+            cacheMessage(from: raw, conversationId: room)
+        case .messageEnvelope(_, let room, let raw):
+            cacheMessage(from: raw, conversationId: room)
             // message:edited/pinned/viewed, poll:voted, link:preview,
             // translation:added - live surfaces re-fetch on this tick.
             realtimeRefreshTick += 1
-            cacheMessage(from: raw)
         case .messageRead(let room, _, _, let ids, let membership, _):
             if let membership, !membership.isEmpty {
                 for id in Set(ids) {
@@ -1572,10 +1574,33 @@ public final class PulseSession: ObservableObject {
         signals.send(signal)
     }
 
+    private func preservingOwnSocketReadState(_ signal: PulseSocketClient.Signal) -> PulseSocketClient.Signal {
+        func patched(_ room: String, _ raw: [String: Any]) -> [String: Any] {
+            guard let viewer, let store, let incoming = Self.decodeMessage(from: raw), incoming.conversationId == room,
+                  let membership = (try? store.cachedConversation(id: room))?.members.first(where: { $0.id == viewer.id })?.readMembershipId else { return raw }
+            let current = try? store.message(id: incoming.id)
+            let retained = PulseMessageMerge.retainOwnSocketReadState(current, incoming: incoming, membership: membership)
+            guard retained.readByMembershipIds != incoming.readByMembershipIds else { return raw }
+            var result = raw
+            if var message = raw["message"] as? [String: Any] {
+                message["readByMembershipIds"] = retained.readByMembershipIds ?? []
+                result["message"] = message
+            } else { result["readByMembershipIds"] = retained.readByMembershipIds ?? [] }
+            return result
+        }
+        switch signal {
+        case .messageNew(let room, let raw): return .messageNew(conversationId: room, raw: patched(room, raw))
+        case .messageDeleted(let room, let raw): return .messageDeleted(conversationId: room, raw: patched(room, raw))
+        case .messageReact(let room, let raw): return .messageReact(conversationId: room, raw: patched(room, raw))
+        case .messageEnvelope(let event, let room, let raw): return .messageEnvelope(event: event, conversationId: room, raw: patched(room, raw))
+        default: return signal
+        }
+    }
+
     /// Wave 0 offline hardening - every relayed message row lands in the
     /// cache so relaunch reads it back even when the surface is closed.
-    private func cacheMessage(from raw: [String: Any]) {
-        guard let store, let message = Self.decodeMessage(from: raw) else { return }
+    private func cacheMessage(from raw: [String: Any], conversationId: String) {
+        guard let store, let message = Self.decodeMessage(from: raw), message.conversationId == conversationId else { return }
         noteMessageRevision(message.id)
         try? store.upsert(messages: [message])
     }

@@ -254,3 +254,17 @@ Mirror's Info panel now displays the same exact Seen/unconfirmed split instead o
 only sent/reaction metadata. Both use one pure domain projection, reject missing
 viewer identity, and honor hidden/retired membership proof. Mirror retains its
 existing autumn colors and 380dp sheet bound with a lazy recipient list.
+
+
+### Public socket envelopes versus private owner evidence
+
+A generic edit/reaction/message broadcast intentionally omits privacy-disabled
+readers. That omission is not a canonical negative about the viewer's own private
+read. Both native caches now retain **only** an already-confirmed observation for
+the current viewer's current membership across such a broadcast. They do not
+union cached peer arrays, invent missing proof, keep a retired membership, or
+apply this rule to owner-scoped GETs. Swift normalizes before both cache writes
+and signal fanout so its independent room/thread/Mirror arrays agree; Android
+publishes its retained Room row. Definitive canonical Info snapshots can still
+remove the owner's proof. The Swift generic-envelope path also no longer writes
+the same socket row twice.

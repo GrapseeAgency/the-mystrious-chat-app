@@ -14,6 +14,24 @@ final class MessageMergeTests: XCTestCase {
         return try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object))
     }
 
+    func testPublicSocketRetainsOnlyExistingOwnProofAndCanonicalSnapshotsCanStillRemoveIt() throws {
+        let stored = try row(["readByMembershipIds": ["own-member", "stale-peer"]])
+        let incoming = try row(["content": "New socket content", "readByMembershipIds": ["public-peer"]])
+        var retained = PulseMessageMerge.retainOwnSocketReadState(stored, incoming: incoming, membership: "own-member")
+        XCTAssertEqual(retained.readByMembershipIds, ["public-peer", "own-member"])
+        retained.readByMembershipIds = incoming.readByMembershipIds
+        XCTAssertEqual(retained, incoming, "Only the existing owner's proof may be retained")
+        for membership: String? in [nil, "", " ", "rejoined-member"] {
+            XCTAssertEqual(PulseMessageMerge.retainOwnSocketReadState(stored, incoming: incoming, membership: membership), incoming)
+        }
+        XCTAssertEqual(PulseMessageMerge.retainOwnSocketReadState(nil, incoming: incoming, membership: "own-member"), incoming)
+        XCTAssertEqual(PulseMessageMerge.retainOwnSocketReadState(try row(["conversationId": "other"]), incoming: incoming, membership: "own-member"), incoming)
+        let deleted = incoming.deletedCopy()
+        XCTAssertEqual(PulseMessageMerge.retainOwnSocketReadState(stored, incoming: deleted, membership: "own-member"), deleted)
+        let canonical = try row(["readByMembershipIds": [String]()])
+        XCTAssertEqual(PulseMessageMerge.merge(stored, incoming: canonical).readByMembershipIds, [])
+    }
+
     func testTombstoneNeverResurrectsInRiverOrThreadAndRedactsSensitiveFields() throws {
         let live = try row()
         let deleted = live.deletedCopy()
