@@ -143,6 +143,9 @@ class ChatRoomViewModel @Inject constructor(
      * header's pop-out toggle reads it exactly like web chat-room.tsx's
      * `pipConversationId` selector (`s.isOpen ? s.conversationId : null`).
      */
+    val pipOverlayOpen: StateFlow<Boolean> = pipStore.state.map { it.isOpen }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val pipFocusedConversationId: StateFlow<String?> = pipStore.state
         .map { s -> if (s.isOpen) s.conversationId else null }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)

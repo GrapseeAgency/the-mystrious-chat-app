@@ -650,18 +650,21 @@ internal fun MirrorRoom(
         locationOpen || captionFor != null || remindersOpen || scheduledOpen || recapOpen || eventsOpen ||
         kanbanOpen || whiteboardOpen || tournamentOpen || redPacketOpen || trayEffectsOpen || slashHelpOpen ||
         safetyOpen || scheduleOpen || viewOnceGrant != null || muteStripOpen || ttlStripOpen || activeEffect != null
+    val readWindow = androidx.compose.ui.platform.LocalWindowInfo.current
+    val windowFocused = readWindow.isWindowFocused
     val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
     val readScope = remember(repository, viewerId, groupId) { app.pulse.domain.sync.VisibleReadScope(repository, groupId) }
     val readIntents = remember(repository, viewerId, groupId) { mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>() }
     val readConnected by remember(repository) { repository.observeConnected() }
         .collectAsStateWithLifecycle(initialValue = false)
-    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, readConnected, minimumReadPixels, readerLifecycle) {
+    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, readConnected, minimumReadPixels, readerLifecycle, windowFocused) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            if (!readingEnabled || readObscured) return@repeatOnLifecycle
+            if (!readingEnabled || readObscured || !readWindow.isWindowFocused) return@repeatOnLifecycle
             val releaseAttention = app.pulse.android.notify.IncomingAttention.beginReading(groupId)
             try {
                 fun currentBoundary(): List<String> {
+                    if (!readWindow.isWindowFocused) return emptyList()
                     val layout = listState.layoutInfo
                     val visible = layout.visibleItemsInfo.filter {
                         app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)

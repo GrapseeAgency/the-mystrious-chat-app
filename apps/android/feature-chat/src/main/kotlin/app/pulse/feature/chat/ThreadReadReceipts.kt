@@ -33,15 +33,18 @@ fun ThreadReadReceipts(
 ) {
     val intents = remember(ownerKey, root?.id) { mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>() }
     val lifecycle = LocalLifecycleOwner.current
+    val window = androidx.compose.ui.platform.LocalWindowInfo.current
+    val windowFocused = window.isWindowFocused
     val minimumPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
     val rows by rememberUpdatedState(root to replies)
     val reader by rememberUpdatedState(onRead)
     val acquireAttention by rememberUpdatedState(onActive)
-    LaunchedEffect(ownerKey, root?.id, enabled, connected, listState, lifecycle, minimumPixels) {
+    LaunchedEffect(ownerKey, root?.id, enabled, connected, listState, lifecycle, minimumPixels, windowFocused) {
         lifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            if (!enabled || rows.first == null) return@repeatOnLifecycle
+            if (!enabled || !window.isWindowFocused || rows.first == null) return@repeatOnLifecycle
             val releaseAttention = acquireAttention()
             fun currentBoundary(): List<String> {
+                if (!window.isWindowFocused) return emptyList()
                 val (parent, messages) = rows
                 val layout = listState.layoutInfo
                 val visible = layout.visibleItemsInfo.filter {

@@ -170,11 +170,11 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    private val readScope = MutableStateFlow<app.pulse.domain.model.ReadScopeState?>(null)
+    private val unreadScopeSnapshot = MutableStateFlow<app.pulse.domain.model.ReadScopeState?>(null)
     private var scopeAnchorCaptured = false
     private val firstUnread = MutableStateFlow<String?>(null)
     val firstUnreadMessageId: StateFlow<String?> = firstUnread.asStateFlow()
-    val unreadCount: StateFlow<Int?> = readScope.withReadScopeExpiry()
+    val unreadCount: StateFlow<Int?> = unreadScopeSnapshot.withReadScopeExpiry()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private var unreadJob: kotlinx.coroutines.Job? = null
     private fun refreshUnread() {
@@ -183,11 +183,11 @@ class ThreadViewModel @Inject constructor(
             val result = repo.readScopeState(conversationId, threadId = rootId)
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             result.getOrNull()?.let { next ->
-                readScope.value = next
+                unreadScopeSnapshot.value = next
                 if (!scopeAnchorCaptured) { scopeAnchorCaptured = true; firstUnread.value = next.firstUnreadMessageId }
             }
             if ((result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.status in setOf(400, 403, 404, 410)) {
-                readScope.value = null
+                unreadScopeSnapshot.value = null
             }
         }
     }
@@ -572,18 +572,7 @@ fun ThreadScreen(
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                item(key = "thread-parent") {
-                    parent?.let { root ->
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                    RoundedCornerShape(16.dp),
-                                )
-                                .padding(10.dp),
-                            horizontalAlignment = if (root.authorId == viewerId) Alignment.End else Alignment.Start,
-                        ) {
+                if (parent != null) item(key = "thread-root-heading") {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Icon(
                                     PulseIcons.ChatBubble,
@@ -599,6 +588,19 @@ fun ThreadScreen(
                                 )
                             }
                             Spacer(Modifier.width(4.dp))
+                }
+                item(key = "thread-parent") {
+                    parent?.let { root ->
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                    RoundedCornerShape(16.dp),
+                                )
+                                .padding(10.dp),
+                            horizontalAlignment = if (root.authorId == viewerId) Alignment.End else Alignment.Start,
+                        ) {
                             ThreadContentBubble(
                                 message = root,
                                 viewerId = viewerId,

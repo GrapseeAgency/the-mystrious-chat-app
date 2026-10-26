@@ -226,6 +226,8 @@ fun ChatRoomScreen(
     val convThemes by viewModel.convThemes.collectAsStateWithLifecycle()
     // R1-W2I - PiP pane focus (F-PI-03): drives the pop-out toggle in the room menu.
     val pipFocusedId by viewModel.pipFocusedConversationId.collectAsStateWithLifecycle()
+    val pipOverlayOpen by viewModel.pipOverlayOpen.collectAsStateWithLifecycle()
+    val readWindow = androidx.compose.ui.platform.LocalWindowInfo.current
     // R2-A item 5 - AI recap card state; item 8 - live group meta drives the veil.
     val recap by viewModel.recap.collectAsStateWithLifecycle()
     val recapLoading by viewModel.recapLoading.collectAsStateWithLifecycle()
@@ -430,10 +432,13 @@ fun ChatRoomScreen(
 
     val readObscured = actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
         lightboxTarget != null || pinsOpen || attachOpen || pollBuilderOpen || reactionPickerTarget != null ||
-        whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen
+        whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen ||
+        safety != null || viewModel.phrasesOpen || viewModel.redPacketOpen || viewModel.redPacketDetailId != null ||
+        viewModel.gameOpen || viewModel.tournamentOpen || viewModel.kanbanOpen || viewModel.whiteboardOpen ||
+        viewModel.eventsOpen || viewModel.remindersOpen || viewModel.leaderboardOpen
     val readRows = rememberUpdatedState(rowsReversed)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
-    LaunchedEffect(lifecycleOwner, viewModel, conversation?.id, pipFocusedId, privacyHidden, readObscured, minimumReadPixels) {
+    LaunchedEffect(lifecycleOwner, viewModel, conversation?.id, pipOverlayOpen, privacyHidden, readObscured, minimumReadPixels) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
                 snapshotFlow {
@@ -441,7 +446,7 @@ fun ChatRoomScreen(
                     val visible = layout.visibleItemsInfo.filter {
                         app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
                     }.map { it.key }.toSet()
-                    if (privacyHidden || readObscured || (pipFocusedId != null && pipFocusedId != conversation?.id)) emptySet<String>()
+                    if (privacyHidden || readObscured || pipOverlayOpen || !readWindow.isWindowFocused) emptySet<String>()
                     else readRows.value.filterIsInstance<TimelineRow.Msg>().filter {
                         it.key in visible && !it.message.isDeleted && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
                     }.map { it.message.id }.toSet()

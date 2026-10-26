@@ -234,4 +234,14 @@ extension ReadVisibilityTests {
         XCTAssertTrue(retired)
         XCTAssertTrue(try store.pendingReads(owner: "owner").isEmpty)
     }
+
+    func testPipOccludesUnderlyingRoomButNotThreadPresentedAboveIt() {
+        var surfaces = PulseReadSurfaces()
+        XCTAssertFalse(surfaces.obscuredByPip(isOpen: false))
+        XCTAssertTrue(surfaces.obscuredByPip(isOpen: true))
+        let thread = surfaces.begin(roomId: "room", rootId: "root")
+        XCTAssertFalse(surfaces.obscuredByPip(isOpen: true))
+        surfaces.end(thread)
+        XCTAssertTrue(surfaces.obscuredByPip(isOpen: true))
+    }
 }

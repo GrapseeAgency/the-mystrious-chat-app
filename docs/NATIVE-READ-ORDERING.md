@@ -36,6 +36,14 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 - Android launcher/notification badges and closed-app cross-device push delivery still require separate platform verification; in-app counts are not a promise that the OS will display an identical number. No paired-device or all-obscuring-surfaces completion claim is made.
 - The read-queue observer's account-switch reset is typed Boolean, not the router's generic empty-list reset. A regression test covers switching while read receipts remain pending.
 
+### Occlusion and preview follow-up
+
+- Android primary, mirror and thread readers now require the hosting Compose window to be focused, in addition to RESUMED lifecycle. System panels/popups cannot rely on lifecycle alone. This follows the official AndroidX `WindowInfo.isWindowFocused` contract.
+- Primary Android collaboration/quick-phrase/safety/detail sheets and Swift packet-detail sheets now participate in read suppression. Thread root headings are separate from the message's lazy item.
+- PiP preview/stack surfaces no longer clear their own timestamp-based unread badges. They use canonical inbox counts on both platforms; a truncated preview is not exact Seen. Swift's primary reader is blocked while PiP covers it; a presented thread sheet above PiP retains its own attention lease.
+- Added a real Compose viewport/lifecycle test with controlled window focus and transport, plus Swift attention-lease coverage. These do not substitute for notification-shade, accessibility or paired-device acceptance.
+- The actual native compiler caught follow-up integration errors (a duplicate serializer annotation, an obsolete badge variable, and a thread snapshot/intent field-name collision); source fixes are published, with fresh execution still required.
+
 ### Wire and storage contracts
 
 - Capture response is **readIntentVersion 2**, visible/all acceptance is **readReceiptVersion 3**; manual marker acceptance remains **unreadReceiptVersion 2**. Both native transports reject timestamp-only read acknowledgements.

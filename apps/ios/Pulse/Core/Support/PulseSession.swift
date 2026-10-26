@@ -555,7 +555,8 @@ public final class PulseSession: ObservableObject {
 
     private var readAttentionBlocked: Bool {
         (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
-            groupCallEngine?.ring != nil || voiceRooms?.surface != nil || PulseAppLock.shared.needsLock
+            groupCallEngine?.ring != nil || voiceRooms?.surface != nil || PulseAppLock.shared.needsLock ||
+            readSurfaces.obscuredByPip(isOpen: pip.isOpen)
     }
 
     private func restartReadAttention() {
@@ -991,6 +992,7 @@ public final class PulseSession: ObservableObject {
         voiceRooms = VoiceRoomSessionModel(session: self)
         voiceRooms?.$surface.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.restartReadAttention() }.store(in: &cancellables)
         PulseAppLock.shared.$needsLock.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.restartReadAttention() }.store(in: &cancellables)
+        pip.$panes.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.restartReadAttention() }.store(in: &cancellables)
     }
 
     /// The rooms owner's emit funnel - the socket is session-owned

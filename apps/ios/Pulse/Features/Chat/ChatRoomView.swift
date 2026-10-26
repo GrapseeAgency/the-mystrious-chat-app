@@ -408,7 +408,7 @@ private struct RoomContent: View {
         let roomSurface = pinsOpen || searchOpen || showFileImporter || showPhotoPicker || showCamera || pollBuilderOpen ||
             safetyOpen || dmInfoOpen || groupInfoOpen || departureEpoch != nil || scheduleOpen || scheduledManagerOpen ||
             stickerOpen || locationOpen || themeOpen || phrasesOpen || leaderboardOpen
-        let collaboration = wave7.redPacketCreateOpen || wave7.gameCreateOpen || wave7.tournamentCreateOpen ||
+        let collaboration = wave7.redPacketCreateOpen || wave7.redPacketDetailId != nil || wave7.gameCreateOpen || wave7.tournamentCreateOpen ||
             wave7.kanbanOpen || wave7.whiteboardOpen || wave7.eventsOpen || wave7.remindersOpen
         return messageSurface || roomSurface || collaboration || viewModel.staged != nil ||
             scenePhase != .active || veilEngaged

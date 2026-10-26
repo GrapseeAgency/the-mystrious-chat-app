@@ -103,6 +103,9 @@ struct PulseReadSurfaces {
     mutating func setPrimary(roomId: String, messageIds: [String]) {
         primary = messageIds.map { .init(roomId: roomId, messageId: $0) }
     }
+    // Root PiP is below a presented thread sheet, but above the primary room.
+    func obscuredByPip(isOpen: Bool) -> Bool { isOpen && owner == nil }
+
     mutating func begin(roomId: String, rootId: String? = nil) -> Owner {
         let next = Owner(roomId: roomId, rootId: rootId)
         owner = next
