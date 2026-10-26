@@ -27,6 +27,15 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 - A current fence can clear a known manual reminder while reading an older thread; message age is no longer mistaken for intent order. Stale fences still cannot clear newer manual choices.
 - Native build evidence: iOS `f3f3489` archive and simulator/build-test jobs succeeded. Subsequent durability changes require their own native execution; this does not establish device acceptance.
 
+### Scope and badge follow-up
+
+- Thread readers now retain the full authoritative count/anchor/expiry snapshot. Unloaded replies expire out of scoped badges offline. New/edit/delete/read/reconnect events invalidate these snapshots; permanent scope refusals clear stale count displays instead of leaving a previous thread count.
+- Thread dividers use exact entry anchors. Android divider layout is a separate lazy item: showing only the divider cannot qualify its adjacent message as Seen. Topic entry anchors are independent of the whole-room anchor.
+- Topic GET authenticates membership and reads all topic counts in one database transaction. Exact anchors and expiry buckets survive Android Room/Swift GRDB cache reopen and project offline without inferring counts from the loaded message window.
+- Primary and mirror docks now use the same active/non-self-room policy, including one contribution for a manual-only reminder. Archived counts remain in the archive surface. The Swift icon badge uses a serialized latest-value writer and a fenced full-inbox refresh during OS-granted background work; badge permission denial is not treated as a failed queue drain.
+- Android launcher/notification badges and closed-app cross-device push delivery still require separate platform verification; in-app counts are not a promise that the OS will display an identical number. No paired-device or all-obscuring-surfaces completion claim is made.
+- The read-queue observer's account-switch reset is typed Boolean, not the router's generic empty-list reset. A regression test covers switching while read receipts remain pending.
+
 ### Wire and storage contracts
 
 - Capture response is **readIntentVersion 2**, visible/all acceptance is **readReceiptVersion 3**; manual marker acceptance remains **unreadReceiptVersion 2**. Both native transports reject timestamp-only read acknowledgements.
@@ -35,7 +44,7 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 - Legacy unfenced read entrypoints cannot create exact observations or clear a manual dot. They cannot poison the new Seen model.
 - Offline `offline.<membership>` receipts can record visible identities only; they cannot win an explicit marker conflict or mark-all. Replays are bound to the original account, origin, membership, message and intent.
 - SQLite journals are protected from disposable cache cleanup. Successful/permanently refused observations are removed using their original payload/intent, so a delayed ACK cannot remove a newer journal entry.
-- Android Room **16 → 17** adds the first-unread identity and topic unread count; full member identity is retained in `membersJson`, exact message proof in reserved locally-owned metadata (never trusted from caller payload). Swift GRDB **v13 → v14** adds topic unread count; message/conversation wireJson already persists additive fields.
+- Android Room **16 → 17 → 18** adds the first-unread identity, topic unread count and durable topic scope/expiry JSON; full member identity is retained in `membersJson`, exact message proof in reserved locally-owned metadata (never trusted from caller payload). Swift GRDB **v13 → v14 → v15** adds topic unread count and durable scope/expiry JSON; message/conversation wireJson already persists additive fields.
 
 ### Deployment order (not executed)
 

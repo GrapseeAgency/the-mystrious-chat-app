@@ -12,6 +12,7 @@ export function inboxMessagesWhere(room: string, at: Date): Prisma.MessageWhereI
     } } }] }],
   }
 }
+/** Legacy query helper only; native/application badges must use unreadSnapshot below. */
 export function unreadMessages(room: string, viewer: string, readAt: Date, at: Date): Prisma.MessageWhereInput {
   // An integration may use a member's senderId without being that member's
   // outgoing action. Only the persisted server flag changes unread semantics.

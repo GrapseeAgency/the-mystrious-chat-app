@@ -303,8 +303,8 @@ fun ChatRoomScreen(
     // R2-A item 5 - the composer draft staged for the /schedule armer.
     var scheduleDraft by remember(conversationId, viewerId) { mutableStateOf<String?>(null) }
     // R2-A item 4 - the frozen pre-open read watermark (unread divider).
-    var firstUnreadMessageId by remember(conversationId) { mutableStateOf<String?>(null) }
-    var unreadAnchorCaptured by remember(conversationId) { mutableStateOf(false) }
+    var firstUnreadMessageId by remember(conversationId, activeTopicId) { mutableStateOf<String?>(null) }
+    var unreadAnchorCaptured by remember(conversationId, activeTopicId) { mutableStateOf(false) }
 
     // Wave 6 - broadcast channel lock (role from the server detail).
     val isChannel = conversation?.kind == Conversation.Kind.CHANNEL
@@ -373,12 +373,16 @@ fun ChatRoomScreen(
     // Room summary that lands (web chats-tab handlePress freezes it at tap
     // time): only when unreadCount > 0, else no divider. markRead on entry
     // zeroes the summary shortly after, so this runs exactly once.
-    LaunchedEffect(conversation) {
+    LaunchedEffect(conversation, activeTopicId, topics) {
         if (unreadAnchorCaptured) return@LaunchedEffect
-        val conv = conversation ?: return@LaunchedEffect
+        if (activeTopicId == null) {
+            val conv = conversation ?: return@LaunchedEffect
+            firstUnreadMessageId = conv.firstUnreadMessageId.takeIf { conv.unreadCount > 0 }
+        } else {
+            val topic = topics.firstOrNull { it.id == activeTopicId && it.unreadCount != null } ?: return@LaunchedEffect
+            firstUnreadMessageId = topic.firstUnreadMessageId.takeIf { (topic.unreadCount ?: 0) > 0 }
+        }
         unreadAnchorCaptured = true
-        firstUnreadMessageId = conv.firstUnreadMessageId.takeIf { conv.unreadCount > 0 }
-
     }
 
     // The pill counts real incoming IDs, not day separators/history rows.
@@ -2402,7 +2406,7 @@ private fun DaySeparator(label: String, modifier: Modifier = Modifier) {
 
 /** R2-A item 4 - the unread divider (web chat-room.tsx UnreadDivider). */
 @Composable
-private fun UnreadDivider(modifier: Modifier = Modifier) {
+internal fun UnreadDivider(modifier: Modifier = Modifier) {
     Row(
         modifier
             .fillMaxWidth()

@@ -223,7 +223,7 @@ class ShellViewModel @Inject constructor(
     repo: PulseRepository,
 ) : ViewModel() {
     val unread: StateFlow<Int> = repo.observeConversations()
-        .map { list -> list.sumOf { it.unreadCount } }
+        .map { list -> list.filter { !it.isArchived && !it.isSelf }.sumOf { it.badgeUnreadCount } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     private val _searchTick = MutableStateFlow(0)

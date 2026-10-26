@@ -124,4 +124,31 @@ final class ConversationExpiryTests: XCTestCase {
         XCTAssertEqual(reopened.draft(conversationId: "room"), "keep")
         XCTAssertEqual(try reopened.countOutbox(), 1)
     }
+
+    func testScopedExpiryAccountsForUnloadedRepliesAndManualOnlyBadges() throws {
+        let raw = Data(#"{"readStateVersion":1,"conversationId":"room","userId":"owner","threadId":"root","unreadCount":4,"firstUnreadMessageId":"unloaded","unreadExpirations":[{"expiresAt":"2033-05-18T03:33:20Z","count":3}]}"#.utf8)
+        let snapshot = try JSONDecoder().decode(WireReadScopeState.self, from: raw)
+        XCTAssertEqual(snapshot.unread(at: base.addingTimeInterval(-1)), 4)
+        XCTAssertEqual(snapshot.unread(at: base), 1)
+        var room = try fixture(deadline: base)
+        room.unreadCount = 0
+        XCTAssertEqual(room.badgeUnreadCount, 1)
+        room.myManualUnread = false
+        XCTAssertEqual(room.badgeUnreadCount, 0)
+    }
+
+    func testTopicScopeScheduleAndAnchorSurviveCacheReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("topics.sqlite").path
+        let topic = try JSONDecoder().decode(WireTopic.self, from: Data(#"{"id":"topic","name":"Topic","unreadCount":4,"firstUnreadMessageId":"unloaded","unreadExpirations":[{"expiresAt":"2033-05-18T03:33:20Z","count":3}]}"#.utf8))
+        do { try PulseStore(path: path).upsert(topics: [topic], conversationId: "room") }
+        let restored = try XCTUnwrap(PulseStore(path: path).topics(conversationId: "room").first)
+        XCTAssertEqual(restored.firstUnreadMessageId, "unloaded")
+        XCTAssertEqual(restored.removingExpiredUnread(at: base.addingTimeInterval(-1)).unreadCount, 4)
+        let expired = restored.removingExpiredUnread(at: base)
+        XCTAssertEqual(expired.unreadCount, 1)
+        XCTAssertEqual(expired.removingExpiredUnread(at: base.addingTimeInterval(5)).unreadCount, 1)
+    }
 }

@@ -29,6 +29,48 @@ import UserNotifications
 // the failure states stay truthful about it.
 
 public enum PulsePushNotifications {
+    @MainActor private static var desiredBadge = 0
+    @MainActor private static var appliedBadge: Int?
+    @MainActor private static var badgeTask: Task<Void, Never>?
+
+    /// Serialize writes: an older completion must not overwrite the newest
+    /// account's badge. The OS still owns whether badge permission is enabled.
+    @MainActor
+    public static func setUnreadBadge(_ count: Int) {
+        desiredBadge = max(0, count)
+        guard badgeTask == nil, appliedBadge != desiredBadge else { return }
+        badgeTask = Task { @MainActor in
+            defer { badgeTask = nil }
+            while appliedBadge != desiredBadge {
+                let next = desiredBadge
+                do { try await UNUserNotificationCenter.current().setBadgeCount(next) }
+                catch { NSLog("Pulse badge update was not accepted: %@", error.localizedDescription); return }
+                appliedBadge = next
+            }
+        }
+    }
+
+    @MainActor
+    static func refreshUnreadBadge(using client: PulseAPIClient, store: PulseStore, isCurrent: () -> Bool) async -> Bool {
+        do {
+            guard !Task.isCancelled, isCurrent() else { return false }
+            let rooms = try await client.conversations()
+            guard !Task.isCancelled, isCurrent() else { return false }
+            try store.upsert(conversations: rooms.map { $0.toDomain() }, replacingSnapshot: true)
+            let count = rooms.filter { !$0.isArchived && $0.isSelf != true }
+                .reduce(0) { $0 + $1.removingExpiredSummary().badgeUnreadCount }
+            setUnreadBadge(count)
+            await badgeTask?.value
+            return !Task.isCancelled && isCurrent() && appliedBadge == desiredBadge
+        } catch { return false }
+    }
+
+    @MainActor
+    static func refreshBadgePermission() {
+        appliedBadge = nil
+        setUnreadBadge(desiredBadge)
+    }
+
 
     /// Ask once per install (idempotent - a determined verdict returns
     /// immediately without a prompt); on grant, register with APNs. The
@@ -211,6 +253,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
                 }
                 NSLog("Pulse push: authorization granted - registering for remote notifications")
                 UIApplication.shared.registerForRemoteNotifications()
+                PulsePushNotifications.refreshBadgePermission()
             }
         }
     }

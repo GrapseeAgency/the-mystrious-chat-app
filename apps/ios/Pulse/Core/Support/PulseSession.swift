@@ -39,7 +39,9 @@ public final class PulseSession: ObservableObject {
     /// deliveries). Features subscribe; later waves consume more cases.
     @Published public private(set) var realtimeRefreshTick = 0
     /// Live total unread feeding the dock badge (Chats view model writes it).
-    @Published public var dockUnreadCount = 0
+    @Published public var dockUnreadCount = 0 {
+        didSet { PulsePushNotifications.setUnreadBadge(dockUnreadCount) }
+    }
     /// True while a chat room owns the screen - the dock hides itself.
     @Published public var roomVisible = false
     /// Dock "More → Search" asks the Chats tab to enter search mode.
@@ -1032,6 +1034,13 @@ public final class PulseSession: ObservableObject {
                 })
             if self.generation == epoch { self.noteInboxChanged() }
             return succeeded
+        }
+        engine.onBadgeRefresh = { [weak self] in
+            guard let self, self.ready, let store = self.store else { return false }
+            let epoch = self.generation, inboxRevision = self.inboxRefreshTick, liveRevision = self.realtimeRefreshTick
+            return await PulsePushNotifications.refreshUnreadBadge(using: self.api, store: store, isCurrent: {
+                self.generation == epoch && self.inboxRefreshTick == inboxRevision && self.realtimeRefreshTick == liveRevision
+            })
         }
         engine.onEvent = { [weak self] event in
             self?.routeOutboxEvent(event)

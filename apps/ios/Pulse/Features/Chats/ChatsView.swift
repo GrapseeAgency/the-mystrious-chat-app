@@ -2810,11 +2810,11 @@ final class ChatsViewModel: ObservableObject {
     }
 
     var unreadTotal: Int {
-        activeRows.reduce(0) { $0 + $1.unreadCount }
+        activeRows.reduce(0) { $0 + max($1.unreadCount, $1.manualUnread ? 1 : 0) }
     }
 
     var archivedUnread: Int {
-        archivedRows.reduce(0) { $0 + $1.unreadCount }
+        archivedRows.reduce(0) { $0 + max($1.unreadCount, $1.manualUnread ? 1 : 0) }
     }
 
     var subscribedChannelCount: Int {

@@ -51,7 +51,18 @@ data class ConversationMember(
 )
 
 @Serializable
+@Serializable
 data class UnreadExpiration(val expiresAtEpochMs: Long, val count: Int)
+
+/** Authoritative whole-scope count; never inferred from a loaded page. */
+@Serializable
+data class ReadScopeState(val unreadCount: Int, val firstUnreadMessageId: String? = null,
+    val unreadExpirations: List<UnreadExpiration> = emptyList()) {
+    fun unreadAt(nowMillis: Long): Int = unreadExpirations.filter { it.expiresAtEpochMs <= nowMillis }
+        .fold(unreadCount.coerceAtLeast(0)) { remaining, bucket ->
+            remaining - bucket.count.coerceIn(0, remaining)
+        }
+}
 
 /** A conversation in the chats list - mirrors web `ConversationSummary`. */
 @Serializable
@@ -102,6 +113,8 @@ data class Conversation(
 ) {
     enum class Kind { DM, GROUP, CHANNEL, SPACE, VOICE, STAGE }
 
+    /** Manual-only reminders contribute one; message counts are never inflated. */
+    val badgeUnreadCount: Int get() = maxOf(unreadCount, if (myManualUnread) 1 else 0)
     val isGroupish: Boolean get() = kind != Kind.DM
 }
 
@@ -192,7 +205,14 @@ data class Topic(
     val lastMessageAt: Long? = null,
     val messageCount: Int = 0,
     val unreadCount: Int? = null,
-)
+    val firstUnreadMessageId: String? = null,
+    val unreadExpirations: List<UnreadExpiration> = emptyList(),
+) {
+    fun removingExpiredUnread(now: Long): Topic = if (unreadCount == null) this else copy(
+        unreadCount = ReadScopeState(unreadCount, firstUnreadMessageId, unreadExpirations).unreadAt(now),
+        unreadExpirations = unreadExpirations.filter { it.expiresAtEpochMs > now },
+    )
+}
 
 /** Outcome of POST /api/messages/{id}/transcribe (cached: server ASR cache hit). */
 @Serializable

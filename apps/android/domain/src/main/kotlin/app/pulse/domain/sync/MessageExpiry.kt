@@ -46,3 +46,31 @@ fun Flow<List<app.pulse.domain.model.SavedItem>>.withSavedMessageExpiry(
 fun messageExpiryEpochMs(raw: String?): Long? = raw?.let {
     runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrDefault(Long.MIN_VALUE)
 }
+
+/** Expiration schedules include unseen/unloaded replies, not just cached rows. */
+@OptIn(ExperimentalCoroutinesApi::class)
+fun Flow<app.pulse.domain.model.ReadScopeState?>.withReadScopeExpiry(
+    nowMillis: () -> Long = System::currentTimeMillis,
+): Flow<Int?> = transformLatest { snapshot ->
+    if (snapshot == null) { emit(null); return@transformLatest }
+    while (true) {
+        val now = nowMillis()
+        emit(snapshot.unreadAt(now))
+        val next = snapshot.unreadExpirations.map { it.expiresAtEpochMs }.filter { it > now }.minOrNull() ?: break
+        delay((next - now).coerceIn(1L, 30_000L))
+    }
+}.distinctUntilChanged()
+
+@OptIn(ExperimentalCoroutinesApi::class)
+fun Flow<List<app.pulse.domain.model.Topic>>.withTopicUnreadExpiry(
+    nowMillis: () -> Long = System::currentTimeMillis,
+): Flow<List<app.pulse.domain.model.Topic>> = transformLatest { rows ->
+    var current = rows
+    while (true) {
+        val now = nowMillis()
+        current = current.map { it.removingExpiredUnread(now) }
+        emit(current)
+        val next = current.flatMap { it.unreadExpirations }.map { it.expiresAtEpochMs }.filter { it > now }.minOrNull() ?: break
+        delay((next - now).coerceIn(1L, 30_000L))
+    }
+}.distinctUntilChanged()

@@ -305,17 +305,24 @@ public struct PulseAPIClient: Sendable {
     }
 
     public func unreadCount(conversationId: String, threadId: String? = nil, topicId: String? = nil) async throws -> Int {
-        struct Snapshot: Decodable {
-            let readStateVersion: Int; let conversationId: String; let userId: String
-            let threadId: String?; let topicId: String?; let unreadCount: Int
-        }
+        try await readScopeState(conversationId: conversationId, threadId: threadId, topicId: topicId).unread()
+    }
+
+    public func readScopeState(conversationId: String, threadId: String? = nil, topicId: String? = nil) async throws -> WireReadScopeState {
         let query = "userId=\(q(userId))" + (threadId.map { "&threadId=\(q($0))" } ?? "") + (topicId.map { "&topicId=\(q($0))" } ?? "")
-        let snapshot = try await get("/api/conversations/\(q(conversationId))/read-state?\(query)", as: Snapshot.self)
+        let snapshot = try await get("/api/conversations/\(q(conversationId))/read-state?\(query)", as: WireReadScopeState.self)
         guard snapshot.readStateVersion == 1, snapshot.conversationId == conversationId, snapshot.userId == userId,
               snapshot.threadId == threadId, snapshot.topicId == topicId, snapshot.unreadCount >= 0 else {
             throw Failure(kind: .validation, message: "Read scope was not confirmed.")
         }
-        return snapshot.unreadCount
+        var remaining = snapshot.unreadCount
+        for bucket in snapshot.unreadExpirations ?? [] {
+            guard bucket.count >= 0, bucket.count <= remaining, PulseFormat.date(bucket.expiresAt) != nil else {
+                throw Failure(kind: .validation, message: "Read scope expiration was not confirmed.")
+            }
+            remaining -= bucket.count
+        }
+        return snapshot
     }
 
     public func captureReadIntent(conversationId: String) async throws -> String {

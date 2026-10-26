@@ -98,4 +98,17 @@ class ConversationExpiryTest {
         assertNull(visible.single().lastMessagePreview)
         reader.cancelAndJoin()
     }
+    @Test fun `scoped expiry includes unloaded replies and manual reminders remain visible in dock`() = runTest {
+        val snapshot = app.pulse.domain.model.ReadScopeState(4, "unloaded", listOf(UnreadExpiration(1000, 3)))
+        val flow = MutableStateFlow<app.pulse.domain.model.ReadScopeState?>(snapshot)
+        val counts = mutableListOf<Int?>()
+        val job = launch { flow.withReadScopeExpiry { testScheduler.currentTime }.collect { counts += it } }
+        runCurrent()
+        assertEquals(4, counts.last())
+        advanceTimeBy(1000); runCurrent()
+        assertEquals(1, counts.last())
+        assertEquals(1, row().copy(unreadCount = 0).badgeUnreadCount)
+        assertEquals(4, row().badgeUnreadCount)
+        job.cancelAndJoin()
+    }
 }

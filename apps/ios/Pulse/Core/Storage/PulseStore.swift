@@ -271,6 +271,9 @@ public final class PulseStore: Sendable {
         m.registerMigration("v14") { db in
             try db.alter(table: "topics") { t in t.add(column: "unreadCount", .integer) }
         }
+        m.registerMigration("v15") { db in
+            try db.alter(table: "topics") { t in t.add(column: "readStateJson", .text) }
+        }
         return m
     }
 
@@ -906,16 +909,17 @@ public final class PulseStore: Sendable {
             for topic in topics {
                 try db.execute(
                     sql: """
-                    INSERT INTO topics (id, conversationId, name, emoji, lastMessageAt, messageCount, unreadCount)
-                    VALUES (:id, :cid, :name, :emoji, :lastMessageAt, :messageCount, :unreadCount)
+                    INSERT INTO topics (id, conversationId, name, emoji, lastMessageAt, messageCount, unreadCount, readStateJson)
+                    VALUES (:id, :cid, :name, :emoji, :lastMessageAt, :messageCount, :unreadCount, :readStateJson)
                     ON CONFLICT(id) DO UPDATE SET
                       conversationId=:cid, name=:name, emoji=:emoji,
-                      lastMessageAt=:lastMessageAt, messageCount=:messageCount, unreadCount=:unreadCount
+                      lastMessageAt=:lastMessageAt, messageCount=:messageCount, unreadCount=:unreadCount, readStateJson=:readStateJson
                     """,
                     arguments: [
                         "id": topic.id, "cid": conversationId, "name": topic.name,
                         "emoji": topic.emoji ?? "chat", "lastMessageAt": topic.lastMessageAt,
                         "messageCount": topic.messageCount ?? 0, "unreadCount": topic.unreadCount,
+                        "readStateJson": String(decoding: try JSONEncoder().encode(topic), as: UTF8.self),
                     ],
                 )
             }
@@ -937,6 +941,10 @@ public final class PulseStore: Sendable {
     private static func topicRow(from row: Row) -> WireTopic? {
         guard let id: String = row["id"],
               let name: String = row["name"] else { return nil }
+        if let raw: String = row["readStateJson"],
+           let topic = try? JSONDecoder().decode(WireTopic.self, from: Data(raw.utf8)), topic.id == id {
+            return topic.removingExpiredUnread()
+        }
         let emoji: String? = row["emoji"]
         let lastMessageAt: String? = row["lastMessageAt"]
         let messageCount: Int? = row["messageCount"]

@@ -103,6 +103,12 @@ struct PulseApp: App {
                             minimumReadAt: read.minimumReadAt, readIntent: read.intent)
                     })
             }
+            engine.onBadgeRefresh = {
+                await PulsePushNotifications.refreshUnreadBadge(using: api, store: store, isCurrent: {
+                    PulseOutboxEngine.active == nil && PulseKeychain.shared.loadViewer()?.id == viewer.id &&
+                    PulseKeychain.shared.loadSessionToken() == token && PulseEndpoints.gatewayURL == api.baseURL
+                })
+            }
             defer { engine.stop() }
             return await engine.flushBackgroundQueues()
         } catch { return false }

@@ -38,14 +38,16 @@ function serializeTopic(row: {
   name: string
   emoji: string
   lastMessageAt: Date
-}, messageCount: number, unreadCount: number | null = null) {
+}, messageCount: number, readState: Awaited<ReturnType<typeof unreadSnapshot>> | null = null) {
   return {
     id: row.id,
     name: row.name,
     emoji: row.emoji,
     lastMessageAt: row.lastMessageAt.toISOString(),
     messageCount,
-    unreadCount,
+    unreadCount: readState?.unreadCount ?? null,
+    firstUnreadMessageId: readState?.firstUnreadMessageId ?? null,
+    unreadExpirations: readState?.unreadExpirations ?? [],
   }
 }
 
@@ -59,47 +61,50 @@ export async function GET(req: Request, { params }: RouteCtx) {
 
   const denied = await requireActionOwner(req, userId, 'topic read state')
   if (denied) return denied
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id }, select: { id: true } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: id } },
-      select: { id: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-
-  const topics = await db.topic.findMany({
-    where: { conversationId: id },
-    orderBy: { lastMessageAt: 'desc' },
-  })
-
-  // Real per-topic filed-message counts (soft-deleted rows excluded).
-  const withCounts = await Promise.all(
-    topics.map(async (row) => ({
-      row,
-      unreadCount: (await unreadSnapshot(db, id, userId, new Date(0), new Date(), { topicId: row.id })).unreadCount,
-      messageCount: await db.message.count({
-        where: { conversationId: id, topicId: row.id, deletedAt: null },
+  return db.$transaction(async tx => {
+    const now = new Date()
+    const [conv, participant] = await Promise.all([
+      tx.conversation.findUnique({ where: { id }, select: { id: true } }),
+      tx.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId, conversationId: id } },
+        select: { id: true },
       }),
-    })),
-  )
+    ])
+    if (!conv) {
+      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    }
+    if (!participant) {
+      return NextResponse.json(
+        { error: 'You are not a participant of this conversation.' },
+        { status: 403 },
+      )
+    }
 
-  withCounts.sort(
-    (a, b) => b.row.lastMessageAt.getTime() - a.row.lastMessageAt.getTime(),
-  )
+    const topics = await tx.topic.findMany({
+      where: { conversationId: id },
+      orderBy: { lastMessageAt: 'desc' },
+    })
 
-  return NextResponse.json(
-    { topics: withCounts.map(({ row, messageCount, unreadCount }) => serializeTopic(row, messageCount, unreadCount)) },
-    { headers: { 'Cache-Control': 'no-store' } },
-  )
+    // Real per-topic filed-message counts (soft-deleted rows excluded).
+    const withCounts = await Promise.all(
+      topics.map(async (row) => ({
+        row,
+        readState: await unreadSnapshot(tx, id, userId, new Date(0), now, { topicId: row.id }),
+        messageCount: await tx.message.count({
+          where: { conversationId: id, topicId: row.id, deletedAt: null },
+        }),
+      })),
+    )
+
+    withCounts.sort(
+      (a, b) => b.row.lastMessageAt.getTime() - a.row.lastMessageAt.getTime(),
+    )
+
+    return NextResponse.json(
+      { topics: withCounts.map(({ row, messageCount, readState }) => serializeTopic(row, messageCount, readState)) },
+      { headers: { 'Cache-Control': 'no-store' } },
+    )
+  }, { isolationLevel: 'Serializable' })
 }
 
 export async function POST(req: Request, { params }: RouteCtx) {

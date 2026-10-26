@@ -95,7 +95,8 @@ final class MirrorViewModel: ObservableObject {
     @Published var stats: WireUserStats?
     @Published var coins: Int?
 
-    var totalUnread: Int { rows.reduce(0) { $0 + $1.unread } }
+    private weak var badgeSession: PulseSession?
+    var totalUnread: Int { rows.reduce(0) { $0 + max($1.unread, $1.manualUnread ? 1 : 0) } }
 
     struct MirrorRow: Identifiable, Hashable {
         let id: String
@@ -173,6 +174,7 @@ final class MirrorViewModel: ObservableObject {
     }
 
     func start(session: PulseSession) {
+        badgeSession = session
         if client?.userId != session.api.userId || client?.baseURL != session.api.baseURL { profile = nil; stats = nil; coins = nil }
         client = session.api
         store = session.store
@@ -198,10 +200,12 @@ final class MirrorViewModel: ObservableObject {
     private func projectInbox() {
         guard let client else { return }
         inbox = inbox.map { $0.removingExpiredSummary() }
-        let built = inbox.map { Self.buildRow(summary: $0, viewerId: client.userId) }
+        let built = inbox.filter { $0.isSelf != true }.map { Self.buildRow(summary: $0, viewerId: client.userId) }
         let active = built.filter { !$0.isArchived }, archived = built.filter { $0.isArchived }
         if rows != active { rows = active }
         if archivedRows != archived { archivedRows = archived }
+        if let session = badgeSession, session.viewer?.id == client.userId, session.api.baseURL == client.baseURL,
+           session.dockUnreadCount != totalUnread { session.dockUnreadCount = totalUnread }
     }
 
     func cachedDirectConversation(viewerId: String, peerId: String) -> WireConversationSummary? {

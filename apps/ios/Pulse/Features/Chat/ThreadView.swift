@@ -29,6 +29,9 @@ struct ThreadView: View {
     @State private var nearTail = true
     @State private var visibleReadIDs: Set<String> = []
     @State private var scopeUnread: Int?
+    @State private var scopeSnapshot: WireReadScopeState?
+    @State private var firstUnreadMessageId: String?
+    @State private var scopeAnchorCaptured = false
     @State private var scopeReadRevision = 0
     @State private var readOwner: PulseReadSurfaces.Owner?
     @Environment(\.scenePhase) private var readScenePhase
@@ -166,16 +169,28 @@ struct ThreadView: View {
         .onReceive(session.signals) { handle(signal: $0) }
         .task(id: scopeReadRevision) {
             let epoch = session.sessionGeneration
-            let count = try? await session.api.unreadCount(conversationId: conversation.id, threadId: root.id)
-            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-            scopeUnread = count
+            do {
+                let snapshot = try await session.api.readScopeState(conversationId: conversation.id, threadId: root.id)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                scopeSnapshot = snapshot; scopeUnread = snapshot.unread()
+                if !scopeAnchorCaptured { scopeAnchorCaptured = true; firstUnreadMessageId = snapshot.firstUnreadMessageId }
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                if [400, 403, 404, 410].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                    scopeSnapshot = nil; scopeUnread = nil
+                }
+            }
         }
-        .onReceive(session.messageVisibilityClock) { now in pruneExpired(now: now); updateReadBoundary() }
+        .onReceive(session.messageVisibilityClock) { now in
+            scopeUnread = scopeSnapshot?.unread(at: now)
+            pruneExpired(now: now)
+            updateReadBoundary()
+        }
         .onReceive(session.outboxEvents) { event in
             switch event {
             case .delivered(let message, let room, let clientId):
                 guard room == conversation.id else { return }
-        scopeReadRevision &+= 1
+                scopeReadRevision &+= 1
                 replies.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
                 if message.parentId == root.id { appendReply(message) }
             case .dropped(let clientId, let room):
@@ -276,6 +291,7 @@ struct ThreadView: View {
                     .padding(.vertical, 8)
                 }
                 ForEach(Array(replies.enumerated()), id: \.element.id) { index, reply in
+                    if reply.id == firstUnreadMessageId { UnreadDividerRow() }
                     // Day chip when the calendar day changes between rows - the
                     // first reply compares against the parent's day.
                     let previous = index == 0 ? parentMessage : replies[index - 1]
@@ -474,6 +490,7 @@ struct ThreadView: View {
         default: return
         }
         guard room == conversation.id else { return }
+        scopeReadRevision &+= 1
         let cached = try? session.store?.message(id: message.id, now: .distantPast)
         let canonical = PulseMessageMerge.merge(cached, incoming: message)
         if canonical.id == root.id { parent = PulseMessageMerge.merge(parent, incoming: canonical) }

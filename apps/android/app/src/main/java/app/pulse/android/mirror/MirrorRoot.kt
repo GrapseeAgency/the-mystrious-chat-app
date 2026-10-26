@@ -638,7 +638,7 @@ internal fun MirrorRoot(
 
                 MirrorDock(
                     activeTab = tab,
-                    unread = activeConversations.sumOf { it.unreadCount },
+                    unread = activeConversations.sumOf { it.badgeUnreadCount },
                     // R90 - a dock tab press dismisses the calls/channels
                     // sub-pages: on web the dock floats above the sub-page and
                     // every slot navigates; before this round the sub-page
@@ -684,7 +684,7 @@ internal fun MirrorRoot(
                         selfOpen = conversations.any { it.isSelf },
                         mentionCount = mentionCount,
                         channelCount = activeConversations.count { it.isChannel },
-                        archivedUnread = archivedConversations.sumOf { it.unreadCount },
+                        archivedUnread = archivedConversations.sumOf { it.badgeUnreadCount },
                         onSearch = {
                             // R75 - kebab Search opens the SPOTLIGHT palette (the web
                             // shell overflow "Search" action opens Spotlight too); the

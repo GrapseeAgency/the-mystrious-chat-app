@@ -447,6 +447,8 @@ public struct WireSavedPage: Codable, Hashable, Sendable {
 /// only real Topic rows ride this shape.
 public struct WireTopic: Codable, Hashable, Sendable, Identifiable {
     public var unreadCount: Int? = nil
+    public var firstUnreadMessageId: String? = nil
+    public var unreadExpirations: [WireUnreadExpiration]? = nil
     public let id: String
     public let name: String
     public let emoji: String?
@@ -653,6 +655,7 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
 
     /// N10-b - nil-coalescing helper: the mark-as-unread dot flag.
     public var manualUnread: Bool { myManualUnread ?? false }
+    public var badgeUnreadCount: Int { max(unreadCount ?? 0, manualUnread ? 1 : 0) }
 
     /// N10-b - server-truth mute: mutedUntil in the FUTURE, not merely non-null
     /// (expired mutes must not mute - web mutedUntil > Date.now() check).

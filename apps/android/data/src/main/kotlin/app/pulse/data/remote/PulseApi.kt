@@ -423,14 +423,22 @@ class PulseApi(
         if (!valid) throw kotlinx.serialization.SerializationException(message())
     }
 
-    suspend fun readStateSnapshot(conversationId: String, userId: String, threadId: String? = null, topicId: String? = null): PulseResult<Int> {
+    suspend fun readStateSnapshot(conversationId: String, userId: String, threadId: String? = null, topicId: String? = null): PulseResult<Int> =
+        when (val result = readScopeState(conversationId, userId, threadId, topicId)) {
+            is PulseResult.Success -> PulseResult.Success(result.value.unreadCount)
+            is PulseResult.Failure -> result
+        }
+
+    suspend fun readScopeState(conversationId: String, userId: String, threadId: String? = null, topicId: String? = null): PulseResult<app.pulse.protocol.ReadStateSnapshotDto> {
         fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
         val query = "userId=${q(userId)}" + (threadId?.let { "&threadId=${q(it)}" } ?: "") + (topicId?.let { "&topicId=${q(it)}" } ?: "")
         return get("/api/conversations/${q(conversationId)}/read-state?$query") { raw ->
             val receipt = PulseJson.decodeFromString(app.pulse.protocol.ReadStateSnapshotDto.serializer(), raw)
             requireReadContract(receipt.readStateVersion == 1 && receipt.conversationId == conversationId && receipt.userId == userId &&
-                receipt.threadId == threadId && receipt.topicId == topicId && receipt.unreadCount >= 0)
-            receipt.unreadCount
+                receipt.threadId == threadId && receipt.topicId == topicId && receipt.unreadCount >= 0 &&
+                receipt.unreadExpirations.all { it.count >= 0 && runCatching { java.time.Instant.parse(it.expiresAt) }.isSuccess } &&
+                receipt.unreadExpirations.sumOf { it.count.toLong() } <= receipt.unreadCount.toLong())
+            receipt
         }
     }
 

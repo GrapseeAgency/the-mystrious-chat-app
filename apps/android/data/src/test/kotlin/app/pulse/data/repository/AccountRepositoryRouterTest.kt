@@ -21,6 +21,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountRepositoryRouterTest {
     private class Account(val owner: String) {
+        val pendingReads = MutableStateFlow(true)
         val draft = MutableStateFlow<String?>("draft-$owner")
         val search = MutableStateFlow(Result.success(listOf(app.pulse.domain.model.MessageHit(
             id = owner, conversationId = "room", conversationName = "Room", isGroup = false,
@@ -32,6 +33,7 @@ class AccountRepositoryRouterTest {
             arrayOf(PulseRepository::class.java)) { _, method, args ->
             when {
                 method.name == "observeDraft" -> draft
+                method.name == "observePendingReads" -> pendingReads
                 method.name == "observeMessageSearch" -> search
                 method.name == "getViewerId" -> owner
                 method.name == "equals" -> false
@@ -94,5 +96,17 @@ class AccountRepositoryRouterTest {
         assertEquals(1, a.completed)
         assertEquals(0, b.completed)
         assertEquals("b", router.repository.viewerId)
+    }
+    @Test fun readJournalAccountSwitchEmitsBooleanAndRetiresOldOwner() = runTest {
+        val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(a.repo, { b.repo }, { b.repo })
+        val seen = mutableListOf<Boolean>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            router.repository.observePendingReads().toList(seen)
+        }
+        router.repository.start("b"); runCurrent()
+        assertEquals(listOf(true, false, true), seen)
+        a.pendingReads.value = false; runCurrent()
+        assertTrue(seen.last())
     }
 }

@@ -3853,6 +3853,15 @@ final class RoomViewModel: ObservableObject {
     /// MY lastReadAt from the route-carried summary when the row showed an
     /// unread badge, else nil - nil means the divider never places.
     private let firstUnreadMessageId: String?
+    private var topicUnreadAnchors: [String: String] = [:]
+    private var capturedTopicAnchors: Set<String> = []
+
+    private func captureTopicAnchor(_ id: String?) {
+        guard let id, !capturedTopicAnchors.contains(id),
+              let topic = topics.first(where: { $0.id == id }), topic.unreadCount != nil else { return }
+        capturedTopicAnchors.insert(id)
+        topicUnreadAnchors[id] = topic.firstUnreadMessageId
+    }
     /// Count distinct incoming arrivals, never changes in rendered history length.
     @Published private(set) var missedCount = 0
     private var missedMessages = PulseMissedMessages()
@@ -4217,7 +4226,8 @@ final class RoomViewModel: ObservableObject {
             .sink { [weak self] _ in
                 guard let self else { return }
                 refilterInPlace()
-                setActiveTopic(TopicHeal.healed(activeTopicId, topics: topics), session: session, feedback: false)
+                captureTopicAnchor(activeTopicId)
+            setActiveTopic(TopicHeal.healed(activeTopicId, topics: topics), session: session, feedback: false)
             }
             .store(in: &cancellables)
 
@@ -4234,6 +4244,8 @@ final class RoomViewModel: ObservableObject {
             .sink { [weak self] now in
                 guard let self, session.sessionGeneration == self.readSessionGeneration else { return }
                 self.refilterInPlace()
+                let projectedTopics = self.topics.map { $0.removingExpiredUnread(at: now) }
+                if projectedTopics != self.topics { self.topics = projectedTopics }
                 if let deadline = self.nextReplyCountExpiry, deadline <= now, let store = session.store {
                     self.seedReplyCounts(store: store)
                 }
@@ -4620,8 +4632,9 @@ final class RoomViewModel: ObservableObject {
     /// R30-c - the index the unread divider row sits BEFORE (web
     /// buildItems parity). Nil = anchor absent or nothing qualifies.
     func unreadDividerRow(viewerId: String?) -> Int? {
-        guard let firstUnreadMessageId else { return nil }
-        return messages.firstIndex { $0.id == firstUnreadMessageId }
+        let anchor = activeTopicId.flatMap { topicUnreadAnchors[$0] } ?? (activeTopicId == nil ? firstUnreadMessageId : nil)
+        guard let anchor else { return nil }
+        return messages.firstIndex { $0.id == anchor }
     }
 
     // ── R2-B R34-b - AI recap ──
@@ -5871,6 +5884,7 @@ final class RoomViewModel: ObservableObject {
         cancelHistory()
         historyWindow.record(cursor: nil, hasMore: false)
         activeTopicId = id
+        captureTopicAnchor(id)
         resetMissedScope()
         // Do not leave another topic visible while the new request is suspended.
         let cached = (try? session.store?.messages(conversationId: conversationId)) ?? []

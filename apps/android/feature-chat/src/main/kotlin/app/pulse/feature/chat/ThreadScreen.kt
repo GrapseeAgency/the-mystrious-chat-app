@@ -75,6 +75,7 @@ import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.domain.repository.PulseEvent
+import app.pulse.domain.sync.withReadScopeExpiry
 import app.pulse.domain.usecase.SendMessageUseCase
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.ui.PulseMotion
@@ -169,13 +170,25 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    private val _unreadCount = MutableStateFlow<Int?>(null)
-    val unreadCount: StateFlow<Int?> = _unreadCount.asStateFlow()
+    private val readScope = MutableStateFlow<app.pulse.domain.model.ReadScopeState?>(null)
+    private var scopeAnchorCaptured = false
+    private val firstUnread = MutableStateFlow<String?>(null)
+    val firstUnreadMessageId: StateFlow<String?> = firstUnread.asStateFlow()
+    val unreadCount: StateFlow<Int?> = readScope.withReadScopeExpiry()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private var unreadJob: kotlinx.coroutines.Job? = null
     private fun refreshUnread() {
         unreadJob?.cancel()
         unreadJob = viewModelScope.launch {
-            _unreadCount.value = repo.readStateSnapshot(conversationId, threadId = rootId).getOrNull()
+            val result = repo.readScopeState(conversationId, threadId = rootId)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            result.getOrNull()?.let { next ->
+                readScope.value = next
+                if (!scopeAnchorCaptured) { scopeAnchorCaptured = true; firstUnread.value = next.firstUnreadMessageId }
+            }
+            if ((result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.status in setOf(400, 403, 404, 410)) {
+                readScope.value = null
+            }
         }
     }
 
@@ -206,7 +219,14 @@ class ThreadViewModel @Inject constructor(
         }
         viewModelScope.launch {
             repo.events().collect { event ->
-                if (event is PulseEvent.MessageRead && event.conversationId == conversationId) refreshUnread()
+                val changedRoom = when (event) {
+                    is PulseEvent.MessageRead -> event.conversationId
+                    is PulseEvent.MessageReceived -> event.conversationId
+                    is PulseEvent.MessageUpdated -> event.conversationId
+                    is PulseEvent.MessageDeleted -> event.conversationId
+                    else -> null
+                }
+                if (changedRoom == conversationId) refreshUnread()
                 if (event is PulseEvent.OutboxDropped && event.conversationId == conversationId && event.threadRootId == rootId) {
                     _state.value = _state.value.copy(
                         notice = RoomNotice(event.reason, isError = true),
@@ -371,6 +391,7 @@ fun ThreadScreen(
     readingEnabled: Boolean = false, // host must grant foreground/unlocked reading eligibility
 ) {
     val unreadCount by viewModel.unreadCount.collectAsStateWithLifecycle()
+    val firstUnreadMessageId by viewModel.firstUnreadMessageId.collectAsStateWithLifecycle()
     val cachedParent by viewModel.parent.collectAsStateWithLifecycle()
     val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -594,7 +615,9 @@ fun ThreadScreen(
                         }
                     }
                 }
-                items(replies, key = { it.id }) { reply ->
+                replies.forEach { reply ->
+                    if (reply.id == firstUnreadMessageId) item(key = "thread-unread-divider") { UnreadDivider() }
+                    item(key = reply.id) {
                     Column(
                         Modifier.fillMaxWidth().then(if (flashId == reply.id)
                             Modifier.border(2.dp, PulsePalette.Amber, RoundedCornerShape(16.dp)) else Modifier),
@@ -614,6 +637,7 @@ fun ThreadScreen(
                             onOpenFile = { viewModel.openFile(reply, share = false) },
                         )
                     }
+                }
                 }
                 items(failedReplies, key = { "failed-" + it.clientId }) { entry ->
                     Column(Modifier.fillMaxWidth().padding(10.dp)) {

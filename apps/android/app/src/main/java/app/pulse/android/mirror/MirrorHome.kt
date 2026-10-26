@@ -251,7 +251,7 @@ internal fun MirrorHome(
         }
     }
     val maxW = 560.dp
-    val unreadTotal = conversations.sumOf { it.unread }
+    val unreadTotal = conversations.sumOf { maxOf(it.unread, if (it.manualUnread) 1 else 0) }
 
     // Real filtering, exactly the web rails: All / Unread / Groups + folder.
     val activeFolder = folders.firstOrNull { f -> f.id == activeFolderId }

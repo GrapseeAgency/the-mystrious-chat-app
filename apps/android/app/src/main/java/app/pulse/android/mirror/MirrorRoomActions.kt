@@ -468,17 +468,39 @@ internal fun MirrorThreadSheet(
     val cachedReplies by replyFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val currentRoot by rootFlow.collectAsStateWithLifecycle(initialValue = null)
     var scopeUnread by remember(threadRepository, root.id) { mutableStateOf<Int?>(null) }
+    var scopeSnapshot by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.model.ReadScopeState?>(null) }
+    LaunchedEffect(scopeSnapshot) {
+        val snapshot = scopeSnapshot ?: return@LaunchedEffect
+        while (true) {
+            val now = System.currentTimeMillis()
+            scopeUnread = snapshot.unreadAt(now)
+            val next = snapshot.unreadExpirations.map { it.expiresAtEpochMs }.filter { it > now }.minOrNull() ?: break
+            kotlinx.coroutines.delay((next - now).coerceIn(1L, 30_000L))
+        }
+    }
     var scopeReadRevision by remember(threadRepository, root.id) { mutableStateOf(0) }
+    var firstUnreadMessageId by remember(threadRepository, root.id) { mutableStateOf<String?>(null) }
+    var scopeAnchorCaptured by remember(threadRepository, root.id) { mutableStateOf(false) }
     LaunchedEffect(threadRepository, root.id) {
         threadRepository.events().collect { event ->
             if (event is app.pulse.domain.repository.PulseEvent.MessageRead && event.conversationId == root.conversationId) scopeReadRevision++
             if (event is app.pulse.domain.repository.PulseEvent.MessageReceived && event.conversationId == root.conversationId) scopeReadRevision++
+            if (event is app.pulse.domain.repository.PulseEvent.MessageDeleted && event.conversationId == root.conversationId) scopeReadRevision++
+            if (event is app.pulse.domain.repository.PulseEvent.MessageUpdated && event.conversationId == root.conversationId) scopeReadRevision++
         }
     }
     val connectedFlow = remember(threadRepository) { threadRepository.observeConnected() }
     val connected by connectedFlow.collectAsStateWithLifecycle(initialValue = false)
     LaunchedEffect(threadRepository, root.id, connected, scopeReadRevision) {
-        scopeUnread = threadRepository.readStateSnapshot(root.conversationId, threadId = root.id).getOrNull()
+        val result = threadRepository.readScopeState(root.conversationId, threadId = root.id)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        result.getOrNull()?.let { snapshot ->
+            scopeSnapshot = snapshot
+            if (!scopeAnchorCaptured) { scopeAnchorCaptured = true; firstUnreadMessageId = snapshot.firstUnreadMessageId }
+        }
+        if ((result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.status in setOf(400, 403, 404, 410)) {
+            scopeSnapshot = null; scopeUnread = null
+        }
     }
     var draftToken by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }
     val composer = remember(threadRepository, root.id) {
@@ -627,11 +649,17 @@ internal fun MirrorThreadSheet(
                     item(key = "thread-parent") {
                         currentRoot?.let { parent -> MirrorThreadTextBubble(parent, parent.authorId == viewerId, onViewOnce = { openViewOnce(parent) }) }
                     }
-                    items(replies, key = { it.id }) { reply ->
+                    replies.forEach { reply ->
+                        if (reply.id == firstUnreadMessageId) item(key = "thread-unread-divider") {
+                            Text("Unread replies", color = MirrorArt.Accent, fontSize = 11.sp,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+                        }
+                        item(key = reply.id) {
                         Box(Modifier.fillMaxWidth().then(if (flashId == reply.id)
                             Modifier.border(1.dp, MirrorArt.Accent, androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) else Modifier)) {
                             MirrorThreadTextBubble(reply, reply.authorId == viewerId, onViewOnce = { openViewOnce(reply) })
                         }
+                    }
                     }
                     if (replies.isEmpty()) item {
                         Text(if (loading) "Loading replies…" else "No replies yet - start the thread", color = MirrorArt.Faint,

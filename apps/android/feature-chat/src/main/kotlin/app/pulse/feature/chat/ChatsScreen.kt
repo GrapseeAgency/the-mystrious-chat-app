@@ -323,7 +323,7 @@ fun ChatsScreen(
     val all = chats
     val activeRows = all.filter { !it.isArchived && !it.isSelf }
     val archivedRows = all.filter { it.isArchived }
-    val archivedUnread = archivedRows.sumOf { it.unreadCount }
+    val archivedUnread = archivedRows.sumOf { it.badgeUnreadCount }
 
     val q = query.trim().lowercase()
     val locallyFiltered = if (q.isEmpty()) activeRows else activeRows.filter { c ->

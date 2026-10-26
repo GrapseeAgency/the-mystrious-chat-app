@@ -175,12 +175,17 @@ public final class PulseOutboxEngine: ObservableObject {
     /// The background task awaits this pass, rather than returning success with
     /// an unowned fire-and-forget read delivery still in flight.
     public var onReadJournalFlush: (() async -> Bool)?
+    public var onBadgeRefresh: (() async -> Bool)?
 
     public func flushBackgroundQueues() async -> Bool {
         let messages = await flush() // Reads never hold up outgoing messages.
         guard !Task.isCancelled, !stopped else { return false }
-        let reads = await onReadJournalFlush?() ?? true
-        return messages && reads
+        let reads = await onReadJournalFlush?() ?? false
+        guard !Task.isCancelled, !stopped else { return false }
+        // Badge permission is optional; refusing it must not penalize OS scheduling
+        // of successfully drained message/read journals.
+        _ = await onBadgeRefresh?()
+        return messages && reads && badge
     }
     /// Session fallback still blocks dispatch if recording a denial on disk failed.
     public var additionalThreadAccessDenied: ((String) -> Bool)?

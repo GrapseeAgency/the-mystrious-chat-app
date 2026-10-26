@@ -31,7 +31,7 @@ class ReadStateApiTest {
             try {
                 val result = PulseApi(http, gateway = { "https://read.test" }).markRead("room", "me", anchor, "2026-10-22T00:00:05Z")
                 assertEquals("$mode: $result", mode == "valid", result is PulseResult.Success)
-                if (result is PulseResult.Failure) assertEquals("Malformed contracts are not connectivity outages", PulseResult.Failure.Kind.VALIDATION, result.kind)
+                if (result is PulseResult.Failure) assertEquals("Malformed mutation ACKs are uncertain server responses, not connectivity outages", PulseResult.Failure.Kind.SERVER, result.kind)
             } finally { http.close() }
         }
     }

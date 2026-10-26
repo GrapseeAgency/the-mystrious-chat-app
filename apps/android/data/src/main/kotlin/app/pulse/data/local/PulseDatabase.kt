@@ -437,15 +437,22 @@ data class TopicEntity(
     val lastMessageAt: String?,
     @ColumnInfo(defaultValue = "0") val messageCount: Int = 0,
     val unreadCount: Int? = null,
+    val readStateJson: String? = null,
 ) {
-    fun toDomain(): app.pulse.domain.model.Topic = app.pulse.domain.model.Topic(
+    fun toDomain(): app.pulse.domain.model.Topic {
+        val state = readStateJson?.let { runCatching { app.pulse.protocol.PulseJson.decodeFromString(
+            app.pulse.domain.model.ReadScopeState.serializer(), it) }.getOrNull() }
+        return app.pulse.domain.model.Topic(
         id = id,
         name = name,
         emoji = app.pulse.protocol.topicIconId(emoji),
         lastMessageAt = app.pulse.core.time.PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
         messageCount = messageCount,
-        unreadCount = unreadCount,
-    )
+        unreadCount = state?.unreadCount ?: unreadCount,
+        firstUnreadMessageId = state?.firstUnreadMessageId,
+        unreadExpirations = state?.unreadExpirations.orEmpty(),
+        )
+    }
 
     companion object {
         fun from(conversationId: String, t: app.pulse.domain.model.Topic) = TopicEntity(
@@ -457,6 +464,9 @@ data class TopicEntity(
             lastMessageAt = t.lastMessageAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
             messageCount = t.messageCount,
             unreadCount = t.unreadCount,
+            readStateJson = t.unreadCount?.let { app.pulse.protocol.PulseJson.encodeToString(
+                app.pulse.domain.model.ReadScopeState.serializer(), app.pulse.domain.model.ReadScopeState(
+                    it, t.firstUnreadMessageId, t.unreadExpirations)) },
         )
     }
 }
@@ -1132,7 +1142,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1277,6 +1287,17 @@ abstract class PulseDatabase : RoomDatabase() {
 
         /** Index reverse quote dependencies; retire previously cached quotes
          * whose source/root is already known deleted, without deleting replies. */
+        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val exists = db.query("PRAGMA table_info(topics)").use { cursor ->
+                    var found = false
+                    while (cursor.moveToNext()) if (cursor.getString(1) == "readStateJson") found = true
+                    found
+                }
+                if (!exists) db.execSQL("ALTER TABLE topics ADD COLUMN readStateJson TEXT")
+            }
+        }
+
         val MIGRATION_16_17: Migration = object : Migration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 val exists = db.query("PRAGMA table_info(conversations)").use { cursor ->

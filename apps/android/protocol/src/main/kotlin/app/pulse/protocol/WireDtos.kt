@@ -604,6 +604,8 @@ data class TopicDto(
     val lastMessageAt: String? = null,
     val messageCount: Int = 0,
     val unreadCount: Int? = null,
+    val firstUnreadMessageId: String? = null,
+    val unreadExpirations: List<UnreadExpirationDto> = emptyList(),
 )
 
 /** GET /api/conversations/{id}/topics?userId= → { topics: [...] }. */
@@ -720,4 +722,4 @@ val ReactionListSerializer = kotlinx.serialization.builtins.ListSerializer(React
 @Serializable
 data class ReadStateSnapshotDto(val readStateVersion: Int, val conversationId: String, val userId: String,
     val threadId: String? = null, val topicId: String? = null, val unreadCount: Int,
-    val firstUnreadMessageId: String? = null)
+    val firstUnreadMessageId: String? = null, val unreadExpirations: List<UnreadExpirationDto> = emptyList())

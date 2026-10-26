@@ -4,6 +4,7 @@ import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withSavedMessageExpiry
 import app.pulse.domain.sync.messageExpiryEpochMs
 import app.pulse.domain.sync.withMessageExpiry
+import app.pulse.domain.sync.withTopicUnreadExpiry
 
 import app.pulse.protocol.objectPayloadText
 import kotlinx.coroutines.ensureActive
@@ -2725,6 +2726,13 @@ class PulseRepositoryImpl constructor(
     override suspend fun readStateSnapshot(conversationId: String, threadId: String?, topicId: String?): Result<Int> =
         ownedPeerRequest { api.readStateSnapshot(conversationId, it, threadId, topicId) }
 
+    override suspend fun readScopeState(conversationId: String, threadId: String?, topicId: String?): Result<app.pulse.domain.model.ReadScopeState> =
+        ownedPeerRequest { api.readScopeState(conversationId, it, threadId, topicId) }.map { snapshot ->
+            app.pulse.domain.model.ReadScopeState(snapshot.unreadCount, snapshot.firstUnreadMessageId,
+                snapshot.unreadExpirations.map { app.pulse.domain.model.UnreadExpiration(
+                    messageExpiryEpochMs(it.expiresAt) ?: Long.MIN_VALUE, it.count) })
+        }
+
     // Capture is LOCAL: the fence must describe authority known when the row
     // was observed, not a later network response after a new manual marker.
     override suspend fun captureReadIntent(conversationId: String): Result<String> {
@@ -2733,7 +2741,10 @@ class PulseRepositoryImpl constructor(
         val member = conversationDao.byId(conversationId)?.toDomain()?.members?.firstOrNull { it.id == owner }
         requireConversationOwner(owner, epoch)
         val membership = member?.readMembershipId?.takeIf { it.isNotBlank() }
-            ?: return Result.failure(IllegalStateException("Waiting for current room membership"))
+            ?: run {
+                scheduleConversationsRefresh()
+                return Result.failure(IllegalStateException("Waiting for current room membership"))
+            }
         return Result.success(member?.readIntent ?: "offline.$membership")
     }
 
@@ -3514,7 +3525,7 @@ class PulseRepositoryImpl constructor(
     }
 
     override fun observeTopics(conversationId: String): Flow<List<Topic>> =
-        topicDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }
+        topicDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }.withTopicUnreadExpiry()
 
     override suspend fun createTopic(conversationId: String, name: String, emoji: String): Result<Topic> =
         when (val r = api.createTopic(conversationId, viewerId ?: "", name, emoji)) {
@@ -4700,6 +4711,9 @@ fun TopicDto.toDomain(): Topic = Topic(
     lastMessageAt = PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
     messageCount = messageCount,
     unreadCount = unreadCount,
+    firstUnreadMessageId = firstUnreadMessageId,
+    unreadExpirations = unreadExpirations.map { app.pulse.domain.model.UnreadExpiration(
+        messageExpiryEpochMs(it.expiresAt) ?: Long.MIN_VALUE, it.count) },
 )
 
 /** Wire ScheduledItem row → the domain model (tolerant: blanks stay blank). */
