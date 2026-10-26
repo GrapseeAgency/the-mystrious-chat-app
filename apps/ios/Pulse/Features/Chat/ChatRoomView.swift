@@ -38,6 +38,7 @@ struct ChatRoomView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .background(PulseReadPresentationAnchor(session: session, owner: readVisitID))
         .navigationTitle(roomTitle)
         .navigationBarTitleDisplayMode(.inline)
         // EMB-I - the header chrome melts into the ember ground (the same

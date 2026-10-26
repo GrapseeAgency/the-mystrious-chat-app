@@ -152,6 +152,9 @@ struct ThreadView: View {
                 }
             }
         }
+        .background {
+            if let readOwner { PulseReadPresentationAnchor(session: session, owner: readOwner.id) }
+        }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .fullScreenCover(item: $lightbox) { target in

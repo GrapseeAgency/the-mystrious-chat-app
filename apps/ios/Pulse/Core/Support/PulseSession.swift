@@ -550,11 +550,9 @@ public final class PulseSession: ObservableObject {
             readSurfaces.reset()
         }
         readFailureCount = 0
-        readReceiptTask?.cancel()
-        readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
         activeRoomId = conversationId
         roomVisible = true
-        if isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+        restartReadAttention()
     }
 
     func ownsRoomReadVisit(conversationId: String, entryID: UUID) -> Bool {
@@ -631,6 +629,38 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    private let nativeReadAnchors = NSMapTable<NSUUID, UIView>(keyOptions: .strongMemory, valueOptions: .weakMemory)
+    private let nativeInactiveScenes = NSHashTable<UIScene>.weakObjects()
+    private var nativePresentationBlocked = true
+
+    private var activeNativeReadView: UIView? {
+        guard let owner = readSurfaces.owner?.id ?? roomReadVisit.owner?.entryID else { return nil }
+        return nativeReadAnchors.object(forKey: owner as NSUUID)
+    }
+
+    private var nativePresentationBlockedNow: Bool {
+        guard let view = activeNativeReadView, let window = view.window,
+              !window.isHidden, let scene = window.windowScene,
+              scene.activationState == .foregroundActive, !nativeInactiveScenes.contains(scene) else { return true }
+        return PulseReadPresentation.hasPresentationAbove(view)
+    }
+
+    func setNativeReadAnchor(_ view: UIView, owner: UUID) {
+        nativeReadAnchors.setObject(view, forKey: owner as NSUUID)
+        refreshNativeReadPresentation()
+    }
+
+    func removeNativeReadAnchor(_ view: UIView, owner: UUID) {
+        guard nativeReadAnchors.object(forKey: owner as NSUUID) === view else { return }
+        nativeReadAnchors.removeObject(forKey: owner as NSUUID)
+        refreshNativeReadPresentation()
+    }
+
+    func refreshNativeReadPresentation() {
+        guard nativePresentationBlockedNow != nativePresentationBlocked else { return }
+        restartReadAttention()
+    }
+
     private var transientReadObscurations: Set<UUID> = []
     func setTransientReadObscured(_ id: UUID, _ obscured: Bool) {
         let changed = obscured ? transientReadObscurations.insert(id).inserted : transientReadObscurations.remove(id) != nil
@@ -645,18 +675,20 @@ public final class PulseSession: ObservableObject {
     }
 
     private var readAttentionBlocked: Bool {
-        nativeReadInactive || !transientReadObscurations.isEmpty || (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
+        nativeReadInactive || nativePresentationBlockedNow || !transientReadObscurations.isEmpty || (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
             groupCallEngine?.ring != nil || voiceRooms?.surface != nil || PulseAppLock.shared.needsLock ||
             readSurfaces.isObscured(shellPresented: shellObscuresReading, pipOpen: pip.isOpen)
     }
 
     private func restartReadAttention() {
+        nativePresentationBlocked = nativePresentationBlockedNow
         readReceiptTask?.cancel()
         readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
         if isForeground && !readAttentionBlocked { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
     }
 
     public func markReadIfVisible(conversationId: String?) async {
+        refreshNativeReadPresentation()
         guard let conversationId, ready, isForeground,
               activeRoomId == conversationId, !readAttentionBlocked,
               let request = readGate.begin(roomId: conversationId, now: ProcessInfo.processInfo.systemUptime) else { return }
@@ -742,12 +774,30 @@ public final class PulseSession: ObservableObject {
             }
             AnyCancellable { notificationCenter.removeObserver(observer) }.store(in: &cancellables)
         }
+        for (name, inactive) in [(UIScene.willDeactivateNotification, true),
+                                 (UIScene.didActivateNotification, false)] {
+            let observer = notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, let scene = note.object as? UIScene else { return }
+                    if inactive { self.nativeInactiveScenes.add(scene) }
+                    else { self.nativeInactiveScenes.remove(scene) }
+                    if self.activeNativeReadView?.window?.windowScene === scene { self.restartReadAttention() }
+                }
+            }
+            AnyCancellable { notificationCenter.removeObserver(observer) }.store(in: &cancellables)
+        }
         // Timer publisher is not actor-isolated; hop back per tick.
         Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                if self?.isForeground == true { self?.messageVisibilityClock.send(Date()) }
+                if self?.isForeground == true {
+                    // Reuse the visibility tick for UIKit dismissal recovery;
+                    // qualification itself checks the presentation synchronously.
+                    // A newly unobscured surface always starts a full new dwell.
+                    self?.refreshNativeReadPresentation()
+                    self?.messageVisibilityClock.send(Date())
+                }
                 self?.pruneTypers()
                 self?.prefs?.refreshQuietGate() // Wave 8 - quiet window opens/closes on the minute
             }
