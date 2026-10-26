@@ -403,9 +403,10 @@ internal fun MessageInfoSheet(
     onDismiss: () -> Unit,
 ) {
     val createdAtMs = PulseTime.epochMs(message.createdAt)
-    val others = conversation?.members?.filter { it.id != viewerId }.orEmpty()
-    val seenBy = app.pulse.domain.sync.confirmedReaders(others, viewerId, createdAtMs, message.readByMembershipIds)
-    val deliveredTo = others.filterNot { it in seenBy }
+    val readers = app.pulse.domain.sync.messageInfoReaders(conversation?.members.orEmpty(), viewerId,
+        message.authorId, createdAtMs, message.readByMembershipIds)
+    val seenBy = readers.seenBy
+    val deliveredTo = readers.unconfirmed
     val nameOf = { id: String ->
         conversation?.members?.firstOrNull { it.id == id }?.name ?: id
     }

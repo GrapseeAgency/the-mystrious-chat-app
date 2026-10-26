@@ -245,3 +245,12 @@ other fields, supports live carriers not yet in storage, rejects queued/absent o
 retired-session rows, and does not classify a receipt update as a new arrival.
 Every accepted snapshot fences earlier message-page responses, including when
 there was no stored row to patch.
+
+
+Android's standard incoming-message Info now excludes the **sender**, not the
+viewing recipient. Its own cross-device confirmation can therefore appear, just
+as on iOS, while sender proof cannot be counted as a recipient receipt. Android
+Mirror's Info panel now displays the same exact Seen/unconfirmed split instead of
+only sent/reaction metadata. Both use one pure domain projection, reject missing
+viewer identity, and honor hidden/retired membership proof. Mirror retains its
+existing autumn colors and 380dp sheet bound with a lazy recipient list.

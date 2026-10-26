@@ -2856,6 +2856,7 @@ internal fun MirrorRoom(
         } else MirrorMessageInfoPanel(
             message = current,
             members = members,
+            viewerId = viewerId,
             onDismiss = { infoFor = null },
         )
     }

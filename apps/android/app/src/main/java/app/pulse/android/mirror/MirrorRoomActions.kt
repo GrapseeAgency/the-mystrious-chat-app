@@ -980,62 +980,71 @@ internal fun MirrorLocationSheet(
 }
 
 /**
- * web who-reacted drawer (chat-room.tsx:5982) + the message-info content:
- * every reaction group with the reacting member names from the live roster.
+ * Message info: exact current readers plus reaction groups from the live roster.
+ * The bounded lazy list preserves the existing sheet size for large groups.
  */
 @Composable
 internal fun MirrorMessageInfoPanel(
     message: Message,
     members: List<ConversationMember>,
+    viewerId: String?,
     onDismiss: () -> Unit,
 ) {
+    val readers = app.pulse.domain.sync.messageInfoReaders(members, viewerId, message.authorId,
+        app.pulse.core.time.PulseTime.epochMs(message.createdAt), message.readByMembershipIds)
     MirrorSheet(title = "Message info", onDismiss = onDismiss) {
-        MirrorSheetScroll {
-            Text(
-                "${if (message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) "Queued" else "Sent"} ${MirrorRoomStamp(message.createdAt)}",
-                color = MirrorArt.TextSoft,
-                fontSize = 12.sp,
-            )
-            if (message.editedAt != null) {
-                Text("Edited", color = MirrorArt.Dim, fontSize = 11.sp)
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+            item {
+                Text(
+                    "${if (message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) "Queued" else "Sent"} ${MirrorRoomStamp(message.createdAt)}",
+                    color = MirrorArt.TextSoft, fontSize = 12.sp,
+                )
+                if (message.editedAt != null) Text("Edited", color = MirrorArt.Dim, fontSize = 11.sp)
+                Spacer(Modifier.height(10.dp))
+                Text("Seen by · ${readers.seenBy.size}", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                if (readers.seenBy.isEmpty()) Text("No read receipts yet", color = MirrorArt.Faint, fontSize = 12.sp)
             }
-            Spacer(Modifier.height(10.dp))
-            if (message.reactions.isEmpty()) {
-                Text("No reactions yet", color = MirrorArt.Faint, fontSize = 12.sp)
+            items(readers.seenBy, key = { "seen-${it.id}" }) { MirrorInfoReceiptRow(it, confirmed = true) }
+            item {
+                Spacer(Modifier.height(10.dp))
+                Text("No read confirmation · ${readers.unconfirmed.size}", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                if (readers.unconfirmed.isEmpty()) Text(
+                    if (readers.seenBy.isEmpty()) "No recipient information" else "Everyone has seen this message",
+                    color = MirrorArt.Faint, fontSize = 12.sp,
+                )
             }
-            val groups = message.reactions.groupBy { it.emoji }
-            for ((emoji, hits) in groups) {
-                val names = hits.mapNotNull { hit -> members.firstOrNull { it.id == hit.userId }?.name }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    MirrorPhosphorIcon(
-                        MirrorReactions.glyphOf(emoji),
-                        tint = MirrorArt.Accent2,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Column {
-                        Text(
-                            "${names.size} reacted",
-                            color = MirrorArt.Text,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            names.joinToString(", ").ifBlank { "Unknown" },
-                            color = MirrorArt.Dim,
-                            fontSize = 11.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+            items(readers.unconfirmed, key = { "unknown-${it.id}" }) { MirrorInfoReceiptRow(it, confirmed = false) }
+            item {
+                Spacer(Modifier.height(10.dp))
+                Text("Reactions", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                if (message.reactions.isEmpty()) Text("No reactions yet", color = MirrorArt.Faint, fontSize = 12.sp)
+            }
+            for ((emoji, hits) in message.reactions.groupBy { it.emoji }) {
+                item(key = "reaction-$emoji") {
+                    val names = hits.mapNotNull { hit -> members.firstOrNull { it.id == hit.userId }?.name }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MirrorPhosphorIcon(MirrorReactions.glyphOf(emoji), tint = MirrorArt.Accent2, modifier = Modifier.size(18.dp))
+                        Column {
+                            Text("${names.size} reacted", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(names.joinToString(", ").ifBlank { "Unknown" }, color = MirrorArt.Dim,
+                                fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MirrorInfoReceiptRow(member: ConversationMember, confirmed: Boolean) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(member.name, color = MirrorArt.Text, fontSize = 13.sp,
+            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(if (confirmed) "Read confirmed" else "No read confirmation",
+            color = if (confirmed) MirrorArt.Accent2 else MirrorArt.Dim, fontSize = 11.sp)
     }
 }
 
