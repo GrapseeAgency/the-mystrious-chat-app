@@ -402,6 +402,11 @@ fun ChatRoomScreen(
     var privacyHidden by remember { mutableStateOf(false) }
     app.pulse.ui.security.SecureWindowProtection(screenPrivacyOn)
     val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, viewModel) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.reconcileResumedRoom()
+        }
+    }
     fun openViewOnce(target: Message) {
         if (openingViewOnce || lightboxTarget != null) return
         openingViewOnce = true

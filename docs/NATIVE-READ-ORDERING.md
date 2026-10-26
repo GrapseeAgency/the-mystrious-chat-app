@@ -20,6 +20,9 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 
 ### Durability follow-up
 
+- Android's primary room now reconciles its cached message range on foreground return and relay reconnection, instead of only restarting dwell. Both Android room surfaces share the resumed-lifecycle collector, including canonical membership and topic badge refresh. Disconnection/background cancellation stops obsolete work; repeated identical connection signals do not fetch again. This path never marks read or renews the mounted read authority, and does not reset the scroll/pagination cursor. Swift's existing connected/foreground room observer was inspected separately; this is not a claim of paired-device execution.
+- Android paged message reconciliation now captures and rechecks its original account/session inside the Room transaction, so an old response cannot write after retirement. A barrier-based repository regression also checks that unrelated rows in the retired page are rejected, not just the row whose read proof changed.
+
 - Android exact-message read reconciliation now advances its per-message fence even when the proof already equals storage or the row is absent. Otherwise a previously started page could restore stale proof after a canonical empty/unavailable response. Real Room/repository regressions hold the older HTTP page behind a response barrier and check both cases, including preservation of unrelated page rows. These new instrumented cases still require execution on the matching native build.
 - Swift public-socket owner-proof retention decodes membership from the cached conversation's wire snapshot; the domain conversation does not expose a `members` property. This corrects the compiler failure in revision `4179cf8`. Cached legacy summaries without membership remain fail-closed, and a rejoined membership cannot inherit the previous membership's proof.
 

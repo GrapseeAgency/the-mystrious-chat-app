@@ -33,7 +33,11 @@ class ReadSnapshotOrderingTest {
         negativeProofWins(cached = false)
     }
 
-    private suspend fun negativeProofWins(cached: Boolean) = withTimeout(30_000) {
+    @Test fun retiredSessionCannotCommitEvenUnrelatedRowsFromAnInflightPage() = runBlocking {
+        negativeProofWins(cached = true, retire = true)
+    }
+
+    private suspend fun negativeProofWins(cached: Boolean, retire: Boolean = false) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
         val prefsJob = SupervisorJob()
@@ -82,8 +86,14 @@ class ReadSnapshotOrderingTest {
                 pageEntered.await()
                 try {
                     assertEquals(cached, repo.refreshMessageReadState("room", "anchor").getOrThrow())
+                    if (retire) repo.stop()
                 } finally { releasePage.complete(Unit) }
-                oldPage.await().getOrThrow()
+                if (retire) {
+                    try {
+                        oldPage.await()
+                        fail("Retired page must be cancelled before its Room commit")
+                    } catch (_: CancellationException) { assertTrue(oldPage.isCancelled) }
+                } else oldPage.await().getOrThrow()
             }
             val anchor = db.messageDao().byId("anchor")?.toDomain()
             if (cached) {
@@ -91,7 +101,8 @@ class ReadSnapshotOrderingTest {
                 assertTrue(anchor!!.readByMembershipIds.isEmpty())
                 assertEquals("current body", anchor.body)
             } else assertNull(anchor)
-            assertEquals("keep this row", db.messageDao().byId("unrelated")?.toDomain()?.body)
+            if (retire) assertNull(db.messageDao().byId("unrelated"))
+            else assertEquals("keep this row", db.messageDao().byId("unrelated")?.toDomain()?.body)
         } finally {
             repo.stop()
             withContext(NonCancellable) {

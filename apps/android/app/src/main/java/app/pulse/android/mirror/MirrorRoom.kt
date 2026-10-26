@@ -1,5 +1,7 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.reconcileResumedRoom
+
 import app.pulse.domain.sync.messageReadStateRefreshes
 import app.pulse.domain.sync.visibleQuote
 import app.pulse.domain.sync.MessageHistoryCursor
@@ -621,13 +623,7 @@ internal fun MirrorRoom(
     }
     LaunchedEffect(groupId, activeTopicId, readerLifecycle) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            var firstAttempt = true
-            repository.observeConnected().distinctUntilChanged().collectLatest { connected ->
-                if (connected || firstAttempt) {
-                    firstAttempt = false
-                    repository.refreshMessages(groupId, activeTopicId)
-                }
-            }
+            repository.reconcileResumedRoom(groupId, activeTopicId)
         }
     }
     val listState = rememberLazyListState()

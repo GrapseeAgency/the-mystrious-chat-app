@@ -947,37 +947,48 @@ class PulseRepositoryImpl constructor(
         conversationId: String,
         limit: Int = 200,
         topicId: String? = null,
-    ): Result<Unit> = messageRefreshLocks.getOrPut(conversationId) { Mutex() }.withLock {
-        // Revisit the cached range, not just its newest timestamp: missed edits
-        // and tombstones matter as much as new messages. Never replace pending rows.
-        val from = messageDao.earliestServerCreatedAt(conversationId)
-        var cursor: String? = null
-        val seenCursors = mutableSetOf<String>()
-        do {
-            val watermark = messageEventClock.get()
-            val result = api.messages(conversationId, limit = limit,
-                topicId = if (from == null) topicId else null,
-                syncFrom = if (cursor == null) from else null, syncCursor = cursor)
-            val page = when (result) {
-                is PulseResult.Success -> result.value
-                is PulseResult.Failure -> return@withLock Result.failure(apiExceptionOf(result))
-            }
-            if (from != null && page.syncVersion != 1) {
-                return@withLock Result.failure(IllegalStateException("Gateway needs the paged message-sync update"))
-            }
-            messageCacheMutex.withLock {
-                messageDao.upsertAll(page.messages.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }.map { dto ->
-                    val message = dto.toDomain()
-                    MessageEntity.from(message, reactionsJsonOf(message))
-                })
-            }
-            if (from == null || !page.hasMore) break
-            cursor = page.nextSyncCursor
-            if (cursor == null || !seenCursors.add(cursor)) {
-                return@withLock Result.failure(IllegalStateException("Message sync returned a missing/repeated cursor"))
-            }
-        } while (true)
-        Result.success(Unit)
+    ): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return messageRefreshLocks.getOrPut(conversationId) { Mutex() }.withLock {
+            requireConversationOwner(owner, epoch)
+            // Revisit the cached range, not just its newest timestamp: missed edits
+            // and tombstones matter as much as new messages. Never replace pending rows.
+            val from = messageDao.earliestServerCreatedAt(conversationId)
+            var cursor: String? = null
+            val seenCursors = mutableSetOf<String>()
+            do {
+                val watermark = messageEventClock.get()
+                val result = api.messages(conversationId, limit = limit,
+                    topicId = if (from == null) topicId else null,
+                    syncFrom = if (cursor == null) from else null, syncCursor = cursor)
+                val page = when (result) {
+                    is PulseResult.Success -> result.value
+                    is PulseResult.Failure -> return@withLock Result.failure(apiExceptionOf(result))
+                }
+                if (from != null && page.syncVersion != 1) {
+                    return@withLock Result.failure(IllegalStateException("Gateway needs the paged message-sync update"))
+                }
+                messageCacheMutex.withLock {
+                    database.withTransaction {
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        requireConversationOwner(owner, epoch)
+                        messageDao.upsertAll(page.messages.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }.map { dto ->
+                            val message = dto.toDomain()
+                            MessageEntity.from(message, reactionsJsonOf(message))
+                        })
+                        requireConversationOwner(owner, epoch)
+                    }
+                }
+                if (from == null || !page.hasMore) break
+                cursor = page.nextSyncCursor
+                if (cursor == null || !seenCursors.add(cursor)) {
+                    return@withLock Result.failure(IllegalStateException("Message sync returned a missing/repeated cursor"))
+                }
+            } while (true)
+            requireConversationOwner(owner, epoch)
+            Result.success(Unit)
+        }
     }
 
     // users / identity

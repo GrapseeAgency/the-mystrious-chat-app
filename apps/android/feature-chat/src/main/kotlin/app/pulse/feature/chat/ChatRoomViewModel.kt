@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.sync.reconcileResumedRoom
 import app.pulse.domain.sync.messageReadStateRefreshes
 import app.pulse.domain.sync.MessageHistoryCursor
 import kotlinx.coroutines.flow.first
@@ -258,6 +259,11 @@ class ChatRoomViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun messageInfoReadState(messageId: String) = repo.messageReadStateRefreshes(conversationId, messageId)
+
+    // The caller's resumed lifecycle owns cancellation; this never renews the
+    // mounted read scope or changes pagination/scroll position.
+    suspend fun reconcileResumedRoom() = repo.reconcileResumedRoom(conversationId)
+
 
     val conversation: StateFlow<Conversation?> = repo.observeConversations()
         .map { list -> list.firstOrNull { it.id == conversationId } }
