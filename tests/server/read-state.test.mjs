@@ -112,3 +112,13 @@ test('all Swift automatic readers register their owned UIKit presentation anchor
     assert.ok(source.includes(`PulseReadPresentationAnchor(session: session, owner: ${owner})`), path)
   }
 })
+
+
+test('alternate Swift mark-all invalidates canonical scopes even without a socket echo', async () => {
+  const source = await readFile(new URL('../../apps/ios/Pulse/Features/Mirror/MirrorRootView.swift', import.meta.url), 'utf8')
+  const options = source.slice(source.indexOf('struct MirrorRowOptions:'), source.indexOf('struct MirrorPanel<'))
+  assert.ok(options.includes('perform(readAll: true) { try await $0.markRead(conversationId: row.id) }'))
+  const settlement = options.slice(options.indexOf('defer {'), options.indexOf('try await work(client)'))
+  assert.ok(settlement.includes('session.sessionGeneration == epoch'))
+  assert.ok(settlement.includes('session.noteReadAllChanged(row.id)'))
+})

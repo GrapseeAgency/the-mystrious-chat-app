@@ -750,7 +750,7 @@ struct MirrorRowOptions: View {
                     perform { try await $0.markUnread(conversationId: row.id, on: !row.manualUnread) }
                 }
                 MirrorPanelOption(icon: "checkmark.circle", label: "Mark as read") {
-                    perform { try await $0.markRead(conversationId: row.id) }
+                    perform(readAll: true) { try await $0.markRead(conversationId: row.id) }
                 }
                 MirrorPanelOption(icon: "bell.slash", label: "Mute notifications") { muteStrip = true }
             }
@@ -764,7 +764,7 @@ struct MirrorRowOptions: View {
 
     private func finish() { onDone(); dismiss() }
 
-    private func perform(_ work: @escaping (PulseAPIClient) async throws -> Void) {
+    private func perform(readAll: Bool = false, _ work: @escaping (PulseAPIClient) async throws -> Void) {
         guard !busy else { return }
         let client = session.api, epoch = session.sessionGeneration
         busy = true
@@ -772,7 +772,12 @@ struct MirrorRowOptions: View {
         actionTask = Task { @MainActor in
             defer {
                 busy = false
-                if session.sessionGeneration == epoch { session.noteInboxChanged() }
+                if session.sessionGeneration == epoch {
+                    // Includes an uncertain/lost response: fetch truth, never
+                    // mark local rows read or depend on a socket echo.
+                    if readAll { session.noteReadAllChanged(row.id) }
+                    else { session.noteInboxChanged() }
+                }
             }
             do {
                 try await work(client)

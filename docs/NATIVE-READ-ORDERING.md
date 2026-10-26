@@ -24,6 +24,7 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 - Swift receipt-membership refresh now completes one canonical request and coalesces intervening events into a trailing pass, instead of cancelling/restarting on every receipt. Ordinary read traffic no longer prevents canonical privacy/member adoption. Conversation updates invalidate older metadata tickets; a current definitive access refusal removes displayed reader metadata. Leaving/backgrounding cancels the refresh generation, and foreground return catches up.
 
 - On both platforms, a qualified attempt that found no usable membership now permanently limits that mounted visit to non-clearing authority. Later metadata can supply the membership ID for exact progress, but cannot lend it a newer manual-unread fence. A genuine new room/thread visit resets that limitation; cancellation/dwell restarts do not.
+- The alternate Swift inbox's explicit mark-all action invalidates canonical read scopes/messages on settlement, including an uncertain response, with the original account epoch check. It no longer depends on socket echo and never invents a local all-read set.
 - Swift's alternate room also refreshes its canonical message window on explicit-all events from the current account, rather than ignoring them as ordinary self-read echoes.
 
 - Visible reads now capture only the membership/fence already known in the cached room snapshot. They do not await a newer network preparation after the observation. Missing membership fails closed until room metadata arrives.
