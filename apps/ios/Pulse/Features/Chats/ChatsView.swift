@@ -3363,8 +3363,11 @@ final class ChatsViewModel: ObservableObject {
             do {
                 try await client.markUnread(conversationId: conv.id, on: next)
                 guard !Task.isCancelled, session.sessionGeneration == epoch, isConversationActionCurrent(ticket) else { return }
-                updateSummaries({ $0.withManualUnread(next) }, ids: [conv.id])
-                session.toasts.show(next ? "Marked as unread" : "Marked as read")
+                // A committed command receipt can arrive after another device's
+                // newer read/unread action. Never repaint its requested old flag.
+                await refreshQuiet(session: session)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, isConversationActionCurrent(ticket) else { return }
+                session.toasts.show("Read/unread change confirmed")
             } catch {
                 guard !Task.isCancelled, session.sessionGeneration == epoch, isConversationActionCurrent(ticket) else { return }
                 session.toasts.show("Could not update the unread flag")

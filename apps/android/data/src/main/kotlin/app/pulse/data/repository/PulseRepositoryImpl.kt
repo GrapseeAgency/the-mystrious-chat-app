@@ -2938,19 +2938,6 @@ class PulseRepositoryImpl constructor(
 
     private val conversationActionLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
-    /** Serialize this device's intents per room. Failed/offline requests must not
-     * persist optimistic pin/archive/mute/unread flags as confirmed local truth.
-     */
-    private suspend fun confirmedConversationChange(
-        id: String,
-        request: suspend (String) -> Result<Unit>,
-        apply: (Conversation) -> Conversation,
-    ): Result<Unit> = withRoomMutation(id) { owner, epoch ->
-        app.pulse.domain.sync.confirmedAction(request = { request(owner) }) {
-            mutateConversation(id, checkOwner = { requireConversationOwner(owner, epoch) }, transform = apply)
-        }
-    }
-
     private suspend fun confirmedPreferenceChange(
         id: String,
         request: suspend (String) -> PulseResult<PulseApi.ConversationPreferenceAcknowledgement>,
@@ -2984,9 +2971,27 @@ class PulseRepositoryImpl constructor(
             apply = { row, receipt -> row.copy(isArchived = receipt.timestamp != null) })
 
     override suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit> =
-        confirmedConversationChange(conversationId, request = { owner ->
-            api.markUnread(conversationId, owner, on).toResult()
-        }, apply = { it.copy(myManualUnread = on) })
+        withRoomMutation(conversationId) { owner, epoch ->
+            when (val receipt = api.markUnread(conversationId, owner, on)) {
+                is PulseResult.Failure -> Result.failure(apiExceptionOf(receipt))
+                is PulseResult.Success -> {
+                    requireConversationOwner(owner, epoch)
+                    // This ACK proves our command committed, not that another
+                    // device hasn't already changed the marker again. Publish
+                    // current server truth rather than repainting the requested flag.
+                    try {
+                        refreshConversations()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The mutation wrapper schedules reconciliation; don't invent a snapshot.
+                        Unit
+                    }
+                    requireConversationOwner(owner, epoch)
+                    Result.success(Unit)
+                }
+            }
+        }
 
     // Wave 6 route fixes (audit A): block carries the ACTOR in the body, and
     // unblock is DELETE /block?userId= - POST /unblock does NOT exist on the

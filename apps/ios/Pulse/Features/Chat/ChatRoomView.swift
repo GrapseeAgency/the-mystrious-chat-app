@@ -4241,10 +4241,7 @@ final class RoomViewModel: ObservableObject {
         if let store { seedReplyCounts(store: store) }
         let catchUpBoundary = PulseMissedMessages.latestBoundary(messages)
         let cachedRows = (try? store?.messages(conversationId: conversationId)) ?? messages
-        let real = cachedRows.filter { !$0.id.hasPrefix("local_") }
-        let from = real.min {
-            (PulseFormat.date($0.createdAt) ?? .distantPast) < (PulseFormat.date($1.createdAt) ?? .distantPast)
-        }?.createdAt
+        let from = PulseHistoryCursor.reconciliationStart(cached: cachedRows, displayed: messages)
         phase = messages.isEmpty ? .loading : phase
         var cursor: String?
         var seenCursors = Set<String>()

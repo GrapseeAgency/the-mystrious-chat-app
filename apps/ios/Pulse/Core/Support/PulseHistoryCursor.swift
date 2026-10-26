@@ -11,6 +11,12 @@ struct PulseHistoryCursor: Equatable {
         }.min { $0.precedes($1) }
     }
 
+    /// Cache reads are bounded, but a mounted paginated river may contain much
+    /// older rows. Reconcile those too (including exact Seen after mark-all).
+    static func reconciliationStart(cached: [WireChatMessage], displayed: [WireChatMessage]) -> String? {
+        oldest(cached + displayed)?.createdAt
+    }
+
     func precedes(_ other: PulseHistoryCursor) -> Bool {
         let left = PulseFormat.date(createdAt) ?? .distantPast
         let right = PulseFormat.date(other.createdAt) ?? .distantPast
