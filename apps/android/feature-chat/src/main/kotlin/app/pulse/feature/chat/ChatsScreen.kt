@@ -219,6 +219,7 @@ fun ChatsScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
     val searchRunning by viewModel.searching.collectAsStateWithLifecycle()
+    val searchError by viewModel.searchError.collectAsStateWithLifecycle()
     // R2-C item 7 - recent searches for the search bar (last 5).
     val spotlightRecents by viewModel.spotlightRecents.collectAsStateWithLifecycle()
     // R14 gap 14 - the spotlight check-in flight flag (Actions block).
@@ -460,6 +461,7 @@ fun ChatsScreen(
                         query = query,
                         hits = searchHits,
                         searching = searchRunning,
+                        error = searchError,
                         typing = typing,
                         presence = presence,
                         // R2-C item 7 - recent-search suggestions + push-on-open.
@@ -2075,6 +2077,7 @@ private fun SearchResults(
     query: String,
     hits: List<MessageHit>,
     searching: Boolean,
+    error: String?,
     typing: Map<String, ChatsViewModel.TypingState>,
     presence: Set<String>,
     onPress: (Conversation) -> Unit,
@@ -2188,6 +2191,7 @@ private fun SearchResults(
                 Spacer(Modifier.width(8.dp))
                 Text("Searching messages…", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Zinc400)
             }
+            q.length >= 2 && error != null -> Text(error, color = Zinc400, modifier = Modifier.padding(16.dp))
             q.length >= 2 && hits.isNotEmpty() -> {
                 SearchSectionHeader("Messages", hits.size)
                 hits.forEach { hit -> SearchHitRow(hit = hit, query = q, onOpen = { onOpenHit(hit) }) }
@@ -2200,7 +2204,7 @@ private fun SearchResults(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
-        if (rows.isEmpty() && (q.length < 2 || (!searching && hits.isEmpty()))) {
+        if (rows.isEmpty() && (q.length < 2 || (!searching && error == null && hits.isEmpty()))) {
             Column(
                 Modifier.fillMaxWidth().padding(top = 96.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

@@ -82,6 +82,9 @@ class ChatsViewModel @Inject constructor(
     private val _searchHits = MutableStateFlow<List<MessageHit>>(emptyList())
     val searchHits: StateFlow<List<MessageHit>> = _searchHits.asStateFlow()
 
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError: StateFlow<String?> = _searchError.asStateFlow()
+    private var searchGeneration = 0L
     private val _searching = MutableStateFlow(false)
     val searching: StateFlow<Boolean> = _searching.asStateFlow()
 
@@ -253,6 +256,10 @@ class ChatsViewModel @Inject constructor(
     /** Debounced server message search - ≥2 chars, 250ms (web rhythm). */
     fun search(query: String) {
         searchJob?.cancel()
+        val generation = ++searchGeneration
+        val epoch = repo.attachmentSessionKey()
+        val account = repo.boundToCurrentAccount()
+        _searchError.value = null
         val trimmed = query.trim()
         if (trimmed.length < 2) {
             _searchHits.value = emptyList()
@@ -263,7 +270,10 @@ class ChatsViewModel @Inject constructor(
         _searching.value = true
         searchJob = viewModelScope.launch {
             delay(250)
-            repo.observeMessageSearch(trimmed).collect { result ->
+            account.observeMessageSearch(trimmed).collect { result ->
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (generation != searchGeneration || repo.attachmentSessionKey() != epoch) return@collect
+                _searchError.value = result.exceptionOrNull()?.message
                 _searchHits.value = result.getOrDefault(emptyList())
                 _searching.value = false
             }

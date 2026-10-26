@@ -704,6 +704,12 @@ struct ChatsView: View {
                         }
                         .padding(.vertical, 24)
                         .frame(maxWidth: .infinity)
+                    } else if let error = viewModel.searchError {
+                        VStack(spacing: 8) {
+                            Text(error).font(.footnote).foregroundStyle(PulseTheme.textSecondary)
+                            Button("Retry message search") { viewModel.searchTextChanged(viewModel.query, session: session) }
+                                .tint(PulseTheme.accent)
+                        }.padding(.vertical, 20)
                     } else if let hits = viewModel.serverHits, !hits.isEmpty {
                         SectionHeader(label: "MESSAGES", count: viewModel.serverTotal ?? hits.count)
                         ForEach(hits, id: \.id) { hit in
@@ -2627,6 +2633,7 @@ final class ChatsViewModel: ObservableObject {
     @Published private(set) var serverHits: [WireSearchMessage]?
     @Published private(set) var serverTotal: Int?
     @Published private(set) var serverSearching = false
+    @Published private(set) var searchError: String?
     // R2-D ITEM 8 - spotlight recent searches (web spotlight.tsx parity):
     // last 5 queries, newest-first, surfaced while the query is empty.
     @Published private(set) var spotlightRecents: [String] = []
@@ -2819,7 +2826,7 @@ final class ChatsViewModel: ObservableObject {
         if deferred.count < 2 { return true }
         if serverSearching { return false }
         if let hits = serverHits { return hits.isEmpty }
-        return true // unreachable server → local misses are final
+        return false // An unavailable remote search is not proof of no matches.
     }
 
     var folderCounts: [String: Int] {
@@ -3106,7 +3113,8 @@ final class ChatsViewModel: ObservableObject {
         serverHits = nil
         serverTotal = nil
         serverSearching = false
-        let epoch = session.sessionGeneration
+        searchError = nil
+        let epoch = session.sessionGeneration, client = session.api
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             deferredQuery = ""
@@ -3119,17 +3127,23 @@ final class ChatsViewModel: ObservableObject {
         serverSearching = trimmed.count >= 2
         searchDebounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, session.sessionGeneration == epoch, let self else { return }
             self.deferredQuery = trimmed
             if trimmed.count >= 2 {
                 self.serverSearching = true
                 let watermark = session.messageRevision
-                let page = await session.api.searchMessages(trimmed)
-                guard !Task.isCancelled, session.sessionGeneration == epoch, self.query == value else { return }
-                self.searchMessageRevision = watermark
-                self.serverSearching = false
-                self.serverHits = page?.messages?.filter { $0.isVisibleSearchHit() && session.acceptsSyncMessage($0.id, startedAt: watermark) }
-                self.serverTotal = self.serverHits?.count
+                do {
+                    let page = try await client.searchMessages(trimmed)
+                    guard !Task.isCancelled, session.sessionGeneration == epoch, self.query == value else { return }
+                    self.searchMessageRevision = watermark
+                    self.serverSearching = false
+                    self.serverHits = page.messages?.filter { $0.isVisibleSearchHit() && session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                    self.serverTotal = self.serverHits?.count
+                } catch {
+                    guard !Task.isCancelled, session.sessionGeneration == epoch, self.query == value else { return }
+                    self.serverSearching = false
+                    self.searchError = (error as? PulseAPIClient.Failure)?.message ?? "Message search is unavailable. Local chat matches are still shown."
+                }
             }
         }
     }
@@ -3159,6 +3173,7 @@ final class ChatsViewModel: ObservableObject {
         serverHits = nil
         serverTotal = nil
         serverSearching = false
+        searchError = nil
     }
 
     /// R2-D ITEM 8 - reload the recents rail when entering search mode so

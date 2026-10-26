@@ -454,7 +454,7 @@ internal fun MirrorHome(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        if (searchQuery.isBlank()) "No chats here yet" else "No matches",
+                        if (searchQuery.isBlank()) "No chats here yet" else "No matching chats",
                         color = MirrorArt.Dim,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
@@ -476,10 +476,15 @@ internal fun MirrorHome(
         if (searchQuery.length >= 2 && repository != null) {
             item {
                 var hits by remember(searchQuery) { mutableStateOf<List<MessageHit>?>(null) }
-                LaunchedEffect(searchQuery) {
+                var searchError by remember(searchQuery) { mutableStateOf<String?>(null) }
+                LaunchedEffect(searchQuery, repository) {
+                    val account = repository.boundToCurrentAccount()
                     kotlinx.coroutines.delay(250)
-                    repository.observeMessageSearch(searchQuery).collect { hits = it.getOrNull() }
+                    account.observeMessageSearch(searchQuery).collect {
+                        hits = it.getOrNull(); searchError = it.exceptionOrNull()?.message
+                    }
                 }
+                if (searchError != null) Text(searchError.orEmpty(), color = MirrorArt.Dim, modifier = Modifier.padding(16.dp))
                 val loaded = hits
                 if (loaded != null && loaded.isNotEmpty()) {
                     Column {

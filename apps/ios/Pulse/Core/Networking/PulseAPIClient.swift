@@ -1020,10 +1020,15 @@ public struct PulseAPIClient: Sendable {
         (try? await mentions(limit: 50))?.count
     }
 
-    /// GET /api/search?userId=&q= - server message search (nil = unreachable;
-    /// the Messages section is omitted silently - local results still work).
-    public func searchMessages(_ query: String) async -> WireSearchPage? {
-        return try? await get(Self.searchPath(userId: userId, query: query), as: WireSearchPage.self)
+    /// Failed search is distinct from a successful empty result.
+    public func searchMessages(_ query: String) async throws -> WireSearchPage {
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count <= 64 else {
+            throw Failure(kind: .validation, message: "Search text must be 64 UTF-16 units or fewer.")
+        }
+        let page = try await get(Self.searchPath(userId: userId, query: query), as: WireSearchPage.self)
+        guard page.messages != nil else { throw Failure(kind: .server, message: "Search results are missing.") }
+        try Task.checkCancellation()
+        return page
     }
 
     static func searchPath(userId: String, query: String) -> String {

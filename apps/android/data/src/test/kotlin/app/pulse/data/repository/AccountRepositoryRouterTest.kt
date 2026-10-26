@@ -8,6 +8,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -21,6 +22,9 @@ import org.junit.Test
 class AccountRepositoryRouterTest {
     private class Account(val owner: String) {
         val draft = MutableStateFlow<String?>("draft-$owner")
+        val search = MutableStateFlow(Result.success(listOf(app.pulse.domain.model.MessageHit(
+            id = owner, conversationId = "room", conversationName = "Room", isGroup = false,
+            senderName = "Sender", senderColor = null, content = "body", createdAt = ""))))
         var completed = 0
         var completeRequest: (() -> Unit)? = null
         @Suppress("UNCHECKED_CAST")
@@ -28,6 +32,7 @@ class AccountRepositoryRouterTest {
             arrayOf(PulseRepository::class.java)) { _, method, args ->
             when {
                 method.name == "observeDraft" -> draft
+                method.name == "observeMessageSearch" -> search
                 method.name == "getViewerId" -> owner
                 method.name == "equals" -> false
                 method.name.startsWith("refreshConversations") -> {
@@ -56,6 +61,19 @@ class AccountRepositoryRouterTest {
         a.draft.value = "late private response"; runCurrent()
         assertFalse(seen.contains("late private response"))
         assertTrue(seen.contains(null))
+    }
+
+    @Test fun searchSwitchEmitsAResultNotAnUnboxedList() = runTest {
+        val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(a.repo, { b.repo }, { b.repo })
+        val seen = mutableListOf<List<String>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            router.repository.observeMessageSearch("query").collect { result -> seen += result.getOrThrow().map { it.id } }
+        }
+        runCurrent(); router.repository.start("b"); runCurrent()
+        assertEquals(listOf(listOf("a"), emptyList(), listOf("b")), seen)
+        a.search.value = Result.success(emptyList()); runCurrent()
+        assertEquals(listOf("b"), seen.last())
     }
 
     @Test fun initialSnapshotReadsStoredValueRatherThanSyntheticNull() = runTest {

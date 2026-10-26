@@ -774,13 +774,18 @@ class PulseApi(
         }
 
     /** GET /api/search?userId=&q= - server message search (≥2 chars upstream). */
-    suspend fun search(userId: String, query: String): PulseResult<SearchPageDto> =
-        get(
+    suspend fun search(userId: String, query: String): PulseResult<SearchPageDto> {
+        if (query.trim().length > 64) return PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "Search text must be 64 UTF-16 units or fewer.")
+        return get(
             "/api/search?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
                 "&q=" + java.net.URLEncoder.encode(query, "UTF-8"),
         ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            if (root?.get("messages") !is kotlinx.serialization.json.JsonArray)
+                throw kotlinx.serialization.SerializationException("Search results are missing")
             PulseJson.decodeFromString(SearchPageDto.serializer(), it)
         }
+    }
 
     /** GET /api/stories?requesterId= - 24h status rail (tolerant subset). */
     suspend fun stories(requesterId: String): PulseResult<StoriesPageDto> =

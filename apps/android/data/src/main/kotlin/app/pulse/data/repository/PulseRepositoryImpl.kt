@@ -3027,29 +3027,26 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun searchMessages(query: String): Result<List<MessageHit>> {
-        val id = viewerId ?: return Result.success(emptyList())
-        return when (val r = api.search(id, query)) {
-            is PulseResult.Success -> Result.success(
-                r.value.messages.map { hit ->
-                    MessageHit(
-                        id = hit.id,
-                        conversationId = hit.conversationId,
-                        conversationName = hit.conversationName ?: "Chat",
-                        isGroup = hit.isGroup,
-                        senderName = if (hit.anon) hit.anonAlias ?: "Anonymous" else hit.sender?.name ?: "",
-                        senderColor = if (hit.anon) null else hit.sender?.color,
-                        content = hit.content,
-                        createdAt = hit.createdAt,
-                        deleted = hit.deletedAt != null,
-                        imageOnly = hit.imagePath != null && hit.content.isBlank(),
-                        isFile = hit.filePath != null,
-                        fileName = hit.fileName,
-                        expiresAtEpochMs = messageExpiryEpochMs(hit.expiresAt),
-                        viewOnce = hit.viewOnce,
-                    )
-                },
-            )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        if (query.trim().length > 64) return Result.failure(IllegalArgumentException("Search text must be 64 UTF-16 units or fewer."))
+        return ownedPeerRequest { owner -> api.search(owner, query) }.map { page ->
+            page.messages.map { hit ->
+                MessageHit(
+                    id = hit.id,
+                    conversationId = hit.conversationId,
+                    conversationName = hit.conversationName ?: "Chat",
+                    isGroup = hit.isGroup,
+                    senderName = if (hit.anon) hit.anonAlias ?: "Anonymous" else hit.sender?.name ?: "",
+                    senderColor = if (hit.anon) null else hit.sender?.color,
+                    content = hit.content,
+                    createdAt = hit.createdAt,
+                    deleted = hit.deletedAt != null,
+                    imageOnly = hit.imagePath != null && hit.content.isBlank(),
+                    isFile = hit.filePath != null,
+                    fileName = hit.fileName,
+                    expiresAtEpochMs = messageExpiryEpochMs(hit.expiresAt),
+                    viewOnce = hit.viewOnce,
+                )
+            }
         }
     }
 
