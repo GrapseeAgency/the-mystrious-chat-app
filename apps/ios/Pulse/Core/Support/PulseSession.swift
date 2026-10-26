@@ -1577,7 +1577,12 @@ public final class PulseSession: ObservableObject {
     private func preservingOwnSocketReadState(_ signal: PulseSocketClient.Signal) -> PulseSocketClient.Signal {
         func patched(_ room: String, _ raw: [String: Any]) -> [String: Any] {
             guard let viewer, let store, let incoming = Self.decodeMessage(from: raw), incoming.conversationId == room,
-                  let membership = (try? store.cachedConversation(id: room))?.members.first(where: { $0.id == viewer.id })?.readMembershipId else { return raw }
+                  let cached = try? store.cachedConversation(id: room) else { return raw }
+            // The storage domain row carries membership in its wire snapshot,
+            // not as a PulseConversation property. Legacy caches have no proof.
+            let summary = WireConversationSummary(cached: cached)
+            guard summary.id == room,
+                  let membership = summary.members.first(where: { $0.id == viewer.id })?.readMembershipId else { return raw }
             let current = try? store.message(id: incoming.id)
             let retained = PulseMessageMerge.retainOwnSocketReadState(current, incoming: incoming, membership: membership)
             guard retained.readByMembershipIds != incoming.readByMembershipIds else { return raw }

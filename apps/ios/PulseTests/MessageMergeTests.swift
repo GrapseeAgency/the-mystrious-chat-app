@@ -32,6 +32,26 @@ final class MessageMergeTests: XCTestCase {
         XCTAssertEqual(PulseMessageMerge.merge(stored, incoming: canonical).readByMembershipIds, [])
     }
 
+    func testSocketProofUsesTheCurrentPersistedMembershipAndLegacyCachesFailClosed() throws {
+        let store = try PulseStore()
+        let stored = try row(["readByMembershipIds": ["own-member"]])
+        let incoming = try row(["readByMembershipIds": [String]()])
+        for membership in ["own-member", "rejoined-member"] {
+            let summary = try JSONDecoder().decode(WireConversationSummary.self, from: JSONSerialization.data(withJSONObject: [
+                "id": "room", "isGroup": false,
+                "members": [["id": "owner", "name": "Owner", "color": "amber", "readMembershipId": membership]],
+            ]))
+            try store.upsert(conversations: [summary.toDomain()])
+            let cached = try XCTUnwrap(store.cachedConversation(id: "room"))
+            let ownMembership = WireConversationSummary(cached: cached).members.first(where: { $0.id == "owner" })?.readMembershipId
+            let result = PulseMessageMerge.retainOwnSocketReadState(stored, incoming: incoming, membership: ownMembership)
+            XCTAssertEqual(result.readByMembershipIds, membership == "own-member" ? ["own-member"] : [])
+        }
+        try store.upsert(conversations: [PulseConversation(id: "room", kind: .DM, title: "Legacy")])
+        let legacy = try XCTUnwrap(store.cachedConversation(id: "room"))
+        XCTAssertTrue(WireConversationSummary(cached: legacy).members.isEmpty)
+    }
+
     func testTombstoneNeverResurrectsInRiverOrThreadAndRedactsSensitiveFields() throws {
         let live = try row()
         let deleted = live.deletedCopy()
