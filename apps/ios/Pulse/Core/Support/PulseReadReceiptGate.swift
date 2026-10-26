@@ -24,6 +24,16 @@ struct PulseReadReceiptGate {
     private var inFlight: Request?
     private var intents: [Boundary: String] = [:]
     private var sessionIntent: String?
+    // Metadata repair may identify the membership, but cannot retroactively
+    // grant an older qualified observation a newer manual-marker fence.
+    private var missingAuthorityObserved = false
+    mutating func noteMissingAuthority(for request: Request) {
+        guard request.revision == revision, request == inFlight else { return }
+        missingAuthorityObserved = true
+    }
+    func candidateIntent(current: String?, membership: String) -> String {
+        missingAuthorityObserved ? "offline.\(membership)" : current ?? "offline.\(membership)"
+    }
     func intent(for request: Request) -> String? { intents[request.boundary] ?? sessionIntent }
     mutating func retainIntent(_ intent: String, for request: Request) -> Bool {
         guard request.revision == revision, request == inFlight else { return false }
@@ -36,6 +46,7 @@ struct PulseReadReceiptGate {
     mutating func reset() {
         intents.removeAll()
         sessionIntent = nil
+        missingAuthorityObserved = false
         candidates = []
         acknowledged = []
         eligibleAt.removeAll()

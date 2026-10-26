@@ -67,12 +67,17 @@ class VisibleReadIntentTest {
         assertTrue(intent.send().isFailure)
         assertTrue(journal.sent.isEmpty())
         assertEquals(2, journal.refreshes, "Missing metadata repairs asynchronously without adopting its future authority")
-        member = ConversationMember("viewer", "Viewer", readMembershipId = "member")
+        member = ConversationMember("viewer", "Viewer", readMembershipId = "member", readIntent = "newer-manual.member")
         val offline = async { intent.send() }
         runCurrent()
         assertEquals(listOf("offline.member"), journal.sent)
         journal.writes.single().resume(Result.success(Unit))
         assertTrue(offline.await().isSuccess)
+        val fresh = async { VisibleReadScope(journal.repo, "room") { member }.message("message").send() }
+        runCurrent()
+        assertEquals("newer-manual.member", journal.sent.last(), "A genuine new visit can capture current authority")
+        journal.writes.last().resume(Result.success(Unit))
+        assertTrue(fresh.await().isSuccess)
     }
 
     @Test fun `distinct visits do not erase or inherit each others queued authority`() {

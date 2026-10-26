@@ -43,6 +43,8 @@ class VisibleReadScope(
     private val account = repository.boundToCurrentAccount()
     private val mutex = Mutex()
     private var intent: String? = null
+    // Later metadata can identify membership, not renew this visit's authority.
+    private var missingAuthorityObserved = false
     private suspend fun capture(): Result<String> = mutex.withLock {
         intent?.let { return@withLock Result.success(it) }
         // Native surfaces supply their displayed membership synchronously at
@@ -51,9 +53,10 @@ class VisibleReadScope(
         val member = memberSnapshot.invoke()?.takeIf { it.id == account.viewerId }
         val membership = member?.readMembershipId?.takeIf { it.isNotBlank() }
         val result = if (membership == null) {
+            missingAuthorityObserved = true
             account.requestReadMembershipRefresh(room)
             Result.failure(IllegalStateException("Waiting for current room membership"))
-        } else Result.success(member?.readIntent ?: "offline.$membership")
+        } else Result.success(if (missingAuthorityObserved) "offline.$membership" else member?.readIntent ?: "offline.$membership")
         result.also {
             currentCoroutineContext().ensureActive()
             it.getOrNull()?.let { captured -> intent = captured }

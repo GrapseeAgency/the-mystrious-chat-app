@@ -20,6 +20,9 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 
 ### Durability follow-up
 
+- On both platforms, a qualified attempt that found no usable membership now permanently limits that mounted visit to non-clearing authority. Later metadata can supply the membership ID for exact progress, but cannot lend it a newer manual-unread fence. A genuine new room/thread visit resets that limitation; cancellation/dwell restarts do not.
+- Swift's alternate room also refreshes its canonical message window on explicit-all events from the current account, rather than ignoring them as ordinary self-read echoes.
+
 - Visible reads now capture only the membership/fence already known in the cached room snapshot. They do not await a newer network preparation after the observation. Missing membership fails closed until room metadata arrives.
 - Swift refreshes canonical receipt membership after read events, including a peer’s first-ever read: unknown/hidden timestamps are not promoted using a relay timestamp. Android read/push invalidations also retire in-flight inbox snapshots before queuing refresh, preventing an older GET from briefly reinstalling pre-invalidation badges.
 - Validated exact HTTP read ACKs now also persist their membership proof into the current cached message, preserving edits/deletions and other readers. Enqueue, unknown ACKs and permanent refusals do not create proof. Explicit-all ACKs fetch the canonical retained range instead of sweeping local rows.

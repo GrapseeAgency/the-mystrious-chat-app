@@ -1857,13 +1857,14 @@ struct MirrorRoomView: View {
                 if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
                 else { refreshRevision &+= 1 }
                 readRevision &+= 1
-            case .messageRead(let id, let reader, _, let ids, _, _):
+            case .messageRead(let id, let reader, _, let ids, _, let all):
                 if id == row.id {
+                    if all { roomOperations.invalidateReads() }
                     for messageId in ids {
                         if let message = try? session.store?.message(id: messageId) { acceptCarrier(message) }
                     }
                 }
-                if id == row.id && reader != session.viewer?.id { refreshRevision &+= 1 }
+                if id == row.id && (all || reader != session.viewer?.id) { refreshRevision &+= 1 }
             case .messageDeleted(let id, let raw):
                 guard id == row.id else { return }
                 if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message.deletedCopy()) }

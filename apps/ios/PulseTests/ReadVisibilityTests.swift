@@ -37,6 +37,31 @@ final class ReadVisibilityTests: XCTestCase {
         XCTAssertNil(thread.gate.intent(for: try XCTUnwrap(thread.gate.begin(roomId: "room", now: 6))))
     }
 
+    func testMissingMembershipRepairCannotBorrowANewerManualFence() throws {
+        var gate = PulseReadReceiptGate()
+        gate.setBoundary(roomId: "room", messageId: "message", now: 0)
+        let missing = try XCTUnwrap(gate.begin(roomId: "room", now: 1))
+        gate.noteMissingAuthority(for: missing)
+        XCTAssertTrue(gate.finish(missing, succeeded: false))
+        gate.restartDwell(now: 2)
+        let repaired = try XCTUnwrap(gate.begin(roomId: "room", now: 3))
+        let candidate = gate.candidateIntent(current: "newer-manual.member", membership: "member")
+        XCTAssertEqual(candidate, "offline.member")
+        XCTAssertTrue(gate.retainIntent(candidate, for: repaired))
+        XCTAssertTrue(gate.finish(repaired, succeeded: true))
+        gate.setBoundary(roomId: "room", messageId: "later", now: 4)
+        let later = try XCTUnwrap(gate.begin(roomId: "room", now: 5))
+        XCTAssertEqual(gate.intent(for: later), "offline.member")
+
+        gate.reset() // a genuinely new visit, not an automatic retry
+        gate.setBoundary(roomId: "room", messageId: "message", now: 6)
+        let fresh = try XCTUnwrap(gate.begin(roomId: "room", now: 7))
+        gate.noteMissingAuthority(for: missing) // late old callback cannot downgrade this visit
+        let freshCandidate = gate.candidateIntent(current: "newer-manual.member", membership: "member")
+        XCTAssertEqual(freshCandidate, "newer-manual.member")
+        XCTAssertTrue(gate.retainIntent(freshCandidate, for: fresh))
+    }
+
     func testRoomVisitSurvivesCoverButSameRoomReentryIsNewAuthority() {
         var visit = PulseRoomReadVisit()
         let old = UUID(), replacement = UUID()

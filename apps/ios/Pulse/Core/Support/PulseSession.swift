@@ -731,12 +731,21 @@ public final class PulseSession: ObservableObject {
             let intent: String
             if let retained = readGate.intent(for: request) { intent = retained }
             else {
-                guard let cached = try store?.cachedConversation(id: conversationId),
-                      let member = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id }),
-                      let membership = member.readMembershipId, !membership.isEmpty else {
+                let member: WireConversationMember?
+                do {
+                    let cached = try store?.cachedConversation(id: conversationId)
+                    member = cached.flatMap {
+                        WireConversationSummary(cached: $0).members.first(where: { $0.id == viewer?.id })
+                    }
+                } catch {
+                    readGate.noteMissingAuthority(for: request)
+                    throw error
+                }
+                guard let member, let membership = member.readMembershipId, !membership.isEmpty else {
+                    readGate.noteMissingAuthority(for: request)
                     throw PulseAPIClient.Failure(kind: .network, message: "Waiting for current room membership")
                 }
-                intent = member.readIntent ?? "offline.\(membership)"
+                intent = readGate.candidateIntent(current: member.readIntent, membership: membership)
                 guard generation == epoch, readGate.retainIntent(intent, for: request) else { return }
             }
             try Task.checkCancellation()
