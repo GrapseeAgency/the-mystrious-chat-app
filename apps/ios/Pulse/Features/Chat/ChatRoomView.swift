@@ -338,7 +338,7 @@ private struct RoomContent: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
 
     // Wave 1 surfaces - threads, forward, info, pins, lightbox, QuickLook,
     // room search, and the media attach flow (photo picker + document).
@@ -2226,19 +2226,11 @@ private struct RoomContent: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Insert emoji")
 
-            TextField(
-                viewModel.editingTarget != nil ? "Edit message" : "Type here",
-                text: $viewModel.draft,
-                // String title resolves to the (title:text:prompt:axis:)
-                // overload - prompt precedes axis.
-                prompt: Text(viewModel.editingTarget != nil ? "Edit message" : "Type here")
-                    .foregroundColor(Color.white.opacity(0.40)),
-                axis: .vertical,
-            )
-            .lineLimit(1...5)
-            .foregroundStyle(.white)
+            PulseComposerInput(text: $viewModel.draft,
+                focused: Binding(get: { composerFocused }, set: { composerFocused = $0 }),
+                placeholder: viewModel.editingTarget != nil ? "Edit message" : "Type here", session: session,
+                textColor: .white, placeholderColor: UIColor.white.withAlphaComponent(0.40))
             .padding(.vertical, 9)
-            .focused($composerFocused)
             .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
             .disabled(viewModel.staged != nil)
             // R2-D - the composer is VISIBLY locked while the

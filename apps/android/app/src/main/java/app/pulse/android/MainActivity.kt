@@ -355,6 +355,8 @@ class MainActivity : FragmentActivity() {
             ),
         )
         setContent {
+            // Track native edit menus before navigation can mount a reader.
+            app.pulse.ui.rememberNativeReadMenus()
             PulseRoot(
                 deepLink = deepLinks.collectAsStateWithLifecycle().value,
                 onConsumeDeepLink = { deepLinks.value = null },

@@ -646,7 +646,9 @@ internal fun MirrorRoom(
     val visibleMessages = remember(messages, activeTopicId, timelineNow) { visibleRoomMessages(messages, activeTopicId, timelineNow) }
     val entries = remember(visibleMessages) { buildRoomEntries(visibleMessages) }
     val latestEntries = androidx.compose.runtime.rememberUpdatedState(entries)
-    val readObscured = roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null ||
+    val nativeReadMenus = app.pulse.ui.rememberNativeReadMenus()
+    val nativeMenuRevision = nativeReadMenus.value.revision
+    val readObscured = nativeReadMenus.value.obscured || roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null ||
         menuOpen || trayOpen || roomSearchOpen || pinnedOpen || phraseManagerOpen || pollOpen || stickerOpen ||
         locationOpen || captionFor != null || remindersOpen || scheduledOpen || recapOpen || eventsOpen ||
         kanbanOpen || whiteboardOpen || tournamentOpen || redPacketOpen || trayEffectsOpen || slashHelpOpen ||
@@ -659,13 +661,13 @@ internal fun MirrorRoom(
     val readIntents = remember(repository, viewerId, groupId) { mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>() }
     val readConnected by remember(repository) { repository.observeConnected() }
         .collectAsStateWithLifecycle(initialValue = false)
-    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, readConnected, minimumReadPixels, readerLifecycle, windowFocused) {
+    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, readConnected, minimumReadPixels, readerLifecycle, windowFocused, nativeMenuRevision) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (!readingEnabled || readObscured || !readWindow.isWindowFocused) return@repeatOnLifecycle
             val releaseAttention = app.pulse.android.notify.IncomingAttention.beginReading(groupId)
             try {
                 fun currentBoundary(): List<String> {
-                    if (!readWindow.isWindowFocused) return emptyList()
+                    if (!readWindow.isWindowFocused || nativeReadMenus.value.obscured || nativeReadMenus.value.revision != nativeMenuRevision) return emptyList()
                     val layout = listState.layoutInfo
                     val visible = layout.visibleItemsInfo.filter {
                         app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)

@@ -495,12 +495,13 @@ class ChatRoomViewModel @Inject constructor(
     private val typingExpiry = mutableMapOf<String, Job>()
 
     private var readingAnchors: Set<String> = emptySet()
+    private var readingAllowed: () -> Boolean = { true }
 
     private val readScope by lazy { app.pulse.domain.sync.VisibleReadScope(repo, conversationId) }
     private val readIntents = mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>()
     private val readJobs by lazy {
         app.pulse.domain.sync.VisibleReadJobs(viewModelScope,
-            isCurrent = { it in readingAnchors },
+            isCurrent = { it in readingAnchors && readingAllowed() },
             send = { id -> readIntents.getOrPut(id) { readScope.message(id) }.send() })
     }
 
@@ -608,7 +609,8 @@ class ChatRoomViewModel @Inject constructor(
     // ── read receipts (spec row 3): debounced 600ms while the room is open ──
 
 
-    fun setReadingAnchors(messageIds: Set<String>) {
+    fun setReadingAnchors(messageIds: Set<String>, allowed: () -> Boolean = { true }) {
+        readingAllowed = allowed
         if (readingAnchors == messageIds) return
         readingAnchors = messageIds
         readJobs.update(messageIds)

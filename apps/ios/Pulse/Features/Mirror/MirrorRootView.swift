@@ -1534,7 +1534,7 @@ struct MirrorRoomView: View {
     // R64 - room kebab + sheets + the composer focus ring
     @State private var menuOpen = false
     @State private var activeSheet: MirrorRoomSheet?
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
     // R102 - the attachments tray (web chat-room.tsx 5113-5256 + trayGroups
     // 2581-2830): panel state, armed effect/incognito, the voice recorder,
     // the document picker and the photo picker - every tile wires a REAL
@@ -1731,11 +1731,11 @@ struct MirrorRoomView: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
-                        TextField("Type here", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
-                            .font(.system(size: 15)).foregroundColor(MirrorArt.text)
-                            .lineLimit(1...5)
+                        PulseComposerInput(text: Binding(get: { draft }, set: { draft = $0 }),
+                            focused: Binding(get: { composerFocused }, set: { composerFocused = $0 }),
+                            placeholder: "Type here", session: session,
+                            textColor: UIColor(MirrorArt.text), placeholderColor: UIColor(MirrorArt.dim), font: .systemFont(ofSize: 15))
                             .padding(.vertical, 6)
-                            .focused($composerFocused)
                         Button { photoPickerOpen = true } label: {
                             Image(systemName: "camera").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
                                 .frame(width: 36, height: 36)

@@ -30,6 +30,66 @@ import org.junit.runner.RunWith
 class ReadAttentionTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun floatingEditMenuStopsReadsWithoutLosingWindowFocus() = nativeEditMenuInterruption(1000)
+    @Test fun editMenuOpenedAndClosedInOneFrameStillRestartsDwell() = nativeEditMenuInterruption(0)
+
+    private fun nativeEditMenuInterruption(holdFor: Long) {
+        val view = java.util.concurrent.atomic.AtomicReference<android.view.View>()
+        val window = java.util.concurrent.atomic.AtomicReference<WindowInfo>()
+        val observed = CopyOnWriteArrayList<String>()
+        val root = Message("menu-root", "room", "peer", "Peer", Message.Kind.TEXT, "Root", "2026-10-26T00:00:00Z")
+        var mode: android.view.ActionMode? = null
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            val host = androidx.compose.ui.platform.LocalView.current
+            val actualWindow = LocalWindowInfo.current
+            androidx.compose.runtime.SideEffect { view.set(host); window.set(actualWindow) }
+            val list = rememberLazyListState()
+            LazyColumn(state = list, modifier = Modifier.height(120.dp).fillMaxWidth()) {
+                item(key = "thread-parent") { Text("Root", Modifier.height(64.dp)) }
+            }
+            ThreadReadReceipts(ownerKey = "native-edit-menu", enabled = true, connected = true,
+                root = root, replies = emptyList(), listState = list,
+                onRead = { id -> VisibleReadIntent({ Result.success("original.member") }, {
+                    observed.add(id); Result.success(Unit)
+                }) })
+        }
+        compose.waitForIdle()
+        compose.waitUntil(5000) { window.get()?.isWindowFocused == true }
+        compose.mainClock.advanceTimeBy(200)
+        try {
+            compose.runOnIdle {
+                mode = view.get().startActionMode(object : android.view.ActionMode.Callback2() {
+                    override fun onCreateActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
+                        menu.add("Copy"); return true
+                    }
+                    override fun onPrepareActionMode(mode: android.view.ActionMode, menu: android.view.Menu) = false
+                    override fun onActionItemClicked(mode: android.view.ActionMode, item: android.view.MenuItem) = false
+                    override fun onDestroyActionMode(mode: android.view.ActionMode) = Unit
+                    override fun onGetContentRect(mode: android.view.ActionMode, view: android.view.View, rect: android.graphics.Rect) {
+                        rect.set(0, 64, 240, 128)
+                    }
+                }, android.view.ActionMode.TYPE_FLOATING)
+                assertNotNull("Use an actual platform floating edit menu", mode)
+                if (holdFor == 0L) mode?.finish()
+            }
+            if (holdFor > 0) {
+                compose.waitForIdle()
+                compose.mainClock.advanceTimeBy(holdFor)
+                compose.runOnIdle {
+                    assertTrue("Floating menu should not rely on focus loss", window.get().isWindowFocused)
+                    assertTrue("Visible edit menu must prevent Seen", observed.isEmpty())
+                    mode?.finish()
+                }
+            }
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(500)
+            compose.runOnIdle { assertTrue("Dismissal requires a full new dwell", observed.isEmpty()) }
+            compose.mainClock.advanceTimeBy(300)
+            compose.waitUntil(5000) { observed.contains(root.id) }
+        } finally { compose.runOnIdle { mode?.finish() } }
+    }
+
     @Test fun systemWindowOcclusionAndSheetInterruptionsRestartDwellWithoutReadingOffscreenRows() {
         var focused by mutableStateOf(false)
         var enabled by mutableStateOf(true)
@@ -77,7 +137,9 @@ class ReadAttentionTest {
     }
     @Test fun arrivingViewportRowDoesNotRestartAnAlreadyVisibleRowsDwell() {
         var showReply by mutableStateOf(false)
-        val window = object : WindowInfo { override val isWindowFocused = true }
+        val window = object : WindowInfo {
+            override val isWindowFocused = true
+        }
         val root = Message("stable-root", "room", "peer", "Peer", Message.Kind.TEXT, "Root", "2026-10-26T00:00:00Z")
         val reply = root.copy(id = "arriving-reply", threadRootId = root.id)
         val observed = CopyOnWriteArrayList<String>()

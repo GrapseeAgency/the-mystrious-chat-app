@@ -430,7 +430,9 @@ fun ChatRoomScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
-    val readObscured = actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
+    val nativeReadMenus = app.pulse.ui.rememberNativeReadMenus()
+    val nativeMenuRevision = nativeReadMenus.value.revision
+    val readObscured = nativeReadMenus.value.obscured || actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
         lightboxTarget != null || pinsOpen || attachOpen || pollBuilderOpen || reactionPickerTarget != null ||
         whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen ||
         safety != null || viewModel.phrasesOpen || viewModel.redPacketOpen || viewModel.redPacketDetailId != null ||
@@ -438,7 +440,7 @@ fun ChatRoomScreen(
         viewModel.eventsOpen || viewModel.remindersOpen || viewModel.leaderboardOpen
     val readRows = rememberUpdatedState(rowsReversed)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
-    LaunchedEffect(lifecycleOwner, viewModel, conversation?.id, pipOverlayOpen, privacyHidden, readObscured, minimumReadPixels) {
+    LaunchedEffect(lifecycleOwner, viewModel, conversation?.id, pipOverlayOpen, privacyHidden, readObscured, minimumReadPixels, nativeMenuRevision) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
                 snapshotFlow {
@@ -450,7 +452,7 @@ fun ChatRoomScreen(
                     else readRows.value.filterIsInstance<TimelineRow.Msg>().filter {
                         it.key in visible && !it.message.isDeleted && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
                     }.map { it.message.id }.toSet()
-                }.collect { viewModel.setReadingAnchors(it) }
+                }.collect { viewModel.setReadingAnchors(it) { !nativeReadMenus.value.obscured && nativeReadMenus.value.revision == nativeMenuRevision && readWindow.isWindowFocused } }
             } finally { viewModel.setReadingAnchors(emptySet()) }
         }
     }

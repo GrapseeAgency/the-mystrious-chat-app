@@ -15,13 +15,15 @@ for report in reports:
     try:
         for case in ET.parse(report).iter('testcase'):
             for failure in list(case.findall('failure')) + list(case.findall('error')):
-                lines.append(f"{case.get('classname')}::{case.get('name')}: {failure.get('message', '')[:500]}")
+                detail = failure.get('message') or (failure.text or '').strip()
+                lines.append(f"{case.get('classname')}::{case.get('name')}: {detail[:3000]}")
     except (ET.ParseError, OSError):
         continue
 device_log = Path('/tmp/pulse-native-instrumented.log')
 if device_log.exists():
     lines.extend(line for line in device_log.read_text(errors='replace').splitlines()
-                 if line.startswith(('FAILURE:', '> ', 'Execution failed')))
+                 if line.startswith(('FAILURE:', 'Execution failed', 'e: '))
+                 or (line.startswith('> ') and not line.startswith('> Task')))
 if not lines:
     # Gradle/dependency/daemon failures can occur before a compiler or JUnit
     # report exists. Surface their bounded summary instead of only "exit 1".
@@ -33,6 +35,6 @@ if not lines:
                        or (line.startswith('> ') and not line.startswith('> Task'))
                        or 'daemon disappeared' in line.lower()]
             lines.extend(summary[-30:])
-if lines:
-    text = '\n'.join(lines)[:10000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+for line in lines[:20]:
+    text = line[:3500].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
     print('::error title=Native compile/test diagnostics::' + text)

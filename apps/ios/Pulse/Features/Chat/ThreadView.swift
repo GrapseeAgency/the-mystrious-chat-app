@@ -52,7 +52,7 @@ struct ThreadView: View {
     @State private var lightbox: MediaLightboxTarget?
     @State private var lightboxMessageId: String?
     @State private var viewOnceTask: Task<Void, Never>?
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -594,12 +594,12 @@ struct ThreadView: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Reply in thread", text: Binding(get: { draft }, set: editDraft), axis: .vertical)
-                .lineLimit(1...5)
+            PulseComposerInput(text: Binding(get: { draft }, set: editDraft),
+                focused: Binding(get: { composerFocused }, set: { composerFocused = $0 }),
+                placeholder: "Reply in thread", session: session)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
                 .background(Capsule().fill(Color(.secondarySystemBackground)))
-                .focused($composerFocused)
                 .disabled(draftJournal == nil || draftSession != session.sessionGeneration)
 
             Button {
