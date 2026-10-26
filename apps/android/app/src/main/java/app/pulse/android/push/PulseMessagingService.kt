@@ -59,11 +59,17 @@ class PulseMessagingService : FirebaseMessagingService() {
             if ((app.pulse.domain.sync.messageExpiryEpochMs(expiry) ?: Long.MIN_VALUE) <= System.currentTimeMillis()) return
         }
         val recipient = data["recipientUserId"]
-        if (data["kind"] == "read-state") {
+        val kind = data["kind"] ?: "message"
+        if (kind == "read-state") {
             // Cold FCM delivery can precede repository startup. The durable worker
             // checks the persisted owner; this hint never creates a notification or Seen.
             if (!recipient.isNullOrBlank()) app.pulse.android.OutboxWorker.enqueue(this, recipient)
             return
+        }
+        // Inbox reconciliation is independent of notification permission or a
+        // short cold-owner lookup. The worker revalidates the durable recipient.
+        if (kind == "message" && !recipient.isNullOrBlank()) {
+            app.pulse.android.OutboxWorker.enqueue(this, recipient)
         }
         // Modern message pushes are data-only, so cold-process delivery reaches
         // this guard too. Loading the durable owner must not depend on a UI
@@ -72,7 +78,6 @@ class PulseMessagingService : FirebaseMessagingService() {
             kotlinx.coroutines.withTimeoutOrNull(2_000) { prefs.viewerId.first() }
         } }.getOrNull()
         if (recipient != null && recipient != owner) return
-        val kind = data["kind"] ?: "message"
         val conversationId = data["conversationId"]
         val notification = message.notification
         val title = notification?.title ?: data["title"] ?: "Pulse"
@@ -107,10 +112,8 @@ class PulseMessagingService : FirebaseMessagingService() {
                         repository.observeConnected().first()
                     } == true }
                 }.getOrDefault(false)
-                if (handledInApp) {
-                    // The socket path already applies mute/quiet-hours/toast/sound policy.
-                    if (!recipient.isNullOrBlank()) app.pulse.android.OutboxWorker.enqueue(this, recipient)
-                } else showMessageNotification(title, body, conversationId, data["messageId"], recipient)
+                // The socket path already applies mute/quiet-hours/toast/sound policy.
+                if (!handledInApp) showMessageNotification(title, body, conversationId, data["messageId"], recipient)
             }
         }
     }
