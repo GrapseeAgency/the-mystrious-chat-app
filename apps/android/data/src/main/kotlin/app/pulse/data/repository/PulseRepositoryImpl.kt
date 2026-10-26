@@ -2738,6 +2738,10 @@ class PulseRepositoryImpl constructor(
 
     // Capture is LOCAL: the fence must describe authority known when the row
     // was observed, not a later network response after a new manual marker.
+    override fun requestReadMembershipRefresh(conversationId: String) {
+        if (viewerId != null && conversationId.isNotBlank()) scheduleConversationsRefresh()
+    }
+
     override suspend fun captureReadIntent(conversationId: String): Result<String> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession

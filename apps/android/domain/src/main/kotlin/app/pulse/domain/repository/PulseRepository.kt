@@ -378,6 +378,8 @@ interface PulseRepository {
     /** LOCAL-only snapshot. VisibleReadIntent shields capture + persistence from UI cancellation. */
     fun observePendingReads(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
     suspend fun flushReadReceipts(): Result<Int> = Result.success(0)
+    /** Queue metadata repair without waiting or supplying authority to an older observation. */
+    fun requestReadMembershipRefresh(conversationId: String) {}
     suspend fun captureReadIntent(conversationId: String): Result<String> = Result.failure(UnsupportedOperationException("Read intent is unavailable"))
     /** Persist locally and schedule independent replay; success does not imply server delivery. */
     suspend fun markReadThrough(conversationId: String, messageId: String, readIntent: String? = null): Result<Unit> =

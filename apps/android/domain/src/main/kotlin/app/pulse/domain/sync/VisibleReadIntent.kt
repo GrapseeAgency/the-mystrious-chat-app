@@ -50,8 +50,10 @@ class VisibleReadScope(
         // intent while the original observation is waiting to be journaled.
         val member = memberSnapshot.invoke()?.takeIf { it.id == account.viewerId }
         val membership = member?.readMembershipId?.takeIf { it.isNotBlank() }
-        val result = if (membership == null) Result.failure(IllegalStateException("Waiting for current room membership"))
-            else Result.success(member?.readIntent ?: "offline.$membership")
+        val result = if (membership == null) {
+            account.requestReadMembershipRefresh(room)
+            Result.failure(IllegalStateException("Waiting for current room membership"))
+        } else Result.success(member?.readIntent ?: "offline.$membership")
         result.also {
             currentCoroutineContext().ensureActive()
             it.getOrNull()?.let { captured -> intent = captured }

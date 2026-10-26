@@ -2667,6 +2667,9 @@ private struct MessageInfoSheet: View {
             }
         }
         .presentationDetents([.medium])
+        .onChange(of: viewModel.messageInfo(messageID)?.id, initial: true) { _, currentID in
+            if currentID == nil { dismiss() }
+        }
     }
 
     @ViewBuilder

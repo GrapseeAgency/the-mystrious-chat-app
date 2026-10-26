@@ -98,8 +98,8 @@ struct PulseReadReceiptGate {
 }
 
 
-/// A mounted reading surface owns its authority. A covered thread keeps this
-/// object in SwiftUI State; actual dismissal releases it. The session exclusively
+/// A mounted reading surface owns its authority. Explicit thread openings
+/// replace this object; temporary covers reuse it. The session exclusively
 /// mutates the gate on the main actor, and a new room/account epoch retires it.
 final class PulseReadAuthority {
     let id = UUID()

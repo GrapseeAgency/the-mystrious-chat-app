@@ -25,10 +25,13 @@ final class RoomDetailReadWatermarkTests: XCTestCase {
         XCTAssertNil(model.messageInfo("missing"))
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(message)) as? [String: Any])
         object["id"] = "expired-info"
+        object["createdAt"] = "2026-10-25T00:00:00Z"
         object["expiresAt"] = "2026-10-26T00:00:00Z"
         model.injectCarrier(try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object)))
+        XCTAssertNotNil(model.messageInfo("expired-info", now: try XCTUnwrap(PulseFormat.date("2026-10-25T23:59:59Z"))))
         XCTAssertNil(model.messageInfo("expired-info", now: try XCTUnwrap(PulseFormat.date("2026-10-26T00:00:00Z"))))
         model.applyFreshDetail(try room(nil))
+        XCTAssertEqual(model.readReceiptMembers.first?.id, "peer")
         XCTAssertNil(model.readReceiptMembers.first?.lastReadAt, "The visible info sheet must adopt current receipt privacy")
         session.stop()
         XCTAssertNil(model.messageInfo("info"), "An old sheet must not retain another session's message")

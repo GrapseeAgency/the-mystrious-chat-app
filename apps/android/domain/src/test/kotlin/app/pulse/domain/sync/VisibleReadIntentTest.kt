@@ -17,12 +17,14 @@ import org.junit.jupiter.api.Test
 class VisibleReadIntentTest {
     private class Journal {
         val sent = mutableListOf<String>()
+        var refreshes = 0
         val writes = mutableListOf<Continuation<Result<Unit>>>()
         @Suppress("UNCHECKED_CAST")
         val repo = Proxy.newProxyInstance(PulseRepository::class.java.classLoader, arrayOf(PulseRepository::class.java)) { proxy, method, args ->
             when {
                 method.name == "boundToCurrentAccount" -> proxy
                 method.name == "getViewerId" -> "viewer"
+                method.name == "requestReadMembershipRefresh" -> { refreshes++; Unit }
                 method.name.startsWith("markReadThrough") -> {
                     sent += args!![2] as String
                     writes += args.last() as Continuation<Result<Unit>>
@@ -64,6 +66,7 @@ class VisibleReadIntentTest {
         member = ConversationMember("another-viewer", "Other", readMembershipId = "other", readIntent = "fresh.other")
         assertTrue(intent.send().isFailure)
         assertTrue(journal.sent.isEmpty())
+        assertEquals(2, journal.refreshes, "Missing metadata repairs asynchronously without adopting its future authority")
         member = ConversationMember("viewer", "Viewer", readMembershipId = "member")
         val offline = async { intent.send() }
         runCurrent()
