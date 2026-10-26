@@ -2,6 +2,40 @@ import XCTest
 @testable import Pulse
 
 final class ReadVisibilityTests: XCTestCase {
+    func testThreadAuthorityIsFreshButCoverAndReturnPreserveOriginalSurfaceIntents() throws {
+        let epoch = UUID()
+        let primary = PulseReadAuthority(), thread = PulseReadAuthority()
+        primary.bind(to: epoch)
+        primary.gate.setBoundary(roomId: "room", messageId: "root", now: 0)
+        let old = try XCTUnwrap(primary.gate.begin(roomId: "room", now: 1))
+        XCTAssertTrue(primary.gate.retainIntent("old.member", for: old))
+        primary.gate.finish(old, succeeded: false)
+
+        thread.bind(to: epoch)
+        var surfaces = PulseReadSurfaces()
+        surfaces.setPrimary(roomId: "room", messageId: "root")
+        let owner = surfaces.begin(roomId: "room", rootId: "root", authority: thread)
+        thread.gate.setBoundary(roomId: "room", messageId: "root", now: 1)
+        let fresh = try XCTUnwrap(thread.gate.begin(roomId: "room", now: 2))
+        XCTAssertNil(thread.gate.intent(for: fresh), "A genuinely new thread must not borrow the old room intent")
+        XCTAssertTrue(thread.gate.retainIntent("fresh.member", for: fresh))
+        thread.gate.finish(fresh, succeeded: false)
+        XCTAssertTrue(surfaces.end(owner))
+        XCTAssertEqual(primary.gate.intent(for: old), "old.member", "Returning to the room cannot renew its authority")
+
+        thread.bind(to: epoch) // temporary cover; same mounted thread
+        thread.gate.restartDwell(now: 3)
+        let resumed = try XCTUnwrap(thread.gate.begin(roomId: "room", now: 4))
+        XCTAssertEqual(thread.gate.intent(for: resumed), "fresh.member")
+        let replacement = PulseReadAuthority()
+        replacement.bind(to: epoch)
+        replacement.gate.setBoundary(roomId: "room", messageId: "root", now: 4)
+        XCTAssertNil(replacement.gate.intent(for: try XCTUnwrap(replacement.gate.begin(roomId: "room", now: 5))))
+        thread.bind(to: UUID()) // room/account replacement retires a retained view
+        thread.gate.setBoundary(roomId: "room", messageId: "root", now: 5)
+        XCTAssertNil(thread.gate.intent(for: try XCTUnwrap(thread.gate.begin(roomId: "room", now: 6))))
+    }
+
     func testRoomVisitSurvivesCoverButSameRoomReentryIsNewAuthority() {
         var visit = PulseRoomReadVisit()
         let old = UUID(), replacement = UUID()

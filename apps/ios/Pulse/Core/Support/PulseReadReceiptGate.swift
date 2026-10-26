@@ -98,6 +98,20 @@ struct PulseReadReceiptGate {
 }
 
 
+/// A mounted reading surface owns its authority. A covered thread keeps this
+/// object in SwiftUI State; actual dismissal releases it. The session exclusively
+/// mutates the gate on the main actor, and a new room/account epoch retires it.
+final class PulseReadAuthority {
+    let id = UUID()
+    var gate = PulseReadReceiptGate()
+    private var epoch: UUID?
+    func bind(to next: UUID) {
+        guard epoch != next else { return }
+        epoch = next
+        gate.reset()
+    }
+}
+
 /// Navigation identity outlives temporary presentation visibility. In particular,
 /// an old same-room destination cannot retire its replacement during a transition.
 struct PulseRoomReadVisit {
@@ -130,6 +144,8 @@ struct PulseReadSurfaces {
         let id = UUID()
         let roomId: String
         let rootId: String?
+        let authority: PulseReadAuthority
+        static func == (lhs: Owner, rhs: Owner) -> Bool { lhs.id == rhs.id }
     }
     private var primary: [PulseReadReceiptGate.Boundary] = []
     private var overlay: [PulseReadReceiptGate.Boundary] = []
@@ -150,8 +166,8 @@ struct PulseReadSurfaces {
         shellPresented || obscuredByPip(isOpen: pipOpen)
     }
 
-    mutating func begin(roomId: String, rootId: String? = nil) -> Owner {
-        let next = Owner(roomId: roomId, rootId: rootId)
+    mutating func begin(roomId: String, rootId: String? = nil, authority: PulseReadAuthority? = nil) -> Owner {
+        let next = Owner(roomId: roomId, rootId: rootId, authority: authority ?? PulseReadAuthority())
         owner = next
         overlay = []
         return next

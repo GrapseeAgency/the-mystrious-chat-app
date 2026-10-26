@@ -34,6 +34,7 @@ struct ThreadView: View {
     @State private var scopeAnchorCaptured = false
     @State private var scopeReadRevision = 0
     @State private var readOwner: PulseReadSurfaces.Owner?
+    let readAuthority: PulseReadAuthority
     @Environment(\.scenePhase) private var readScenePhase
     @State private var tailScrollRevision = 0
     @State private var cachedCursor: PulseCachedThreadCursor?
@@ -157,7 +158,7 @@ struct ThreadView: View {
             MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt, singleUse: target.singleUse)
         }
         .onAppear {
-            readOwner = session.beginReadSurface(conversationId: conversation.id, rootId: root.id)
+            readOwner = session.beginReadSurface(conversationId: conversation.id, rootId: root.id, authority: readAuthority)
             updateReadBoundary()
         }
         .onChange(of: readCandidate, initial: true) { _, _ in updateReadBoundary() }
@@ -222,7 +223,8 @@ struct ThreadView: View {
         .onDisappear {
             if let readOwner { session.endReadSurface(readOwner) }
             readOwner = nil
-            visibleReadIDs = []
+            // Keep measured geometry while a temporary cover hides this same
+            // thread; its authority and viewport resume with fresh dwell.
             viewOnceTask?.cancel()
             loadGeneration = UUID()
             recoveryObservation?.cancel()

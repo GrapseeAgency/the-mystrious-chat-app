@@ -343,6 +343,7 @@ private struct RoomContent: View {
     // Wave 1 surfaces - threads, forward, info, pins, lightbox, QuickLook,
     // room search, and the media attach flow (photo picker + document).
     @State private var threadRoot: WireChatMessage?
+    @State private var threadReadAuthority = PulseReadAuthority()
     @State private var threadJumpMessageId: String?
     @State private var forwardSource: WireChatMessage?
     @State private var infoTarget: WireChatMessage?
@@ -994,12 +995,15 @@ private struct RoomContent: View {
         .onChange(of: viewModel.jumpThreadRoot) { _, root in
             if let root {
                 threadJumpMessageId = viewModel.jumpThreadReplyId
+                threadReadAuthority = PulseReadAuthority()
                 threadRoot = root
                 viewModel.consumeThreadJump()
             }
         }
         .sheet(item: $threadRoot, onDismiss: { threadJumpMessageId = nil }) { root in
-            ThreadView(conversation: conversation, root: root, session: session, initialJumpMessageId: threadJumpMessageId)
+            ThreadView(conversation: conversation, root: root, session: session,
+                initialJumpMessageId: threadJumpMessageId, readAuthority: threadReadAuthority)
+                .id(threadReadAuthority.id)
         }
     }
 
@@ -1608,7 +1612,7 @@ private struct RoomContent: View {
                                 clusterTighten: prefs.density == .cozy ? 4 : 1,
                                 onOpenImage: { openLightbox($0) },
                                 onOpenFile: { openFile($0) },
-                                onOpenThread: { threadJumpMessageId = nil; threadRoot = $0 },
+                                onOpenThread: { threadJumpMessageId = nil; threadReadAuthority = PulseReadAuthority(); threadRoot = $0 },
                                 onForward: { forwardSource = $0 },
                                 onInfo: { infoTarget = $0 },
                                 onViewOnce: { message in

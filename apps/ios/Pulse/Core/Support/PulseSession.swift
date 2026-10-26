@@ -136,8 +136,14 @@ public final class PulseSession: ObservableObject {
         }
     }
     private var roomReadVisit = PulseRoomReadVisit()
-    private var readGate = PulseReadReceiptGate()
+    private var readAuthorityEpoch = UUID()
+    private let primaryReadAuthority = PulseReadAuthority()
     private var readSurfaces = PulseReadSurfaces()
+    private var activeReadAuthority: PulseReadAuthority { readSurfaces.owner?.authority ?? primaryReadAuthority }
+    private var readGate: PulseReadReceiptGate {
+        get { activeReadAuthority.gate }
+        set { activeReadAuthority.gate = newValue }
+    }
     private var readFailureCount = 0
     private var readReceiptTask: Task<Void, Never>?
     private var readReplayTask: Task<Void, Never>?
@@ -505,7 +511,8 @@ public final class PulseSession: ObservableObject {
 
     func showRoomReadVisit(conversationId: String, entryID: UUID) {
         if roomReadVisit.activate(entryID: entryID, roomID: conversationId) {
-            readGate.reset()
+            readAuthorityEpoch = UUID()
+            primaryReadAuthority.bind(to: readAuthorityEpoch)
             readSurfaces.reset()
         }
         readFailureCount = 0
@@ -541,9 +548,11 @@ public final class PulseSession: ObservableObject {
         applyVisibleReadBoundary(conversationId: conversationId)
     }
 
-    func beginReadSurface(conversationId: String, rootId: String) -> PulseReadSurfaces.Owner? {
+    func beginReadSurface(conversationId: String, rootId: String, authority: PulseReadAuthority? = nil) -> PulseReadSurfaces.Owner? {
         guard activeRoomId == conversationId else { return nil }
-        let owner = readSurfaces.begin(roomId: conversationId, rootId: rootId)
+        let authority = authority ?? PulseReadAuthority()
+        authority.bind(to: readAuthorityEpoch)
+        let owner = readSurfaces.begin(roomId: conversationId, rootId: rootId, authority: authority)
         applyVisibleReadBoundary(conversationId: conversationId)
         restartReadAttention() // same message in a different surface still needs fresh dwell
         return owner
@@ -839,7 +848,8 @@ public final class PulseSession: ObservableObject {
         onlineUserIds = []
         typers = [:]
         roomReadVisit.reset()
-        readGate.reset()
+        readAuthorityEpoch = UUID()
+        primaryReadAuthority.bind(to: readAuthorityEpoch)
         readSurfaces.reset()
         readReceiptTask?.cancel()
         activeRoomId = nil
