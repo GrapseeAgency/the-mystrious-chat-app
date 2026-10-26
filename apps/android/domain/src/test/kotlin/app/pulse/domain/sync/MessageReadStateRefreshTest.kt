@@ -23,7 +23,6 @@ class MessageReadStateRefreshTest {
         var calls = 0
         var rosters = 0
         var held: Continuation<Result<Boolean>>? = null
-        var available = true
         val revisions = MutableStateFlow(0L)
         @Suppress("UNCHECKED_CAST")
         val repository = Proxy.newProxyInstance(PulseRepository::class.java.classLoader, arrayOf(PulseRepository::class.java)) { proxy, method, args ->
@@ -34,14 +33,14 @@ class MessageReadStateRefreshTest {
                 method.name.startsWith("refreshMessageReadState") -> {
                     assertEquals("room", args!![0]); assertEquals("message", args[1])
                     calls++
-                    if (calls == 1) {
-                        held = args.last() as Continuation<Result<Boolean>>
-                        COROUTINE_SUSPENDED
-                    } else Result.success(available)
+                    held = args.last() as Continuation<Result<Boolean>>
+                    COROUTINE_SUSPENDED
                 }
                 method.name.startsWith("conversationDetail") -> {
                     rosters++
-                    Result.failure<Conversation>(IllegalStateException("Offline roster"))
+                    (args!!.last() as Continuation<Result<Conversation>>).resume(
+                        Result.failure(IllegalStateException("Offline roster")))
+                    COROUTINE_SUSPENDED
                 }
                 else -> error("Info must not write a read receipt or fetch history: ${method.name}")
             }
@@ -59,9 +58,13 @@ class MessageReadStateRefreshTest {
         gateway.held!!.resume(Result.success(true))
         runCurrent()
         assertEquals(2, gateway.calls)
+        gateway.held!!.resume(Result.success(true))
+        runCurrent()
         assertEquals(listOf(true, true), seen)
         advanceTimeBy(5_000); runCurrent()
         assertEquals(3, gateway.calls)
+        gateway.held!!.resume(Result.success(true))
+        runCurrent()
         job.cancel(); runCurrent()
         advanceTimeBy(10_000); runCurrent()
         assertEquals(3, gateway.calls)
