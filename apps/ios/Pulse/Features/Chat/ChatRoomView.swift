@@ -3892,7 +3892,6 @@ final class RoomViewModel: ObservableObject {
     private var initialJumpMessageId: String?
     /// Member read watermarks (id → lastReadAt) - group-aware "Seen".
     private var memberWatermarks: [String: Date] = [:]
-    private var receiptRevision = 0
     // Wave 2 voice plumbing - recorder + single active player + timers.
     private var voiceRecorder: VoiceRecorder?
     private var voicePermissionTask: Task<Void, Never>?
@@ -4029,6 +4028,7 @@ final class RoomViewModel: ObservableObject {
         quickPhraseTask?.cancel()
         quickPhraseReads.stop()
         privacyReads.stop()
+        receiptMembersRefresh.cancel()
         cancelPhotoImport()
         journalDraft(draftBeforeEdit ?? draft)
         draftSaveTask?.cancel()
@@ -4137,6 +4137,10 @@ final class RoomViewModel: ObservableObject {
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     upsert(message)
                     try? session.store?.upsert(messages: [message])
+                case .conversationUpdated(let convId, _):
+                    guard convId == self.conversationId else { return }
+                    privacyReads.invalidateReads()
+                    scheduleReceiptMembersRefresh(session: session)
                 case .messageRead(let convId, let userId, let lastReadAt, let ids, _, let all):
                     guard convId == self.conversationId else { return }
                     loadTopics(session: session)
@@ -4148,9 +4152,7 @@ final class RoomViewModel: ObservableObject {
                     // Missing or reordered receipts cannot invent/regress Seen.
                     guard memberWatermarks[userId] != nil,
                           let at = lastReadAt.flatMap({ PulseFormat.date($0) }), at.timeIntervalSince1970 > 0 else { return }
-                    receiptRevision += 1
-                    memberWatermarks[userId] = max(memberWatermarks[userId] ?? .distantPast, at)
-                    partnerLastReadAt = max(partnerLastReadAt ?? .distantPast, at)
+                    applyKnownReadStamp(userId: userId, at: at)
                 case .typing(let convId, let userId, let userName, let isTyping):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
                     var bucket = typers.filter { $0.userId != userId }
@@ -4179,8 +4181,10 @@ final class RoomViewModel: ObservableObject {
                 guard let self else { return }
                 if foreground && session.activeRoomId == self.conversationId {
                     self.requestRefresh(session: session)
+                    self.scheduleReceiptMembersRefresh(session: session)
                 } else {
                     self.refreshTask?.cancel()
+                    self.receiptMembersRefresh.cancel()
                 }
             }
             .store(in: &cancellables)
@@ -4689,26 +4693,35 @@ final class RoomViewModel: ObservableObject {
     private let privacyReads = PulseRoomOperations()
     struct PrivacyReadTicket {
         let snapshot: PulseRoomOperations.ReadTicket
-        let readers: Int
     }
     func beginPrivacyRead() -> PrivacyReadTicket? {
-        privacyReads.beginRead().map { PrivacyReadTicket(snapshot: $0, readers: receiptRevision) }
+        privacyReads.beginRead().map { PrivacyReadTicket(snapshot: $0) }
     }
     @discardableResult
     func applyPrivacyRead(_ ticket: PrivacyReadTicket, detail: WireConversationSummary) -> Bool {
         guard detail.id == conversationId, privacyReads.accepts(ticket.snapshot) else { return false }
-        if receiptRevision == ticket.readers { adoptReadMembers(detail) }
+        // Ordinary read traffic does not retire membership/privacy authority.
+        // Positive live stamps merge monotonically; canonical hidden/removed
+        // readers must still disappear even while other readers are active.
+        adoptReadMembers(detail)
         roomScreenPrivacy = detail.screenPrivacy
         dmBlocked = !detail.isGroup && detail.dmBlockedNow
         return true
     }
 
-    private var receiptMembersRefreshTask: Task<Void, Never>?
+    func applyKnownReadStamp(userId: String, at: Date) {
+        guard memberWatermarks[userId] != nil, at.timeIntervalSince1970 > 0 else { return }
+        memberWatermarks[userId] = max(memberWatermarks[userId] ?? .distantPast, at)
+        partnerLastReadAt = max(partnerLastReadAt ?? .distantPast, at)
+    }
+
+    private let receiptMembersRefresh = PulseCoalescedRefresh()
     private func scheduleReceiptMembersRefresh(session: PulseSession) {
-        receiptMembersRefreshTask?.cancel()
-        receiptMembersRefreshTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return }
-            guard let self, session.sessionGeneration == self.readSessionGeneration else { return }
+        guard session.isForeground, session.sessionGeneration == readSessionGeneration,
+              session.ownsRoomReadVisit(conversationId: conversationId, entryID: readVisitID) else { return }
+        receiptMembersRefresh.request { [weak self] in
+            guard let self, session.isForeground, session.sessionGeneration == self.readSessionGeneration,
+                  session.ownsRoomReadVisit(conversationId: self.conversationId, entryID: self.readVisitID) else { return }
             // nil means either never-read or privacy-hidden. Only canonical
             // membership metadata can distinguish them; a relay date cannot.
             await self.loadPrivacyState(session: session)
@@ -4724,12 +4737,28 @@ final class RoomViewModel: ObservableObject {
         guard !viewerId.isEmpty, epoch == readSessionGeneration, let ticket = beginPrivacyRead() else { return }
         let privacyRead = session.prefs?.screenPrivacyRead(conversationId: conversationId)
         let client = session.api
-        guard let detail = try? await client.conversationDetail(id: conversationId, userId: viewerId),
-              !Task.isCancelled, session.sessionGeneration == epoch,
-              applyPrivacyRead(ticket, detail: detail) else { return }
-        if let mine = detail.myScreenPrivacy, let privacyRead {
-            session.prefs?.adoptServerScreenPrivacy(privacyRead, on: mine)
-        }
+        do {
+            let detail = try await client.conversationDetail(id: conversationId, userId: viewerId)
+            guard !Task.isCancelled, session.sessionGeneration == epoch,
+                  applyPrivacyRead(ticket, detail: detail) else { return }
+            if let mine = detail.myScreenPrivacy, let privacyRead {
+                session.prefs?.adoptServerScreenPrivacy(privacyRead, on: mine)
+            }
+        } catch let failure as PulseAPIClient.Failure {
+            guard !Task.isCancelled, session.sessionGeneration == epoch,
+                  [403, 404, 410].contains(failure.status ?? 0) else { return }
+            _ = applyReadMembersRefusal(ticket)
+        } catch { /* Offline is not evidence that cached readers were revoked. */ }
+    }
+
+    @discardableResult
+    func applyReadMembersRefusal(_ ticket: PrivacyReadTicket) -> Bool {
+        guard privacyReads.accepts(ticket.snapshot) else { return false }
+        readReceiptMembers = []
+        readerMemberships = [:]
+        memberWatermarks = [:]
+        partnerLastReadAt = nil
+        return true
     }
 
     // ── room search (server q= + local window filter) ───────

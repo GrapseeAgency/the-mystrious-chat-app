@@ -11,6 +11,33 @@ final class RoomDetailReadWatermarkTests: XCTestCase {
         ]))
     }
 
+    func testReadTrafficCannotPreventCanonicalPrivacyAndMembershipAdoption() throws {
+        let session = PulseSession()
+        let model = RoomViewModel(conversation: try room("2026-10-24T12:00:00Z"), session: session, beginAutomaticWork: false)
+        let newer = try XCTUnwrap(PulseFormat.date("2026-10-26T12:00:00Z"))
+        let visible = try XCTUnwrap(model.beginPrivacyRead())
+        model.applyKnownReadStamp(userId: "peer", at: newer)
+        XCTAssertTrue(model.applyPrivacyRead(visible, detail: try room("2026-10-25T12:00:00Z")))
+        XCTAssertEqual(model.partnerLastReadAt, newer, "A positive canonical snapshot cannot rewind a newer live stamp")
+        let hidden = try XCTUnwrap(model.beginPrivacyRead())
+        model.applyKnownReadStamp(userId: "peer", at: newer.addingTimeInterval(1))
+        XCTAssertTrue(model.applyPrivacyRead(hidden, detail: try room(nil)))
+        XCTAssertNil(model.partnerLastReadAt, "Read traffic must not suppress canonical privacy removal")
+        XCTAssertNil(model.readReceiptMembers.first?.lastReadAt)
+    }
+
+    func testOnlyCurrentAccessRefusalCanRetireTheDisplayedReaders() throws {
+        let session = PulseSession()
+        let model = RoomViewModel(conversation: try room("2026-10-24T12:00:00Z"), session: session, beginAutomaticWork: false)
+        let old = try XCTUnwrap(model.beginPrivacyRead())
+        let current = try XCTUnwrap(model.beginPrivacyRead())
+        XCTAssertFalse(model.applyReadMembersRefusal(old))
+        XCTAssertNotNil(model.partnerLastReadAt)
+        XCTAssertTrue(model.applyReadMembersRefusal(current))
+        XCTAssertNil(model.partnerLastReadAt)
+        XCTAssertTrue(model.readReceiptMembers.isEmpty)
+    }
+
     func testMessageInfoUsesCurrentRoomDataAndRetiresUnavailableOrForeignRows() throws {
         let session = PulseSession()
         let model = RoomViewModel(conversation: try room("2026-10-24T12:00:00Z"), session: session, beginAutomaticWork: false)
