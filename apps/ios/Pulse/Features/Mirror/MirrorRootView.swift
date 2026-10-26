@@ -1773,6 +1773,7 @@ struct MirrorRoomView: View {
                 .padding(.horizontal, 12).padding(.vertical, 12)
             }
         }
+        .background(PulseReadPresentationAnchor(session: session, owner: readVisitID))
         .overlay(alignment: .topTrailing) {
             if menuOpen {
                 MirrorRoomKebab(

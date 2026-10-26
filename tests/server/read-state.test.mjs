@@ -100,3 +100,15 @@ test('manual unread route validates desired state and returns only the committed
   assert.equal(fanouts.length, 1)
   assert.deepEqual(hints, [['reader','room']])
 })
+
+test('all Swift automatic readers register their owned UIKit presentation anchor', async () => {
+  // Wiring regression only; UIKit hierarchy/dwell behavior is exercised natively.
+  for (const [path, owner] of [
+    ['Features/Chat/ChatRoomView.swift', 'readVisitID'],
+    ['Features/Mirror/MirrorRootView.swift', 'readVisitID'],
+    ['Features/Chat/ThreadView.swift', 'readOwner.id'],
+  ]) {
+    const source = await readFile(new URL(`../../apps/ios/Pulse/${path}`, import.meta.url), 'utf8')
+    assert.ok(source.includes(`PulseReadPresentationAnchor(session: session, owner: ${owner})`), path)
+  }
+})
