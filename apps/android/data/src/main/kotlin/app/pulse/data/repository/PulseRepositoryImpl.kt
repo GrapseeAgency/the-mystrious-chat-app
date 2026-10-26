@@ -748,6 +748,7 @@ class PulseRepositoryImpl constructor(
                 checkNotNull(messageDao.byId(message.id)).toDomain()
             }.also { messageCacheChanges.value = messageEventClock.get() }
         }
+        requireConversationOwner(owner, epoch) // the commit/lock release can suspend before UI fanout
         app.pulse.domain.sync.messageEnvelopeEvent(signal.event, signal.conversationId, message)?.let {
             eventsBus.tryEmit(it)
         }

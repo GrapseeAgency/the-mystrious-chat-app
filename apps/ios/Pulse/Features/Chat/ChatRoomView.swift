@@ -2696,8 +2696,11 @@ private struct MessageInfoSheet: View {
                 do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { break }
             }
         }
-        .onReceive(session.$readStateRevisions
-            .map { $0[viewModel.messageInfo(messageID)?.conversationId ?? ""] ?? 0 }.removeDuplicates()) { _ in refreshProof() }
+        .onChange(of: session.readStateRevisions[viewModel.messageInfo(messageID)?.conversationId ?? ""] ?? 0) { _, _ in
+            // Metadata adoption redraws this sheet too. Compare the scoped value
+            // rather than rebuilding a CurrentValuePublisher subscription here.
+            refreshProof()
+        }
         .onChange(of: session.isForeground) { _, foreground in
             if foreground { refreshProof() } else { proofRefresh.cancel() }
         }
