@@ -17,7 +17,8 @@ async function fixture(run) {
       'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,senderId TEXT,createdAt DATETIME,parentId TEXT,topicId TEXT,deletedAt DATETIME,expiresAt DATETIME,viaAutomation BOOLEAN DEFAULT false)',
       'CREATE TABLE Topic(id TEXT PRIMARY KEY,conversationId TEXT)',
     ]) await db.$executeRawUnsafe(sql)
-    const migration = await readFile(new URL('../../prisma/patches/20261026_exact_read_observations.sql', import.meta.url), 'utf8')
+    const migration = (await Promise.all(['20261026_read_intent_state.sql', '20261026_exact_read_observations.sql'].map(name =>
+      readFile(new URL(`../../prisma/patches/${name}`, import.meta.url), 'utf8')))).join('\n')
     await db.$transaction(async tx => {
       for (const sql of migration.replace(/^--.*$/gm, '').split(';').map(s => s.trim()).filter(s => s && !['BEGIN IMMEDIATE','COMMIT'].includes(s))) await tx.$executeRawUnsafe(sql)
     })
