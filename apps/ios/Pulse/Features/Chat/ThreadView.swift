@@ -169,7 +169,9 @@ struct ThreadView: View {
             updateReadBoundary()
         }
         .onChange(of: readCandidate, initial: true) { _, _ in updateReadBoundary() }
-        .task(id: ThreadLoadKey(connected: session.connected, target: initialJumpMessageId)) { await load() }
+        .task(id: ThreadLoadKey(connected: session.connected, foreground: session.isForeground, target: initialJumpMessageId)) {
+            if session.isForeground { await load() }
+        }
         .onChange(of: initialJumpMessageId) { _, _ in
             initialJumpResolved = false
             highlightedReplyId = nil
@@ -684,5 +686,6 @@ private struct ThreadTailPositionKey: PreferenceKey {
 
 private struct ThreadLoadKey: Hashable {
     let connected: Bool
+    let foreground: Bool
     let target: String?
 }

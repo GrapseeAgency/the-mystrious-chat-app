@@ -1,5 +1,7 @@
 package app.pulse.android.mirror
 
+import androidx.lifecycle.repeatOnLifecycle
+
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -569,26 +571,29 @@ internal fun MirrorThreadSheet(
     LaunchedEffect(root.id) {
         while (true) { now = System.currentTimeMillis(); delay(1_000) }
     }
-    LaunchedEffect(root.id, connected, retry) {
-        loading = true
-        error = null
-        try {
-            val (fresh, loadedReplies) = threadRepository.loadThread(root.id)
-            currentCoroutineContext().ensureActive()
-            fetchedReplies = loadedReplies
-            if (!threadRootAvailable(fresh, root.conversationId, root.id)) {
-                denied = true
-                error = "This thread is no longer available."
-            } else {
-                denied = false
-                validated = true
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
-            error = failure.message ?: "Couldn't load this thread. Tap to retry."
-        } finally { loading = false }
+    LaunchedEffect(threadRepository, root.id, connected, retry, revealLifecycle) {
+        revealLifecycle.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            unreadRefresh.request()
+            loading = true
+            error = null
+            try {
+                val (fresh, loadedReplies) = threadRepository.loadThread(root.id)
+                currentCoroutineContext().ensureActive()
+                fetchedReplies = loadedReplies
+                if (!threadRootAvailable(fresh, root.conversationId, root.id)) {
+                    denied = true
+                    error = "This thread is no longer available."
+                } else {
+                    denied = false
+                    validated = true
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
+                error = failure.message ?: "Couldn't load this thread. Tap to retry."
+            } finally { loading = false }
+        }
     }
     val available = !denied && threadRootAvailable(currentRoot, root.conversationId, root.id, now)
     val replies = if (available) cachedReplies.filter { it.conversationId == root.conversationId &&

@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import androidx.lifecycle.repeatOnLifecycle
 import app.pulse.domain.model.PulseApiException
 import app.pulse.domain.sync.threadRootAvailable
 import app.pulse.domain.sync.threadAccessDenied
@@ -176,12 +177,12 @@ class ThreadViewModel @Inject constructor(
     val firstUnreadMessageId: StateFlow<String?> = firstUnread.asStateFlow()
     val unreadCount: StateFlow<Int?> = unreadScopeSnapshot.withReadScopeExpiry()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    private val unreadRepository = repo.boundToCurrentAccount()
+    private val threadRepository = repo.boundToCurrentAccount()
     private val unreadRefresh = app.pulse.domain.sync.CoalescedRefresh(viewModelScope) {
-        val epoch = unreadRepository.attachmentSessionKey()
-        val result = unreadRepository.readScopeState(conversationId, threadId = rootId)
+        val epoch = threadRepository.attachmentSessionKey()
+        val result = threadRepository.readScopeState(conversationId, threadId = rootId)
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        if (unreadRepository.attachmentSessionKey() == epoch) {
+        if (threadRepository.attachmentSessionKey() == epoch) {
             result.getOrNull()?.let { next ->
                 unreadScopeSnapshot.value = next
                 if (!scopeAnchorCaptured) { scopeAnchorCaptured = true; firstUnread.value = next.firstUnreadMessageId }
@@ -192,6 +193,8 @@ class ThreadViewModel @Inject constructor(
         }
     }
     private fun refreshUnread() = unreadRefresh.request()
+
+    private val threadRefresh = app.pulse.domain.sync.CoalescedRefresh(viewModelScope) { reloadThread() }
 
     private var composerRevision = 0L
     private var threadDraftToken: app.pulse.domain.model.ComposerDraftToken? = null
@@ -277,36 +280,37 @@ class ThreadViewModel @Inject constructor(
 
     fun retry() {
         refreshUnread()
-        if (_state.value.loading) return
+        threadRefresh.request()
+    }
+
+    private suspend fun reloadThread() {
         _state.value = _state.value.copy(loading = true, error = null, offlineJumpId = null)
-        viewModelScope.launch {
-            try {
-                val (root, loadedReplies) = repo.loadThread(rootId)
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                if (!threadRootAvailable(root, conversationId, rootId)) throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
-                val now = System.currentTimeMillis()
-                val liveIds = loadedReplies.filter { it.conversationId == conversationId && it.threadRootId == rootId &&
-                    !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
-                    .mapTo(mutableSetOf()) { it.id }
-                _state.value = _state.value.copy(loading = false, unavailable = false, error = null, loadedReplyIds = liveIds, offlineJumpId = null)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                val denied = threadAccessDenied((failure as? PulseApiException)?.status)
-                val offlineTarget = if (initialJumpMessageId != null && app.pulse.domain.sync.mayUseOfflineThread(failure)) {
-                    try {
-                        repo.cachedThreadTarget(conversationId, rootId, initialJumpMessageId)?.second?.id
-                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                        throw cancelled
-                    } catch (cacheFailure: Exception) {
-                        null
-                    }
-                } else null
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                _state.value = _state.value.copy(loading = false, error = failure.message, offlineJumpId = offlineTarget,
-                    unavailable = _state.value.unavailable || denied,
-                    openedFile = if (denied) null else _state.value.openedFile)
-            }
+        try {
+            val (root, loadedReplies) = threadRepository.loadThread(rootId)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (!threadRootAvailable(root, conversationId, rootId)) throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
+            val now = System.currentTimeMillis()
+            val liveIds = loadedReplies.filter { it.conversationId == conversationId && it.threadRootId == rootId &&
+                !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
+                .mapTo(mutableSetOf()) { it.id }
+            _state.value = _state.value.copy(loading = false, unavailable = false, error = null, loadedReplyIds = liveIds, offlineJumpId = null)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            val denied = threadAccessDenied((failure as? PulseApiException)?.status)
+            val offlineTarget = if (initialJumpMessageId != null && app.pulse.domain.sync.mayUseOfflineThread(failure)) {
+                try {
+                    threadRepository.cachedThreadTarget(conversationId, rootId, initialJumpMessageId)?.second?.id
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (cacheFailure: Exception) {
+                    null
+                }
+            } else null
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            _state.value = _state.value.copy(loading = false, error = failure.message, offlineJumpId = offlineTarget,
+                unavailable = _state.value.unavailable || denied,
+                openedFile = if (denied) null else _state.value.openedFile)
         }
     }
 
@@ -407,6 +411,13 @@ fun ThreadScreen(
     var discardConfirm by remember { mutableStateOf<String?>(null) }
     val revealScope = androidx.compose.runtime.rememberCoroutineScope()
     val revealLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(viewModel, revealLifecycle) {
+        revealLifecycle.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            // A foreground return is a catch-up boundary even when relay state
+            // stayed true. Queue a trailing load if another load is still busy.
+            viewModel.retry()
+        }
+    }
     val clipboard = LocalClipboardManager.current
     discardConfirm?.let { clientId ->
         androidx.compose.material3.AlertDialog(
