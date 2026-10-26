@@ -2832,8 +2832,10 @@ class PulseRepositoryImpl constructor(
                     if (current != null && current.conversationId == conversationId && current.readByMembershipIds != proof) {
                         val updated = current.copy(readByMembershipIds = proof)
                         messageDao.upsertAll(listOf(MessageEntity.from(updated, reactionsJsonOf(updated))))
-                        messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
                     }
+                    // Even an unchanged/uncached negative is a newer observation.
+                    // Otherwise a page already in flight can reinstall older proof.
+                    messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
                     requireConversationOwner(owner, epoch)
                     true
                 }.also { messageCacheChanges.value = messageEventClock.get() }

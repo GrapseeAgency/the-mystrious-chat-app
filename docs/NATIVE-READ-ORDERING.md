@@ -20,6 +20,9 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 
 ### Durability follow-up
 
+- Android exact-message read reconciliation now advances its per-message fence even when the proof already equals storage or the row is absent. Otherwise a previously started page could restore stale proof after a canonical empty/unavailable response. Real Room/repository regressions hold the older HTTP page behind a response barrier and check both cases, including preservation of unrelated page rows. These new instrumented cases still require execution on the matching native build.
+- Swift public-socket owner-proof retention decodes membership from the cached conversation's wire snapshot; the domain conversation does not expose a `members` property. This corrects the compiler failure in revision `4179cf8`. Cached legacy summaries without membership remain fail-closed, and a rejoined membership cannot inherit the previous membership's proof.
+
 - The alternate Swift room uses the same coalescing refresh owner, independently of message-window tickets. Message traffic cannot continually retire its roster request. It subscribes to scoped read invalidations and conversation updates, and drops reader metadata on a current definitive access refusal.
 - Swift receipt-membership refresh now completes one canonical request and coalesces intervening events into a trailing pass, instead of cancelling/restarting on every receipt. Ordinary read traffic no longer prevents canonical privacy/member adoption. Conversation updates invalidate older metadata tickets; a current definitive access refusal removes displayed reader metadata. Leaving/backgrounding cancels the refresh generation, and foreground return catches up.
 
