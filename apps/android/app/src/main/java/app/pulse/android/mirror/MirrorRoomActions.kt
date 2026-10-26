@@ -492,7 +492,11 @@ internal fun MirrorThreadSheet(
     }
     val connectedFlow = remember(threadRepository) { threadRepository.observeConnected() }
     val connected by connectedFlow.collectAsStateWithLifecycle(initialValue = false)
-    LaunchedEffect(threadRepository, root.id, connected, scopeReadRevision) {
+    val readRevisionFlow = remember(threadRepository, root.conversationId) {
+        threadRepository.observeReadStateRevision(root.conversationId)
+    }
+    val readRevision by readRevisionFlow.collectAsStateWithLifecycle(initialValue = 0L)
+    LaunchedEffect(threadRepository, root.id, connected, scopeReadRevision, readRevision) {
         val result = threadRepository.readScopeState(root.conversationId, threadId = root.id)
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         result.getOrNull()?.let { snapshot ->

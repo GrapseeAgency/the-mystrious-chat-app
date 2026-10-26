@@ -56,6 +56,7 @@ internal class AccountRepositoryRouter(
                                 "events" -> Unit
                                 "observeConnected", "observePendingSettings", "observePendingReads" -> emit(false)
                                 "observeThreadAccessDenied" -> emit(true)
+                                "observeReadStateRevision" -> emit(0L)
                                 "observePersonalScreenPrivacy" -> emit(app.pulse.domain.model.PersonalScreenPrivacy())
                                 "observePresence" -> emit(emptySet<String>())
                                 "observeDraft" -> emit(null)

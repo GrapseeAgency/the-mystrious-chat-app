@@ -2333,6 +2333,7 @@ private struct ChatActionSheet: View {
         do {
             try await client.markRead(conversationId: conversation.id)
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            session.noteReadStateChanged(conversation.id)
             onChanged() // current counts, never an invented local zero
         } catch {
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
@@ -3481,7 +3482,7 @@ final class ChatsViewModel: ObservableObject {
                 if (try? await client.markRead(conversationId: conv.id)) != nil {
                     guard !Task.isCancelled, session.sessionGeneration == epoch, isConversationActionCurrent(ticket) else { return }
                     acknowledgeBatchSelection([conv.id], epoch: selectionTicket)
-                    session.noteInboxChanged() // reload canonical counts; never zero a newer arrival locally
+                    session.noteReadStateChanged(conv.id) // reload canonical scopes; never zero newer arrivals
                     read += 1
                 } else {
                     failed += 1

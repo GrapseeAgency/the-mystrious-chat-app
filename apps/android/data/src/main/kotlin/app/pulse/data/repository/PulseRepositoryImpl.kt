@@ -245,6 +245,21 @@ class PulseRepositoryImpl constructor(
         replay = 0, extraBufferCapacity = 128,
     )
     private val onlineIds = MutableStateFlow<Set<String>>(emptySet())
+    private val readStateRevisions = app.pulse.domain.sync.ReadStateInvalidations()
+    override fun observeReadStateRevision(conversationId: String): Flow<Long> = readStateRevisions.observe(conversationId)
+
+    private fun noteReadStateChanged(room: String) {
+        conversationSnapshots.invalidate(room)
+        invalidateReadProjections(room)
+        scheduleConversationsRefresh()
+    }
+
+    override fun invalidateReadProjections(conversationId: String) {
+        if (viewerId == null || conversationId.isBlank()) return
+        readStateRevisions.settled(conversationId)
+        scope.launch { refreshTopics(conversationId) }
+    }
+
 
     /**
      * Relay connection truth for the room offline banner. Seeded from the
@@ -277,6 +292,7 @@ class PulseRepositoryImpl constructor(
         viewerId = null
         queueOwner.value = null
         conversationSnapshots.clear()
+        readStateRevisions.clear()
         socket.disconnect()
         scope.coroutineContext.cancelChildren()
         pumpStarted = false
@@ -2786,27 +2802,34 @@ class PulseRepositoryImpl constructor(
             scheduleSelfHeal()
             return@withLock
         }
-        for (entry in wave7Dao.readJournal("read-journal:v1|$owner|")) {
-            requireConversationOwner(owner, epoch)
-            val read = runCatching { PulseJson.decodeFromString(QueuedRead.serializer(), entry.json) }.getOrNull()
-            if (read == null || read.owner != owner) {
-                wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
-                continue
+        val settledRooms = linkedSetOf<String>()
+        try {
+            for (entry in wave7Dao.readJournal("read-journal:v1|$owner|")) {
+                requireConversationOwner(owner, epoch)
+                val read = runCatching { PulseJson.decodeFromString(QueuedRead.serializer(), entry.json) }.getOrNull()
+                if (read == null || read.owner != owner) {
+                    wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
+                    continue
+                }
+                // Replay only the durable original intent, never prepare a fresh fence.
+                val response = api.markRead(read.room, owner, read.message, read.minimumReadAt, read.intent)
+                requireConversationOwner(owner, epoch)
+                val failure = (response as? PulseResult.Failure)?.let { apiExceptionOf(it) }
+                if (response is PulseResult.Success || failure?.status in setOf(400, 403, 404, 410, 422)) {
+                    settledRooms += read.room
+                    conversationSnapshots.invalidate(read.room)
+                    wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
+                } else {
+                    readReplayRetryAt = android.os.SystemClock.elapsedRealtime() + maxOf(SELF_HEAL_MS,
+                        app.pulse.domain.sync.visibleReadRetryDelay(failure, 1) ?: SELF_HEAL_MS)
+                    scheduleSelfHeal()
+                    break
+                }
             }
-            // Replay only the durable original intent, never prepare a fresh fence.
-            val response = api.markRead(read.room, owner, read.message, read.minimumReadAt, read.intent)
-            requireConversationOwner(owner, epoch)
-            val failure = (response as? PulseResult.Failure)?.let { apiExceptionOf(it) }
-            if (response is PulseResult.Success || failure?.status in setOf(400, 403, 404, 410, 422)) {
-                wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
-                conversationSnapshots.invalidate(read.room)
-                scheduleConversationsRefresh()
-            } else {
-                readReplayRetryAt = android.os.SystemClock.elapsedRealtime() + maxOf(SELF_HEAL_MS,
-                    app.pulse.domain.sync.visibleReadRetryDelay(failure, 1) ?: SELF_HEAL_MS)
-                scheduleSelfHeal()
-                break
-            }
+        } finally {
+            // Publish once per room/batch, including a valid server settlement
+            // whose local journal deletion failed. No optimistic count or Seen.
+            if (viewerId == owner && attachmentSession == epoch) settledRooms.forEach(::noteReadStateChanged)
         }
     }
 
@@ -2860,7 +2883,7 @@ class PulseRepositoryImpl constructor(
             requireConversationOwner(owner, epoch)
             // Do not zero newer arrivals or roll an entire stale conversation back
             // over messages/pins received while the read request was in flight.
-            if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
+            if (result.isSuccess && viewerId == owner) noteReadStateChanged(conversationId)
             result
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
             Result.failure(error)

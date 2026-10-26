@@ -146,6 +146,13 @@ public final class PulseSession: ObservableObject {
     }
     private var readFailureCount = 0
     private var readReceiptTask: Task<Void, Never>?
+    @Published private(set) var readStateRevisions: [String: UInt64] = [:]
+    func readStateRevision(_ room: String) -> UInt64 { readStateRevisions[room] ?? 0 }
+    func noteReadStateChanged(_ room: String) {
+        readStateRevisions[room, default: 0] &+= 1
+        noteInboxChanged()
+    }
+
     private var readReplayTask: Task<Void, Never>?
     private var readReplayID = UUID()
 
@@ -159,17 +166,24 @@ public final class PulseSession: ObservableObject {
             while let self, self.generation == epoch, !Task.isCancelled {
                 guard let reads = try? store.pendingReads(owner: owner), !reads.isEmpty else { return }
                 var retry: TimeInterval?
+                var settledRooms = Set<String>()
+                let publish: () -> Void = {
+                    if self.generation == epoch { settledRooms.forEach { self.noteReadStateChanged($0) } }
+                    settledRooms.removeAll()
+                }
+                defer { publish() }
                 for read in reads {
                     guard self.generation == epoch, !Task.isCancelled, read.owner == owner else { return }
                     do {
                         try await client.markRead(conversationId: read.room, messageId: read.message,
                             minimumReadAt: read.minimumReadAt, readIntent: read.intent)
-                        try store.acknowledgeRead(read)
                         guard self.generation == epoch else { return }
-                        self.noteInboxChanged()
+                        settledRooms.insert(read.room)
+                        try store.acknowledgeRead(read)
                         failures = 0
                     } catch {
                         if [400, 403, 404, 410, 422].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                            settledRooms.insert(read.room)
                             do { try store.acknowledgeRead(read) } catch { return }
                         } else {
                             failures += 1
@@ -179,6 +193,7 @@ public final class PulseSession: ObservableObject {
                         }
                     }
                 }
+                publish()
                 if let retry {
                     do { try await Task.sleep(nanoseconds: UInt64(retry * 1_000_000_000)) } catch { return }
                 }
@@ -814,6 +829,7 @@ public final class PulseSession: ObservableObject {
         readReplayID = UUID()
         readReplayTask?.cancel()
         readReplayTask = nil
+        readStateRevisions = [:]
         settingsWrites.cancelAll()
         startupTask?.cancel()
         startupTask = nil
@@ -1089,16 +1105,23 @@ public final class PulseSession: ObservableObject {
                 self?.toasts.show(line)
             }
         }
+        let readHintEpoch = generation
+        engine.onReadStateInvalidation = { [weak self] room in
+            guard let self, self.ready, self.generation == readHintEpoch else { return }
+            self.noteReadStateChanged(room)
+        }
         engine.onReadJournalFlush = { [weak self] in
             guard let self, self.ready, let owner = self.viewer?.id, let store = self.store else { return false }
             let client = self.api, epoch = self.generation
+            var settledRooms = Set<String>()
             let succeeded = await PulseReadJournalReplay.flush(store: store, owner: owner,
                 isCurrent: { self.generation == epoch && self.viewer?.id == owner },
+                onSettled: { settledRooms.insert($0.room) },
                 send: { read in
                     try await client.markRead(conversationId: read.room, messageId: read.message,
                         minimumReadAt: read.minimumReadAt, readIntent: read.intent)
                 })
-            if self.generation == epoch { self.noteInboxChanged() }
+            if self.generation == epoch { settledRooms.forEach { self.noteReadStateChanged($0) } }
             return succeeded
         }
         engine.onBadgeRefresh = { [weak self] in

@@ -176,6 +176,12 @@ public final class PulseOutboxEngine: ObservableObject {
     /// an unowned fire-and-forget read delivery still in flight.
     public var onReadJournalFlush: (() async -> Bool)?
     public var onBadgeRefresh: (() async -> Bool)?
+    var onReadStateInvalidation: ((String) -> Void)?
+    func invalidateReadProjections(_ room: String) {
+        guard !stopped, !room.isEmpty, room.count <= 128 else { return }
+        onReadStateInvalidation?(room)
+    }
+
 
     public func flushBackgroundQueues() async -> Bool {
         let messages = await flush() // Reads never hold up outgoing messages.

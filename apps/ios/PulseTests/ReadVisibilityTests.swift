@@ -337,23 +337,27 @@ extension ReadVisibilityTests {
             minimumReadAt: "2026-10-26T00:00:00Z", intent: "original.member")
         _ = try store.enqueueRead(read)
         var sent: [String] = []
-        let lost = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { row in
+        var settled: [String] = []
+        let lost = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }, onSettled: { settled.append($0.room) }) { row in
             sent.append(row.intent)
             throw PulseAPIClient.Failure(kind: .network, message: "ACK lost")
         }
         XCTAssertFalse(lost)
+        XCTAssertTrue(settled.isEmpty())
         XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
         var owned = true
-        let switched = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { owned }) { row in
+        let switched = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { owned }, onSettled: { settled.append($0.room) }) { row in
             sent.append(row.intent)
             owned = false
         }
         XCTAssertFalse(switched)
+        XCTAssertTrue(settled.isEmpty(), "Retired sessions cannot invalidate the new account's scopes")
         XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
-        let delivered = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { row in
+        let delivered = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }, onSettled: { settled.append($0.room) }) { row in
             sent.append(row.intent)
         }
         XCTAssertTrue(delivered)
+        XCTAssertEqual(settled, ["room"])
         XCTAssertEqual(sent, Array(repeating: "original.member", count: 3))
         XCTAssertTrue(try store.pendingReads(owner: "owner").isEmpty)
     }
@@ -364,16 +368,46 @@ extension ReadVisibilityTests {
         let read = PulseQueuedRead(owner: "owner", room: "room", message: "message",
             minimumReadAt: "2026-10-26T00:00:00Z", intent: "original.member")
         _ = try store.enqueueRead(read)
-        let retry = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { _ in
+        var settled: [String] = []
+        let retry = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }, onSettled: { settled.append($0.room) }) { _ in
             throw PulseAPIClient.Failure(kind: .network, message: "Rate limited", status: 429)
         }
         XCTAssertFalse(retry)
+        XCTAssertTrue(settled.isEmpty())
         XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
-        let retired = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { _ in
+        let retired = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }, onSettled: { settled.append($0.room) }) { _ in
             throw PulseAPIClient.Failure(kind: .forbidden, message: "Membership retired", status: 410)
         }
         XCTAssertTrue(retired)
+        XCTAssertEqual(settled, ["room"], "A refused scope needs canonical refresh, not invented read progress")
         XCTAssertTrue(try store.pendingReads(owner: "owner").isEmpty)
+    }
+
+    @MainActor
+    func testPushScopeInvalidationNeverResurrectsAStoppedEngine() throws {
+        let store = try PulseStore(path: ":memory:")
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false) { nil }
+        var rooms: [String] = []
+        engine.onReadStateInvalidation = { rooms.append($0) }
+        engine.invalidateReadProjections("room")
+        engine.invalidateReadProjections("")
+        engine.invalidateReadProjections(String(repeating: "x", count: 129))
+        XCTAssertEqual(rooms, ["room"])
+        engine.stop()
+        engine.invalidateReadProjections("other")
+        XCTAssertEqual(rooms, ["room"])
+    }
+
+    @MainActor
+    func testHTTPReadInvalidationIsRoomSpecificAndRetiredOnSessionStop() {
+        let session = PulseSession()
+        XCTAssertEqual(session.readStateRevision("room"), 0)
+        session.noteReadStateChanged("room")
+        session.noteReadStateChanged("room")
+        XCTAssertEqual(session.readStateRevision("room"), 2)
+        XCTAssertEqual(session.readStateRevision("other"), 0)
+        session.stop()
+        XCTAssertEqual(session.readStateRevision("room"), 0)
     }
 
     func testPipOccludesUnderlyingRoomButNotThreadPresentedAboveIt() {

@@ -22,6 +22,7 @@ import org.junit.Test
 class AccountRepositoryRouterTest {
     private class Account(val owner: String?) {
         val pendingReads = MutableStateFlow(true)
+        val readRevision = MutableStateFlow(4L)
         val draft = MutableStateFlow<String?>("draft-$owner")
         val search = MutableStateFlow(Result.success(listOf(app.pulse.domain.model.MessageHit(
             id = owner ?: "guest", conversationId = "room", conversationName = "Room", isGroup = false,
@@ -34,6 +35,7 @@ class AccountRepositoryRouterTest {
             when {
                 method.name == "observeDraft" -> draft
                 method.name == "observePendingReads" -> pendingReads
+                method.name == "observeReadStateRevision" -> readRevision
                 method.name == "observeMessageSearch" -> search
                 method.name == "getViewerId" -> owner
                 method.name == "equals" -> false
@@ -76,6 +78,21 @@ class AccountRepositoryRouterTest {
         assertEquals(listOf(listOf("a"), emptyList(), listOf("b")), seen)
         a.search.value = Result.success(emptyList()); runCurrent()
         assertEquals(listOf("b"), seen.last())
+    }
+
+    @Test fun readProjectionSwitchEmitsLongAndDoesNotReplayTheRetiredAccount() = runTest {
+        val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(a.repo, { b.repo }, { b.repo })
+        val seen = mutableListOf<Long>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            router.repository.observeReadStateRevision("room").toList(seen)
+        }
+        runCurrent(); router.repository.start("b"); runCurrent()
+        assertEquals(listOf(4L, 0L, 4L), seen)
+        a.readRevision.value = 9L; runCurrent()
+        assertEquals(listOf(4L, 0L, 4L), seen)
+        b.readRevision.value = 5L; runCurrent()
+        assertEquals(5L, seen.last())
     }
 
     @Test fun initialSnapshotReadsStoredValueRatherThanSyntheticNull() = runTest {

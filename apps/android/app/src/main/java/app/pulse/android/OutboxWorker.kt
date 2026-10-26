@@ -46,10 +46,14 @@ class OutboxWorker(
             if (!repo.startBackgroundIfIdle(owner)) return Result.retry()
             val target = repo.boundToCurrentAccount()
             if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) return Result.retry()
+            // A slow upload must not postpone the open thread's canonical refresh.
+            inputData.getString("readStateRoom")?.takeIf { it.isNotBlank() && it.length <= 128 }
+                ?.let(target::invalidateReadProjections)
             val report = target.flushOutbox()
             val pendingReads = target.flushReadReceipts().getOrThrow()
             // No count from a push is trusted. Read the full current inbox after replay.
             target.refreshConversations().getOrThrow()
+            if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) return Result.retry()
             val notifications = app.pulse.android.push.PulseMessageNotifications.reconcile(applicationContext, target) {
                 prefs.viewerId.first() == owner && graph.tokens().cached == token && repo.viewerId == owner
             }
@@ -82,9 +86,9 @@ class OutboxWorker(
          * running delivery and cannot lose an observation enqueued as that
          * worker completes. Failed/cancelled chains are replaced safely.
          */
-        fun enqueue(context: Context, recipientUserId: String? = null) {
+        fun enqueue(context: Context, recipientUserId: String? = null, readStateRoom: String? = null) {
             val request = OneTimeWorkRequestBuilder<OutboxWorker>()
-                .setInputData(androidx.work.workDataOf("recipientUserId" to recipientUserId))
+                .setInputData(androidx.work.workDataOf("recipientUserId" to recipientUserId, "readStateRoom" to readStateRoom))
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)

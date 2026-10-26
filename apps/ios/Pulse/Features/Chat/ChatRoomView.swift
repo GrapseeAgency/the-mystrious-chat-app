@@ -4071,6 +4071,17 @@ final class RoomViewModel: ObservableObject {
     func observe(session: PulseSession) {
         self.session = session
         cancellables.removeAll()
+        let readRoom = conversationId
+        session.$readStateRevisions
+            .map { $0[readRoom] ?? 0 }
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.readSessionGeneration == session.sessionGeneration else { return }
+                self.loadTopics(session: session)
+            }
+            .store(in: &cancellables)
         if let store = session.store {
             let epoch = session.sessionGeneration
             store.observeThreadReplyCounts(conversationId: conversationId)

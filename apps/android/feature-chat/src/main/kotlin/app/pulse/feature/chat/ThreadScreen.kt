@@ -212,6 +212,9 @@ class ThreadViewModel @Inject constructor(
         }
         retry()
         viewModelScope.launch {
+            repo.observeReadStateRevision(conversationId).collect { refreshUnread() }
+        }
+        viewModelScope.launch {
             repo.observeConnected().collect { connected ->
                 _state.value = _state.value.copy(connected = connected)
                 if (connected) retry()

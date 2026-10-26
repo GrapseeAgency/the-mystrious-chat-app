@@ -63,13 +63,13 @@ class PulseMessagingService : FirebaseMessagingService() {
         if (kind == "read-state") {
             // Cold FCM delivery can precede repository startup. The durable worker
             // checks the persisted owner; this hint never creates a notification or Seen.
-            if (!recipient.isNullOrBlank()) app.pulse.android.OutboxWorker.enqueue(this, recipient)
+            if (!recipient.isNullOrBlank()) app.pulse.android.OutboxWorker.enqueue(this, recipient, data["conversationId"])
             return
         }
         // Inbox reconciliation is independent of notification permission or a
         // short cold-owner lookup. The worker revalidates the durable recipient.
         if (kind == "message" && !recipient.isNullOrBlank()) {
-            app.pulse.android.OutboxWorker.enqueue(this, recipient)
+            app.pulse.android.OutboxWorker.enqueue(this, recipient, data["conversationId"])
         }
         // Modern message pushes are data-only, so cold-process delivery reaches
         // this guard too. Loading the durable owner must not depend on a UI
@@ -189,7 +189,7 @@ class PulseMessagingService : FirebaseMessagingService() {
             val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
             if (identity != null) nm.notify(identity.tag, 0, built)
             else nm.notify((conversationId ?: "pulse").hashCode().and(0x3FFFFFFF), built)
-            if (identity != null) app.pulse.android.OutboxWorker.enqueue(this, identity.ownerId)
+            if (identity != null) app.pulse.android.OutboxWorker.enqueue(this, identity.ownerId, identity.conversationId)
         }.onFailure { Log.w(TAG, "message notification failed", it) }
     }
 

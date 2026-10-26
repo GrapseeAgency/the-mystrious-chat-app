@@ -81,8 +81,14 @@ struct PulseApp: App {
     }
 
     @MainActor
-    static func flushBackgroundOutbox() async -> Bool {
-        if let active = PulseOutboxEngine.active { return await active.flushBackgroundQueues() }
+    static func flushBackgroundOutbox(recipientUserId: String? = nil, readStateRoom: String? = nil) async -> Bool {
+        if let recipientUserId, PulseKeychain.shared.loadViewer()?.id != recipientUserId { return false }
+        if let active = PulseOutboxEngine.active {
+            // Invalidate open scopes promptly even if an unrelated upload is slow.
+            // The session callback is generation-fenced and fetches canonical counts.
+            if let readStateRoom { active.invalidateReadProjections(readStateRoom) }
+            return await active.flushBackgroundQueues()
+        }
         guard let viewer = PulseKeychain.shared.loadViewer(),
               let token = PulseKeychain.shared.loadSessionToken() else { return false }
         PulseEndpoints.loadPersistedOverride()

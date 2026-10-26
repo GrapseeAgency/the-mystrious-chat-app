@@ -168,7 +168,8 @@ struct ThreadView: View {
             highlightedReplyId = nil
         }
         .onReceive(session.signals) { handle(signal: $0) }
-        .task(id: scopeReadRevision) {
+        .task(id: "\(scopeReadRevision):\(session.readStateRevision(conversation.id))") {
+            guard session.ready else { return }
             let epoch = session.sessionGeneration
             do {
                 let snapshot = try await session.api.readScopeState(conversationId: conversation.id, threadId: root.id)

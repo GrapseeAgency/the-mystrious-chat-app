@@ -154,7 +154,10 @@ public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
               PulseKeychain.shared.loadViewer()?.id == recipient else { return .noData }
         // A wake-up is only an invalidation. Never apply a delayed payload's count
         // or manufacture visibility; replay already-recorded reads, then fetch.
-        let work = Task { @MainActor in await PulseApp.flushBackgroundOutbox() }
+        let room = userInfo["conversationId"] as? String
+        let work = Task { @MainActor in
+            await PulseApp.flushBackgroundOutbox(recipientUserId: recipient, readStateRoom: room)
+        }
         let deadline = Task { @MainActor in
             do { try await Task.sleep(nanoseconds: 25_000_000_000) }
             catch { return }
