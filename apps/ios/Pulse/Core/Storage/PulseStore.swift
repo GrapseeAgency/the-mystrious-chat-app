@@ -347,9 +347,13 @@ public final class PulseStore: Sendable {
 
     func acknowledgeRead(_ observation: PulseQueuedRead) throws {
         try dbQueue.write { db in
-            if let json = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key = ?", arguments: [observation.key]),
-               let current = try? JSONDecoder().decode(PulseQueuedRead.self, from: Data(json.utf8)), current.intent == observation.intent {
-                try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [observation.key])
+            // Drain pre-upgrade records too, but never let their delayed ACK
+            // remove a distinct newer visit. Both keys are checked atomically.
+            for key in [observation.key, observation.legacyKey] {
+                if let json = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key = ?", arguments: [key]),
+                   let current = try? JSONDecoder().decode(PulseQueuedRead.self, from: Data(json.utf8)), current == observation {
+                    try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [key])
+                }
             }
         }
     }

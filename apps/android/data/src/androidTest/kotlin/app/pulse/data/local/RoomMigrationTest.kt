@@ -1021,8 +1021,32 @@ class RoomMigrationTest {
         assertTrue(db.wave7Dao().readJournal("read-journal:v1|other|").isEmpty())
         db.wave7Dao().acknowledgeReadIntent(first.key, "wrong")
         assertNotNull(db.wave7Dao().get(first.key))
+        val revisit = Wave7CacheEntity(app.pulse.domain.sync.readObservationJournalKey("owner", "seen", "after-manual.membership"), "new-visit", 2)
+        db.wave7Dao().insertReadIntent(revisit)
         db.wave7Dao().acknowledgeReadIntent(first.key, first.json)
         assertNull(db.wave7Dao().get(first.key))
+        db.wave7Dao().acknowledgeReadIntent(first.key, first.json) // duplicate old ACK
+        assertEquals(revisit, db.wave7Dao().get(revisit.key))
+        db.wave7Dao().clearAll()
+        assertEquals(listOf(revisit), db.wave7Dao().readJournal("read-journal:v1|owner|"))
+    }
+
+    @Test fun distinctReadVisitsSurviveDiskReopenAndAcknowledgementsInEitherOrder() = runBlocking {
+        fun open() = Room.databaseBuilder(context, PulseDatabase::class.java, dbName).build()
+        db = open()
+        val first = Wave7CacheEntity(app.pulse.domain.sync.readObservationJournalKey("owner", "seen", "first.member"), "first", 1)
+        val fresh = Wave7CacheEntity(app.pulse.domain.sync.readObservationJournalKey("owner", "seen", "fresh.member"), "fresh", 2)
+        db.wave7Dao().insertReadIntent(first)
+        db.wave7Dao().insertReadIntent(fresh)
+        db.wave7Dao().insertReadIntent(first.copy(json = "retry-must-not-rewrite"))
+        db.close()
+        db = open()
+        assertEquals(listOf(first, fresh), db.wave7Dao().readJournal("read-journal:v1|owner|"))
+        assertTrue(db.wave7Dao().readJournal("read-journal:v1|other|").isEmpty())
+        db.wave7Dao().acknowledgeReadIntent(fresh.key, fresh.json)
+        assertEquals(listOf(first), db.wave7Dao().readJournal("read-journal:v1|owner|"))
+        db.wave7Dao().acknowledgeReadIntent(first.key, first.json)
+        assertTrue(db.wave7Dao().readJournal("read-journal:v1|owner|").isEmpty())
     }
 
     @Test fun topicReadScopeSurvivesReopenWithoutCountingUnloadedExpiredReplies() = runBlocking {

@@ -188,7 +188,7 @@ extension ReadVisibilityTests {
         XCTAssertNil(gate.begin(roomId: "room", now: 1))
     }
 
-    func testReadJournalSurvivesReopenAndKeepsFirstIntentWithoutCrossOwnerReplay() throws {
+    func testReadJournalSurvivesReopenAndRetainsDistinctVisitsWithoutCrossOwnerReplay() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -200,13 +200,17 @@ extension ReadVisibilityTests {
         do {
             let store = try PulseStore(path: path)
             XCTAssertEqual(try store.enqueueRead(original).intent, original.intent)
-            XCTAssertEqual(try store.enqueueRead(newer).intent, original.intent)
+            XCTAssertEqual(try store.enqueueRead(newer).intent, newer.intent)
+            XCTAssertEqual(try store.enqueueRead(original).intent, original.intent) // original retry stays original
+            // A pre-upgrade journal row is also drainable after reopening.
+            try store.saveWave7Cache(key: original.legacyKey,
+                json: String(decoding: JSONEncoder().encode(original), as: UTF8.self), updatedAt: 0)
         }
         let reopened = try PulseStore(path: path)
         XCTAssertTrue(try reopened.pendingReads(owner: "another-account").isEmpty)
-        XCTAssertEqual(try reopened.pendingReads(owner: "owner").map(\.intent), [original.intent])
+        XCTAssertEqual(Set(try reopened.pendingReads(owner: "owner").map(\.intent)), Set([original.intent, newer.intent]))
         try reopened.acknowledgeRead(original)
-        _ = try reopened.enqueueRead(newer)
+        XCTAssertNil(try reopened.loadWave7Cache(key: original.legacyKey))
         try reopened.acknowledgeRead(original) // lost/duplicated old ACK must not delete the new observation
         XCTAssertEqual(try reopened.pendingReads(owner: "owner").map(\.intent), [newer.intent])
     }

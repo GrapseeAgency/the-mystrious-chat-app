@@ -8,6 +8,15 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class VisibleReadIntentTest {
+    @Test fun `distinct visits do not erase or inherit each others queued authority`() {
+        val first = readObservationJournalKey("owner", "message", "first.member")
+        val fresh = readObservationJournalKey("owner", "message", "after-manual.member")
+        assertNotEquals(first, fresh)
+        assertEquals(first, readObservationJournalKey("owner", "message", "first.member"))
+        assertTrue(first.startsWith("read-journal:v1|owner|"))
+        assertNotEquals(first, readObservationJournalKey("other", "message", "first.member"))
+    }
+
     @Test fun `lost ACK and reconnect retry retain the original fence even after server intent changes`() = runTest {
         var revision = "before-manual-unread"
         var captures = 0

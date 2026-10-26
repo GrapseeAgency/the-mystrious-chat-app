@@ -599,3 +599,22 @@ test('fresh authorized reading of an older row clears a known manual reminder wi
   await advanceReadReceipt(db,'room','reader','displayed',fresh)
   assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,false)
 }))
+
+for (const freshFirst of [false, true]) {
+  test(`distinct visits replay in either order without crossing a still-later marker (fresh first: ${freshFirst})`, () => fixture(async db => {
+    await seedRead(db)
+    await db.$executeRaw`INSERT INTO Conversation(id,updatedAt) VALUES ('room',${t(0)})`
+    const old = (await captureReadIntent(db,'room','reader')).readIntent
+    await setManualUnread(db,'room','reader',true,old)
+    const fresh = (await captureReadIntent(db,'room','reader')).readIntent
+    const intents = freshFirst ? [fresh, old] : [old, fresh]
+    for (const intent of intents) await advanceReadReceipt(db,'room','reader','displayed',intent)
+    assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,false)
+    assert.equal(await db.messageReadObservation.count(),1)
+    await setManualUnread(db,'room','reader',true,fresh)
+    // Lost ACK retries of BOTH observations retain their captured fences.
+    for (const intent of intents) await advanceReadReceipt(db,'room','reader','displayed',intent)
+    assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,true)
+    assert.equal(await db.messageReadObservation.count(),1)
+  }))
+}

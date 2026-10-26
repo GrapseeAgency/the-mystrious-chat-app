@@ -48,3 +48,8 @@ class VisibleReadScope(repository: PulseRepository, private val room: String) {
     }
     fun message(id: String) = VisibleReadIntent({ capture() }, { account.markReadThrough(room, id, it) })
 }
+
+/** A later real visit is not a retry: retain its distinct captured fence too.
+ * The legacy prefix remains readable; ACKs still compare exact stored payloads. */
+fun readObservationJournalKey(owner: String, message: String, intent: String): String =
+    "read-journal:v1|$owner|${intent.substringAfterLast('.')}|$message|$intent"

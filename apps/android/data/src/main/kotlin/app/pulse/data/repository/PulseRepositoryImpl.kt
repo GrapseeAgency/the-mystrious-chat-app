@@ -2829,7 +2829,7 @@ class PulseRepositoryImpl constructor(
                 val intent = readIntent ?: captureReadIntent(conversationId).getOrThrow()
                 kotlin.coroutines.coroutineContext.ensureActive()
                 requireConversationOwner(owner, epoch)
-                val key = "read-journal:v1|$owner|${intent.substringAfterLast('.')}|$messageId"
+                val key = app.pulse.domain.sync.readObservationJournalKey(owner, messageId, intent)
                 val json = PulseJson.encodeToString(QueuedRead.serializer(), QueuedRead(owner, conversationId, messageId, anchor.createdAt, intent))
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     wave7Dao.insertReadIntent(Wave7CacheEntity(key, json, System.currentTimeMillis()))

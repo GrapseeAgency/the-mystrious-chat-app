@@ -150,13 +150,16 @@ enum PulseVisibleReadRetry {
 }
 
 /// A dwell-qualified observation, not a new read intention at delivery time.
-struct PulseQueuedRead: Codable, Sendable {
+struct PulseQueuedRead: Codable, Sendable, Equatable {
     let owner: String
     let room: String
     let message: String
     let minimumReadAt: String
     let intent: String
-    var key: String { "read-journal:v1|\(owner)|\(intent.split(separator: ".").last.map(String.init) ?? intent)|\(message)" }
+    var legacyKey: String { "read-journal:v1|\(owner)|\(intent.split(separator: ".").last.map(String.init) ?? intent)|\(message)" }
+    // A new dwell with genuinely newer cached authority must not be swallowed
+    // by an earlier offline observation of the same message.
+    var key: String { legacyKey + "|" + intent }
 }
 
 /// One cancellation-aware background pass over ORIGINAL durable observations.
