@@ -132,7 +132,7 @@ async function fixture(run, database = db => db) {
       buildConversationSummary:async row=>({id:row.id,updatedAt:row.updatedAt.toISOString(),pinnedAt:null}),
     }, '({GET,POST})')
     const legacyRead=await load('src/app/api/conversations/[id]/read/route.ts',{
-      ...blockDeps,...reads,memberIdsOf:async()=>['owner','other'],
+      ...blockDeps,...reads,memberIdsOf:async()=>['owner','other'],invalidateNativeReadState:()=>{},
     },'POST')
     const messagesRoute=await load('src/app/api/conversations/[id]/messages/route.ts',{
       ...blockDeps,...sync,requireActionActor,parseIsoDate:reminderDeps.parseIsoDate,
@@ -161,7 +161,7 @@ async function fixture(run, database = db => db) {
     const readRoutes={}
     for (const [kind,method] of [['read-intent','GET'],['read-state','POST'],['mark-unread','PATCH']]) {
       readRoutes[kind]=await load(`src/app/api/conversations/[id]/${kind}/route.ts`,{
-        ...blockDeps,...reads,memberIdsOf:async()=>['owner','other'],
+        ...blockDeps,...reads,memberIdsOf:async()=>['owner','other'],invalidateNativeReadState:()=>{},
       },method)
     }
     const attention=(kind,body={},token='synthetic-owner',userId='owner')=>readRoutes[kind](new Request(

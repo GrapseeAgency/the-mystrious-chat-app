@@ -38,6 +38,12 @@ internal class AccountRepositoryRouter(
             "hashCode" -> System.identityHashCode(proxy)
             "toString" -> "AccountScopedPulseRepository"
             "start" -> synchronized(transitionLock) { active.value = startAccount(args!![0] as String); null }
+            "startBackgroundIfIdle" -> synchronized(transitionLock) {
+                val owner = args!![0] as String
+                val selected = active.value.viewerId
+                if (selected == null) { active.value = startAccount(owner); true }
+                else selected == owner
+            }
             "stop" -> synchronized(transitionLock) { active.value = stopAccount(); null }
             else -> if (method.returnType == Flow::class.java) {
                 flow {

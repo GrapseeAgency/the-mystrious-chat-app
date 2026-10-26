@@ -628,6 +628,11 @@ exports.Prisma.ReadLedgerMigrationScalarFieldEnum = {
   id: 'id'
 };
 
+exports.Prisma.PushReadStateCapabilityScalarFieldEnum = {
+  tokenId: 'tokenId',
+  version: 'version'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -690,7 +695,8 @@ exports.Prisma.ModelName = {
   ScheduledCreationOperation: 'ScheduledCreationOperation',
   ReadIntentState: 'ReadIntentState',
   MessageReadObservation: 'MessageReadObservation',
-  ReadLedgerMigration: 'ReadLedgerMigration'
+  ReadLedgerMigration: 'ReadLedgerMigration',
+  PushReadStateCapability: 'PushReadStateCapability'
 };
 
 /**

@@ -29,6 +29,7 @@ import UserNotifications
 // the failure states stay truthful about it.
 
 public enum PulsePushNotifications {
+    @MainActor private static var snapshotFence = PulseBadgeSnapshotFence()
     @MainActor private static var desiredBadge = 0
     @MainActor private static var appliedBadge: Int?
     @MainActor private static var badgeTask: Task<Void, Never>?
@@ -37,6 +38,7 @@ public enum PulsePushNotifications {
     /// account's badge. The OS still owns whether badge permission is enabled.
     @MainActor
     public static func setUnreadBadge(_ count: Int) {
+        _ = snapshotFence.reserve()
         desiredBadge = max(0, count)
         guard badgeTask == nil, appliedBadge != desiredBadge else { return }
         badgeTask = Task { @MainActor in
@@ -54,8 +56,9 @@ public enum PulsePushNotifications {
     static func refreshUnreadBadge(using client: PulseAPIClient, store: PulseStore, isCurrent: () -> Bool) async -> Bool {
         do {
             guard !Task.isCancelled, isCurrent() else { return false }
+            let ticket = snapshotFence.reserve()
             let rooms = try await client.conversations()
-            guard !Task.isCancelled, isCurrent() else { return false }
+            guard !Task.isCancelled, isCurrent(), snapshotFence.owns(ticket) else { return false }
             try store.upsert(conversations: rooms.map { $0.toDomain() }, replacingSnapshot: true)
             let count = rooms.filter { !$0.isArchived && $0.isSelf != true }
                 .reduce(0) { $0 + $1.removingExpiredSummary().badgeUnreadCount }
@@ -99,6 +102,25 @@ public enum PulsePushNotifications {
 /// (didRegister / didFail). Wired via @UIApplicationDelegateAdaptor in
 /// PulseApp; registration itself is requested by activate() above.
 public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
+
+    @MainActor
+    public func application(_ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+        guard let kind = userInfo["kind"] as? String, kind == "read-state" || kind == "message",
+              let recipient = userInfo["recipientUserId"] as? String,
+              PulseKeychain.shared.loadViewer()?.id == recipient else { return .noData }
+        // A wake-up is only an invalidation. Never apply a delayed payload's count
+        // or manufacture visibility; replay already-recorded reads, then fetch.
+        let work = Task { @MainActor in await PulseApp.flushBackgroundOutbox() }
+        let deadline = Task { @MainActor in
+            do { try await Task.sleep(nanoseconds: 25_000_000_000) }
+            catch { return }
+            work.cancel()
+        }
+        defer { deadline.cancel() }
+        return await work.value ? .newData : .failed
+    }
+
 
     public func application(
         _ application: UIApplication,
@@ -390,4 +412,12 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         }
         return error.localizedDescription
     }
+}
+
+/// Main-actor callers share this ordering fence across background fetches and
+/// foreground badge publications; OS write serialization alone is not enough.
+struct PulseBadgeSnapshotFence {
+    private var revision: UInt64 = 0
+    mutating func reserve() -> UInt64 { revision &+= 1; return revision }
+    func owns(_ ticket: UInt64) -> Bool { revision == ticket }
 }

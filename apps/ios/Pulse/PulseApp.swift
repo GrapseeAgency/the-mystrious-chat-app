@@ -81,7 +81,7 @@ struct PulseApp: App {
     }
 
     @MainActor
-    private static func flushBackgroundOutbox() async -> Bool {
+    static func flushBackgroundOutbox() async -> Bool {
         if let active = PulseOutboxEngine.active { return await active.flushBackgroundQueues() }
         guard let viewer = PulseKeychain.shared.loadViewer(),
               let token = PulseKeychain.shared.loadSessionToken() else { return false }

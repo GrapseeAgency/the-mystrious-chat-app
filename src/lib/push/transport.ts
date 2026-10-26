@@ -28,7 +28,7 @@ import { db } from '@/lib/db'
 export type PushPlatform = 'web' | 'android' | 'ios'
 
 export interface PushPayload {
-  kind: 'message' | 'gcall' | 'call'
+  kind: 'message' | 'gcall' | 'call' | 'read-state'
   /** Notification title - sender display name (or "Group call"). */
   title: string
   /** Notification body - preview text, or a generic line when previews are off. */
@@ -307,7 +307,8 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
           },
           android: {
             ttl: `${window.ttlSeconds}s`,
-            priority: payload.kind === 'message' ? 'normal' : 'high',
+            priority: payload.kind === 'message' || payload.kind === 'read-state' ? 'normal' : 'high',
+            ...(payload.kind === 'read-state' ? { collapse_key: 'pulse-read-state' } : {}),
           },
         },
       }),
@@ -331,12 +332,14 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
     const res = await postApns(origin, token, {
       authorization: `bearer ${bearer}`,
       'apns-topic': process.env.PULSE_APNS_BUNDLE_ID || 'app.pulse.chat',
-      'apns-push-type': 'alert',
-      'apns-priority': '10',
+      'apns-push-type': payload.kind === 'read-state' ? 'background' : 'alert',
+      'apns-priority': payload.kind === 'read-state' ? '5' : '10',
+      ...(payload.kind === 'read-state' ? { 'apns-collapse-id': 'pulse-read-state' } : {}),
       'apns-expiration': String(window.expiresAtSeconds),
       'content-type': 'application/json',
     }, {
-        aps: {
+        aps: payload.kind === 'read-state' ? { 'content-available': 1 } : {
+          ...(payload.kind === 'message' ? { 'content-available': 1 } : {}),
           alert: { title: payload.title, body: payload.body },
           sound: 'default',
           // R10 - remote message pushes render the OS quick-reply action: the
@@ -395,18 +398,23 @@ export async function fanoutPush(
   const ids = Array.from(new Set(userIds.filter((id) => typeof id === 'string' && id.trim())))
   if (ids.length === 0) return report
   try {
-    const online = await onlineUserIds()
+    // Read invalidations must reach another device even while this user is
+    // reading on an online device. They carry no count or read authority.
+    const online = payload.kind === 'read-state' ? new Set<string>() : await onlineUserIds()
     const targets = ids.filter((id) => !online.has(id))
     report.users = targets.length
     if (targets.length === 0) return report
-    const tokens = await db.pushToken.findMany({ where: { userId: { in: targets } } })
+    const capability = payload.kind === 'read-state' ? { readStateCapability: { is: { version: 1 } } } : {}
+    const tokens = await db.pushToken.findMany({ where: { userId: { in: targets }, ...capability } })
     report.devices = tokens.length
     for (const row of tokens) {
+      // Web Push requires a visible notification; never turn a read hint into a banner.
+      if (payload.kind === 'read-state' && row.platform === 'web') { report.skipped += 1; continue }
       if (!pushDeliveryWindow(payload)) { report.skipped += 1; continue }
       // A queued provider call must not use a registration rebound while earlier
       // devices were being processed. This is a preflight, not provider recall.
       const binding = { id: row.id, userId: row.userId, platform: row.platform, token: row.token, updatedAt: row.updatedAt }
-      if (!await db.pushToken.findFirst({ where: binding, select: { id: true } })) { report.skipped += 1; continue }
+      if (!await db.pushToken.findFirst({ where: { ...binding, ...capability }, select: { id: true } })) { report.skipped += 1; continue }
       const perUser: PushPayload = {
         ...payload,
         recipientUserId: row.userId,
@@ -446,4 +454,10 @@ export async function fanoutPush(
 /** Public key served to web clients for PushManager.subscribe({ userVisibleOnly, applicationServerKey }). */
 export function vapidPublicKey(): string {
   return process.env.VAPID_PUBLIC_KEY ?? ''
+}
+
+/** A best-effort wake-up, never read authority. Foreground/reconnect fetches
+ * remain necessary because providers/OSes may collapse or suppress delivery. */
+export function invalidateNativeReadState(userId: string, conversationId: string): void {
+  void fanoutPush([userId], { kind: 'read-state', title: '', body: '', conversationId })
 }

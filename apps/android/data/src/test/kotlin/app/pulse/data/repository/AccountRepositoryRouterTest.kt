@@ -20,11 +20,11 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountRepositoryRouterTest {
-    private class Account(val owner: String) {
+    private class Account(val owner: String?) {
         val pendingReads = MutableStateFlow(true)
         val draft = MutableStateFlow<String?>("draft-$owner")
         val search = MutableStateFlow(Result.success(listOf(app.pulse.domain.model.MessageHit(
-            id = owner, conversationId = "room", conversationName = "Room", isGroup = false,
+            id = owner ?: "guest", conversationId = "room", conversationName = "Room", isGroup = false,
             senderName = "Sender", senderColor = null, content = "body", createdAt = ""))))
         var completed = 0
         var completeRequest: (() -> Unit)? = null
@@ -109,4 +109,15 @@ class AccountRepositoryRouterTest {
         a.pendingReads.value = false; runCurrent()
         assertTrue(seen.last())
     }
+    @Test fun backgroundWakeCannotReplaceAForegroundAccountSelection() {
+        val guest = Account(null); val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(guest.repo, { if (it == "a") a.repo else b.repo }, { guest.repo })
+        assertTrue(router.repository.startBackgroundIfIdle("a"))
+        assertEquals("a", router.repository.viewerId)
+        router.repository.start("b")
+        assertFalse(router.repository.startBackgroundIfIdle("a"))
+        assertTrue(router.repository.startBackgroundIfIdle("b"))
+        assertEquals("b", router.repository.viewerId)
+    }
+
 }

@@ -800,6 +800,8 @@ model PushToken {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  readStateCapability PushReadStateCapability?
+
 }
 
 // Durable delivery receipt, intentionally retained after the message is deleted.
@@ -874,4 +876,12 @@ model MessageReadObservation {
 
 model ReadLedgerMigration {
   id String @id
+}
+
+// Explicit native protocol opt-in; old Android clients must never render an
+// unfamiliar background invalidation as a visible generic notification.
+model PushReadStateCapability {
+  tokenId String @id
+  token PushToken @relation(fields: [tokenId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  version Int @default(1)
 }

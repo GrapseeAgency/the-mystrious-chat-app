@@ -2,6 +2,16 @@ import XCTest
 @testable import Pulse
 
 final class ReadVisibilityTests: XCTestCase {
+    func testDelayedBackgroundBadgeSnapshotCannotCrossAnotherFetchOrForegroundPublication() {
+        var fence = PulseBadgeSnapshotFence()
+        let delayed = fence.reserve()
+        let newer = fence.reserve()
+        XCTAssertFalse(fence.owns(delayed))
+        XCTAssertTrue(fence.owns(newer))
+        _ = fence.reserve() // the foreground publishes a newer count
+        XCTAssertFalse(fence.owns(newer))
+    }
+
     func testThreadLeaseIgnoresUnderlyingRoomAndRestoresEitherDismissalOrder() {
         var surfaces = PulseReadSurfaces()
         surfaces.setPrimary(roomId: "room", messageId: "river")

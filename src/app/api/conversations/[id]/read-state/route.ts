@@ -1,3 +1,4 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 // Native read acceptance distinguishes actual visibility from deliberate mark-all.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -24,6 +25,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const owner = await db.user.findUnique({ where: { id: userId }, select: { preferences: true } })
     const recipients = receiptRecipients(userId, await memberIdsOf(id), owner?.preferences)
     await notifySocket('message:read', recipients, { conversationId: id, userId, lastReadAt: at.toISOString(), readerMembershipId: readIntent.split('.').at(-1), messageIds: messageId ? [messageId] : [], all: mode === 'all' })
+    invalidateNativeReadState(userId, id)
     return NextResponse.json({ ok: true, readReceiptVersion: 3, readIntent, conversationId: id, userId, mode,
       messageId: mode === 'visible' ? messageId : null, lastReadAt: at.toISOString() }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {

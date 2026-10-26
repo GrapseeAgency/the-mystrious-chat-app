@@ -122,6 +122,8 @@ final class MirrorViewModel: ObservableObject {
     private var inbox: [WireConversationSummary] = []
     private weak var store: PulseStore?
     private var refreshRevision: UInt64 = 0
+    private var inboxRequestID: UUID?
+    private var inboxRefreshQueued = false
     private var client: PulseAPIClient?
 
 
@@ -174,6 +176,7 @@ final class MirrorViewModel: ObservableObject {
     }
 
     func start(session: PulseSession) {
+        stop()
         badgeSession = session
         if client?.userId != session.api.userId || client?.baseURL != session.api.baseURL { profile = nil; stats = nil; coins = nil }
         client = session.api
@@ -187,7 +190,10 @@ final class MirrorViewModel: ObservableObject {
         timer?.invalidate()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in
+                guard let self, self.inboxRequestID == nil else { return }
+                self.refresh()
+            }
         }
     }
 
@@ -195,6 +201,7 @@ final class MirrorViewModel: ObservableObject {
         timer?.invalidate(); timer = nil
         expiryTimer?.invalidate(); expiryTimer = nil
         refreshRevision &+= 1
+        inboxRequestID = nil; inboxRefreshQueued = false
     }
 
     private func projectInbox() {
@@ -202,10 +209,11 @@ final class MirrorViewModel: ObservableObject {
         inbox = inbox.map { $0.removingExpiredSummary() }
         let built = inbox.filter { $0.isSelf != true }.map { Self.buildRow(summary: $0, viewerId: client.userId) }
         let active = built.filter { !$0.isArchived }, archived = built.filter { $0.isArchived }
+        let changed = rows != active || archivedRows != archived
         if rows != active { rows = active }
         if archivedRows != archived { archivedRows = archived }
         if let session = badgeSession, session.viewer?.id == client.userId, session.api.baseURL == client.baseURL,
-           session.dockUnreadCount != totalUnread { session.dockUnreadCount = totalUnread }
+           (changed || session.dockUnreadCount != totalUnread) { session.dockUnreadCount = totalUnread }
     }
 
     func cachedDirectConversation(viewerId: String, peerId: String) -> WireConversationSummary? {
@@ -224,17 +232,25 @@ final class MirrorViewModel: ObservableObject {
 
     func refresh() {
         guard let client else { return }
+        // Polling must not continually invalidate a request on a slow network.
+        // Explicit refreshes while one runs retain a trailing fetch instead.
+        guard inboxRequestID == nil else { inboxRefreshQueued = true; return }
+        let requestID = UUID(); inboxRequestID = requestID
         refreshRevision &+= 1
         let revision = refreshRevision, store = store
         Task { @MainActor in
             // rows - real summaries, same mapping the web home uses;
             // R64 web parity: the main list EXCLUDES archived chats
-            if let page = try? await client.conversations() {
-                guard revision == refreshRevision else { return }
+            let page = try? await client.conversations()
+            guard inboxRequestID == requestID else { return }
+            inboxRequestID = nil
+            let trailing = inboxRefreshQueued; inboxRefreshQueued = false
+            if let page, revision == refreshRevision {
                 inbox = page
                 projectInbox()
                 try? store?.upsert(conversations: page.map { $0.toDomain() }, replacingSnapshot: true)
             }
+            if trailing { refresh(); return }
             guard !Task.isCancelled, revision == refreshRevision else { return }
             // profile row (tolerant subset), stats, coins
             // Keep the endpoint and credential in the SAME captured API client.

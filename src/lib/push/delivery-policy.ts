@@ -2,7 +2,7 @@
  * or expired deadline never becomes the provider's default multi-week lifetime. */
 export function pushDeliveryWindow(payload: { kind: string; expiresAt?: string }, now = Date.now()):
   { ttlSeconds: number; expiresAtSeconds: number } | null {
-  const cap = payload.kind === 'message' ? 3600 : 60
+  const cap = payload.kind === 'message' || payload.kind === 'read-state' ? 3600 : 60
   let ttlSeconds = cap
   if (payload.expiresAt !== undefined) {
     const deadline = typeof payload.expiresAt === 'string' ? Date.parse(payload.expiresAt) : NaN

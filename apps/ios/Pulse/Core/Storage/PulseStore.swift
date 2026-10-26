@@ -943,7 +943,12 @@ public final class PulseStore: Sendable {
               let name: String = row["name"] else { return nil }
         if let raw: String = row["readStateJson"],
            let topic = try? JSONDecoder().decode(WireTopic.self, from: Data(raw.utf8)), topic.id == id {
-            return topic.removingExpiredUnread()
+            // JSON adds read metadata; normalized structural SQL fields remain
+            // authoritative (including the existing nil-emoji -> chat default).
+            return WireTopic(unreadCount: topic.unreadCount, firstUnreadMessageId: topic.firstUnreadMessageId,
+                unreadExpirations: topic.unreadExpirations, id: id, name: name,
+                emoji: row["emoji"], lastMessageAt: row["lastMessageAt"], messageCount: row["messageCount"])
+                .removingExpiredUnread()
         }
         let emoji: String? = row["emoji"]
         let lastMessageAt: String? = row["lastMessageAt"]

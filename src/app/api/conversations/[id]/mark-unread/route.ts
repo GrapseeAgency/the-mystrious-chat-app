@@ -1,3 +1,4 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 // /api/conversations/[id]/mark-unread - per-VIEWER unread dot
 // R44 - WhatsApp/Telegram "mark as unread": a participant flags a row so it
 // re-appears with the unread badge even with nothing new to read. The dot
@@ -42,6 +43,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   try {
     const receipt = await setManualUnread(db, id, userId, body.on, readIntent)
     await notifySocket('conversation:updated', [userId], { conversationId: id })
+    invalidateNativeReadState(userId, id)
     return NextResponse.json(receipt, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     if (error instanceof ReadReceiptError) return NextResponse.json({ error: error.message }, { status: error.status })

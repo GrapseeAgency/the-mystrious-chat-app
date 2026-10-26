@@ -35,15 +35,21 @@ class OutboxWorker(
         return try {
             val prefs = graph.prefs()
             val owner = prefs.viewerId.first() ?: return Result.success()
+            val recipient = inputData.getString("recipientUserId")
+            if (recipient != null && recipient != owner) return Result.success()
             val base = prefs.serverBase.first()
             if (!base.isNullOrBlank()) app.pulse.core.PulseEndpoints.applyBase(base)
             else graph.endpoints().applyPersisted()
             val token = graph.tokens().load() ?: return Result.retry()
             if (prefs.viewerId.first() != owner || graph.tokens().cached != token) return Result.retry()
             val repo = graph.pulseRepository()
-            repo.start(owner)
-            val report = repo.flushOutbox()
-            val pendingReads = repo.flushReadReceipts().getOrThrow()
+            if (!repo.startBackgroundIfIdle(owner)) return Result.retry()
+            val target = repo.boundToCurrentAccount()
+            if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) return Result.retry()
+            val report = target.flushOutbox()
+            val pendingReads = target.flushReadReceipts().getOrThrow()
+            // No count from a push is trusted. Read the full current inbox after replay.
+            target.refreshConversations().getOrThrow()
             if (report.pending > 0 || pendingReads > 0) Result.retry() else Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -73,8 +79,9 @@ class OutboxWorker(
          * running delivery and cannot lose an observation enqueued as that
          * worker completes. Failed/cancelled chains are replaced safely.
          */
-        fun enqueue(context: Context) {
+        fun enqueue(context: Context, recipientUserId: String? = null) {
             val request = OneTimeWorkRequestBuilder<OutboxWorker>()
+                .setInputData(androidx.work.workDataOf("recipientUserId" to recipientUserId))
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)

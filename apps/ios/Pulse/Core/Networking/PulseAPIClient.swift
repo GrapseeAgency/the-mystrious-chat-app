@@ -1249,6 +1249,7 @@ public struct PulseAPIClient: Sendable {
         _ = try await postRaw("/api/push/register", body: [
             "userId": userId,
             "platform": platform,
+            "readStateHints": 1,
             "token": token,
         ])
     }

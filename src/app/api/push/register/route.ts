@@ -8,6 +8,7 @@
 // endpoint URL as `endpoint`; mobile clients post their FCM/APNs token.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -31,15 +32,25 @@ export async function POST(req: Request) {
   if (!token || token.length > TOKEN_MAX) {
     return NextResponse.json({ error: `token is required (≤${TOKEN_MAX} chars).` }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'push registration')
+  if (denied) return denied
   const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
   if (!user) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
   }
 
-  const row = await db.pushToken.upsert({
-    where: { token },
-    update: { userId, platform, endpoint },
-    create: { userId, platform, token, endpoint },
+  const row = await db.$transaction(async tx => {
+    const row = await tx.pushToken.upsert({
+      where: { token }, update: { userId, platform, endpoint }, create: { userId, platform, token, endpoint },
+    })
+    if (platform !== 'web' && body.readStateHints === 1) {
+      await tx.pushReadStateCapability.upsert({ where: { tokenId: row.id },
+        update: { version: 1 }, create: { tokenId: row.id, version: 1 } })
+    } else {
+      // Re-registration from an older app revokes the capability atomically.
+      await tx.pushReadStateCapability.deleteMany({ where: { tokenId: row.id } })
+    }
+    return row
   })
   return NextResponse.json({ ok: true, id: row.id })
 }
@@ -50,10 +61,11 @@ export async function DELETE(req: Request) {
   if (!token) {
     return NextResponse.json({ error: 'token is required.' }, { status: 400 })
   }
-  try {
-    await db.pushToken.delete({ where: { token } })
-  } catch {
-    // already gone - idempotent
+  const row = await db.pushToken.findUnique({ where: { token } })
+  if (row) {
+    const denied = await requireActionOwner(req, row.userId, 'push removal')
+    if (denied) return denied
+    await db.pushToken.deleteMany({ where: { id: row.id, token, userId: row.userId, updatedAt: row.updatedAt } })
   }
   return NextResponse.json({ ok: true })
 }

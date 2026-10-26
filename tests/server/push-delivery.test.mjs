@@ -73,12 +73,13 @@ async function fixture(run) {
  const dir=await mkdtemp(join(tmpdir(),'push-transport-'));const db=new PrismaClient({datasourceUrl:`file:${join(dir,'test.sqlite')}`})
  try {
   await db.$executeRawUnsafe('CREATE TABLE PushToken(id TEXT PRIMARY KEY,userId TEXT,platform TEXT,token TEXT UNIQUE,endpoint TEXT,createdAt DATETIME,updatedAt DATETIME)')
+  await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261026_native_read_push.sql',import.meta.url),'utf8'))
   const seed=async(id,platform='android')=>db.pushToken.create({data:{id,userId:'owner',platform,token:`token-${id}`,createdAt:new Date(now-10000),updatedAt:new Date(now-1000)}})
   const source=(await readFile(new URL('../../src/lib/push/transport.ts',import.meta.url),'utf8'))
    .replace(/^import .*$/gm,'').replace(/^export /gm,'')
-  const requests=[];let androidResponse={status:200,body:{}};let iosResponse={status:200,body:null};let duringSend=async()=>{}
+  const requests=[];let androidResponse={status:200,body:{}};let iosResponse={status:200,body:null};let duringSend=async()=>{};let online=[]
   const fetch=async(url,options)=>{
-   if(url.endsWith('/online'))return new Response(JSON.stringify({onlineUserIds:[]}))
+   if(url.endsWith('/online'))return new Response(JSON.stringify({onlineUserIds:online}))
    requests.push({platform:'android',payload:JSON.parse(options.body)})
    await duringSend();return new Response(JSON.stringify(androidResponse.body),{status:androidResponse.status})
   }
@@ -89,7 +90,7 @@ async function fixture(run) {
     fcmBearer=async()=>"test-token";fcmCredentials=()=>({projectId:"test-project"});apnsBearer=async()=>"test-token";
     webPushSender=async()=>({sendNotification:web});
     return {fanoutPush,sendAndroid,sendIos,sendWeb};`)(...Object.values(bindings))
-  await run({db,seed,requests,...methods,setAndroid:r=>androidResponse=r,setIos:r=>iosResponse=r,onSend:f=>duringSend=f})
+  await run({db,seed,requests,...methods,setOnline:ids=>online=ids,setAndroid:r=>androidResponse=r,setIos:r=>iosResponse=r,onSend:f=>duringSend=f})
  }finally{await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
 test('actual senders retain registrations on payload/credential failure and serialize bounded expiry',()=>fixture(async h=>{
@@ -165,4 +166,69 @@ test('Android call push is data-only so native owner and deadline guards run in 
   await h.sendIos('token', ring)
   assert.equal(h.requests[1].payload.callId, 'current-call')
   assert.equal(h.requests[1].headers['apns-expiration'], String(now / 1000 + 12))
+}))
+
+
+test('read invalidations reach opted-in devices of an online user without banners or stale badge counts',()=>fixture(async h=>{
+ await h.seed('modern');await h.seed('legacy');await h.seed('ios','ios');await h.seed('web','web')
+ for(const tokenId of ['modern','ios','web']) await h.db.pushReadStateCapability.create({data:{tokenId,version:1}})
+ h.setOnline(['owner'])
+ const report=await h.fanoutPush(['owner'],{...payload,kind:'read-state',title:'',body:''})
+ assert.equal(report.sent,2);assert.equal(report.skipped,1)
+ const android=h.requests.find(r=>r.platform==='android').payload.message
+ assert.equal(android.token,'token-modern');assert.equal(android.notification,undefined)
+ assert.equal(android.data.recipientUserId,'owner');assert.equal(android.android.collapse_key,'pulse-read-state')
+ assert.equal(android.android.priority,'normal');assert.equal(android.data.badge,undefined)
+ const ios=h.requests.find(r=>r.platform==='ios')
+ assert.deepEqual(ios.payload.aps,{'content-available':1})
+ assert.equal(ios.headers['apns-push-type'],'background');assert.equal(ios.headers['apns-priority'],'5')
+ assert.equal(ios.headers['apns-collapse-id'],'pulse-read-state')
+}))
+test('a capability revoked during fanout prevents dispatch to a downgraded Android client',()=>fixture(async h=>{
+ for(const tokenId of ['a','b']) {await h.seed(tokenId);await h.db.pushReadStateCapability.create({data:{tokenId,version:1}})}
+ h.onSend(async()=>{await h.db.pushReadStateCapability.deleteMany({where:{tokenId:'b'}})})
+ const report=await h.fanoutPush(['owner'],{...payload,kind:'read-state'})
+ assert.equal(report.sent,1);assert.equal(report.skipped,1)
+}))
+test('ordinary APNs messages request background reconciliation without applying a queued badge number',()=>fixture(async h=>{
+ await h.sendIos('token',payload)
+ assert.equal(h.requests[0].payload.aps['content-available'],1)
+ assert.equal(h.requests[0].payload.aps.badge,undefined)
+ assert.equal(h.requests[0].payload.aps.alert.body,'Preview')
+}))
+
+async function registrationFixture(run) {
+ return fixture(async h=>{
+  await h.db.$executeRawUnsafe('CREATE TABLE User(id TEXT PRIMARY KEY)')
+  await h.db.$executeRawUnsafe("INSERT INTO User VALUES ('owner'),('other')")
+  const source=stripTypeScriptTypes(await readFile(new URL('../../src/app/api/push/register/route.ts',import.meta.url),'utf8'))
+   .replace(/^import .*$/gm,'').replace(/^export /gm,'')
+  let duringAuth=async()=>{}
+  const bindings={db:h.db,NextResponse:{json:Response.json},safeJson:req=>req.json(),strField:v=>typeof v==='string'?v.trim():'',
+   requireActionOwner:async(req,owner)=>{await duringAuth();return req.headers.get('authorization')===`Bearer ${owner}`?null:Response.json({error:'denied'},{status:403})}}
+  const methods=new Function(...Object.keys(bindings),source+';return {POST,DELETE}')(...Object.values(bindings))
+  const request=(method,body,owner='owner')=>methods[method](new Request('https://pulse.test/api/push/register',{method,headers:{authorization:`Bearer ${owner}`},body:JSON.stringify(body)}))
+  await run({...h,request,onAuth:f=>duringAuth=f})
+ })
+}
+test('push registration authenticates owner and atomically opts in or revokes read-hint compatibility',()=>registrationFixture(async h=>{
+ const body={userId:'owner',platform:'android',token:'new-token',readStateHints:1}
+ assert.equal((await h.request('POST',body,'other')).status,403)
+ assert.equal(await h.db.pushToken.count(),0)
+ assert.equal((await h.request('POST',body)).status,200)
+ assert.equal(await h.db.pushReadStateCapability.count(),1)
+ assert.equal((await h.request('POST',{...body,readStateHints:undefined})).status,200)
+ assert.equal(await h.db.pushReadStateCapability.count(),0)
+ assert.equal((await h.request('POST',{...body,platform:'web'})).status,200)
+ assert.equal(await h.db.pushReadStateCapability.count(),0)
+ assert.equal((await h.request('DELETE',{token:body.token},'other')).status,403)
+ assert.equal(await h.db.pushToken.count(),1)
+ assert.equal((await h.request('DELETE',{token:body.token})).status,200)
+ assert.equal(await h.db.pushToken.count(),0)
+}))
+test('logout removal cannot delete a token rebound during owner verification',()=>registrationFixture(async h=>{
+ await h.seed('a')
+ h.onAuth(async()=>{await h.db.pushToken.update({where:{id:'a'},data:{userId:'other'}})})
+ assert.equal((await h.request('DELETE',{token:'token-a'})).status,200)
+ assert.equal((await h.db.pushToken.findUnique({where:{id:'a'}})).userId,'other')
 }))

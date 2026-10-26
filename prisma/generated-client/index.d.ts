@@ -327,6 +327,11 @@ export type MessageReadObservation = $Result.DefaultSelection<Prisma.$MessageRea
  *
  */
 export type ReadLedgerMigration = $Result.DefaultSelection<Prisma.$ReadLedgerMigrationPayload>
+/**
+ * Model PushReadStateCapability
+ *
+ */
+export type PushReadStateCapability = $Result.DefaultSelection<Prisma.$PushReadStateCapabilityPayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -955,6 +960,16 @@ export class PrismaClient<
     * ```
     */
   get readLedgerMigration(): Prisma.ReadLedgerMigrationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.pushReadStateCapability`: Exposes CRUD operations for the **PushReadStateCapability** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more PushReadStateCapabilities
+    * const pushReadStateCapabilities = await prisma.pushReadStateCapability.findMany()
+    * ```
+    */
+  get pushReadStateCapability(): Prisma.PushReadStateCapabilityDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1446,7 +1461,8 @@ export namespace Prisma {
     ScheduledCreationOperation: 'ScheduledCreationOperation',
     ReadIntentState: 'ReadIntentState',
     MessageReadObservation: 'MessageReadObservation',
-    ReadLedgerMigration: 'ReadLedgerMigration'
+    ReadLedgerMigration: 'ReadLedgerMigration',
+    PushReadStateCapability: 'PushReadStateCapability'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1465,7 +1481,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -5243,6 +5259,80 @@ export namespace Prisma {
           }
         }
       }
+      PushReadStateCapability: {
+        payload: Prisma.$PushReadStateCapabilityPayload<ExtArgs>
+        fields: Prisma.PushReadStateCapabilityFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.PushReadStateCapabilityFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.PushReadStateCapabilityFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>
+          }
+          findFirst: {
+            args: Prisma.PushReadStateCapabilityFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.PushReadStateCapabilityFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>
+          }
+          findMany: {
+            args: Prisma.PushReadStateCapabilityFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>[]
+          }
+          create: {
+            args: Prisma.PushReadStateCapabilityCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>
+          }
+          createMany: {
+            args: Prisma.PushReadStateCapabilityCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.PushReadStateCapabilityCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>[]
+          }
+          delete: {
+            args: Prisma.PushReadStateCapabilityDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>
+          }
+          update: {
+            args: Prisma.PushReadStateCapabilityUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>
+          }
+          deleteMany: {
+            args: Prisma.PushReadStateCapabilityDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.PushReadStateCapabilityUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.PushReadStateCapabilityUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>[]
+          }
+          upsert: {
+            args: Prisma.PushReadStateCapabilityUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$PushReadStateCapabilityPayload>
+          }
+          aggregate: {
+            args: Prisma.PushReadStateCapabilityAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregatePushReadStateCapability>
+          }
+          groupBy: {
+            args: Prisma.PushReadStateCapabilityGroupByArgs<ExtArgs>
+            result: $Utils.Optional<PushReadStateCapabilityGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.PushReadStateCapabilityCountArgs<ExtArgs>
+            result: $Utils.Optional<PushReadStateCapabilityCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -5390,6 +5480,7 @@ export namespace Prisma {
     readIntentState?: ReadIntentStateOmit
     messageReadObservation?: MessageReadObservationOmit
     readLedgerMigration?: ReadLedgerMigrationOmit
+    pushReadStateCapability?: PushReadStateCapabilityOmit
   }
 
   /* Types for Logging */
@@ -54336,6 +54427,7 @@ export namespace Prisma {
     endpoint?: boolean
     createdAt?: boolean
     updatedAt?: boolean
+    readStateCapability?: boolean | PushToken$readStateCapabilityArgs<ExtArgs>
   }, ExtArgs["result"]["pushToken"]>
 
   export type PushTokenSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
@@ -54369,10 +54461,17 @@ export namespace Prisma {
   }
 
   export type PushTokenOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "platform" | "token" | "endpoint" | "createdAt" | "updatedAt", ExtArgs["result"]["pushToken"]>
+  export type PushTokenInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    readStateCapability?: boolean | PushToken$readStateCapabilityArgs<ExtArgs>
+  }
+  export type PushTokenIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
+  export type PushTokenIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
 
   export type $PushTokenPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     name: "PushToken"
-    objects: {}
+    objects: {
+      readStateCapability: Prisma.$PushReadStateCapabilityPayload<ExtArgs> | null
+    }
     scalars: $Extensions.GetPayloadResult<{
       id: string
       userId: string
@@ -54775,6 +54874,7 @@ export namespace Prisma {
    */
   export interface Prisma__PushTokenClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
     readonly [Symbol.toStringTag]: "PrismaPromise"
+    readStateCapability<T extends PushToken$readStateCapabilityArgs<ExtArgs> = {}>(args?: Subset<T, PushToken$readStateCapabilityArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -54828,6 +54928,10 @@ export namespace Prisma {
      */
     omit?: PushTokenOmit<ExtArgs> | null
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
+    /**
      * Filter, which PushToken to fetch.
      */
     where: PushTokenWhereUniqueInput
@@ -54846,6 +54950,10 @@ export namespace Prisma {
      */
     omit?: PushTokenOmit<ExtArgs> | null
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
+    /**
      * Filter, which PushToken to fetch.
      */
     where: PushTokenWhereUniqueInput
@@ -54863,6 +54971,10 @@ export namespace Prisma {
      * Omit specific fields from the PushToken
      */
     omit?: PushTokenOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
     /**
      * Filter, which PushToken to fetch.
      */
@@ -54912,6 +55024,10 @@ export namespace Prisma {
      */
     omit?: PushTokenOmit<ExtArgs> | null
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
+    /**
      * Filter, which PushToken to fetch.
      */
     where?: PushTokenWhereInput
@@ -54960,6 +55076,10 @@ export namespace Prisma {
      */
     omit?: PushTokenOmit<ExtArgs> | null
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
+    /**
      * Filter, which PushTokens to fetch.
      */
     where?: PushTokenWhereInput
@@ -55002,6 +55122,10 @@ export namespace Prisma {
      * Omit specific fields from the PushToken
      */
     omit?: PushTokenOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
     /**
      * The data needed to create a PushToken.
      */
@@ -55048,6 +55172,10 @@ export namespace Prisma {
      * Omit specific fields from the PushToken
      */
     omit?: PushTokenOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
     /**
      * The data needed to update a PushToken.
      */
@@ -55115,6 +55243,10 @@ export namespace Prisma {
      */
     omit?: PushTokenOmit<ExtArgs> | null
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
+    /**
      * The filter to search for the PushToken to update in case it exists.
      */
     where: PushTokenWhereUniqueInput
@@ -55141,6 +55273,10 @@ export namespace Prisma {
      */
     omit?: PushTokenOmit<ExtArgs> | null
     /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
+    /**
      * Filter which PushToken to delete.
      */
     where: PushTokenWhereUniqueInput
@@ -55161,6 +55297,25 @@ export namespace Prisma {
   }
 
   /**
+   * PushToken.readStateCapability
+   */
+  export type PushToken$readStateCapabilityArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    where?: PushReadStateCapabilityWhereInput
+  }
+
+  /**
    * PushToken without action
    */
   export type PushTokenDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -55172,6 +55327,10 @@ export namespace Prisma {
      * Omit specific fields from the PushToken
      */
     omit?: PushTokenOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushTokenInclude<ExtArgs> | null
   }
 
 
@@ -63098,6 +63257,1057 @@ export namespace Prisma {
 
 
   /**
+   * Model PushReadStateCapability
+   */
+
+  export type AggregatePushReadStateCapability = {
+    _count: PushReadStateCapabilityCountAggregateOutputType | null
+    _avg: PushReadStateCapabilityAvgAggregateOutputType | null
+    _sum: PushReadStateCapabilitySumAggregateOutputType | null
+    _min: PushReadStateCapabilityMinAggregateOutputType | null
+    _max: PushReadStateCapabilityMaxAggregateOutputType | null
+  }
+
+  export type PushReadStateCapabilityAvgAggregateOutputType = {
+    version: number | null
+  }
+
+  export type PushReadStateCapabilitySumAggregateOutputType = {
+    version: number | null
+  }
+
+  export type PushReadStateCapabilityMinAggregateOutputType = {
+    tokenId: string | null
+    version: number | null
+  }
+
+  export type PushReadStateCapabilityMaxAggregateOutputType = {
+    tokenId: string | null
+    version: number | null
+  }
+
+  export type PushReadStateCapabilityCountAggregateOutputType = {
+    tokenId: number
+    version: number
+    _all: number
+  }
+
+
+  export type PushReadStateCapabilityAvgAggregateInputType = {
+    version?: true
+  }
+
+  export type PushReadStateCapabilitySumAggregateInputType = {
+    version?: true
+  }
+
+  export type PushReadStateCapabilityMinAggregateInputType = {
+    tokenId?: true
+    version?: true
+  }
+
+  export type PushReadStateCapabilityMaxAggregateInputType = {
+    tokenId?: true
+    version?: true
+  }
+
+  export type PushReadStateCapabilityCountAggregateInputType = {
+    tokenId?: true
+    version?: true
+    _all?: true
+  }
+
+  export type PushReadStateCapabilityAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which PushReadStateCapability to aggregate.
+     */
+    where?: PushReadStateCapabilityWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of PushReadStateCapabilities to fetch.
+     */
+    orderBy?: PushReadStateCapabilityOrderByWithRelationInput | PushReadStateCapabilityOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: PushReadStateCapabilityWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` PushReadStateCapabilities from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` PushReadStateCapabilities.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned PushReadStateCapabilities
+    **/
+    _count?: true | PushReadStateCapabilityCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to average
+    **/
+    _avg?: PushReadStateCapabilityAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to sum
+    **/
+    _sum?: PushReadStateCapabilitySumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: PushReadStateCapabilityMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: PushReadStateCapabilityMaxAggregateInputType
+  }
+
+  export type GetPushReadStateCapabilityAggregateType<T extends PushReadStateCapabilityAggregateArgs> = {
+        [P in keyof T & keyof AggregatePushReadStateCapability]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregatePushReadStateCapability[P]>
+      : GetScalarType<T[P], AggregatePushReadStateCapability[P]>
+  }
+
+
+
+
+  export type PushReadStateCapabilityGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: PushReadStateCapabilityWhereInput
+    orderBy?: PushReadStateCapabilityOrderByWithAggregationInput | PushReadStateCapabilityOrderByWithAggregationInput[]
+    by: PushReadStateCapabilityScalarFieldEnum[] | PushReadStateCapabilityScalarFieldEnum
+    having?: PushReadStateCapabilityScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: PushReadStateCapabilityCountAggregateInputType | true
+    _avg?: PushReadStateCapabilityAvgAggregateInputType
+    _sum?: PushReadStateCapabilitySumAggregateInputType
+    _min?: PushReadStateCapabilityMinAggregateInputType
+    _max?: PushReadStateCapabilityMaxAggregateInputType
+  }
+
+  export type PushReadStateCapabilityGroupByOutputType = {
+    tokenId: string
+    version: number
+    _count: PushReadStateCapabilityCountAggregateOutputType | null
+    _avg: PushReadStateCapabilityAvgAggregateOutputType | null
+    _sum: PushReadStateCapabilitySumAggregateOutputType | null
+    _min: PushReadStateCapabilityMinAggregateOutputType | null
+    _max: PushReadStateCapabilityMaxAggregateOutputType | null
+  }
+
+  type GetPushReadStateCapabilityGroupByPayload<T extends PushReadStateCapabilityGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<PushReadStateCapabilityGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof PushReadStateCapabilityGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], PushReadStateCapabilityGroupByOutputType[P]>
+            : GetScalarType<T[P], PushReadStateCapabilityGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type PushReadStateCapabilitySelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    tokenId?: boolean
+    version?: boolean
+    token?: boolean | PushTokenDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["pushReadStateCapability"]>
+
+  export type PushReadStateCapabilitySelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    tokenId?: boolean
+    version?: boolean
+    token?: boolean | PushTokenDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["pushReadStateCapability"]>
+
+  export type PushReadStateCapabilitySelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    tokenId?: boolean
+    version?: boolean
+    token?: boolean | PushTokenDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["pushReadStateCapability"]>
+
+  export type PushReadStateCapabilitySelectScalar = {
+    tokenId?: boolean
+    version?: boolean
+  }
+
+  export type PushReadStateCapabilityOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"tokenId" | "version", ExtArgs["result"]["pushReadStateCapability"]>
+  export type PushReadStateCapabilityInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    token?: boolean | PushTokenDefaultArgs<ExtArgs>
+  }
+  export type PushReadStateCapabilityIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    token?: boolean | PushTokenDefaultArgs<ExtArgs>
+  }
+  export type PushReadStateCapabilityIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    token?: boolean | PushTokenDefaultArgs<ExtArgs>
+  }
+
+  export type $PushReadStateCapabilityPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "PushReadStateCapability"
+    objects: {
+      token: Prisma.$PushTokenPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      tokenId: string
+      version: number
+    }, ExtArgs["result"]["pushReadStateCapability"]>
+    composites: {}
+  }
+
+  type PushReadStateCapabilityGetPayload<S extends boolean | null | undefined | PushReadStateCapabilityDefaultArgs> = $Result.GetResult<Prisma.$PushReadStateCapabilityPayload, S>
+
+  type PushReadStateCapabilityCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<PushReadStateCapabilityFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: PushReadStateCapabilityCountAggregateInputType | true
+    }
+
+  export interface PushReadStateCapabilityDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['PushReadStateCapability'], meta: { name: 'PushReadStateCapability' } }
+    /**
+     * Find zero or one PushReadStateCapability that matches the filter.
+     * @param {PushReadStateCapabilityFindUniqueArgs} args - Arguments to find a PushReadStateCapability
+     * @example
+     * // Get one PushReadStateCapability
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends PushReadStateCapabilityFindUniqueArgs>(args: SelectSubset<T, PushReadStateCapabilityFindUniqueArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one PushReadStateCapability that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {PushReadStateCapabilityFindUniqueOrThrowArgs} args - Arguments to find a PushReadStateCapability
+     * @example
+     * // Get one PushReadStateCapability
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends PushReadStateCapabilityFindUniqueOrThrowArgs>(args: SelectSubset<T, PushReadStateCapabilityFindUniqueOrThrowArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first PushReadStateCapability that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {PushReadStateCapabilityFindFirstArgs} args - Arguments to find a PushReadStateCapability
+     * @example
+     * // Get one PushReadStateCapability
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends PushReadStateCapabilityFindFirstArgs>(args?: SelectSubset<T, PushReadStateCapabilityFindFirstArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first PushReadStateCapability that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {PushReadStateCapabilityFindFirstOrThrowArgs} args - Arguments to find a PushReadStateCapability
+     * @example
+     * // Get one PushReadStateCapability
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends PushReadStateCapabilityFindFirstOrThrowArgs>(args?: SelectSubset<T, PushReadStateCapabilityFindFirstOrThrowArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more PushReadStateCapabilities that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {PushReadStateCapabilityFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all PushReadStateCapabilities
+     * const pushReadStateCapabilities = await prisma.pushReadStateCapability.findMany()
+     *
+     * // Get first 10 PushReadStateCapabilities
+     * const pushReadStateCapabilities = await prisma.pushReadStateCapability.findMany({ take: 10 })
+     *
+     * // Only select the `tokenId`
+     * const pushReadStateCapabilityWithTokenIdOnly = await prisma.pushReadStateCapability.findMany({ select: { tokenId: true } })
+     *
+     */
+    findMany<T extends PushReadStateCapabilityFindManyArgs>(args?: SelectSubset<T, PushReadStateCapabilityFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a PushReadStateCapability.
+     * @param {PushReadStateCapabilityCreateArgs} args - Arguments to create a PushReadStateCapability.
+     * @example
+     * // Create one PushReadStateCapability
+     * const PushReadStateCapability = await prisma.pushReadStateCapability.create({
+     *   data: {
+     *     // ... data to create a PushReadStateCapability
+     *   }
+     * })
+     *
+     */
+    create<T extends PushReadStateCapabilityCreateArgs>(args: SelectSubset<T, PushReadStateCapabilityCreateArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many PushReadStateCapabilities.
+     * @param {PushReadStateCapabilityCreateManyArgs} args - Arguments to create many PushReadStateCapabilities.
+     * @example
+     * // Create many PushReadStateCapabilities
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends PushReadStateCapabilityCreateManyArgs>(args?: SelectSubset<T, PushReadStateCapabilityCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many PushReadStateCapabilities and returns the data saved in the database.
+     * @param {PushReadStateCapabilityCreateManyAndReturnArgs} args - Arguments to create many PushReadStateCapabilities.
+     * @example
+     * // Create many PushReadStateCapabilities
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many PushReadStateCapabilities and only return the `tokenId`
+     * const pushReadStateCapabilityWithTokenIdOnly = await prisma.pushReadStateCapability.createManyAndReturn({
+     *   select: { tokenId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends PushReadStateCapabilityCreateManyAndReturnArgs>(args?: SelectSubset<T, PushReadStateCapabilityCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a PushReadStateCapability.
+     * @param {PushReadStateCapabilityDeleteArgs} args - Arguments to delete one PushReadStateCapability.
+     * @example
+     * // Delete one PushReadStateCapability
+     * const PushReadStateCapability = await prisma.pushReadStateCapability.delete({
+     *   where: {
+     *     // ... filter to delete one PushReadStateCapability
+     *   }
+     * })
+     *
+     */
+    delete<T extends PushReadStateCapabilityDeleteArgs>(args: SelectSubset<T, PushReadStateCapabilityDeleteArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one PushReadStateCapability.
+     * @param {PushReadStateCapabilityUpdateArgs} args - Arguments to update one PushReadStateCapability.
+     * @example
+     * // Update one PushReadStateCapability
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends PushReadStateCapabilityUpdateArgs>(args: SelectSubset<T, PushReadStateCapabilityUpdateArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more PushReadStateCapabilities.
+     * @param {PushReadStateCapabilityDeleteManyArgs} args - Arguments to filter PushReadStateCapabilities to delete.
+     * @example
+     * // Delete a few PushReadStateCapabilities
+     * const { count } = await prisma.pushReadStateCapability.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends PushReadStateCapabilityDeleteManyArgs>(args?: SelectSubset<T, PushReadStateCapabilityDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more PushReadStateCapabilities.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {PushReadStateCapabilityUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many PushReadStateCapabilities
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends PushReadStateCapabilityUpdateManyArgs>(args: SelectSubset<T, PushReadStateCapabilityUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more PushReadStateCapabilities and returns the data updated in the database.
+     * @param {PushReadStateCapabilityUpdateManyAndReturnArgs} args - Arguments to update many PushReadStateCapabilities.
+     * @example
+     * // Update many PushReadStateCapabilities
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more PushReadStateCapabilities and only return the `tokenId`
+     * const pushReadStateCapabilityWithTokenIdOnly = await prisma.pushReadStateCapability.updateManyAndReturn({
+     *   select: { tokenId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends PushReadStateCapabilityUpdateManyAndReturnArgs>(args: SelectSubset<T, PushReadStateCapabilityUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one PushReadStateCapability.
+     * @param {PushReadStateCapabilityUpsertArgs} args - Arguments to update or create a PushReadStateCapability.
+     * @example
+     * // Update or create a PushReadStateCapability
+     * const pushReadStateCapability = await prisma.pushReadStateCapability.upsert({
+     *   create: {
+     *     // ... data to create a PushReadStateCapability
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the PushReadStateCapability we want to update
+     *   }
+     * })
+     */
+    upsert<T extends PushReadStateCapabilityUpsertArgs>(args: SelectSubset<T, PushReadStateCapabilityUpsertArgs<ExtArgs>>): Prisma__PushReadStateCapabilityClient<$Result.GetResult<Prisma.$PushReadStateCapabilityPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of PushReadStateCapabilities.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {PushReadStateCapabilityCountArgs} args - Arguments to filter PushReadStateCapabilities to count.
+     * @example
+     * // Count the number of PushReadStateCapabilities
+     * const count = await prisma.pushReadStateCapability.count({
+     *   where: {
+     *     // ... the filter for the PushReadStateCapabilities we want to count
+     *   }
+     * })
+    **/
+    count<T extends PushReadStateCapabilityCountArgs>(
+      args?: Subset<T, PushReadStateCapabilityCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], PushReadStateCapabilityCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a PushReadStateCapability.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {PushReadStateCapabilityAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends PushReadStateCapabilityAggregateArgs>(args: Subset<T, PushReadStateCapabilityAggregateArgs>): Prisma.PrismaPromise<GetPushReadStateCapabilityAggregateType<T>>
+
+    /**
+     * Group by PushReadStateCapability.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {PushReadStateCapabilityGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends PushReadStateCapabilityGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: PushReadStateCapabilityGroupByArgs['orderBy'] }
+        : { orderBy?: PushReadStateCapabilityGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, PushReadStateCapabilityGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetPushReadStateCapabilityGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the PushReadStateCapability model
+   */
+  readonly fields: PushReadStateCapabilityFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for PushReadStateCapability.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__PushReadStateCapabilityClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    token<T extends PushTokenDefaultArgs<ExtArgs> = {}>(args?: Subset<T, PushTokenDefaultArgs<ExtArgs>>): Prisma__PushTokenClient<$Result.GetResult<Prisma.$PushTokenPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the PushReadStateCapability model
+   */
+  interface PushReadStateCapabilityFieldRefs {
+    readonly tokenId: FieldRef<"PushReadStateCapability", 'String'>
+    readonly version: FieldRef<"PushReadStateCapability", 'Int'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * PushReadStateCapability findUnique
+   */
+  export type PushReadStateCapabilityFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * Filter, which PushReadStateCapability to fetch.
+     */
+    where: PushReadStateCapabilityWhereUniqueInput
+  }
+
+  /**
+   * PushReadStateCapability findUniqueOrThrow
+   */
+  export type PushReadStateCapabilityFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * Filter, which PushReadStateCapability to fetch.
+     */
+    where: PushReadStateCapabilityWhereUniqueInput
+  }
+
+  /**
+   * PushReadStateCapability findFirst
+   */
+  export type PushReadStateCapabilityFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * Filter, which PushReadStateCapability to fetch.
+     */
+    where?: PushReadStateCapabilityWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of PushReadStateCapabilities to fetch.
+     */
+    orderBy?: PushReadStateCapabilityOrderByWithRelationInput | PushReadStateCapabilityOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for PushReadStateCapabilities.
+     */
+    cursor?: PushReadStateCapabilityWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` PushReadStateCapabilities from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` PushReadStateCapabilities.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of PushReadStateCapabilities.
+     */
+    distinct?: PushReadStateCapabilityScalarFieldEnum | PushReadStateCapabilityScalarFieldEnum[]
+  }
+
+  /**
+   * PushReadStateCapability findFirstOrThrow
+   */
+  export type PushReadStateCapabilityFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * Filter, which PushReadStateCapability to fetch.
+     */
+    where?: PushReadStateCapabilityWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of PushReadStateCapabilities to fetch.
+     */
+    orderBy?: PushReadStateCapabilityOrderByWithRelationInput | PushReadStateCapabilityOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for PushReadStateCapabilities.
+     */
+    cursor?: PushReadStateCapabilityWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` PushReadStateCapabilities from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` PushReadStateCapabilities.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of PushReadStateCapabilities.
+     */
+    distinct?: PushReadStateCapabilityScalarFieldEnum | PushReadStateCapabilityScalarFieldEnum[]
+  }
+
+  /**
+   * PushReadStateCapability findMany
+   */
+  export type PushReadStateCapabilityFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * Filter, which PushReadStateCapabilities to fetch.
+     */
+    where?: PushReadStateCapabilityWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of PushReadStateCapabilities to fetch.
+     */
+    orderBy?: PushReadStateCapabilityOrderByWithRelationInput | PushReadStateCapabilityOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing PushReadStateCapabilities.
+     */
+    cursor?: PushReadStateCapabilityWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` PushReadStateCapabilities from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` PushReadStateCapabilities.
+     */
+    skip?: number
+    distinct?: PushReadStateCapabilityScalarFieldEnum | PushReadStateCapabilityScalarFieldEnum[]
+  }
+
+  /**
+   * PushReadStateCapability create
+   */
+  export type PushReadStateCapabilityCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * The data needed to create a PushReadStateCapability.
+     */
+    data: XOR<PushReadStateCapabilityCreateInput, PushReadStateCapabilityUncheckedCreateInput>
+  }
+
+  /**
+   * PushReadStateCapability createMany
+   */
+  export type PushReadStateCapabilityCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many PushReadStateCapabilities.
+     */
+    data: PushReadStateCapabilityCreateManyInput | PushReadStateCapabilityCreateManyInput[]
+  }
+
+  /**
+   * PushReadStateCapability createManyAndReturn
+   */
+  export type PushReadStateCapabilityCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * The data used to create many PushReadStateCapabilities.
+     */
+    data: PushReadStateCapabilityCreateManyInput | PushReadStateCapabilityCreateManyInput[]
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * PushReadStateCapability update
+   */
+  export type PushReadStateCapabilityUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * The data needed to update a PushReadStateCapability.
+     */
+    data: XOR<PushReadStateCapabilityUpdateInput, PushReadStateCapabilityUncheckedUpdateInput>
+    /**
+     * Choose, which PushReadStateCapability to update.
+     */
+    where: PushReadStateCapabilityWhereUniqueInput
+  }
+
+  /**
+   * PushReadStateCapability updateMany
+   */
+  export type PushReadStateCapabilityUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update PushReadStateCapabilities.
+     */
+    data: XOR<PushReadStateCapabilityUpdateManyMutationInput, PushReadStateCapabilityUncheckedUpdateManyInput>
+    /**
+     * Filter which PushReadStateCapabilities to update
+     */
+    where?: PushReadStateCapabilityWhereInput
+    /**
+     * Limit how many PushReadStateCapabilities to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * PushReadStateCapability updateManyAndReturn
+   */
+  export type PushReadStateCapabilityUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * The data used to update PushReadStateCapabilities.
+     */
+    data: XOR<PushReadStateCapabilityUpdateManyMutationInput, PushReadStateCapabilityUncheckedUpdateManyInput>
+    /**
+     * Filter which PushReadStateCapabilities to update
+     */
+    where?: PushReadStateCapabilityWhereInput
+    /**
+     * Limit how many PushReadStateCapabilities to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * PushReadStateCapability upsert
+   */
+  export type PushReadStateCapabilityUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * The filter to search for the PushReadStateCapability to update in case it exists.
+     */
+    where: PushReadStateCapabilityWhereUniqueInput
+    /**
+     * In case the PushReadStateCapability found by the `where` argument doesn't exist, create a new PushReadStateCapability with this data.
+     */
+    create: XOR<PushReadStateCapabilityCreateInput, PushReadStateCapabilityUncheckedCreateInput>
+    /**
+     * In case the PushReadStateCapability was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<PushReadStateCapabilityUpdateInput, PushReadStateCapabilityUncheckedUpdateInput>
+  }
+
+  /**
+   * PushReadStateCapability delete
+   */
+  export type PushReadStateCapabilityDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+    /**
+     * Filter which PushReadStateCapability to delete.
+     */
+    where: PushReadStateCapabilityWhereUniqueInput
+  }
+
+  /**
+   * PushReadStateCapability deleteMany
+   */
+  export type PushReadStateCapabilityDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which PushReadStateCapabilities to delete
+     */
+    where?: PushReadStateCapabilityWhereInput
+    /**
+     * Limit how many PushReadStateCapabilities to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * PushReadStateCapability without action
+   */
+  export type PushReadStateCapabilityDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the PushReadStateCapability
+     */
+    select?: PushReadStateCapabilitySelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the PushReadStateCapability
+     */
+    omit?: PushReadStateCapabilityOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: PushReadStateCapabilityInclude<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -63769,6 +64979,14 @@ export namespace Prisma {
   };
 
   export type ReadLedgerMigrationScalarFieldEnum = (typeof ReadLedgerMigrationScalarFieldEnum)[keyof typeof ReadLedgerMigrationScalarFieldEnum]
+
+
+  export const PushReadStateCapabilityScalarFieldEnum: {
+    tokenId: 'tokenId',
+    version: 'version'
+  };
+
+  export type PushReadStateCapabilityScalarFieldEnum = (typeof PushReadStateCapabilityScalarFieldEnum)[keyof typeof PushReadStateCapabilityScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -66951,6 +68169,7 @@ export namespace Prisma {
     endpoint?: StringNullableFilter<"PushToken"> | string | null
     createdAt?: DateTimeFilter<"PushToken"> | Date | string
     updatedAt?: DateTimeFilter<"PushToken"> | Date | string
+    readStateCapability?: XOR<PushReadStateCapabilityNullableScalarRelationFilter, PushReadStateCapabilityWhereInput> | null
   }
 
   export type PushTokenOrderByWithRelationInput = {
@@ -66961,6 +68180,7 @@ export namespace Prisma {
     endpoint?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+    readStateCapability?: PushReadStateCapabilityOrderByWithRelationInput
   }
 
   export type PushTokenWhereUniqueInput = Prisma.AtLeast<{
@@ -66974,6 +68194,7 @@ export namespace Prisma {
     endpoint?: StringNullableFilter<"PushToken"> | string | null
     createdAt?: DateTimeFilter<"PushToken"> | Date | string
     updatedAt?: DateTimeFilter<"PushToken"> | Date | string
+    readStateCapability?: XOR<PushReadStateCapabilityNullableScalarRelationFilter, PushReadStateCapabilityWhereInput> | null
   }, "id" | "token">
 
   export type PushTokenOrderByWithAggregationInput = {
@@ -67371,6 +68592,48 @@ export namespace Prisma {
     OR?: ReadLedgerMigrationScalarWhereWithAggregatesInput[]
     NOT?: ReadLedgerMigrationScalarWhereWithAggregatesInput | ReadLedgerMigrationScalarWhereWithAggregatesInput[]
     id?: StringWithAggregatesFilter<"ReadLedgerMigration"> | string
+  }
+
+  export type PushReadStateCapabilityWhereInput = {
+    AND?: PushReadStateCapabilityWhereInput | PushReadStateCapabilityWhereInput[]
+    OR?: PushReadStateCapabilityWhereInput[]
+    NOT?: PushReadStateCapabilityWhereInput | PushReadStateCapabilityWhereInput[]
+    tokenId?: StringFilter<"PushReadStateCapability"> | string
+    version?: IntFilter<"PushReadStateCapability"> | number
+    token?: XOR<PushTokenScalarRelationFilter, PushTokenWhereInput>
+  }
+
+  export type PushReadStateCapabilityOrderByWithRelationInput = {
+    tokenId?: SortOrder
+    version?: SortOrder
+    token?: PushTokenOrderByWithRelationInput
+  }
+
+  export type PushReadStateCapabilityWhereUniqueInput = Prisma.AtLeast<{
+    tokenId?: string
+    AND?: PushReadStateCapabilityWhereInput | PushReadStateCapabilityWhereInput[]
+    OR?: PushReadStateCapabilityWhereInput[]
+    NOT?: PushReadStateCapabilityWhereInput | PushReadStateCapabilityWhereInput[]
+    version?: IntFilter<"PushReadStateCapability"> | number
+    token?: XOR<PushTokenScalarRelationFilter, PushTokenWhereInput>
+  }, "tokenId">
+
+  export type PushReadStateCapabilityOrderByWithAggregationInput = {
+    tokenId?: SortOrder
+    version?: SortOrder
+    _count?: PushReadStateCapabilityCountOrderByAggregateInput
+    _avg?: PushReadStateCapabilityAvgOrderByAggregateInput
+    _max?: PushReadStateCapabilityMaxOrderByAggregateInput
+    _min?: PushReadStateCapabilityMinOrderByAggregateInput
+    _sum?: PushReadStateCapabilitySumOrderByAggregateInput
+  }
+
+  export type PushReadStateCapabilityScalarWhereWithAggregatesInput = {
+    AND?: PushReadStateCapabilityScalarWhereWithAggregatesInput | PushReadStateCapabilityScalarWhereWithAggregatesInput[]
+    OR?: PushReadStateCapabilityScalarWhereWithAggregatesInput[]
+    NOT?: PushReadStateCapabilityScalarWhereWithAggregatesInput | PushReadStateCapabilityScalarWhereWithAggregatesInput[]
+    tokenId?: StringWithAggregatesFilter<"PushReadStateCapability"> | string
+    version?: IntWithAggregatesFilter<"PushReadStateCapability"> | number
   }
 
   export type UserCreateInput = {
@@ -70676,6 +71939,7 @@ export namespace Prisma {
     endpoint?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
+    readStateCapability?: PushReadStateCapabilityCreateNestedOneWithoutTokenInput
   }
 
   export type PushTokenUncheckedCreateInput = {
@@ -70686,6 +71950,7 @@ export namespace Prisma {
     endpoint?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
+    readStateCapability?: PushReadStateCapabilityUncheckedCreateNestedOneWithoutTokenInput
   }
 
   export type PushTokenUpdateInput = {
@@ -70696,6 +71961,7 @@ export namespace Prisma {
     endpoint?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    readStateCapability?: PushReadStateCapabilityUpdateOneWithoutTokenNestedInput
   }
 
   export type PushTokenUncheckedUpdateInput = {
@@ -70706,6 +71972,7 @@ export namespace Prisma {
     endpoint?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    readStateCapability?: PushReadStateCapabilityUncheckedUpdateOneWithoutTokenNestedInput
   }
 
   export type PushTokenCreateManyInput = {
@@ -71097,6 +72364,40 @@ export namespace Prisma {
 
   export type ReadLedgerMigrationUncheckedUpdateManyInput = {
     id?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type PushReadStateCapabilityCreateInput = {
+    version?: number
+    token: PushTokenCreateNestedOneWithoutReadStateCapabilityInput
+  }
+
+  export type PushReadStateCapabilityUncheckedCreateInput = {
+    tokenId: string
+    version?: number
+  }
+
+  export type PushReadStateCapabilityUpdateInput = {
+    version?: IntFieldUpdateOperationsInput | number
+    token?: PushTokenUpdateOneRequiredWithoutReadStateCapabilityNestedInput
+  }
+
+  export type PushReadStateCapabilityUncheckedUpdateInput = {
+    tokenId?: StringFieldUpdateOperationsInput | string
+    version?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type PushReadStateCapabilityCreateManyInput = {
+    tokenId: string
+    version?: number
+  }
+
+  export type PushReadStateCapabilityUpdateManyMutationInput = {
+    version?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type PushReadStateCapabilityUncheckedUpdateManyInput = {
+    tokenId?: StringFieldUpdateOperationsInput | string
+    version?: IntFieldUpdateOperationsInput | number
   }
 
   export type StringFilter<$PrismaModel = never> = {
@@ -73365,6 +74666,11 @@ export namespace Prisma {
     _max?: NestedBytesFilter<$PrismaModel>
   }
 
+  export type PushReadStateCapabilityNullableScalarRelationFilter = {
+    is?: PushReadStateCapabilityWhereInput | null
+    isNot?: PushReadStateCapabilityWhereInput | null
+  }
+
   export type PushTokenCountOrderByAggregateInput = {
     id?: SortOrder
     userId?: SortOrder
@@ -73584,6 +74890,34 @@ export namespace Prisma {
 
   export type ReadLedgerMigrationMinOrderByAggregateInput = {
     id?: SortOrder
+  }
+
+  export type PushTokenScalarRelationFilter = {
+    is?: PushTokenWhereInput
+    isNot?: PushTokenWhereInput
+  }
+
+  export type PushReadStateCapabilityCountOrderByAggregateInput = {
+    tokenId?: SortOrder
+    version?: SortOrder
+  }
+
+  export type PushReadStateCapabilityAvgOrderByAggregateInput = {
+    version?: SortOrder
+  }
+
+  export type PushReadStateCapabilityMaxOrderByAggregateInput = {
+    tokenId?: SortOrder
+    version?: SortOrder
+  }
+
+  export type PushReadStateCapabilityMinOrderByAggregateInput = {
+    tokenId?: SortOrder
+    version?: SortOrder
+  }
+
+  export type PushReadStateCapabilitySumOrderByAggregateInput = {
+    version?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {
@@ -76476,6 +77810,38 @@ export namespace Prisma {
     set?: Bytes
   }
 
+  export type PushReadStateCapabilityCreateNestedOneWithoutTokenInput = {
+    create?: XOR<PushReadStateCapabilityCreateWithoutTokenInput, PushReadStateCapabilityUncheckedCreateWithoutTokenInput>
+    connectOrCreate?: PushReadStateCapabilityCreateOrConnectWithoutTokenInput
+    connect?: PushReadStateCapabilityWhereUniqueInput
+  }
+
+  export type PushReadStateCapabilityUncheckedCreateNestedOneWithoutTokenInput = {
+    create?: XOR<PushReadStateCapabilityCreateWithoutTokenInput, PushReadStateCapabilityUncheckedCreateWithoutTokenInput>
+    connectOrCreate?: PushReadStateCapabilityCreateOrConnectWithoutTokenInput
+    connect?: PushReadStateCapabilityWhereUniqueInput
+  }
+
+  export type PushReadStateCapabilityUpdateOneWithoutTokenNestedInput = {
+    create?: XOR<PushReadStateCapabilityCreateWithoutTokenInput, PushReadStateCapabilityUncheckedCreateWithoutTokenInput>
+    connectOrCreate?: PushReadStateCapabilityCreateOrConnectWithoutTokenInput
+    upsert?: PushReadStateCapabilityUpsertWithoutTokenInput
+    disconnect?: PushReadStateCapabilityWhereInput | boolean
+    delete?: PushReadStateCapabilityWhereInput | boolean
+    connect?: PushReadStateCapabilityWhereUniqueInput
+    update?: XOR<XOR<PushReadStateCapabilityUpdateToOneWithWhereWithoutTokenInput, PushReadStateCapabilityUpdateWithoutTokenInput>, PushReadStateCapabilityUncheckedUpdateWithoutTokenInput>
+  }
+
+  export type PushReadStateCapabilityUncheckedUpdateOneWithoutTokenNestedInput = {
+    create?: XOR<PushReadStateCapabilityCreateWithoutTokenInput, PushReadStateCapabilityUncheckedCreateWithoutTokenInput>
+    connectOrCreate?: PushReadStateCapabilityCreateOrConnectWithoutTokenInput
+    upsert?: PushReadStateCapabilityUpsertWithoutTokenInput
+    disconnect?: PushReadStateCapabilityWhereInput | boolean
+    delete?: PushReadStateCapabilityWhereInput | boolean
+    connect?: PushReadStateCapabilityWhereUniqueInput
+    update?: XOR<XOR<PushReadStateCapabilityUpdateToOneWithWhereWithoutTokenInput, PushReadStateCapabilityUpdateWithoutTokenInput>, PushReadStateCapabilityUncheckedUpdateWithoutTokenInput>
+  }
+
   export type ConversationParticipantCreateNestedOneWithoutReadIntentStateInput = {
     create?: XOR<ConversationParticipantCreateWithoutReadIntentStateInput, ConversationParticipantUncheckedCreateWithoutReadIntentStateInput>
     connectOrCreate?: ConversationParticipantCreateOrConnectWithoutReadIntentStateInput
@@ -76516,6 +77882,20 @@ export namespace Prisma {
     upsert?: MessageUpsertWithoutReadObservationsInput
     connect?: MessageWhereUniqueInput
     update?: XOR<XOR<MessageUpdateToOneWithWhereWithoutReadObservationsInput, MessageUpdateWithoutReadObservationsInput>, MessageUncheckedUpdateWithoutReadObservationsInput>
+  }
+
+  export type PushTokenCreateNestedOneWithoutReadStateCapabilityInput = {
+    create?: XOR<PushTokenCreateWithoutReadStateCapabilityInput, PushTokenUncheckedCreateWithoutReadStateCapabilityInput>
+    connectOrCreate?: PushTokenCreateOrConnectWithoutReadStateCapabilityInput
+    connect?: PushTokenWhereUniqueInput
+  }
+
+  export type PushTokenUpdateOneRequiredWithoutReadStateCapabilityNestedInput = {
+    create?: XOR<PushTokenCreateWithoutReadStateCapabilityInput, PushTokenUncheckedCreateWithoutReadStateCapabilityInput>
+    connectOrCreate?: PushTokenCreateOrConnectWithoutReadStateCapabilityInput
+    upsert?: PushTokenUpsertWithoutReadStateCapabilityInput
+    connect?: PushTokenWhereUniqueInput
+    update?: XOR<XOR<PushTokenUpdateToOneWithWhereWithoutReadStateCapabilityInput, PushTokenUpdateWithoutReadStateCapabilityInput>, PushTokenUncheckedUpdateWithoutReadStateCapabilityInput>
   }
 
   export type NestedStringFilter<$PrismaModel = never> = {
@@ -86915,6 +88295,38 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
+  export type PushReadStateCapabilityCreateWithoutTokenInput = {
+    version?: number
+  }
+
+  export type PushReadStateCapabilityUncheckedCreateWithoutTokenInput = {
+    version?: number
+  }
+
+  export type PushReadStateCapabilityCreateOrConnectWithoutTokenInput = {
+    where: PushReadStateCapabilityWhereUniqueInput
+    create: XOR<PushReadStateCapabilityCreateWithoutTokenInput, PushReadStateCapabilityUncheckedCreateWithoutTokenInput>
+  }
+
+  export type PushReadStateCapabilityUpsertWithoutTokenInput = {
+    update: XOR<PushReadStateCapabilityUpdateWithoutTokenInput, PushReadStateCapabilityUncheckedUpdateWithoutTokenInput>
+    create: XOR<PushReadStateCapabilityCreateWithoutTokenInput, PushReadStateCapabilityUncheckedCreateWithoutTokenInput>
+    where?: PushReadStateCapabilityWhereInput
+  }
+
+  export type PushReadStateCapabilityUpdateToOneWithWhereWithoutTokenInput = {
+    where?: PushReadStateCapabilityWhereInput
+    data: XOR<PushReadStateCapabilityUpdateWithoutTokenInput, PushReadStateCapabilityUncheckedUpdateWithoutTokenInput>
+  }
+
+  export type PushReadStateCapabilityUpdateWithoutTokenInput = {
+    version?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type PushReadStateCapabilityUncheckedUpdateWithoutTokenInput = {
+    version?: IntFieldUpdateOperationsInput | number
+  }
+
   export type ConversationParticipantCreateWithoutReadIntentStateInput = {
     id?: string
     role?: string
@@ -87261,6 +88673,62 @@ export namespace Prisma {
     redPacket?: RedPacketUncheckedUpdateOneWithoutMessageNestedInput
     translations?: MessageTranslationUncheckedUpdateManyWithoutMessageNestedInput
     savedBy?: SavedMessageUncheckedUpdateManyWithoutMessageNestedInput
+  }
+
+  export type PushTokenCreateWithoutReadStateCapabilityInput = {
+    id?: string
+    userId: string
+    platform: string
+    token: string
+    endpoint?: string | null
+    createdAt?: Date | string
+    updatedAt?: Date | string
+  }
+
+  export type PushTokenUncheckedCreateWithoutReadStateCapabilityInput = {
+    id?: string
+    userId: string
+    platform: string
+    token: string
+    endpoint?: string | null
+    createdAt?: Date | string
+    updatedAt?: Date | string
+  }
+
+  export type PushTokenCreateOrConnectWithoutReadStateCapabilityInput = {
+    where: PushTokenWhereUniqueInput
+    create: XOR<PushTokenCreateWithoutReadStateCapabilityInput, PushTokenUncheckedCreateWithoutReadStateCapabilityInput>
+  }
+
+  export type PushTokenUpsertWithoutReadStateCapabilityInput = {
+    update: XOR<PushTokenUpdateWithoutReadStateCapabilityInput, PushTokenUncheckedUpdateWithoutReadStateCapabilityInput>
+    create: XOR<PushTokenCreateWithoutReadStateCapabilityInput, PushTokenUncheckedCreateWithoutReadStateCapabilityInput>
+    where?: PushTokenWhereInput
+  }
+
+  export type PushTokenUpdateToOneWithWhereWithoutReadStateCapabilityInput = {
+    where?: PushTokenWhereInput
+    data: XOR<PushTokenUpdateWithoutReadStateCapabilityInput, PushTokenUncheckedUpdateWithoutReadStateCapabilityInput>
+  }
+
+  export type PushTokenUpdateWithoutReadStateCapabilityInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    platform?: StringFieldUpdateOperationsInput | string
+    token?: StringFieldUpdateOperationsInput | string
+    endpoint?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type PushTokenUncheckedUpdateWithoutReadStateCapabilityInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    platform?: StringFieldUpdateOperationsInput | string
+    token?: StringFieldUpdateOperationsInput | string
+    endpoint?: NullableStringFieldUpdateOperationsInput | string | null
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
   export type AppInstallCreateManyUserInput = {

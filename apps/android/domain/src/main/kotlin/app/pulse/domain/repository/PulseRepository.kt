@@ -252,6 +252,9 @@ class SettingsPersistenceFailure(cause: Throwable) : Exception(
 interface PulseRepository {
     /** Bind the client to a viewer identity (REST userId + socket join). Idempotent per id. */
     fun start(userId: String)
+    /** Background wake-ups must not replace a foreground account selection. */
+    fun startBackgroundIfIdle(userId: String): Boolean = viewerId == userId
+
 
     /** End the current account transport and cancel account-owned work. */
     fun stop() {}

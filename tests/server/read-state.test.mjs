@@ -7,9 +7,10 @@ import { receiptRecipients, ReadReceiptError } from '../../src/lib/read-receipt.
 async function fixture() {
   const source = stripTypeScriptTypes(await readFile(new URL('../../src/app/api/conversations/[id]/read-state/route.ts', import.meta.url), 'utf8'))
     .replace(/^import .*$/gm, '').replace(/export /g, '')
-  const calls = [], fanouts = []
+  const calls = [], fanouts = [], hints = []
   let denied = false, privateReceipts = false, refusal
   const dependencies = {
+    invalidateNativeReadState: (...args) => hints.push(args),
     NextResponse: { json: Response.json },
     db: { user: { findUnique: async () => ({ preferences: privateReceipts ? '{"readReceipts":false}' : null }) } },
     requireActionOwner: async () => denied ? Response.json({}, { status: 403 }) : null,
@@ -21,7 +22,7 @@ async function fixture() {
     safeJson: req => req.json(), strField: value => typeof value === 'string' ? value.trim() : '',
   }
   const post = new Function(...Object.keys(dependencies), source + ';return POST')(...Object.values(dependencies))
-  return { calls, fanouts, deny: () => { denied = true }, private: () => { privateReceipts = true },
+  return { calls, fanouts, hints, deny: () => { denied = true }, private: () => { privateReceipts = true },
     refuse: error => { refusal = error },
     request: body => post(new Request('https://read.test', { method: 'POST', body: JSON.stringify({ userId: 'reader', readIntent:'fence', ...body }) }), { params: Promise.resolve({ id: 'room' }) }) }
 }
@@ -43,6 +44,7 @@ test('read receipt binds version, owner, room, intent, boundary and committed ti
       mode, messageId: mode === 'visible' ? 'anchor' : null, lastReadAt: '2026-10-22T00:00:10.000Z' })
     assert.deepEqual(f.calls.at(-1), { room: 'room', owner: 'reader', anchor: mode === 'visible' ? 'anchor' : undefined, intent:'fence' })
   }
+  assert.deepEqual(f.hints, [['reader','room'],['reader','room']])
   assert.deepEqual(f.fanouts[0][1], ['reader', 'peer'])
   f.private(); await f.request({ mode: 'visible', messageId: 'anchor' })
   assert.deepEqual(f.fanouts.at(-1)[1], ['reader'])
@@ -50,7 +52,7 @@ test('read receipt binds version, owner, room, intent, boundary and committed ti
 test('refused/unavailable read boundary cannot produce a success receipt or fanout', async () => {
   const f = await fixture(); f.refuse(new ReadReceiptError(404, 'unavailable'))
   assert.equal((await f.request({ mode: 'visible', messageId: 'anchor' })).status, 404)
-  assert.equal(f.fanouts.length, 0)
+  assert.equal(f.fanouts.length, 0); assert.equal(f.hints.length, 0)
 })
 test('opening primary Android chat is navigation only, not an eager mark-all action', async () => {
   const source = await readFile(new URL('../../apps/android/feature-chat/src/main/kotlin/app/pulse/feature/chat/ChatsScreen.kt', import.meta.url), 'utf8')
@@ -63,9 +65,10 @@ test('manual unread route validates desired state and returns only the committed
   const source = stripTypeScriptTypes(await readFile(new URL('../../src/app/api/conversations/[id]/mark-unread/route.ts', import.meta.url), 'utf8'))
     .replace(/^import .*$/gm, '').replace(/export /g, '')
   let denied = false, refusal
-  const calls = [], fanouts = []
+  const calls = [], fanouts = [], hints = []
   const receipt = { ok: true, unreadReceiptVersion: 2, readIntent: 'fence', conversationId: 'room', userId: 'reader', manualUnread: true }
   const dependencies = {
+    invalidateNativeReadState: (...args) => hints.push(args),
     NextResponse: { json: Response.json }, db: {}, ReadReceiptError,
     bearerToken: () => 'session', requireActionOwner: async () => denied ? Response.json({}, { status: 403 }) : null,
     setManualUnread: async (_, room, owner, on) => { calls.push({ room, owner, on }); if (refusal) throw refusal; return receipt },
@@ -95,4 +98,5 @@ test('manual unread route validates desired state and returns only the committed
     assert.equal((await request({ userId: 'reader', on: false })).status, status)
   }
   assert.equal(fanouts.length, 1)
+  assert.deepEqual(hints, [['reader','room']])
 })

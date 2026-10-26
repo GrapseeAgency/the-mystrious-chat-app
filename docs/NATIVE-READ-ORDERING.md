@@ -44,6 +44,16 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 - Added a real Compose viewport/lifecycle test with controlled window focus and transport, plus Swift attention-lease coverage. These do not substitute for notification-shade, accessibility or paired-device acceptance.
 - The actual native compiler caught follow-up integration errors (a duplicate serializer annotation, an obsolete badge variable, and a thread snapshot/intent field-name collision); source fixes are published, with fresh execution still required.
 
+### Cross-device background invalidation follow-up
+
+- Read/manual-unread commits now issue a body-free native invalidation, including when the same user is online on another device. The hint carries neither badge count nor read authority; delayed hints only request current state.
+- Explicit registration capability version 1 protects older Android clients from rendering an unfamiliar hint as a generic banner. Registration/removal require owner authentication; capability revocation and registration updates are transactional. Apply `20261026_native_read_push.sql` before releasing this backend.
+- APNs hints are collapsible background pushes, and ordinary message alerts request background processing. The Swift delegate awaits the existing owner-fenced replay/full-inbox path with a deadline. Foreground badge publications and newer background fetches invalidate older pending badge snapshots.
+- Android hints schedule durable owned work, refresh the complete inbox after replay, and cannot switch the repository away from a foreground-selected account. This does not invent an Android launcher-count API or clear notifications from an empty/partial cache.
+- Swift mirror polling no longer supersedes every still-running inbox request on networks slower than its polling interval; explicit intervening refreshes retain a trailing fetch.
+- Native execution exposed a topic-cache normalization regression (nil emoji lost the existing `chat` fallback when read metadata JSON was present). The decoder now preserves canonical structural columns alongside the exact read metadata.
+- Provider delivery, OS background limits, disabled permissions, legacy already-delivered notifications and Android launcher behavior remain real platform acceptance work—not a claim of synchronized closed-app icons on every device.
+
 ### Wire and storage contracts
 
 - Capture response is **readIntentVersion 2**, visible/all acceptance is **readReceiptVersion 3**; manual marker acceptance remains **unreadReceiptVersion 2**. Both native transports reject timestamp-only read acknowledgements.

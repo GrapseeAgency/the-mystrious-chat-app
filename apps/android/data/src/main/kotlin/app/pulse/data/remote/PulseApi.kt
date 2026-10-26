@@ -1204,6 +1204,7 @@ class PulseApi(
             buildJsonObject {
                 put("userId", userId)
                 put("platform", "android")
+                put("readStateHints", 1)
                 put("token", token)
             },
         )

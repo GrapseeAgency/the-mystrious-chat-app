@@ -790,13 +790,14 @@ model UploadedFile {
 // Tokens are opaque server-side; delivery failures prune the row so the
 // registry self-heals. Sender identity comes from the caller's userId.
 model PushToken {
-  id        String   @id @default(cuid())
-  userId    String
-  platform  String // web|android|ios
-  token     String   @unique
-  endpoint  String? // Web Push endpoint URL (web platform only)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String                   @id @default(cuid())
+  userId              String
+  platform            String // web|android|ios
+  token               String                   @unique
+  endpoint            String? // Web Push endpoint URL (web platform only)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  readStateCapability PushReadStateCapability?
 
   @@index([userId])
 }
@@ -874,4 +875,12 @@ model MessageReadObservation {
 
 model ReadLedgerMigration {
   id String @id
+}
+
+// Explicit native protocol opt-in; old Android clients must never render an
+// unfamiliar background invalidation as a visible generic notification.
+model PushReadStateCapability {
+  tokenId String    @id
+  token   PushToken @relation(fields: [tokenId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  version Int       @default(1)
 }

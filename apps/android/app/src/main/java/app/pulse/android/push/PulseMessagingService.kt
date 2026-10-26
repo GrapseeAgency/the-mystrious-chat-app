@@ -55,6 +55,12 @@ class PulseMessagingService : FirebaseMessagingService() {
             if ((app.pulse.domain.sync.messageExpiryEpochMs(expiry) ?: Long.MIN_VALUE) <= System.currentTimeMillis()) return
         }
         val recipient = data["recipientUserId"]
+        if (data["kind"] == "read-state") {
+            // Cold FCM delivery can precede repository startup. The durable worker
+            // checks the persisted owner; this hint never creates a notification or Seen.
+            if (!recipient.isNullOrBlank()) app.pulse.android.OutboxWorker.enqueue(this, recipient)
+            return
+        }
         // OS-managed background banners bypass this service; only this custom
         // receive/quick-reply path can enforce the current account here.
         if (recipient != null && recipient != repository.viewerId) return
