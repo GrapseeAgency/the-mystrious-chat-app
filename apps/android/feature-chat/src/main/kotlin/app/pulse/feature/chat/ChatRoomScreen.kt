@@ -2257,8 +2257,11 @@ fun ChatRoomScreen(
     }
 
     infoTarget?.let { target ->
-        MessageInfoSheet(
-            message = target,
+        val current = messages.firstOrNull { it.id == target.id }
+        if (current == null) {
+            LaunchedEffect(target.id) { infoTarget = null }
+        } else MessageInfoSheet(
+            message = current,
             conversation = conversation,
             viewerId = viewerId,
             onDismiss = { infoTarget = null },

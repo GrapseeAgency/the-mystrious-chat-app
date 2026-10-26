@@ -11,6 +11,29 @@ final class RoomDetailReadWatermarkTests: XCTestCase {
         ]))
     }
 
+    func testMessageInfoUsesCurrentRoomDataAndRetiresUnavailableOrForeignRows() throws {
+        let session = PulseSession()
+        let model = RoomViewModel(conversation: try room("2026-10-24T12:00:00Z"), session: session, beginAutomaticWork: false)
+        var message = OutboxFixtures.makeMessage(id: "info", conversationId: "read-room", content: "Current")
+        message.readByMembershipIds = ["peer-membership"]
+        model.injectCarrier(message)
+        XCTAssertEqual(model.messageInfo("info")?.readByMembershipIds, ["peer-membership"])
+        XCTAssertEqual(model.messageInfo("info")?.content, "Current")
+        model.injectCarrier(OutboxFixtures.makeMessage(id: "foreign", conversationId: "another-room", content: "Private"))
+        XCTAssertNil(model.messageInfo("foreign"))
+        XCTAssertFalse(model.messages.contains { $0.id == "foreign" })
+        XCTAssertNil(model.messageInfo("missing"))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(message)) as? [String: Any])
+        object["id"] = "expired-info"
+        object["expiresAt"] = "2026-10-26T00:00:00Z"
+        model.injectCarrier(try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object)))
+        XCTAssertNil(model.messageInfo("expired-info", now: try XCTUnwrap(PulseFormat.date("2026-10-26T00:00:00Z"))))
+        model.applyFreshDetail(try room(nil))
+        XCTAssertNil(model.readReceiptMembers.first?.lastReadAt, "The visible info sheet must adopt current receipt privacy")
+        session.stop()
+        XCTAssertNil(model.messageInfo("info"), "An old sheet must not retain another session's message")
+    }
+
     func testLateRoomMetadataDoesNotRewindSeenButHiddenReadersAreRemoved() throws {
         let newest = "2026-10-24T12:00:00.000Z"
         let session = PulseSession()

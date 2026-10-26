@@ -1,10 +1,8 @@
 import XCTest
 @testable import Pulse
 
-/// R2-D ITEM 7 - the message-info receipt split ("Seen by" vs "Delivered
-/// to"). Web ground truth: chat-room.tsx:5893-5960 (readMs >= msgMs, viewer
-/// excluded, NaN watermarks delivered) + Android MessageSheets.kt:379-424.
-/// Fixture watermarks are the CURRENT wire ISO shapes (fractional seconds).
+/// Exact membership proof, receipt privacy, and author/recipient identity.
+/// Unconfirmed readers are not device-delivery acknowledgements.
 final class PulseReceiptSplitTests: XCTestCase {
 
     private func member(_ id: String, readAt: String?) -> PulseRoomParityLogic.ReceiptMember {
@@ -24,6 +22,11 @@ final class PulseReceiptSplitTests: XCTestCase {
         )
         XCTAssertEqual(split.seenBy.map(\.id), ["u1", "u2"])
         XCTAssertEqual(split.deliveredTo.map(\.id), ["u3"])
+    }
+
+    func testEmptyRecipientSnapshotCannotClaimEveryoneHasSeen() {
+        let split = PulseRoomParityLogic.receiptSplit(members: [], viewerId: "me", createdAtIso: "2026-01-05T10:00:00Z")
+        XCTAssertFalse(split.allConfirmed)
     }
 
     func testIncomingMessageInfoExcludesTheAuthorRatherThanItsReader() {

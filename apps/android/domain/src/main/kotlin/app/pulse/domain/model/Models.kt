@@ -33,9 +33,9 @@ data class Reaction(
 )
 
 /**
- * One conversation participant with the read watermark (wire members[]).
- * Powers the double-tick read receipts (member.lastReadAt >= message createdAt) and the
- * message-info "seen by" sheet. Serialized into the Room `membersJson` cache.
+ * Current conversation membership and receipt privacy metadata (wire members[]).
+ * Message.readByMembershipIds supplies exact Seen evidence; lastReadAt alone
+ * cannot prove reading. Serialized into the Room `membersJson` cache.
  */
 @Serializable
 data class ConversationMember(

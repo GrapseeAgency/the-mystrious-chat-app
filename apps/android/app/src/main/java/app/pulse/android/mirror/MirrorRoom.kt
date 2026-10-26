@@ -2836,8 +2836,11 @@ internal fun MirrorRoom(
         )
     }
     infoFor?.let { target ->
-        MirrorMessageInfoPanel(
-            message = target,
+        val current = messages.firstOrNull { it.id == target.id }
+        if (current == null) {
+            LaunchedEffect(target.id) { infoFor = null }
+        } else MirrorMessageInfoPanel(
+            message = current,
             members = members,
             onDismiss = { infoFor = null },
         )

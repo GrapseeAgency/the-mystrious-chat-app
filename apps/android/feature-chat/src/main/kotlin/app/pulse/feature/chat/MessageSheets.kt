@@ -390,8 +390,8 @@ internal fun ForwardSheet(
 }
 
 /**
- * Read-only message info (own messages): the watermark read model turned into
- * "Seen by" (members whose lastReadAt ≥ createdAt) vs "No read confirmation" (the rest; no device-delivery ACK exists)
+ * Read-only message info (own messages): exact current-membership observations
+ * distinguish "Seen by" from "No read confirmation" (no device-delivery ACK exists)
  * plus the full reaction roster with resolved names.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -419,7 +419,7 @@ internal fun MessageInfoSheet(
         )
         LazyColumn(Modifier.fillMaxWidth().height(380.dp).padding(bottom = 24.dp)) {
             item {
-                SectionLabel("Sent")
+                SectionLabel(if (message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) "Queued" else "Sent")
                 Text(
                     PulseTime.shortLabel(message.createdAt) + " · " + PulseTime.clock(message.createdAt),
                     fontSize = 13.sp,
@@ -447,7 +447,7 @@ internal fun MessageInfoSheet(
             }
             item { SectionLabel("No read confirmation · ${deliveredTo.size}") }
             if (deliveredTo.isEmpty()) {
-                item { EmptyHint("Everyone has seen this message") }
+                item { EmptyHint(if (seenBy.isEmpty()) "No recipient information" else "Everyone has seen this message") }
             } else {
                 items(deliveredTo, key = { "del-" + it.id }) { member ->
                     MemberRow(member, check = false)

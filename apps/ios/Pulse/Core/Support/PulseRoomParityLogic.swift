@@ -125,6 +125,7 @@ public enum PulseRoomParityLogic {
     public struct ReceiptSplit: Equatable, Sendable {
         public let seenBy: [ReceiptMember]
         public let deliveredTo: [ReceiptMember]
+        public var allConfirmed: Bool { !seenBy.isEmpty && deliveredTo.isEmpty }
     }
 
     public static func receiptSplit(

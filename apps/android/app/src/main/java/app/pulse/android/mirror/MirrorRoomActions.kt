@@ -982,7 +982,7 @@ internal fun MirrorMessageInfoPanel(
     MirrorSheet(title = "Message info", onDismiss = onDismiss) {
         MirrorSheetScroll {
             Text(
-                "Sent ${MirrorRoomStamp(message.createdAt)}",
+                "${if (message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) "Queued" else "Sent"} ${MirrorRoomStamp(message.createdAt)}",
                 color = MirrorArt.TextSoft,
                 fontSize = 12.sp,
             )

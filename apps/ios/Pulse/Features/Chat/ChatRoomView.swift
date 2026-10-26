@@ -139,8 +139,8 @@ private struct RoomMessageRow: View {
 
     var body: some View {
         Group {
-            // R30-c - the unread divider anchors at the FIRST message newer
-            // than the frozen lastRead watermark (web buildItems parity).
+            // Anchor at the exact first-unread identity from the entry snapshot;
+            // timestamp ties and unseen gaps must not move the divider.
             if showUnreadDivider {
                 UnreadDividerRow()
                     .padding(.vertical, 4)
@@ -1009,7 +1009,7 @@ private struct RoomContent: View {
             ForwardSheet(source: source, session: session)
         }
         .sheet(item: $infoTarget) { message in
-            MessageInfoSheet(message: message, conversation: conversation, viewerId: session.viewer?.id)
+            MessageInfoSheet(messageID: message.id, viewModel: viewModel, viewerId: session.viewer?.id)
         }
         .sheet(isPresented: $pinsOpen) {
             pinsList
@@ -2623,19 +2623,19 @@ private struct RoomContent: View {
 
 /// Wave 1 message info - seen-by watermarks (conversation members) + the
 /// reaction groups with member names. Read-only, native sheet.
-/// R2-D - the sheet mirrors the web/Android delivered split: "Seen by" =
-/// lastReadAt >= createdAt, "Delivered to" = the rest (viewer excluded).
+/// Exact membership observations distinguish Seen from unconfirmed readers.
+/// The sheet observes the live room rather than freezing its opening snapshot.
 private struct MessageInfoSheet: View {
-    let message: WireChatMessage
-    let conversation: WireConversationSummary
+    let messageID: String
+    @ObservedObject var viewModel: RoomViewModel
     /// Authenticated viewer; incoming-message info excludes the sender, not this reader.
     var viewerId: String? = nil
 
     @Environment(\.dismiss) private var dismiss
 
-    private var receipts: PulseRoomParityLogic.ReceiptSplit {
+    private func receipts(for message: WireChatMessage) -> PulseRoomParityLogic.ReceiptSplit {
         PulseRoomParityLogic.receiptSplit(
-            members: conversation.members.map {
+            members: viewModel.readReceiptMembers.map {
                 PulseRoomParityLogic.ReceiptMember(id: $0.id, lastReadAtIso: $0.lastReadAt, readMembershipId: $0.readMembershipId)
             },
             viewerId: viewerId,
@@ -2647,67 +2647,11 @@ private struct MessageInfoSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Message") {
-                    Text(message.content.isEmpty ? "Media message" : message.content)
-                        .font(.subheadline)
-                    LabeledContent("Sent", value: PulseFormat.listStamp(message.createdAt))
-                    if message.editedAt != nil {
-                        HStack {
-                            Text("Edited")
-                                .font(.subheadline)
-                            Spacer()
-                            Image(systemName: "pencil")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                let split = receipts
-                let seenTitle = "Seen by · \(split.seenBy.count)"
-                Section {
-                    if split.seenBy.isEmpty {
-                        Text("No read receipts yet")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(split.seenBy, id: \.id) { member in
-                        receiptRow(member, seen: true)
-                    }
-                } header: {
-                    Text(seenTitle)
-                }
-                // A missing read receipt is NOT proof of device delivery.
-                // Privacy-disabled receipts also belong in this unknown group.
-                Section {
-                    if split.deliveredTo.isEmpty {
-                        Text("Everyone has seen this message")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(split.deliveredTo, id: \.id) { member in
-                        receiptRow(member, seen: false)
-                    }
-                } header: {
-                    Text("No read confirmation · \(split.deliveredTo.count)")
-                }
-                if let reactions = message.reactions, !reactions.isEmpty {
-                    Section("Reactions") {
-                        ForEach(reactions, id: \.emoji) { group in
-                            // R19-b - normalized registry symbol + label, the
-                            // wire group key is never rendered raw.
-                            HStack(spacing: 8) {
-                                Image(systemName: PulseReactionId.normalize(group.emoji).symbolName)
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(PulseTheme.emberGlowTop)
-                                Text(PulseReactionId.normalize(group.emoji).label)
-                                    .font(.subheadline)
-                                Text("\(group.count)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                            }
-                        }
-                    }
+                if let message = viewModel.messageInfo(messageID) {
+                    messageSections(message)
+                } else {
+                    Text("This message is no longer available in this room.")
+                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Message info")
@@ -2721,10 +2665,76 @@ private struct MessageInfoSheet: View {
         .presentationDetents([.medium])
     }
 
+    @ViewBuilder
+    private func messageSections(_ message: WireChatMessage) -> some View {
+        Section("Message") {
+            Text(message.deletedAt != nil ? "Message deleted" : message.content.isEmpty ? "Media message" : message.content)
+                .font(.subheadline)
+            LabeledContent(message.id.hasPrefix("local_") ? "Queued" : "Sent", value: PulseFormat.listStamp(message.createdAt))
+            if message.editedAt != nil {
+                HStack {
+                    Text("Edited")
+                        .font(.subheadline)
+                    Spacer()
+                    Image(systemName: "pencil")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        let split = receipts(for: message)
+        let seenTitle = "Seen by · \(split.seenBy.count)"
+        Section {
+            if split.seenBy.isEmpty {
+                Text("No read receipts yet")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(split.seenBy, id: \.id) { member in
+                receiptRow(member, seen: true)
+            }
+        } header: {
+            Text(seenTitle)
+        }
+        // A missing read receipt is NOT proof of device delivery.
+        // Privacy-disabled receipts also belong in this unknown group.
+        Section {
+            if split.deliveredTo.isEmpty {
+                Text(split.allConfirmed ? "Everyone has seen this message" : "No recipient information")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(split.deliveredTo, id: \.id) { member in
+                receiptRow(member, seen: false)
+            }
+        } header: {
+            Text("No read confirmation · \(split.deliveredTo.count)")
+        }
+        if let reactions = message.reactions, !reactions.isEmpty {
+            Section("Reactions") {
+                ForEach(reactions, id: \.emoji) { group in
+                    // R19-b - normalized registry symbol + label, the
+                    // wire group key is never rendered raw.
+                    HStack(spacing: 8) {
+                        Image(systemName: PulseReactionId.normalize(group.emoji).symbolName)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(PulseTheme.emberGlowTop)
+                        Text(PulseReactionId.normalize(group.emoji).label)
+                            .font(.subheadline)
+                        Text("\(group.count)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
     /// One receipt row - read watermark stamp + the double-check (seen) or
     /// plain check (delivered) glyph, web seen-by-sheet rhythm.
     private func receiptRow(_ member: PulseRoomParityLogic.ReceiptMember, seen: Bool) -> some View {
-        let summary = conversation.members.first(where: { $0.id == member.id })
+        let summary = viewModel.readReceiptMembers.first(where: { $0.id == member.id })
         return HStack(spacing: 10) {
             PulseAvatar(
                 name: summary?.name ?? "Member",
@@ -3797,6 +3807,14 @@ final class RoomViewModel: ObservableObject {
     }
     @Published var readSurfaceObscured = false { didSet { noteRiverChanged() } }
 
+    @Published private(set) var readReceiptMembers: [WireConversationMember] = []
+
+    func messageInfo(_ id: String, now: Date = Date()) -> WireChatMessage? {
+        guard session?.sessionGeneration == readSessionGeneration else { return nil }
+        return messages.first { $0.id == id && $0.conversationId == conversationId &&
+            PulseRemediationLogic.isAlive($0.expiresAt, now: now) }
+    }
+
     private var readerMemberships: [String: String] = [:]
     private var visibleReadIDs: Set<String> = []
 
@@ -3849,7 +3867,7 @@ final class RoomViewModel: ObservableObject {
     /// W7 - carrier rows (game / tournament / red packet) land instantly from
     /// the flow that created them; the next window refresh reconciles.
     func injectCarrier(_ m: WireChatMessage) {
-        guard !messages.contains(where: { $0.id == m.id }) else { return }
+        guard m.conversationId == conversationId, !messages.contains(where: { $0.id == m.id }) else { return }
         messages.append(m)
     }
 
@@ -3969,6 +3987,7 @@ final class RoomViewModel: ObservableObject {
         self.isGroupRoom = conversation.isGroup
         self.initialJumpMessageId = initialJumpMessageId
         self.voiceRate = VoicePlaybackManager.storedRate()
+        self.readReceiptMembers = conversation.members
         // R2-B R30-c - freeze the unread anchor from the list summary the
         // route carried (web freezes the same values at tap time).
         let viewerId = session.viewer?.id
@@ -4632,6 +4651,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     private func adoptReadMembers(_ detail: WireConversationSummary) {
+        readReceiptMembers = detail.members
         readerMemberships = detail.members.reduce(into: [:]) { result, member in result[member.id] = member.readMembershipId }
         let previous = memberWatermarks
         memberWatermarks = detail.members.reduce(into: [String: Date]()) { stamps, member in
