@@ -62,7 +62,7 @@ struct PulseComposerInput: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: PulseComposerTextView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width > 0 else { return nil }
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
         let full = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         let line = (uiView.font ?? font).lineHeight
         let height = Self.height(content: full.height, line: line)
@@ -105,7 +105,7 @@ struct PulseComposerInput: UIViewRepresentable {
             } else { parent.focused = focused }
         }
 
-        func textView(_ textView: UITextView, willPresentEditMenuWith animator: UIEditMenuInteractionAnimating) {
+        func textView(_ textView: UITextView, willPresentEditMenuWithAnimator animator: UIEditMenuInteractionAnimating) {
             if menuSession !== parent.session {
                 menuSession?.setTransientReadObscured(menuID, false)
                 menuSession = parent.session
@@ -113,7 +113,7 @@ struct PulseComposerInput: UIViewRepresentable {
             menu.begin()
             menuSession?.setTransientReadObscured(menuID, true)
         }
-        func textView(_ textView: UITextView, willDismissEditMenuWith animator: UIEditMenuInteractionAnimating) {
+        func textView(_ textView: UITextView, willDismissEditMenuWithAnimator animator: UIEditMenuInteractionAnimating) {
             let ticket = menu.ticket
             animator.addCompletion { [weak self] in self?.finishMenu(ticket) }
         }
