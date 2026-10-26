@@ -605,13 +605,14 @@ class ChatRoomViewModel @Inject constructor(
         scheduleRead()
     }
 
+    private val readIntents = mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>()
     private fun scheduleRead() {
         val anchor = readingAnchor ?: return
         readJob?.cancel()
         readJob = viewModelScope.launch {
             app.pulse.domain.sync.acknowledgeVisibleRead(
                 isCurrent = { readingAnchor == anchor },
-                send = { safelySend { repo.markReadThrough(conversationId, anchor) } },
+                send = readIntents.getOrPut(anchor) { app.pulse.domain.sync.visibleReadIntent(repo, conversationId, anchor) }::send,
             )
         }
     }

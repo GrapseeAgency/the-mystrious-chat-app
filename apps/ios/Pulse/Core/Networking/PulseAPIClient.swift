@@ -304,17 +304,31 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extractSendResult(from: data)
     }
 
-    public func markRead(conversationId: String, messageId: String? = nil, minimumReadAt: String? = nil) async throws {
+    public func captureReadIntent(conversationId: String) async throws -> String {
+        struct Receipt: Decodable { let readIntentVersion: Int; let conversationId: String; let userId: String; let readIntent: String }
+        let receipt = try await get("/api/conversations/\(q(conversationId))/read-intent?userId=\(q(userId))", as: Receipt.self)
+        guard receipt.readIntentVersion == 1, receipt.conversationId == conversationId, receipt.userId == userId,
+              !receipt.readIntent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, receipt.readIntent.utf16.count <= 128 else {
+            throw Failure(kind: .validation, message: "Read intent was not confirmed.")
+        }
+        try Task.checkCancellation()
+        return receipt.readIntent
+    }
+
+    public func markRead(conversationId: String, messageId: String? = nil, minimumReadAt: String? = nil, readIntent: String? = nil) async throws {
         struct Receipt: Decodable {
             let ok: Bool; let readReceiptVersion: Int; let conversationId: String; let userId: String
+            let readIntent: String
             let mode: String; let messageId: String?; let lastReadAt: String
         }
+        let intent: String
+        if let readIntent { intent = readIntent } else { intent = try await captureReadIntent(conversationId: conversationId) }
         let mode = messageId == nil ? "all" : "visible"
-        var body = ["userId": userId, "mode": mode]
+        var body = ["userId": userId, "mode": mode, "readIntent": intent]
         if let messageId { body["messageId"] = messageId }
         let data = try await postRaw("/api/conversations/\(conversationId)/read-state", body: body)
         let receipt = try decoder.decode(Receipt.self, from: data)
-        guard receipt.ok, receipt.readReceiptVersion == 1, receipt.conversationId == conversationId,
+        guard receipt.ok, receipt.readReceiptVersion == 2, receipt.readIntent == intent, receipt.conversationId == conversationId,
               receipt.userId == userId, receipt.mode == mode, receipt.messageId == messageId,
               let acknowledged = PulseFormat.date(receipt.lastReadAt) else {
             throw Failure(kind: .validation, message: "Read state was not confirmed.")
@@ -401,11 +415,12 @@ public struct PulseAPIClient: Sendable {
     public func markUnread(conversationId: String, on: Bool) async throws {
         struct Receipt: Decodable {
             let ok: Bool; let unreadReceiptVersion: Int; let conversationId: String; let userId: String
-            let manualUnread: Bool
+            let manualUnread: Bool; let readIntent: String
         }
-        let data = try await patchRaw("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on])
+        let intent = try await captureReadIntent(conversationId: conversationId)
+        let data = try await patchRaw("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on, "readIntent": intent])
         let receipt = try decoder.decode(Receipt.self, from: data)
-        guard receipt.ok, receipt.unreadReceiptVersion == 1, receipt.conversationId == conversationId,
+        guard receipt.ok, receipt.unreadReceiptVersion == 2, receipt.readIntent == intent, receipt.conversationId == conversationId,
               receipt.userId == userId, receipt.manualUnread == on else {
             throw Failure(kind: .validation, message: "Unread state was not confirmed. Refresh before retrying.")
         }

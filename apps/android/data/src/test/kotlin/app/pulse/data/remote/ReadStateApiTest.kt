@@ -16,14 +16,16 @@ import org.junit.Test
 
 class ReadStateApiTest {
     @Test fun bothReadIntentsRequireTheExactReceiptInsteadOfAnyHttpSuccess() = runTest {
-        for (anchor in listOf("anchor", null)) for (mode in listOf("valid", "legacy", "false", "version", "room", "owner", "anchor", "intent", "date", "behind")) {
+        for (anchor in listOf("anchor", null)) for (mode in listOf("valid", "legacy", "false", "version", "room", "owner", "anchor", "intent", "date", "behind", "fence")) {
             val intent = if (anchor == null) "all" else "visible"
             val http = HttpClient(MockEngine { request ->
+                if (request.url.encodedPath.endsWith("/read-intent")) return@MockEngine respond(
+                    """{"readIntentVersion":1,"conversationId":"room","userId":"me","readIntent":"fence"}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
                 assertEquals("/api/conversations/room/read-state", request.url.encodedPath)
                 assertTrue((request.body as TextContent).text.contains("\"mode\":\"$intent\""))
                 val stamp = when (mode) { "date" -> "invalid"; "behind" -> "2026-10-22T00:00:00Z"; else -> "2026-10-22T00:00:10Z" }
                 val message = if (mode == "anchor") "\"other\"" else anchor?.let { "\"$it\"" } ?: "null"
-                val body = if (mode == "legacy") """{"ok":true}""" else """{"ok":${mode != "false"},"readReceiptVersion":${if (mode == "version") 0 else 1},"conversationId":"${if (mode == "room") "other" else "room"}","userId":"${if (mode == "owner") "other" else "me"}","messageId":$message,"mode":"${if (mode == "intent") "wrong" else intent}","lastReadAt":"$stamp"}"""
+                val body = if (mode == "legacy") """{"ok":true}""" else """{"ok":${mode != "false"},"readReceiptVersion":${if (mode == "version") 0 else 2},"readIntent":"${if (mode == "fence") "other-fence" else "fence"}","conversationId":"${if (mode == "room") "other" else "room"}","userId":"${if (mode == "owner") "other" else "me"}","messageId":$message,"mode":"${if (mode == "intent") "wrong" else intent}","lastReadAt":"$stamp"}"""
                 respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
             })
             try {
@@ -35,7 +37,7 @@ class ReadStateApiTest {
     @Test fun unsupportedGatewayDoesNotFallbackToMarkAll() = runTest {
         var calls = 0
         val http = HttpClient(MockEngine { request ->
-            calls++; assertEquals("/api/conversations/room/read-state", request.url.encodedPath)
+            calls++; assertEquals("/api/conversations/room/read-intent", request.url.encodedPath)
             respond("""{"error":"not found"}""", HttpStatusCode.NotFound, headersOf("Content-Type", "application/json"))
         })
         try {
@@ -46,6 +48,8 @@ class ReadStateApiTest {
     @Test fun manualUnreadRequiresExactOwnerRoomVersionAndDesiredBoolean() = runTest {
         for (on in listOf(true, false)) for (mode in listOf("valid", "legacy", "false", "version", "room", "owner", "opposite", "missing", "null", "string", "ok-string", "version-string", "numeric-owner")) {
             val http = HttpClient(MockEngine { request ->
+                if (request.url.encodedPath.endsWith("/read-intent")) return@MockEngine respond(
+                    """{"readIntentVersion":1,"conversationId":"room","userId":"me","readIntent":"fence"}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
                 assertEquals("PATCH", request.method.value)
                 assertEquals("/api/conversations/room/mark-unread", request.url.encodedPath)
                 assertTrue((request.body as TextContent).text.contains("\"on\":$on"))
@@ -53,7 +57,8 @@ class ReadStateApiTest {
                     if (mode == "ok-string") put("ok", "true") else put("ok", mode != "false")
                     if (mode != "legacy") {
                         if (mode == "version-string") put("unreadReceiptVersion", "1")
-                        else put("unreadReceiptVersion", if (mode == "version") 0 else 1)
+                        else put("unreadReceiptVersion", if (mode == "version") 0 else 2)
+                        put("readIntent", "fence")
                         put("conversationId", if (mode == "room") "other" else "room")
                         if (mode == "numeric-owner") put("userId", 1)
                         else put("userId", if (mode == "owner") "other" else "me")
@@ -73,6 +78,31 @@ class ReadStateApiTest {
             } finally { http.close() }
         }
     }
+    @Test fun malformedReadIntentCannotDispatchAnyReadOrUnreadWrite() = runTest {
+        for (mode in listOf("missing", "owner", "room", "version", "version-string", "numeric-token", "blank")) {
+            var writes = 0
+            val http = HttpClient(MockEngine { request ->
+                if (request.method.value != "GET") writes++
+                val receipt = buildJsonObject {
+                    if (mode != "missing") {
+                        if (mode == "version-string") put("readIntentVersion", "1")
+                        else put("readIntentVersion", if (mode == "version") 2 else 1)
+                        put("conversationId", if (mode == "room") "other" else "room")
+                        put("userId", if (mode == "owner") "other" else "me")
+                        if (mode == "numeric-token") put("readIntent", 1) else put("readIntent", if (mode == "blank") " " else "fence")
+                    }
+                }
+                respond(receipt.toString(), HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+            })
+            try {
+                val api = PulseApi(http, gateway = { "https://read.test" })
+                assertTrue(api.markRead("room", "me", "anchor") is PulseResult.Failure)
+                assertTrue(api.markUnread("room", "me", true) is PulseResult.Failure)
+                assertEquals(mode, 0, writes)
+            } finally { http.close() }
+        }
+    }
+
     @Test fun groupRingCarriesTheAdmittedCallIdentity() = runTest {
         val http = HttpClient(MockEngine { request ->
             assertEquals("/api/conversations/room/calls/ring", request.url.encodedPath)

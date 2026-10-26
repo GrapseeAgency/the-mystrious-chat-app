@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { canJoinConversationCall } from '../../src/lib/group-call-access.ts'
-import { advanceReadReceipt, receiptRecipients, setManualUnread } from '../../src/lib/read-receipt.ts'
+import { advanceReadReceipt, receiptRecipients, setManualUnread, captureReadIntent } from '../../src/lib/read-receipt.ts'
 import { inboxMessagesWhere, visibleInboxPreview, threadRepliesWhere, removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation, openSelfConversation } from '../../src/lib/direct-conversation.ts'
@@ -26,6 +26,7 @@ async function fixture(run) {
         lastReadAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME,
         handRaisedAt DATETIME, screenPrivacy BOOLEAN NOT NULL DEFAULT false, manualUnread BOOLEAN NOT NULL DEFAULT false,
         draft TEXT, UNIQUE(userId,conversationId))`,
+      await readFile(new URL('../../prisma/patches/20261026_read_intent_state.sql', import.meta.url), 'utf8'),
       `CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, createdAt DATETIME, senderId TEXT,
         expiresAt DATETIME, deletedAt DATETIME, parentId TEXT, viaAutomation BOOLEAN NOT NULL DEFAULT false)`,
       `CREATE TABLE UserBlock(id TEXT PRIMARY KEY, blockerId TEXT, blockedId TEXT)`,
@@ -39,7 +40,7 @@ async function seedRead(db) {
 }
 test('reading a displayed row leaves later, undisplayed arrival unread', () => fixture(async db => {
   await seedRead(db)
-  assert.equal((await advanceReadReceipt(db, 'room', 'reader', 'displayed')).toISOString(), t(10).toISOString())
+  assert.equal((await advanceReadReceipt(db, 'room', 'reader', 'displayed', (await captureReadIntent(db, 'room', 'reader')).readIntent)).toISOString(), t(10).toISOString())
   assert.equal(await db.message.count({ where: { conversationId: 'room', createdAt: { gt: t(10) } } }), 1)
   assert.equal((await db.conversationParticipant.findUnique({ where: { id: 'p' } })).manualUnread, false)
 }))
@@ -371,13 +372,13 @@ test('an older displayed receipt preserves a newer manual marker; deliberate mar
   await db.$executeRaw`INSERT INTO Conversation(id,updatedAt) VALUES ('room',${t(0)})`
   await advanceReadReceipt(db, 'room', 'reader', 'not-displayed')
   const receipt = await setManualUnread(db, 'room', 'reader', true)
-  assert.deepEqual(receipt, { ok: true, unreadReceiptVersion: 1, conversationId: 'room', userId: 'reader', manualUnread: true })
+  assert.deepEqual(receipt, { ok: true, unreadReceiptVersion: 2, readIntent: undefined, conversationId: 'room', userId: 'reader', manualUnread: true })
   assert.equal((await advanceReadReceipt(db, 'room', 'reader', 'displayed')).toISOString(), t(20).toISOString())
   let row = await db.conversationParticipant.findUnique({ where: { id: 'p' } })
   assert.equal(row.manualUnread, true)
   // Deleting the latest row must not prevent an explicit mark-all from clearing the marker.
   await db.message.delete({ where: { id: 'not-displayed' }, select: { id: true } })
-  await advanceReadReceipt(db, 'room', 'reader')
+  await advanceReadReceipt(db, 'room', 'reader', undefined, (await captureReadIntent(db, 'room', 'reader')).readIntent)
   row = await db.conversationParticipant.findUnique({ where: { id: 'p' } })
   assert.equal(row.manualUnread, false)
   assert.equal(row.lastReadAt.toISOString(), t(20).toISOString())
@@ -407,4 +408,65 @@ test('call access requires current conversation membership, not just an existing
   assert.equal(await canJoinConversationCall(db, 'other', 'reader'), false)
   await db.conversationParticipant.delete({ where: { id: 'p' } })
   assert.equal(await canJoinConversationCall(db, 'room', 'reader'), false)
+}))
+
+
+test('manual unread fences equal/newer delayed visible receipts and lost-ACK retries', () => fixture(async db => {
+  await seedRead(db)
+  await db.$executeRaw`INSERT INTO Conversation(id,updatedAt) VALUES ('room',${t(0)})`
+  const original = (await captureReadIntent(db, 'room', 'reader')).readIntent
+  await advanceReadReceipt(db, 'room', 'reader', 'displayed', original) // response lost
+  await setManualUnread(db, 'room', 'reader', true, original)
+  for (const anchor of ['displayed', 'not-displayed', 'displayed']) {
+    await advanceReadReceipt(db, 'room', 'reader', anchor, original)
+    assert.equal((await db.conversationParticipant.findUnique({ where: { id: 'p' } })).manualUnread, true)
+  }
+  const fresh = (await captureReadIntent(db, 'room', 'reader')).readIntent
+  assert.notEqual(fresh, original)
+  await advanceReadReceipt(db, 'room', 'reader', 'not-displayed', fresh)
+  assert.equal((await db.conversationParticipant.findUnique({ where: { id: 'p' } })).manualUnread, false)
+}))
+test('stale explicit all/off/on cannot overwrite newer manual intent, including ABA', () => fixture(async db => {
+  await seedRead(db)
+  await db.$executeRaw`INSERT INTO Conversation(id,updatedAt) VALUES ('room',${t(0)})`
+  const original = (await captureReadIntent(db, 'room', 'reader')).readIntent
+  await setManualUnread(db, 'room', 'reader', false, original)
+  const afterOff = (await captureReadIntent(db, 'room', 'reader')).readIntent
+  await setManualUnread(db, 'room', 'reader', true, afterOff)
+  for (const token of [original, afterOff]) {
+    await assert.rejects(advanceReadReceipt(db, 'room', 'reader', undefined, token), {status:409})
+    for (const on of [true,false]) await assert.rejects(setManualUnread(db, 'room', 'reader', on, token), {status:409})
+  }
+  const row = await db.conversationParticipant.findUnique({ where: { id:'p' } })
+  assert.equal(row.manualUnread,true); assert.equal(row.lastReadAt.toISOString(),t(0).toISOString())
+  await advanceReadReceipt(db, 'room', 'reader', undefined, (await captureReadIntent(db, 'room', 'reader')).readIntent)
+  assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,false)
+}))
+test('legacy unfenced reads cannot erase manual unread; removed membership cannot capture intent', () => fixture(async db => {
+  await seedRead(db)
+  for (const anchor of ['displayed', 'not-displayed', undefined]) {
+    await advanceReadReceipt(db, 'room', 'reader', anchor)
+    assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,true)
+  }
+  await assert.rejects(captureReadIntent(db,'room','outsider'),{status:403})
+  const old = (await captureReadIntent(db,'room','reader')).readIntent
+  await db.conversationParticipant.delete({where:{id:'p'}})
+  await db.conversationParticipant.create({data:{id:'replacement',userId:'reader',conversationId:'room',manualUnread:true,lastReadAt:t(0)}})
+  const fresh = (await captureReadIntent(db,'room','reader')).readIntent
+  assert.notEqual(old,fresh)
+  await advanceReadReceipt(db,'room','reader','not-displayed',old)
+  assert.equal((await db.conversationParticipant.findUnique({where:{id:'replacement'}})).manualUnread,true)
+}))
+
+
+test('read-intent migration is additive and rerunnable; membership removal retires its fence', () => fixture(async db => {
+  await seedRead(db)
+  const first = await captureReadIntent(db,'room','reader')
+  await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261026_read_intent_state.sql', import.meta.url),'utf8'))
+  assert.equal((await captureReadIntent(db,'room','reader')).readIntent,first.readIntent)
+  assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,true)
+  await db.conversationParticipant.delete({where:{id:'p'}})
+  assert.equal(await db.readIntentState.count(),0)
+  await db.conversationParticipant.create({data:{id:'p',userId:'reader',conversationId:'room',manualUnread:true,lastReadAt:t(0)}})
+  assert.notEqual((await captureReadIntent(db,'room','reader')).readIntent,first.readIntent)
 }))

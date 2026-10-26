@@ -274,7 +274,8 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    suspend fun markVisibleRead(messageId: String): Result<Unit> = repo.markReadThrough(conversationId, messageId)
+    fun markVisibleRead(messageId: String): app.pulse.domain.sync.VisibleReadIntent =
+        app.pulse.domain.sync.visibleReadIntent(repo, conversationId, messageId)
 
     fun notify(text: String, isError: Boolean = false) {
         _state.value = _state.value.copy(notice = RoomNotice(text, isError))

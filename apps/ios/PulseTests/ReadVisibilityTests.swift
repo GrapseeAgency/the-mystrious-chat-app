@@ -131,3 +131,21 @@ final class ReadVisibilityTests: XCTestCase {
     }
 
 }
+
+extension ReadVisibilityTests {
+    func testReadIntentSurvivesLostAckAndReconnectButRetiredPreparationCannotReplaceIt() throws {
+        var gate = PulseReadReceiptGate()
+        gate.setBoundary(roomId: "room", messageId: "message", now: 0)
+        let first = try XCTUnwrap(gate.begin(roomId: "room", now: 1))
+        XCTAssertTrue(gate.retainIntent("before-manual-unread", for: first))
+        XCTAssertTrue(gate.finish(first, succeeded: false))
+        gate.restartDwell(now: 2)
+        let retry = try XCTUnwrap(gate.begin(roomId: "room", now: 3))
+        XCTAssertEqual(gate.intent(for: retry), "before-manual-unread")
+        XCTAssertFalse(gate.retainIntent("late-old-preparation", for: first))
+        gate.reset()
+        gate.setBoundary(roomId: "room", messageId: "message", now: 4)
+        let reopened = try XCTUnwrap(gate.begin(roomId: "room", now: 5))
+        XCTAssertNil(gate.intent(for: reopened))
+    }
+}

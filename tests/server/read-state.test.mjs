@@ -13,8 +13,8 @@ async function fixture() {
     NextResponse: { json: Response.json },
     db: { user: { findUnique: async () => ({ preferences: privateReceipts ? '{"readReceipts":false}' : null }) } },
     requireActionOwner: async () => denied ? Response.json({}, { status: 403 }) : null,
-    advanceReadReceipt: async (_, room, owner, anchor) => {
-      calls.push({ room, owner, anchor }); if (refusal) throw refusal
+    advanceReadReceipt: async (_, room, owner, anchor, intent) => {
+      calls.push({ room, owner, anchor, intent }); if (refusal) throw refusal
       return new Date('2026-10-22T00:00:10Z')
     }, ReadReceiptError, receiptRecipients,
     memberIdsOf: async () => ['reader', 'peer'], notifySocket: async (...args) => fanouts.push(args),
@@ -23,11 +23,11 @@ async function fixture() {
   const post = new Function(...Object.keys(dependencies), source + ';return POST')(...Object.values(dependencies))
   return { calls, fanouts, deny: () => { denied = true }, private: () => { privateReceipts = true },
     refuse: error => { refusal = error },
-    request: body => post(new Request('https://read.test', { method: 'POST', body: JSON.stringify({ userId: 'reader', ...body }) }), { params: Promise.resolve({ id: 'room' }) }) }
+    request: body => post(new Request('https://read.test', { method: 'POST', body: JSON.stringify({ userId: 'reader', readIntent:'fence', ...body }) }), { params: Promise.resolve({ id: 'room' }) }) }
 }
 test('read-state requires explicit visible/all intent and cannot downgrade a missing anchor to mark-all', async () => {
   const f = await fixture()
-  for (const body of [{}, { mode: 'visible' }, { mode: 'visible', messageId: null }, { mode: 'visible', messageId: ' ' },
+  for (const body of [{ mode:'all',readIntent:null }, { mode:'all',readIntent:'' }, {}, { mode: 'visible' }, { mode: 'visible', messageId: null }, { mode: 'visible', messageId: ' ' },
     { mode: 'visible', messageId: 1 }, { mode: 'all', messageId: 'anchor' }, { mode: 'all', messageId: false }, { mode: 'other' }]) {
     assert.equal((await f.request(body)).status, 400)
   }
@@ -39,9 +39,9 @@ test('read receipt binds version, owner, room, intent, boundary and committed ti
   for (const mode of ['visible', 'all']) {
     const body = { mode, ...(mode === 'visible' ? { messageId: 'anchor' } : {}) }
     const response = await f.request(body)
-    assert.deepEqual(await response.json(), { ok: true, readReceiptVersion: 1, userId: 'reader', conversationId: 'room',
+    assert.deepEqual(await response.json(), { ok: true, readReceiptVersion: 2, readIntent: 'fence', userId: 'reader', conversationId: 'room',
       mode, messageId: mode === 'visible' ? 'anchor' : null, lastReadAt: '2026-10-22T00:00:10.000Z' })
-    assert.deepEqual(f.calls.at(-1), { room: 'room', owner: 'reader', anchor: mode === 'visible' ? 'anchor' : undefined })
+    assert.deepEqual(f.calls.at(-1), { room: 'room', owner: 'reader', anchor: mode === 'visible' ? 'anchor' : undefined, intent:'fence' })
   }
   assert.deepEqual(f.fanouts[0][1], ['reader', 'peer'])
   f.private(); await f.request({ mode: 'visible', messageId: 'anchor' })
@@ -64,7 +64,7 @@ test('manual unread route validates desired state and returns only the committed
     .replace(/^import .*$/gm, '').replace(/export /g, '')
   let denied = false, refusal
   const calls = [], fanouts = []
-  const receipt = { ok: true, unreadReceiptVersion: 1, conversationId: 'room', userId: 'reader', manualUnread: true }
+  const receipt = { ok: true, unreadReceiptVersion: 2, readIntent: 'fence', conversationId: 'room', userId: 'reader', manualUnread: true }
   const dependencies = {
     NextResponse: { json: Response.json }, db: {}, ReadReceiptError,
     bearerToken: () => 'session', requireActionOwner: async () => denied ? Response.json({}, { status: 403 }) : null,
@@ -75,7 +75,7 @@ test('manual unread route validates desired state and returns only the committed
   }
   const patch = new Function(...Object.keys(dependencies), source + ';return PATCH')(...Object.values(dependencies))
   const request = body => patch(new Request('https://pulse.test/api/conversations/room/mark-unread', {
-    method: 'PATCH', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' },
+    method: 'PATCH', body: JSON.stringify(body && !Array.isArray(body) ? {readIntent:'fence',...body} : body), headers: { 'Content-Type': 'application/json' },
   }), { params: Promise.resolve({ id: 'room' }) })
   for (const body of [null, [], {}, { userId: 'reader' }, { userId: 'reader', on: 'true' }, { userId: 'reader', on: null }]) {
     assert.equal((await request(body)).status, 400)

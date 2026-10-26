@@ -532,7 +532,15 @@ public final class PulseSession: ObservableObject {
                 throw PulseAPIClient.Failure(kind: .validation, message: "The displayed read boundary is no longer available.")
             }
             try Task.checkCancellation()
-            try await client.markRead(conversationId: conversationId, messageId: request.boundary.messageId, minimumReadAt: anchor.createdAt)
+            let intent: String
+            if let retained = readGate.intent(for: request) { intent = retained }
+            else {
+                intent = try await client.captureReadIntent(conversationId: conversationId)
+                guard generation == epoch, readGate.retainIntent(intent, for: request) else { return }
+            }
+            try Task.checkCancellation()
+            try await client.markRead(conversationId: conversationId, messageId: request.boundary.messageId,
+                minimumReadAt: anchor.createdAt, readIntent: intent)
             guard generation == epoch else { return }
             if readGate.finish(request, succeeded: true) { readFailureCount = 0 }
             // An older visible boundary can still have been accepted by the server;

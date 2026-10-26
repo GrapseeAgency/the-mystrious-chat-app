@@ -652,6 +652,7 @@ internal fun MirrorRoom(
         safetyOpen || scheduleOpen || viewOnceGrant != null
     val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
+    val readIntents = remember(repository, viewerId, groupId) { mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>() }
     val readConnected by remember(repository) { repository.observeConnected() }
         .collectAsStateWithLifecycle(initialValue = false)
     LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, readConnected, minimumReadPixels, readerLifecycle) {
@@ -672,7 +673,7 @@ internal fun MirrorRoom(
                 androidx.compose.runtime.snapshotFlow { currentBoundary() }.collectLatest { id ->
                     if (id != null) app.pulse.domain.sync.acknowledgeVisibleRead(
                         isCurrent = { currentBoundary() == id },
-                        send = { repository.markReadThrough(groupId, id) },
+                        send = readIntents.getOrPut(id) { app.pulse.domain.sync.visibleReadIntent(repository, groupId, id) }::send,
                     )
                 }
             } finally {

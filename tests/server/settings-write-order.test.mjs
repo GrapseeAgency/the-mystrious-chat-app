@@ -29,7 +29,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'UserBlock', 'AccountReport', 'UserVerification', 'Message', 'Reminder']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'UserVerification', 'Message', 'Reminder']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -154,7 +154,19 @@ async function fixture(run, database = db => db) {
     const feed=(kind,token='synthetic-owner',q='private')=>feeds[kind](new Request(`https://settings.test/api/${kind}?userId=owner&q=${encodeURIComponent(q)}`,{
       headers:token?{authorization:`Bearer ${token}`}:{},
     }))
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed})
+    const readRoutes={}
+    for (const [kind,method] of [['read-intent','GET'],['read-state','POST'],['mark-unread','PATCH']]) {
+      readRoutes[kind]=await load(`src/app/api/conversations/[id]/${kind}/route.ts`,{
+        ...blockDeps,...reads,memberIdsOf:async()=>['owner','other'],
+      },method)
+    }
+    const attention=(kind,body={},token='synthetic-owner',userId='owner')=>readRoutes[kind](new Request(
+      `https://settings.test/api/conversations/room/${kind}?userId=${userId}`,{
+        method:kind==='read-intent'?'GET':kind==='read-state'?'POST':'PATCH',
+        headers:token?{authorization:`Bearer ${token}`}:{},
+        ...(kind==='read-intent'?{}:{body:JSON.stringify({userId,...body})}),
+      }),{params:Promise.resolve({id:'room'})})
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed,attention})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -467,7 +479,7 @@ test('conversation list creation send and legacy mark-all cannot be impersonated
   assert.equal(notices.length,0)
   assert.equal((await chat('list')).status,200)
   assert.equal((await chat('read')).status,200)
-  assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).manualUnread,false)
+  assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).manualUnread,true)
 }))
 
 test('history search and sync require credential-derived room membership before even the expiry purge',()=>fixture(async({db,chat})=>{
@@ -543,4 +555,30 @@ test('mention snippets do not split Unicode at the display boundary',()=>fixture
   await db.message.create({data:{id:'unicode',conversationId:'room',senderId:'other',content}})
   const row=(await (await feed('mentions')).json()).items[0]
   assert.equal(row.snippet,'@owner '+'x'.repeat(152));assert.ok(row.snippet.isWellFormed())
+}))
+
+
+test('read intent routes require owner authority and retain manual choice against delayed and forged writes',()=>fixture(async({db,attention})=>{
+  await db.conversationParticipant.updateMany({where:{userId:'owner'},data:{lastReadAt:new Date(0)}})
+  await db.message.create({data:{id:'anchor',conversationId:'room',senderId:'other',content:'visible'}})
+  for(const kind of ['read-intent','read-state','mark-unread']) for(const token of [null,'invalid','synthetic-other']) {
+    const response=await attention(kind,{mode:'visible',messageId:'anchor',on:true,readIntent:'forged'},token)
+    assert.equal(response.status,token?403:401)
+  }
+  const snapshot=await attention('read-intent')
+  assert.equal(snapshot.headers.get('cache-control'),'private, no-store')
+  const {readIntent:old}=await snapshot.json()
+  assert.equal((await attention('mark-unread',{on:true})).status,400)
+  assert.equal((await attention('mark-unread',{on:true,readIntent:old})).status,200)
+  const visible=await attention('read-state',{mode:'visible',messageId:'anchor',readIntent:old})
+  assert.equal(visible.status,200)
+  assert.equal((await visible.json()).readIntent,old)
+  assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).manualUnread,true)
+  assert.equal((await attention('read-state',{mode:'all',readIntent:old})).status,409)
+  assert.equal((await attention('mark-unread',{on:false,readIntent:old})).status,409)
+  const {readIntent:fresh}=await (await attention('read-intent')).json()
+  assert.equal((await attention('read-state',{mode:'all',readIntent:fresh})).status,200)
+  assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).manualUnread,false)
+  await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
+  assert.equal((await attention('read-intent')).status,403)
 }))

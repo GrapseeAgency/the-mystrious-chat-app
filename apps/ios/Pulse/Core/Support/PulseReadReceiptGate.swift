@@ -3,7 +3,7 @@ import Foundation
 /// Visibility dwell and response ownership, independent of transport scheduling.
 /// `now` is monotonic uptime, never the device's adjustable wall clock.
 struct PulseReadReceiptGate {
-    struct Boundary: Equatable {
+    struct Boundary: Hashable {
         let roomId: String
         let messageId: String
     }
@@ -17,9 +17,17 @@ struct PulseReadReceiptGate {
     private var eligibleAt: TimeInterval = .infinity
     private var acknowledged: Boundary?
     private var inFlight: Request?
+    private var intents: [Boundary: String] = [:]
+    func intent(for request: Request) -> String? { intents[request.boundary] }
+    mutating func retainIntent(_ intent: String, for request: Request) -> Bool {
+        guard request.revision == revision, request == inFlight else { return false }
+        intents[request.boundary] = intent
+        return true
+    }
     static let dwell: TimeInterval = 0.6
 
     mutating func reset() {
+        intents.removeAll()
         boundary = nil
         acknowledged = nil
         eligibleAt = .infinity

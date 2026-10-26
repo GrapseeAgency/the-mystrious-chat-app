@@ -576,6 +576,47 @@ exports.Prisma.PushTokenScalarFieldEnum = {
   updatedAt: 'updatedAt'
 };
 
+exports.Prisma.MessageSendOperationScalarFieldEnum = {
+  senderId: 'senderId',
+  clientId: 'clientId',
+  conversationId: 'conversationId',
+  requestHash: 'requestHash',
+  messageId: 'messageId'
+};
+
+exports.Prisma.WhiteboardStrokeOperationScalarFieldEnum = {
+  senderId: 'senderId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  strokeId: 'strokeId'
+};
+
+exports.Prisma.WalletOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  result: 'result'
+};
+
+exports.Prisma.ConversationCreationOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  conversationId: 'conversationId'
+};
+
+exports.Prisma.ScheduledCreationOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  scheduledId: 'scheduledId'
+};
+
+exports.Prisma.ReadIntentStateScalarFieldEnum = {
+  participantId: 'participantId',
+  revision: 'revision'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -630,7 +671,13 @@ exports.Prisma.ModelName = {
   GroupEvent: 'GroupEvent',
   EventRsvp: 'EventRsvp',
   UploadedFile: 'UploadedFile',
-  PushToken: 'PushToken'
+  PushToken: 'PushToken',
+  MessageSendOperation: 'MessageSendOperation',
+  WhiteboardStrokeOperation: 'WhiteboardStrokeOperation',
+  WalletOperation: 'WalletOperation',
+  ConversationCreationOperation: 'ConversationCreationOperation',
+  ScheduledCreationOperation: 'ScheduledCreationOperation',
+  ReadIntentState: 'ReadIntentState'
 };
 
 /**

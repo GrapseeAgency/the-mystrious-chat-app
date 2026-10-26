@@ -122,7 +122,11 @@ data class ManualUnreadReceiptDto(
     val conversationId: String,
     val userId: String,
     val manualUnread: Boolean,
+    val readIntent: String,
 )
+
+@Serializable
+data class ReadIntentDto(val readIntentVersion: Int, val conversationId: String, val userId: String, val readIntent: String)
 
 /** Identity-bearing read receipt, not an arbitrary HTTP success. */
 @Serializable
@@ -134,6 +138,7 @@ data class ReadReceiptDto(
     val mode: String,
     val lastReadAt: String,
     val messageId: String? = null,
+    val readIntent: String,
 )
 
 /** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt ascending). */

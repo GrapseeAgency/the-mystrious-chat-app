@@ -407,6 +407,8 @@ model ConversationParticipant {
   @@unique([userId, conversationId])
   @@index([conversationId])
   @@index([userId])
+  readIntentState ReadIntentState?
+
 }
 
 model Message {
@@ -847,4 +849,11 @@ model ScheduledCreationOperation {
   scheduledId String
 
   @@id([userId, clientId])
+}
+
+// Independent of message timestamps: a new manual action retires old read intent.
+model ReadIntentState {
+  participantId String @id
+  revision String
+  participant ConversationParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 }

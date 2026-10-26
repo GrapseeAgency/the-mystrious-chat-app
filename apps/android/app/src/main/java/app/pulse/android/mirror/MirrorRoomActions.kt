@@ -555,7 +555,7 @@ internal fun MirrorThreadSheet(
         root = currentRoot,
         replies = replies,
         listState = listState,
-        onRead = { threadRepository.markReadThrough(root.conversationId, it) },
+        onRead = { app.pulse.domain.sync.visibleReadIntent(threadRepository, root.conversationId, it) },
         onActive = { app.pulse.android.notify.IncomingAttention.beginReading(root.conversationId) },
     )
     LaunchedEffect(jumpMessageId, replies, available, loading, fetchedReplies) {

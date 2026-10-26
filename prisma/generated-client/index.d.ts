@@ -287,6 +287,36 @@ export type UploadedFile = $Result.DefaultSelection<Prisma.$UploadedFilePayload>
  * 
  */
 export type PushToken = $Result.DefaultSelection<Prisma.$PushTokenPayload>
+/**
+ * Model MessageSendOperation
+ *
+ */
+export type MessageSendOperation = $Result.DefaultSelection<Prisma.$MessageSendOperationPayload>
+/**
+ * Model WhiteboardStrokeOperation
+ *
+ */
+export type WhiteboardStrokeOperation = $Result.DefaultSelection<Prisma.$WhiteboardStrokeOperationPayload>
+/**
+ * Model WalletOperation
+ *
+ */
+export type WalletOperation = $Result.DefaultSelection<Prisma.$WalletOperationPayload>
+/**
+ * Model ConversationCreationOperation
+ *
+ */
+export type ConversationCreationOperation = $Result.DefaultSelection<Prisma.$ConversationCreationOperationPayload>
+/**
+ * Model ScheduledCreationOperation
+ *
+ */
+export type ScheduledCreationOperation = $Result.DefaultSelection<Prisma.$ScheduledCreationOperationPayload>
+/**
+ * Model ReadIntentState
+ *
+ */
+export type ReadIntentState = $Result.DefaultSelection<Prisma.$ReadIntentStatePayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -835,6 +865,66 @@ export class PrismaClient<
     * ```
     */
   get pushToken(): Prisma.PushTokenDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.messageSendOperation`: Exposes CRUD operations for the **MessageSendOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more MessageSendOperations
+    * const messageSendOperations = await prisma.messageSendOperation.findMany()
+    * ```
+    */
+  get messageSendOperation(): Prisma.MessageSendOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.whiteboardStrokeOperation`: Exposes CRUD operations for the **WhiteboardStrokeOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more WhiteboardStrokeOperations
+    * const whiteboardStrokeOperations = await prisma.whiteboardStrokeOperation.findMany()
+    * ```
+    */
+  get whiteboardStrokeOperation(): Prisma.WhiteboardStrokeOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.walletOperation`: Exposes CRUD operations for the **WalletOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more WalletOperations
+    * const walletOperations = await prisma.walletOperation.findMany()
+    * ```
+    */
+  get walletOperation(): Prisma.WalletOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.conversationCreationOperation`: Exposes CRUD operations for the **ConversationCreationOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ConversationCreationOperations
+    * const conversationCreationOperations = await prisma.conversationCreationOperation.findMany()
+    * ```
+    */
+  get conversationCreationOperation(): Prisma.ConversationCreationOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.scheduledCreationOperation`: Exposes CRUD operations for the **ScheduledCreationOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ScheduledCreationOperations
+    * const scheduledCreationOperations = await prisma.scheduledCreationOperation.findMany()
+    * ```
+    */
+  get scheduledCreationOperation(): Prisma.ScheduledCreationOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.readIntentState`: Exposes CRUD operations for the **ReadIntentState** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ReadIntentStates
+    * const readIntentStates = await prisma.readIntentState.findMany()
+    * ```
+    */
+  get readIntentState(): Prisma.ReadIntentStateDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1318,7 +1408,13 @@ export namespace Prisma {
     GroupEvent: 'GroupEvent',
     EventRsvp: 'EventRsvp',
     UploadedFile: 'UploadedFile',
-    PushToken: 'PushToken'
+    PushToken: 'PushToken',
+    MessageSendOperation: 'MessageSendOperation',
+    WhiteboardStrokeOperation: 'WhiteboardStrokeOperation',
+    WalletOperation: 'WalletOperation',
+    ConversationCreationOperation: 'ConversationCreationOperation',
+    ScheduledCreationOperation: 'ScheduledCreationOperation',
+    ReadIntentState: 'ReadIntentState'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1337,7 +1433,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -4523,6 +4619,450 @@ export namespace Prisma {
           }
         }
       }
+      MessageSendOperation: {
+        payload: Prisma.$MessageSendOperationPayload<ExtArgs>
+        fields: Prisma.MessageSendOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.MessageSendOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.MessageSendOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.MessageSendOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.MessageSendOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>
+          }
+          findMany: {
+            args: Prisma.MessageSendOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>[]
+          }
+          create: {
+            args: Prisma.MessageSendOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>
+          }
+          createMany: {
+            args: Prisma.MessageSendOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.MessageSendOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.MessageSendOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>
+          }
+          update: {
+            args: Prisma.MessageSendOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.MessageSendOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.MessageSendOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.MessageSendOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.MessageSendOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MessageSendOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.MessageSendOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateMessageSendOperation>
+          }
+          groupBy: {
+            args: Prisma.MessageSendOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<MessageSendOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.MessageSendOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<MessageSendOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      WhiteboardStrokeOperation: {
+        payload: Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>
+        fields: Prisma.WhiteboardStrokeOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.WhiteboardStrokeOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.WhiteboardStrokeOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.WhiteboardStrokeOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.WhiteboardStrokeOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>
+          }
+          findMany: {
+            args: Prisma.WhiteboardStrokeOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>[]
+          }
+          create: {
+            args: Prisma.WhiteboardStrokeOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>
+          }
+          createMany: {
+            args: Prisma.WhiteboardStrokeOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.WhiteboardStrokeOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.WhiteboardStrokeOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>
+          }
+          update: {
+            args: Prisma.WhiteboardStrokeOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.WhiteboardStrokeOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.WhiteboardStrokeOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.WhiteboardStrokeOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.WhiteboardStrokeOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WhiteboardStrokeOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.WhiteboardStrokeOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateWhiteboardStrokeOperation>
+          }
+          groupBy: {
+            args: Prisma.WhiteboardStrokeOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<WhiteboardStrokeOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.WhiteboardStrokeOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<WhiteboardStrokeOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      WalletOperation: {
+        payload: Prisma.$WalletOperationPayload<ExtArgs>
+        fields: Prisma.WalletOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.WalletOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.WalletOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.WalletOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.WalletOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>
+          }
+          findMany: {
+            args: Prisma.WalletOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>[]
+          }
+          create: {
+            args: Prisma.WalletOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>
+          }
+          createMany: {
+            args: Prisma.WalletOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.WalletOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.WalletOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>
+          }
+          update: {
+            args: Prisma.WalletOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.WalletOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.WalletOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.WalletOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.WalletOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$WalletOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.WalletOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateWalletOperation>
+          }
+          groupBy: {
+            args: Prisma.WalletOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<WalletOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.WalletOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<WalletOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      ConversationCreationOperation: {
+        payload: Prisma.$ConversationCreationOperationPayload<ExtArgs>
+        fields: Prisma.ConversationCreationOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ConversationCreationOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ConversationCreationOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.ConversationCreationOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ConversationCreationOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>
+          }
+          findMany: {
+            args: Prisma.ConversationCreationOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>[]
+          }
+          create: {
+            args: Prisma.ConversationCreationOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>
+          }
+          createMany: {
+            args: Prisma.ConversationCreationOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ConversationCreationOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.ConversationCreationOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>
+          }
+          update: {
+            args: Prisma.ConversationCreationOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.ConversationCreationOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ConversationCreationOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ConversationCreationOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.ConversationCreationOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ConversationCreationOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.ConversationCreationOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateConversationCreationOperation>
+          }
+          groupBy: {
+            args: Prisma.ConversationCreationOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ConversationCreationOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ConversationCreationOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<ConversationCreationOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      ScheduledCreationOperation: {
+        payload: Prisma.$ScheduledCreationOperationPayload<ExtArgs>
+        fields: Prisma.ScheduledCreationOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ScheduledCreationOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ScheduledCreationOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.ScheduledCreationOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ScheduledCreationOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>
+          }
+          findMany: {
+            args: Prisma.ScheduledCreationOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>[]
+          }
+          create: {
+            args: Prisma.ScheduledCreationOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>
+          }
+          createMany: {
+            args: Prisma.ScheduledCreationOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ScheduledCreationOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.ScheduledCreationOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>
+          }
+          update: {
+            args: Prisma.ScheduledCreationOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.ScheduledCreationOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ScheduledCreationOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ScheduledCreationOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.ScheduledCreationOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledCreationOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.ScheduledCreationOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateScheduledCreationOperation>
+          }
+          groupBy: {
+            args: Prisma.ScheduledCreationOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ScheduledCreationOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ScheduledCreationOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<ScheduledCreationOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      ReadIntentState: {
+        payload: Prisma.$ReadIntentStatePayload<ExtArgs>
+        fields: Prisma.ReadIntentStateFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ReadIntentStateFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ReadIntentStateFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>
+          }
+          findFirst: {
+            args: Prisma.ReadIntentStateFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ReadIntentStateFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>
+          }
+          findMany: {
+            args: Prisma.ReadIntentStateFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>[]
+          }
+          create: {
+            args: Prisma.ReadIntentStateCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>
+          }
+          createMany: {
+            args: Prisma.ReadIntentStateCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ReadIntentStateCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>[]
+          }
+          delete: {
+            args: Prisma.ReadIntentStateDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>
+          }
+          update: {
+            args: Prisma.ReadIntentStateUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>
+          }
+          deleteMany: {
+            args: Prisma.ReadIntentStateDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ReadIntentStateUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ReadIntentStateUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>[]
+          }
+          upsert: {
+            args: Prisma.ReadIntentStateUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReadIntentStatePayload>
+          }
+          aggregate: {
+            args: Prisma.ReadIntentStateAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateReadIntentState>
+          }
+          groupBy: {
+            args: Prisma.ReadIntentStateGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ReadIntentStateGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ReadIntentStateCountArgs<ExtArgs>
+            result: $Utils.Optional<ReadIntentStateCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -4662,6 +5202,12 @@ export namespace Prisma {
     eventRsvp?: EventRsvpOmit
     uploadedFile?: UploadedFileOmit
     pushToken?: PushTokenOmit
+    messageSendOperation?: MessageSendOperationOmit
+    whiteboardStrokeOperation?: WhiteboardStrokeOperationOmit
+    walletOperation?: WalletOperationOmit
+    conversationCreationOperation?: ConversationCreationOperationOmit
+    scheduledCreationOperation?: ScheduledCreationOperationOmit
+    readIntentState?: ReadIntentStateOmit
   }
 
   /* Types for Logging */
@@ -28575,6 +29121,7 @@ export namespace Prisma {
     draft?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
+    readIntentState?: boolean | ConversationParticipant$readIntentStateArgs<ExtArgs>
   }, ExtArgs["result"]["conversationParticipant"]>
 
   export type ConversationParticipantSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
@@ -28633,6 +29180,7 @@ export namespace Prisma {
   export type ConversationParticipantInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
+    readIntentState?: boolean | ConversationParticipant$readIntentStateArgs<ExtArgs>
   }
   export type ConversationParticipantIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
@@ -28648,6 +29196,7 @@ export namespace Prisma {
     objects: {
       user: Prisma.$UserPayload<ExtArgs>
       conversation: Prisma.$ConversationPayload<ExtArgs>
+      readIntentState: Prisma.$ReadIntentStatePayload<ExtArgs> | null
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -29059,6 +29608,7 @@ export namespace Prisma {
     readonly [Symbol.toStringTag]: "PrismaPromise"
     user<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
     conversation<T extends ConversationDefaultArgs<ExtArgs> = {}>(args?: Subset<T, ConversationDefaultArgs<ExtArgs>>): Prisma__ConversationClient<$Result.GetResult<Prisma.$ConversationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    readIntentState<T extends ConversationParticipant$readIntentStateArgs<ExtArgs> = {}>(args?: Subset<T, ConversationParticipant$readIntentStateArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -29492,6 +30042,25 @@ export namespace Prisma {
      * Limit how many ConversationParticipants to delete.
      */
     limit?: number
+  }
+
+  /**
+   * ConversationParticipant.readIntentState
+   */
+  export type ConversationParticipant$readIntentStateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    where?: ReadIntentStateWhereInput
   }
 
   /**
@@ -53963,7 +54532,7 @@ export namespace Prisma {
     readonly createdAt: FieldRef<"PushToken", 'DateTime'>
     readonly updatedAt: FieldRef<"PushToken", 'DateTime'>
   }
-    
+
 
   // Custom InputTypes
   /**
@@ -54020,31 +54589,31 @@ export namespace Prisma {
     where?: PushTokenWhereInput
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
-     * 
+     *
      * Determine the order of PushTokens to fetch.
      */
     orderBy?: PushTokenOrderByWithRelationInput | PushTokenOrderByWithRelationInput[]
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
-     * 
+     *
      * Sets the position for searching for PushTokens.
      */
     cursor?: PushTokenWhereUniqueInput
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
-     * 
+     *
      * Take `±n` PushTokens from the position of the cursor.
      */
     take?: number
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
-     * 
+     *
      * Skip the first `n` PushTokens.
      */
     skip?: number
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
-     * 
+     *
      * Filter by unique combinations of PushTokens.
      */
     distinct?: PushTokenScalarFieldEnum | PushTokenScalarFieldEnum[]
@@ -54068,31 +54637,31 @@ export namespace Prisma {
     where?: PushTokenWhereInput
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
-     * 
+     *
      * Determine the order of PushTokens to fetch.
      */
     orderBy?: PushTokenOrderByWithRelationInput | PushTokenOrderByWithRelationInput[]
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
-     * 
+     *
      * Sets the position for searching for PushTokens.
      */
     cursor?: PushTokenWhereUniqueInput
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
-     * 
+     *
      * Take `±n` PushTokens from the position of the cursor.
      */
     take?: number
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
-     * 
+     *
      * Skip the first `n` PushTokens.
      */
     skip?: number
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
-     * 
+     *
      * Filter by unique combinations of PushTokens.
      */
     distinct?: PushTokenScalarFieldEnum | PushTokenScalarFieldEnum[]
@@ -54116,25 +54685,25 @@ export namespace Prisma {
     where?: PushTokenWhereInput
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
-     * 
+     *
      * Determine the order of PushTokens to fetch.
      */
     orderBy?: PushTokenOrderByWithRelationInput | PushTokenOrderByWithRelationInput[]
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
-     * 
+     *
      * Sets the position for listing PushTokens.
      */
     cursor?: PushTokenWhereUniqueInput
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
-     * 
+     *
      * Take `±n` PushTokens from the position of the cursor.
      */
     take?: number
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
-     * 
+     *
      * Skip the first `n` PushTokens.
      */
     skip?: number
@@ -54323,6 +54892,5936 @@ export namespace Prisma {
      * Omit specific fields from the PushToken
      */
     omit?: PushTokenOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model MessageSendOperation
+   */
+
+  export type AggregateMessageSendOperation = {
+    _count: MessageSendOperationCountAggregateOutputType | null
+    _min: MessageSendOperationMinAggregateOutputType | null
+    _max: MessageSendOperationMaxAggregateOutputType | null
+  }
+
+  export type MessageSendOperationMinAggregateOutputType = {
+    senderId: string | null
+    clientId: string | null
+    conversationId: string | null
+    requestHash: string | null
+    messageId: string | null
+  }
+
+  export type MessageSendOperationMaxAggregateOutputType = {
+    senderId: string | null
+    clientId: string | null
+    conversationId: string | null
+    requestHash: string | null
+    messageId: string | null
+  }
+
+  export type MessageSendOperationCountAggregateOutputType = {
+    senderId: number
+    clientId: number
+    conversationId: number
+    requestHash: number
+    messageId: number
+    _all: number
+  }
+
+
+  export type MessageSendOperationMinAggregateInputType = {
+    senderId?: true
+    clientId?: true
+    conversationId?: true
+    requestHash?: true
+    messageId?: true
+  }
+
+  export type MessageSendOperationMaxAggregateInputType = {
+    senderId?: true
+    clientId?: true
+    conversationId?: true
+    requestHash?: true
+    messageId?: true
+  }
+
+  export type MessageSendOperationCountAggregateInputType = {
+    senderId?: true
+    clientId?: true
+    conversationId?: true
+    requestHash?: true
+    messageId?: true
+    _all?: true
+  }
+
+  export type MessageSendOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which MessageSendOperation to aggregate.
+     */
+    where?: MessageSendOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of MessageSendOperations to fetch.
+     */
+    orderBy?: MessageSendOperationOrderByWithRelationInput | MessageSendOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: MessageSendOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` MessageSendOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` MessageSendOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned MessageSendOperations
+    **/
+    _count?: true | MessageSendOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: MessageSendOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: MessageSendOperationMaxAggregateInputType
+  }
+
+  export type GetMessageSendOperationAggregateType<T extends MessageSendOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateMessageSendOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateMessageSendOperation[P]>
+      : GetScalarType<T[P], AggregateMessageSendOperation[P]>
+  }
+
+
+
+
+  export type MessageSendOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: MessageSendOperationWhereInput
+    orderBy?: MessageSendOperationOrderByWithAggregationInput | MessageSendOperationOrderByWithAggregationInput[]
+    by: MessageSendOperationScalarFieldEnum[] | MessageSendOperationScalarFieldEnum
+    having?: MessageSendOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: MessageSendOperationCountAggregateInputType | true
+    _min?: MessageSendOperationMinAggregateInputType
+    _max?: MessageSendOperationMaxAggregateInputType
+  }
+
+  export type MessageSendOperationGroupByOutputType = {
+    senderId: string
+    clientId: string
+    conversationId: string
+    requestHash: string
+    messageId: string
+    _count: MessageSendOperationCountAggregateOutputType | null
+    _min: MessageSendOperationMinAggregateOutputType | null
+    _max: MessageSendOperationMaxAggregateOutputType | null
+  }
+
+  type GetMessageSendOperationGroupByPayload<T extends MessageSendOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<MessageSendOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof MessageSendOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], MessageSendOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], MessageSendOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type MessageSendOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    senderId?: boolean
+    clientId?: boolean
+    conversationId?: boolean
+    requestHash?: boolean
+    messageId?: boolean
+  }, ExtArgs["result"]["messageSendOperation"]>
+
+  export type MessageSendOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    senderId?: boolean
+    clientId?: boolean
+    conversationId?: boolean
+    requestHash?: boolean
+    messageId?: boolean
+  }, ExtArgs["result"]["messageSendOperation"]>
+
+  export type MessageSendOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    senderId?: boolean
+    clientId?: boolean
+    conversationId?: boolean
+    requestHash?: boolean
+    messageId?: boolean
+  }, ExtArgs["result"]["messageSendOperation"]>
+
+  export type MessageSendOperationSelectScalar = {
+    senderId?: boolean
+    clientId?: boolean
+    conversationId?: boolean
+    requestHash?: boolean
+    messageId?: boolean
+  }
+
+  export type MessageSendOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"senderId" | "clientId" | "conversationId" | "requestHash" | "messageId", ExtArgs["result"]["messageSendOperation"]>
+
+  export type $MessageSendOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "MessageSendOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      senderId: string
+      clientId: string
+      conversationId: string
+      requestHash: string
+      messageId: string
+    }, ExtArgs["result"]["messageSendOperation"]>
+    composites: {}
+  }
+
+  type MessageSendOperationGetPayload<S extends boolean | null | undefined | MessageSendOperationDefaultArgs> = $Result.GetResult<Prisma.$MessageSendOperationPayload, S>
+
+  type MessageSendOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<MessageSendOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: MessageSendOperationCountAggregateInputType | true
+    }
+
+  export interface MessageSendOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['MessageSendOperation'], meta: { name: 'MessageSendOperation' } }
+    /**
+     * Find zero or one MessageSendOperation that matches the filter.
+     * @param {MessageSendOperationFindUniqueArgs} args - Arguments to find a MessageSendOperation
+     * @example
+     * // Get one MessageSendOperation
+     * const messageSendOperation = await prisma.messageSendOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends MessageSendOperationFindUniqueArgs>(args: SelectSubset<T, MessageSendOperationFindUniqueArgs<ExtArgs>>): Prisma__MessageSendOperationClient<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one MessageSendOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {MessageSendOperationFindUniqueOrThrowArgs} args - Arguments to find a MessageSendOperation
+     * @example
+     * // Get one MessageSendOperation
+     * const messageSendOperation = await prisma.messageSendOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends MessageSendOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, MessageSendOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__MessageSendOperationClient<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first MessageSendOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageSendOperationFindFirstArgs} args - Arguments to find a MessageSendOperation
+     * @example
+     * // Get one MessageSendOperation
+     * const messageSendOperation = await prisma.messageSendOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends MessageSendOperationFindFirstArgs>(args?: SelectSubset<T, MessageSendOperationFindFirstArgs<ExtArgs>>): Prisma__MessageSendOperationClient<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first MessageSendOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageSendOperationFindFirstOrThrowArgs} args - Arguments to find a MessageSendOperation
+     * @example
+     * // Get one MessageSendOperation
+     * const messageSendOperation = await prisma.messageSendOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends MessageSendOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, MessageSendOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__MessageSendOperationClient<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more MessageSendOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageSendOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all MessageSendOperations
+     * const messageSendOperations = await prisma.messageSendOperation.findMany()
+     *
+     * // Get first 10 MessageSendOperations
+     * const messageSendOperations = await prisma.messageSendOperation.findMany({ take: 10 })
+     *
+     * // Only select the `senderId`
+     * const messageSendOperationWithSenderIdOnly = await prisma.messageSendOperation.findMany({ select: { senderId: true } })
+     *
+     */
+    findMany<T extends MessageSendOperationFindManyArgs>(args?: SelectSubset<T, MessageSendOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a MessageSendOperation.
+     * @param {MessageSendOperationCreateArgs} args - Arguments to create a MessageSendOperation.
+     * @example
+     * // Create one MessageSendOperation
+     * const MessageSendOperation = await prisma.messageSendOperation.create({
+     *   data: {
+     *     // ... data to create a MessageSendOperation
+     *   }
+     * })
+     *
+     */
+    create<T extends MessageSendOperationCreateArgs>(args: SelectSubset<T, MessageSendOperationCreateArgs<ExtArgs>>): Prisma__MessageSendOperationClient<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many MessageSendOperations.
+     * @param {MessageSendOperationCreateManyArgs} args - Arguments to create many MessageSendOperations.
+     * @example
+     * // Create many MessageSendOperations
+     * const messageSendOperation = await prisma.messageSendOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends MessageSendOperationCreateManyArgs>(args?: SelectSubset<T, MessageSendOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many MessageSendOperations and returns the data saved in the database.
+     * @param {MessageSendOperationCreateManyAndReturnArgs} args - Arguments to create many MessageSendOperations.
+     * @example
+     * // Create many MessageSendOperations
+     * const messageSendOperation = await prisma.messageSendOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many MessageSendOperations and only return the `senderId`
+     * const messageSendOperationWithSenderIdOnly = await prisma.messageSendOperation.createManyAndReturn({
+     *   select: { senderId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends MessageSendOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, MessageSendOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a MessageSendOperation.
+     * @param {MessageSendOperationDeleteArgs} args - Arguments to delete one MessageSendOperation.
+     * @example
+     * // Delete one MessageSendOperation
+     * const MessageSendOperation = await prisma.messageSendOperation.delete({
+     *   where: {
+     *     // ... filter to delete one MessageSendOperation
+     *   }
+     * })
+     *
+     */
+    delete<T extends MessageSendOperationDeleteArgs>(args: SelectSubset<T, MessageSendOperationDeleteArgs<ExtArgs>>): Prisma__MessageSendOperationClient<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one MessageSendOperation.
+     * @param {MessageSendOperationUpdateArgs} args - Arguments to update one MessageSendOperation.
+     * @example
+     * // Update one MessageSendOperation
+     * const messageSendOperation = await prisma.messageSendOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends MessageSendOperationUpdateArgs>(args: SelectSubset<T, MessageSendOperationUpdateArgs<ExtArgs>>): Prisma__MessageSendOperationClient<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more MessageSendOperations.
+     * @param {MessageSendOperationDeleteManyArgs} args - Arguments to filter MessageSendOperations to delete.
+     * @example
+     * // Delete a few MessageSendOperations
+     * const { count } = await prisma.messageSendOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends MessageSendOperationDeleteManyArgs>(args?: SelectSubset<T, MessageSendOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more MessageSendOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageSendOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many MessageSendOperations
+     * const messageSendOperation = await prisma.messageSendOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends MessageSendOperationUpdateManyArgs>(args: SelectSubset<T, MessageSendOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more MessageSendOperations and returns the data updated in the database.
+     * @param {MessageSendOperationUpdateManyAndReturnArgs} args - Arguments to update many MessageSendOperations.
+     * @example
+     * // Update many MessageSendOperations
+     * const messageSendOperation = await prisma.messageSendOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more MessageSendOperations and only return the `senderId`
+     * const messageSendOperationWithSenderIdOnly = await prisma.messageSendOperation.updateManyAndReturn({
+     *   select: { senderId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends MessageSendOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, MessageSendOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one MessageSendOperation.
+     * @param {MessageSendOperationUpsertArgs} args - Arguments to update or create a MessageSendOperation.
+     * @example
+     * // Update or create a MessageSendOperation
+     * const messageSendOperation = await prisma.messageSendOperation.upsert({
+     *   create: {
+     *     // ... data to create a MessageSendOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the MessageSendOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends MessageSendOperationUpsertArgs>(args: SelectSubset<T, MessageSendOperationUpsertArgs<ExtArgs>>): Prisma__MessageSendOperationClient<$Result.GetResult<Prisma.$MessageSendOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of MessageSendOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageSendOperationCountArgs} args - Arguments to filter MessageSendOperations to count.
+     * @example
+     * // Count the number of MessageSendOperations
+     * const count = await prisma.messageSendOperation.count({
+     *   where: {
+     *     // ... the filter for the MessageSendOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends MessageSendOperationCountArgs>(
+      args?: Subset<T, MessageSendOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], MessageSendOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a MessageSendOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageSendOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends MessageSendOperationAggregateArgs>(args: Subset<T, MessageSendOperationAggregateArgs>): Prisma.PrismaPromise<GetMessageSendOperationAggregateType<T>>
+
+    /**
+     * Group by MessageSendOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MessageSendOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends MessageSendOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: MessageSendOperationGroupByArgs['orderBy'] }
+        : { orderBy?: MessageSendOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, MessageSendOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetMessageSendOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the MessageSendOperation model
+   */
+  readonly fields: MessageSendOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for MessageSendOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__MessageSendOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the MessageSendOperation model
+   */
+  interface MessageSendOperationFieldRefs {
+    readonly senderId: FieldRef<"MessageSendOperation", 'String'>
+    readonly clientId: FieldRef<"MessageSendOperation", 'String'>
+    readonly conversationId: FieldRef<"MessageSendOperation", 'String'>
+    readonly requestHash: FieldRef<"MessageSendOperation", 'String'>
+    readonly messageId: FieldRef<"MessageSendOperation", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * MessageSendOperation findUnique
+   */
+  export type MessageSendOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MessageSendOperation to fetch.
+     */
+    where: MessageSendOperationWhereUniqueInput
+  }
+
+  /**
+   * MessageSendOperation findUniqueOrThrow
+   */
+  export type MessageSendOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MessageSendOperation to fetch.
+     */
+    where: MessageSendOperationWhereUniqueInput
+  }
+
+  /**
+   * MessageSendOperation findFirst
+   */
+  export type MessageSendOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MessageSendOperation to fetch.
+     */
+    where?: MessageSendOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of MessageSendOperations to fetch.
+     */
+    orderBy?: MessageSendOperationOrderByWithRelationInput | MessageSendOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for MessageSendOperations.
+     */
+    cursor?: MessageSendOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` MessageSendOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` MessageSendOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of MessageSendOperations.
+     */
+    distinct?: MessageSendOperationScalarFieldEnum | MessageSendOperationScalarFieldEnum[]
+  }
+
+  /**
+   * MessageSendOperation findFirstOrThrow
+   */
+  export type MessageSendOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MessageSendOperation to fetch.
+     */
+    where?: MessageSendOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of MessageSendOperations to fetch.
+     */
+    orderBy?: MessageSendOperationOrderByWithRelationInput | MessageSendOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for MessageSendOperations.
+     */
+    cursor?: MessageSendOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` MessageSendOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` MessageSendOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of MessageSendOperations.
+     */
+    distinct?: MessageSendOperationScalarFieldEnum | MessageSendOperationScalarFieldEnum[]
+  }
+
+  /**
+   * MessageSendOperation findMany
+   */
+  export type MessageSendOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MessageSendOperations to fetch.
+     */
+    where?: MessageSendOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of MessageSendOperations to fetch.
+     */
+    orderBy?: MessageSendOperationOrderByWithRelationInput | MessageSendOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing MessageSendOperations.
+     */
+    cursor?: MessageSendOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` MessageSendOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` MessageSendOperations.
+     */
+    skip?: number
+    distinct?: MessageSendOperationScalarFieldEnum | MessageSendOperationScalarFieldEnum[]
+  }
+
+  /**
+   * MessageSendOperation create
+   */
+  export type MessageSendOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a MessageSendOperation.
+     */
+    data: XOR<MessageSendOperationCreateInput, MessageSendOperationUncheckedCreateInput>
+  }
+
+  /**
+   * MessageSendOperation createMany
+   */
+  export type MessageSendOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many MessageSendOperations.
+     */
+    data: MessageSendOperationCreateManyInput | MessageSendOperationCreateManyInput[]
+  }
+
+  /**
+   * MessageSendOperation createManyAndReturn
+   */
+  export type MessageSendOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many MessageSendOperations.
+     */
+    data: MessageSendOperationCreateManyInput | MessageSendOperationCreateManyInput[]
+  }
+
+  /**
+   * MessageSendOperation update
+   */
+  export type MessageSendOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a MessageSendOperation.
+     */
+    data: XOR<MessageSendOperationUpdateInput, MessageSendOperationUncheckedUpdateInput>
+    /**
+     * Choose, which MessageSendOperation to update.
+     */
+    where: MessageSendOperationWhereUniqueInput
+  }
+
+  /**
+   * MessageSendOperation updateMany
+   */
+  export type MessageSendOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update MessageSendOperations.
+     */
+    data: XOR<MessageSendOperationUpdateManyMutationInput, MessageSendOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which MessageSendOperations to update
+     */
+    where?: MessageSendOperationWhereInput
+    /**
+     * Limit how many MessageSendOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * MessageSendOperation updateManyAndReturn
+   */
+  export type MessageSendOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update MessageSendOperations.
+     */
+    data: XOR<MessageSendOperationUpdateManyMutationInput, MessageSendOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which MessageSendOperations to update
+     */
+    where?: MessageSendOperationWhereInput
+    /**
+     * Limit how many MessageSendOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * MessageSendOperation upsert
+   */
+  export type MessageSendOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the MessageSendOperation to update in case it exists.
+     */
+    where: MessageSendOperationWhereUniqueInput
+    /**
+     * In case the MessageSendOperation found by the `where` argument doesn't exist, create a new MessageSendOperation with this data.
+     */
+    create: XOR<MessageSendOperationCreateInput, MessageSendOperationUncheckedCreateInput>
+    /**
+     * In case the MessageSendOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<MessageSendOperationUpdateInput, MessageSendOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * MessageSendOperation delete
+   */
+  export type MessageSendOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+    /**
+     * Filter which MessageSendOperation to delete.
+     */
+    where: MessageSendOperationWhereUniqueInput
+  }
+
+  /**
+   * MessageSendOperation deleteMany
+   */
+  export type MessageSendOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which MessageSendOperations to delete
+     */
+    where?: MessageSendOperationWhereInput
+    /**
+     * Limit how many MessageSendOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * MessageSendOperation without action
+   */
+  export type MessageSendOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MessageSendOperation
+     */
+    select?: MessageSendOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MessageSendOperation
+     */
+    omit?: MessageSendOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model WhiteboardStrokeOperation
+   */
+
+  export type AggregateWhiteboardStrokeOperation = {
+    _count: WhiteboardStrokeOperationCountAggregateOutputType | null
+    _min: WhiteboardStrokeOperationMinAggregateOutputType | null
+    _max: WhiteboardStrokeOperationMaxAggregateOutputType | null
+  }
+
+  export type WhiteboardStrokeOperationMinAggregateOutputType = {
+    senderId: string | null
+    clientId: string | null
+    requestHash: string | null
+    strokeId: string | null
+  }
+
+  export type WhiteboardStrokeOperationMaxAggregateOutputType = {
+    senderId: string | null
+    clientId: string | null
+    requestHash: string | null
+    strokeId: string | null
+  }
+
+  export type WhiteboardStrokeOperationCountAggregateOutputType = {
+    senderId: number
+    clientId: number
+    requestHash: number
+    strokeId: number
+    _all: number
+  }
+
+
+  export type WhiteboardStrokeOperationMinAggregateInputType = {
+    senderId?: true
+    clientId?: true
+    requestHash?: true
+    strokeId?: true
+  }
+
+  export type WhiteboardStrokeOperationMaxAggregateInputType = {
+    senderId?: true
+    clientId?: true
+    requestHash?: true
+    strokeId?: true
+  }
+
+  export type WhiteboardStrokeOperationCountAggregateInputType = {
+    senderId?: true
+    clientId?: true
+    requestHash?: true
+    strokeId?: true
+    _all?: true
+  }
+
+  export type WhiteboardStrokeOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which WhiteboardStrokeOperation to aggregate.
+     */
+    where?: WhiteboardStrokeOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of WhiteboardStrokeOperations to fetch.
+     */
+    orderBy?: WhiteboardStrokeOperationOrderByWithRelationInput | WhiteboardStrokeOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: WhiteboardStrokeOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` WhiteboardStrokeOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` WhiteboardStrokeOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned WhiteboardStrokeOperations
+    **/
+    _count?: true | WhiteboardStrokeOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: WhiteboardStrokeOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: WhiteboardStrokeOperationMaxAggregateInputType
+  }
+
+  export type GetWhiteboardStrokeOperationAggregateType<T extends WhiteboardStrokeOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateWhiteboardStrokeOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateWhiteboardStrokeOperation[P]>
+      : GetScalarType<T[P], AggregateWhiteboardStrokeOperation[P]>
+  }
+
+
+
+
+  export type WhiteboardStrokeOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: WhiteboardStrokeOperationWhereInput
+    orderBy?: WhiteboardStrokeOperationOrderByWithAggregationInput | WhiteboardStrokeOperationOrderByWithAggregationInput[]
+    by: WhiteboardStrokeOperationScalarFieldEnum[] | WhiteboardStrokeOperationScalarFieldEnum
+    having?: WhiteboardStrokeOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: WhiteboardStrokeOperationCountAggregateInputType | true
+    _min?: WhiteboardStrokeOperationMinAggregateInputType
+    _max?: WhiteboardStrokeOperationMaxAggregateInputType
+  }
+
+  export type WhiteboardStrokeOperationGroupByOutputType = {
+    senderId: string
+    clientId: string
+    requestHash: string
+    strokeId: string
+    _count: WhiteboardStrokeOperationCountAggregateOutputType | null
+    _min: WhiteboardStrokeOperationMinAggregateOutputType | null
+    _max: WhiteboardStrokeOperationMaxAggregateOutputType | null
+  }
+
+  type GetWhiteboardStrokeOperationGroupByPayload<T extends WhiteboardStrokeOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<WhiteboardStrokeOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof WhiteboardStrokeOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], WhiteboardStrokeOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], WhiteboardStrokeOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type WhiteboardStrokeOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    senderId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    strokeId?: boolean
+  }, ExtArgs["result"]["whiteboardStrokeOperation"]>
+
+  export type WhiteboardStrokeOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    senderId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    strokeId?: boolean
+  }, ExtArgs["result"]["whiteboardStrokeOperation"]>
+
+  export type WhiteboardStrokeOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    senderId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    strokeId?: boolean
+  }, ExtArgs["result"]["whiteboardStrokeOperation"]>
+
+  export type WhiteboardStrokeOperationSelectScalar = {
+    senderId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    strokeId?: boolean
+  }
+
+  export type WhiteboardStrokeOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"senderId" | "clientId" | "requestHash" | "strokeId", ExtArgs["result"]["whiteboardStrokeOperation"]>
+
+  export type $WhiteboardStrokeOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "WhiteboardStrokeOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      senderId: string
+      clientId: string
+      requestHash: string
+      strokeId: string
+    }, ExtArgs["result"]["whiteboardStrokeOperation"]>
+    composites: {}
+  }
+
+  type WhiteboardStrokeOperationGetPayload<S extends boolean | null | undefined | WhiteboardStrokeOperationDefaultArgs> = $Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload, S>
+
+  type WhiteboardStrokeOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<WhiteboardStrokeOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: WhiteboardStrokeOperationCountAggregateInputType | true
+    }
+
+  export interface WhiteboardStrokeOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['WhiteboardStrokeOperation'], meta: { name: 'WhiteboardStrokeOperation' } }
+    /**
+     * Find zero or one WhiteboardStrokeOperation that matches the filter.
+     * @param {WhiteboardStrokeOperationFindUniqueArgs} args - Arguments to find a WhiteboardStrokeOperation
+     * @example
+     * // Get one WhiteboardStrokeOperation
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends WhiteboardStrokeOperationFindUniqueArgs>(args: SelectSubset<T, WhiteboardStrokeOperationFindUniqueArgs<ExtArgs>>): Prisma__WhiteboardStrokeOperationClient<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one WhiteboardStrokeOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {WhiteboardStrokeOperationFindUniqueOrThrowArgs} args - Arguments to find a WhiteboardStrokeOperation
+     * @example
+     * // Get one WhiteboardStrokeOperation
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends WhiteboardStrokeOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, WhiteboardStrokeOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__WhiteboardStrokeOperationClient<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first WhiteboardStrokeOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WhiteboardStrokeOperationFindFirstArgs} args - Arguments to find a WhiteboardStrokeOperation
+     * @example
+     * // Get one WhiteboardStrokeOperation
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends WhiteboardStrokeOperationFindFirstArgs>(args?: SelectSubset<T, WhiteboardStrokeOperationFindFirstArgs<ExtArgs>>): Prisma__WhiteboardStrokeOperationClient<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first WhiteboardStrokeOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WhiteboardStrokeOperationFindFirstOrThrowArgs} args - Arguments to find a WhiteboardStrokeOperation
+     * @example
+     * // Get one WhiteboardStrokeOperation
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends WhiteboardStrokeOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, WhiteboardStrokeOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__WhiteboardStrokeOperationClient<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more WhiteboardStrokeOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WhiteboardStrokeOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all WhiteboardStrokeOperations
+     * const whiteboardStrokeOperations = await prisma.whiteboardStrokeOperation.findMany()
+     *
+     * // Get first 10 WhiteboardStrokeOperations
+     * const whiteboardStrokeOperations = await prisma.whiteboardStrokeOperation.findMany({ take: 10 })
+     *
+     * // Only select the `senderId`
+     * const whiteboardStrokeOperationWithSenderIdOnly = await prisma.whiteboardStrokeOperation.findMany({ select: { senderId: true } })
+     *
+     */
+    findMany<T extends WhiteboardStrokeOperationFindManyArgs>(args?: SelectSubset<T, WhiteboardStrokeOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a WhiteboardStrokeOperation.
+     * @param {WhiteboardStrokeOperationCreateArgs} args - Arguments to create a WhiteboardStrokeOperation.
+     * @example
+     * // Create one WhiteboardStrokeOperation
+     * const WhiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.create({
+     *   data: {
+     *     // ... data to create a WhiteboardStrokeOperation
+     *   }
+     * })
+     *
+     */
+    create<T extends WhiteboardStrokeOperationCreateArgs>(args: SelectSubset<T, WhiteboardStrokeOperationCreateArgs<ExtArgs>>): Prisma__WhiteboardStrokeOperationClient<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many WhiteboardStrokeOperations.
+     * @param {WhiteboardStrokeOperationCreateManyArgs} args - Arguments to create many WhiteboardStrokeOperations.
+     * @example
+     * // Create many WhiteboardStrokeOperations
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends WhiteboardStrokeOperationCreateManyArgs>(args?: SelectSubset<T, WhiteboardStrokeOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many WhiteboardStrokeOperations and returns the data saved in the database.
+     * @param {WhiteboardStrokeOperationCreateManyAndReturnArgs} args - Arguments to create many WhiteboardStrokeOperations.
+     * @example
+     * // Create many WhiteboardStrokeOperations
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many WhiteboardStrokeOperations and only return the `senderId`
+     * const whiteboardStrokeOperationWithSenderIdOnly = await prisma.whiteboardStrokeOperation.createManyAndReturn({
+     *   select: { senderId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends WhiteboardStrokeOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, WhiteboardStrokeOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a WhiteboardStrokeOperation.
+     * @param {WhiteboardStrokeOperationDeleteArgs} args - Arguments to delete one WhiteboardStrokeOperation.
+     * @example
+     * // Delete one WhiteboardStrokeOperation
+     * const WhiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.delete({
+     *   where: {
+     *     // ... filter to delete one WhiteboardStrokeOperation
+     *   }
+     * })
+     *
+     */
+    delete<T extends WhiteboardStrokeOperationDeleteArgs>(args: SelectSubset<T, WhiteboardStrokeOperationDeleteArgs<ExtArgs>>): Prisma__WhiteboardStrokeOperationClient<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one WhiteboardStrokeOperation.
+     * @param {WhiteboardStrokeOperationUpdateArgs} args - Arguments to update one WhiteboardStrokeOperation.
+     * @example
+     * // Update one WhiteboardStrokeOperation
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends WhiteboardStrokeOperationUpdateArgs>(args: SelectSubset<T, WhiteboardStrokeOperationUpdateArgs<ExtArgs>>): Prisma__WhiteboardStrokeOperationClient<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more WhiteboardStrokeOperations.
+     * @param {WhiteboardStrokeOperationDeleteManyArgs} args - Arguments to filter WhiteboardStrokeOperations to delete.
+     * @example
+     * // Delete a few WhiteboardStrokeOperations
+     * const { count } = await prisma.whiteboardStrokeOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends WhiteboardStrokeOperationDeleteManyArgs>(args?: SelectSubset<T, WhiteboardStrokeOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more WhiteboardStrokeOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WhiteboardStrokeOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many WhiteboardStrokeOperations
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends WhiteboardStrokeOperationUpdateManyArgs>(args: SelectSubset<T, WhiteboardStrokeOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more WhiteboardStrokeOperations and returns the data updated in the database.
+     * @param {WhiteboardStrokeOperationUpdateManyAndReturnArgs} args - Arguments to update many WhiteboardStrokeOperations.
+     * @example
+     * // Update many WhiteboardStrokeOperations
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more WhiteboardStrokeOperations and only return the `senderId`
+     * const whiteboardStrokeOperationWithSenderIdOnly = await prisma.whiteboardStrokeOperation.updateManyAndReturn({
+     *   select: { senderId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends WhiteboardStrokeOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, WhiteboardStrokeOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one WhiteboardStrokeOperation.
+     * @param {WhiteboardStrokeOperationUpsertArgs} args - Arguments to update or create a WhiteboardStrokeOperation.
+     * @example
+     * // Update or create a WhiteboardStrokeOperation
+     * const whiteboardStrokeOperation = await prisma.whiteboardStrokeOperation.upsert({
+     *   create: {
+     *     // ... data to create a WhiteboardStrokeOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the WhiteboardStrokeOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends WhiteboardStrokeOperationUpsertArgs>(args: SelectSubset<T, WhiteboardStrokeOperationUpsertArgs<ExtArgs>>): Prisma__WhiteboardStrokeOperationClient<$Result.GetResult<Prisma.$WhiteboardStrokeOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of WhiteboardStrokeOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WhiteboardStrokeOperationCountArgs} args - Arguments to filter WhiteboardStrokeOperations to count.
+     * @example
+     * // Count the number of WhiteboardStrokeOperations
+     * const count = await prisma.whiteboardStrokeOperation.count({
+     *   where: {
+     *     // ... the filter for the WhiteboardStrokeOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends WhiteboardStrokeOperationCountArgs>(
+      args?: Subset<T, WhiteboardStrokeOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], WhiteboardStrokeOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a WhiteboardStrokeOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WhiteboardStrokeOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends WhiteboardStrokeOperationAggregateArgs>(args: Subset<T, WhiteboardStrokeOperationAggregateArgs>): Prisma.PrismaPromise<GetWhiteboardStrokeOperationAggregateType<T>>
+
+    /**
+     * Group by WhiteboardStrokeOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WhiteboardStrokeOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends WhiteboardStrokeOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: WhiteboardStrokeOperationGroupByArgs['orderBy'] }
+        : { orderBy?: WhiteboardStrokeOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, WhiteboardStrokeOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetWhiteboardStrokeOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the WhiteboardStrokeOperation model
+   */
+  readonly fields: WhiteboardStrokeOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for WhiteboardStrokeOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__WhiteboardStrokeOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the WhiteboardStrokeOperation model
+   */
+  interface WhiteboardStrokeOperationFieldRefs {
+    readonly senderId: FieldRef<"WhiteboardStrokeOperation", 'String'>
+    readonly clientId: FieldRef<"WhiteboardStrokeOperation", 'String'>
+    readonly requestHash: FieldRef<"WhiteboardStrokeOperation", 'String'>
+    readonly strokeId: FieldRef<"WhiteboardStrokeOperation", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * WhiteboardStrokeOperation findUnique
+   */
+  export type WhiteboardStrokeOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WhiteboardStrokeOperation to fetch.
+     */
+    where: WhiteboardStrokeOperationWhereUniqueInput
+  }
+
+  /**
+   * WhiteboardStrokeOperation findUniqueOrThrow
+   */
+  export type WhiteboardStrokeOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WhiteboardStrokeOperation to fetch.
+     */
+    where: WhiteboardStrokeOperationWhereUniqueInput
+  }
+
+  /**
+   * WhiteboardStrokeOperation findFirst
+   */
+  export type WhiteboardStrokeOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WhiteboardStrokeOperation to fetch.
+     */
+    where?: WhiteboardStrokeOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of WhiteboardStrokeOperations to fetch.
+     */
+    orderBy?: WhiteboardStrokeOperationOrderByWithRelationInput | WhiteboardStrokeOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for WhiteboardStrokeOperations.
+     */
+    cursor?: WhiteboardStrokeOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` WhiteboardStrokeOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` WhiteboardStrokeOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of WhiteboardStrokeOperations.
+     */
+    distinct?: WhiteboardStrokeOperationScalarFieldEnum | WhiteboardStrokeOperationScalarFieldEnum[]
+  }
+
+  /**
+   * WhiteboardStrokeOperation findFirstOrThrow
+   */
+  export type WhiteboardStrokeOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WhiteboardStrokeOperation to fetch.
+     */
+    where?: WhiteboardStrokeOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of WhiteboardStrokeOperations to fetch.
+     */
+    orderBy?: WhiteboardStrokeOperationOrderByWithRelationInput | WhiteboardStrokeOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for WhiteboardStrokeOperations.
+     */
+    cursor?: WhiteboardStrokeOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` WhiteboardStrokeOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` WhiteboardStrokeOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of WhiteboardStrokeOperations.
+     */
+    distinct?: WhiteboardStrokeOperationScalarFieldEnum | WhiteboardStrokeOperationScalarFieldEnum[]
+  }
+
+  /**
+   * WhiteboardStrokeOperation findMany
+   */
+  export type WhiteboardStrokeOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WhiteboardStrokeOperations to fetch.
+     */
+    where?: WhiteboardStrokeOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of WhiteboardStrokeOperations to fetch.
+     */
+    orderBy?: WhiteboardStrokeOperationOrderByWithRelationInput | WhiteboardStrokeOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing WhiteboardStrokeOperations.
+     */
+    cursor?: WhiteboardStrokeOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` WhiteboardStrokeOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` WhiteboardStrokeOperations.
+     */
+    skip?: number
+    distinct?: WhiteboardStrokeOperationScalarFieldEnum | WhiteboardStrokeOperationScalarFieldEnum[]
+  }
+
+  /**
+   * WhiteboardStrokeOperation create
+   */
+  export type WhiteboardStrokeOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a WhiteboardStrokeOperation.
+     */
+    data: XOR<WhiteboardStrokeOperationCreateInput, WhiteboardStrokeOperationUncheckedCreateInput>
+  }
+
+  /**
+   * WhiteboardStrokeOperation createMany
+   */
+  export type WhiteboardStrokeOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many WhiteboardStrokeOperations.
+     */
+    data: WhiteboardStrokeOperationCreateManyInput | WhiteboardStrokeOperationCreateManyInput[]
+  }
+
+  /**
+   * WhiteboardStrokeOperation createManyAndReturn
+   */
+  export type WhiteboardStrokeOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many WhiteboardStrokeOperations.
+     */
+    data: WhiteboardStrokeOperationCreateManyInput | WhiteboardStrokeOperationCreateManyInput[]
+  }
+
+  /**
+   * WhiteboardStrokeOperation update
+   */
+  export type WhiteboardStrokeOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a WhiteboardStrokeOperation.
+     */
+    data: XOR<WhiteboardStrokeOperationUpdateInput, WhiteboardStrokeOperationUncheckedUpdateInput>
+    /**
+     * Choose, which WhiteboardStrokeOperation to update.
+     */
+    where: WhiteboardStrokeOperationWhereUniqueInput
+  }
+
+  /**
+   * WhiteboardStrokeOperation updateMany
+   */
+  export type WhiteboardStrokeOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update WhiteboardStrokeOperations.
+     */
+    data: XOR<WhiteboardStrokeOperationUpdateManyMutationInput, WhiteboardStrokeOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which WhiteboardStrokeOperations to update
+     */
+    where?: WhiteboardStrokeOperationWhereInput
+    /**
+     * Limit how many WhiteboardStrokeOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * WhiteboardStrokeOperation updateManyAndReturn
+   */
+  export type WhiteboardStrokeOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update WhiteboardStrokeOperations.
+     */
+    data: XOR<WhiteboardStrokeOperationUpdateManyMutationInput, WhiteboardStrokeOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which WhiteboardStrokeOperations to update
+     */
+    where?: WhiteboardStrokeOperationWhereInput
+    /**
+     * Limit how many WhiteboardStrokeOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * WhiteboardStrokeOperation upsert
+   */
+  export type WhiteboardStrokeOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the WhiteboardStrokeOperation to update in case it exists.
+     */
+    where: WhiteboardStrokeOperationWhereUniqueInput
+    /**
+     * In case the WhiteboardStrokeOperation found by the `where` argument doesn't exist, create a new WhiteboardStrokeOperation with this data.
+     */
+    create: XOR<WhiteboardStrokeOperationCreateInput, WhiteboardStrokeOperationUncheckedCreateInput>
+    /**
+     * In case the WhiteboardStrokeOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<WhiteboardStrokeOperationUpdateInput, WhiteboardStrokeOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * WhiteboardStrokeOperation delete
+   */
+  export type WhiteboardStrokeOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+    /**
+     * Filter which WhiteboardStrokeOperation to delete.
+     */
+    where: WhiteboardStrokeOperationWhereUniqueInput
+  }
+
+  /**
+   * WhiteboardStrokeOperation deleteMany
+   */
+  export type WhiteboardStrokeOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which WhiteboardStrokeOperations to delete
+     */
+    where?: WhiteboardStrokeOperationWhereInput
+    /**
+     * Limit how many WhiteboardStrokeOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * WhiteboardStrokeOperation without action
+   */
+  export type WhiteboardStrokeOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WhiteboardStrokeOperation
+     */
+    select?: WhiteboardStrokeOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WhiteboardStrokeOperation
+     */
+    omit?: WhiteboardStrokeOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model WalletOperation
+   */
+
+  export type AggregateWalletOperation = {
+    _count: WalletOperationCountAggregateOutputType | null
+    _min: WalletOperationMinAggregateOutputType | null
+    _max: WalletOperationMaxAggregateOutputType | null
+  }
+
+  export type WalletOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    result: string | null
+  }
+
+  export type WalletOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    result: string | null
+  }
+
+  export type WalletOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    result: number
+    _all: number
+  }
+
+
+  export type WalletOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    result?: true
+  }
+
+  export type WalletOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    result?: true
+  }
+
+  export type WalletOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    result?: true
+    _all?: true
+  }
+
+  export type WalletOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which WalletOperation to aggregate.
+     */
+    where?: WalletOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of WalletOperations to fetch.
+     */
+    orderBy?: WalletOperationOrderByWithRelationInput | WalletOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: WalletOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` WalletOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` WalletOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned WalletOperations
+    **/
+    _count?: true | WalletOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: WalletOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: WalletOperationMaxAggregateInputType
+  }
+
+  export type GetWalletOperationAggregateType<T extends WalletOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateWalletOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateWalletOperation[P]>
+      : GetScalarType<T[P], AggregateWalletOperation[P]>
+  }
+
+
+
+
+  export type WalletOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: WalletOperationWhereInput
+    orderBy?: WalletOperationOrderByWithAggregationInput | WalletOperationOrderByWithAggregationInput[]
+    by: WalletOperationScalarFieldEnum[] | WalletOperationScalarFieldEnum
+    having?: WalletOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: WalletOperationCountAggregateInputType | true
+    _min?: WalletOperationMinAggregateInputType
+    _max?: WalletOperationMaxAggregateInputType
+  }
+
+  export type WalletOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    result: string
+    _count: WalletOperationCountAggregateOutputType | null
+    _min: WalletOperationMinAggregateOutputType | null
+    _max: WalletOperationMaxAggregateOutputType | null
+  }
+
+  type GetWalletOperationGroupByPayload<T extends WalletOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<WalletOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof WalletOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], WalletOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], WalletOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type WalletOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    result?: boolean
+  }, ExtArgs["result"]["walletOperation"]>
+
+  export type WalletOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    result?: boolean
+  }, ExtArgs["result"]["walletOperation"]>
+
+  export type WalletOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    result?: boolean
+  }, ExtArgs["result"]["walletOperation"]>
+
+  export type WalletOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    result?: boolean
+  }
+
+  export type WalletOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "result", ExtArgs["result"]["walletOperation"]>
+
+  export type $WalletOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "WalletOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      result: string
+    }, ExtArgs["result"]["walletOperation"]>
+    composites: {}
+  }
+
+  type WalletOperationGetPayload<S extends boolean | null | undefined | WalletOperationDefaultArgs> = $Result.GetResult<Prisma.$WalletOperationPayload, S>
+
+  type WalletOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<WalletOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: WalletOperationCountAggregateInputType | true
+    }
+
+  export interface WalletOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['WalletOperation'], meta: { name: 'WalletOperation' } }
+    /**
+     * Find zero or one WalletOperation that matches the filter.
+     * @param {WalletOperationFindUniqueArgs} args - Arguments to find a WalletOperation
+     * @example
+     * // Get one WalletOperation
+     * const walletOperation = await prisma.walletOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends WalletOperationFindUniqueArgs>(args: SelectSubset<T, WalletOperationFindUniqueArgs<ExtArgs>>): Prisma__WalletOperationClient<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one WalletOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {WalletOperationFindUniqueOrThrowArgs} args - Arguments to find a WalletOperation
+     * @example
+     * // Get one WalletOperation
+     * const walletOperation = await prisma.walletOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends WalletOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, WalletOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__WalletOperationClient<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first WalletOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WalletOperationFindFirstArgs} args - Arguments to find a WalletOperation
+     * @example
+     * // Get one WalletOperation
+     * const walletOperation = await prisma.walletOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends WalletOperationFindFirstArgs>(args?: SelectSubset<T, WalletOperationFindFirstArgs<ExtArgs>>): Prisma__WalletOperationClient<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first WalletOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WalletOperationFindFirstOrThrowArgs} args - Arguments to find a WalletOperation
+     * @example
+     * // Get one WalletOperation
+     * const walletOperation = await prisma.walletOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends WalletOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, WalletOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__WalletOperationClient<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more WalletOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WalletOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all WalletOperations
+     * const walletOperations = await prisma.walletOperation.findMany()
+     *
+     * // Get first 10 WalletOperations
+     * const walletOperations = await prisma.walletOperation.findMany({ take: 10 })
+     *
+     * // Only select the `userId`
+     * const walletOperationWithUserIdOnly = await prisma.walletOperation.findMany({ select: { userId: true } })
+     *
+     */
+    findMany<T extends WalletOperationFindManyArgs>(args?: SelectSubset<T, WalletOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a WalletOperation.
+     * @param {WalletOperationCreateArgs} args - Arguments to create a WalletOperation.
+     * @example
+     * // Create one WalletOperation
+     * const WalletOperation = await prisma.walletOperation.create({
+     *   data: {
+     *     // ... data to create a WalletOperation
+     *   }
+     * })
+     *
+     */
+    create<T extends WalletOperationCreateArgs>(args: SelectSubset<T, WalletOperationCreateArgs<ExtArgs>>): Prisma__WalletOperationClient<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many WalletOperations.
+     * @param {WalletOperationCreateManyArgs} args - Arguments to create many WalletOperations.
+     * @example
+     * // Create many WalletOperations
+     * const walletOperation = await prisma.walletOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends WalletOperationCreateManyArgs>(args?: SelectSubset<T, WalletOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many WalletOperations and returns the data saved in the database.
+     * @param {WalletOperationCreateManyAndReturnArgs} args - Arguments to create many WalletOperations.
+     * @example
+     * // Create many WalletOperations
+     * const walletOperation = await prisma.walletOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many WalletOperations and only return the `userId`
+     * const walletOperationWithUserIdOnly = await prisma.walletOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends WalletOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, WalletOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a WalletOperation.
+     * @param {WalletOperationDeleteArgs} args - Arguments to delete one WalletOperation.
+     * @example
+     * // Delete one WalletOperation
+     * const WalletOperation = await prisma.walletOperation.delete({
+     *   where: {
+     *     // ... filter to delete one WalletOperation
+     *   }
+     * })
+     *
+     */
+    delete<T extends WalletOperationDeleteArgs>(args: SelectSubset<T, WalletOperationDeleteArgs<ExtArgs>>): Prisma__WalletOperationClient<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one WalletOperation.
+     * @param {WalletOperationUpdateArgs} args - Arguments to update one WalletOperation.
+     * @example
+     * // Update one WalletOperation
+     * const walletOperation = await prisma.walletOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends WalletOperationUpdateArgs>(args: SelectSubset<T, WalletOperationUpdateArgs<ExtArgs>>): Prisma__WalletOperationClient<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more WalletOperations.
+     * @param {WalletOperationDeleteManyArgs} args - Arguments to filter WalletOperations to delete.
+     * @example
+     * // Delete a few WalletOperations
+     * const { count } = await prisma.walletOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends WalletOperationDeleteManyArgs>(args?: SelectSubset<T, WalletOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more WalletOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WalletOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many WalletOperations
+     * const walletOperation = await prisma.walletOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends WalletOperationUpdateManyArgs>(args: SelectSubset<T, WalletOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more WalletOperations and returns the data updated in the database.
+     * @param {WalletOperationUpdateManyAndReturnArgs} args - Arguments to update many WalletOperations.
+     * @example
+     * // Update many WalletOperations
+     * const walletOperation = await prisma.walletOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more WalletOperations and only return the `userId`
+     * const walletOperationWithUserIdOnly = await prisma.walletOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends WalletOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, WalletOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one WalletOperation.
+     * @param {WalletOperationUpsertArgs} args - Arguments to update or create a WalletOperation.
+     * @example
+     * // Update or create a WalletOperation
+     * const walletOperation = await prisma.walletOperation.upsert({
+     *   create: {
+     *     // ... data to create a WalletOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the WalletOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends WalletOperationUpsertArgs>(args: SelectSubset<T, WalletOperationUpsertArgs<ExtArgs>>): Prisma__WalletOperationClient<$Result.GetResult<Prisma.$WalletOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of WalletOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WalletOperationCountArgs} args - Arguments to filter WalletOperations to count.
+     * @example
+     * // Count the number of WalletOperations
+     * const count = await prisma.walletOperation.count({
+     *   where: {
+     *     // ... the filter for the WalletOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends WalletOperationCountArgs>(
+      args?: Subset<T, WalletOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], WalletOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a WalletOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WalletOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends WalletOperationAggregateArgs>(args: Subset<T, WalletOperationAggregateArgs>): Prisma.PrismaPromise<GetWalletOperationAggregateType<T>>
+
+    /**
+     * Group by WalletOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {WalletOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends WalletOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: WalletOperationGroupByArgs['orderBy'] }
+        : { orderBy?: WalletOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, WalletOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetWalletOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the WalletOperation model
+   */
+  readonly fields: WalletOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for WalletOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__WalletOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the WalletOperation model
+   */
+  interface WalletOperationFieldRefs {
+    readonly userId: FieldRef<"WalletOperation", 'String'>
+    readonly clientId: FieldRef<"WalletOperation", 'String'>
+    readonly requestHash: FieldRef<"WalletOperation", 'String'>
+    readonly result: FieldRef<"WalletOperation", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * WalletOperation findUnique
+   */
+  export type WalletOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WalletOperation to fetch.
+     */
+    where: WalletOperationWhereUniqueInput
+  }
+
+  /**
+   * WalletOperation findUniqueOrThrow
+   */
+  export type WalletOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WalletOperation to fetch.
+     */
+    where: WalletOperationWhereUniqueInput
+  }
+
+  /**
+   * WalletOperation findFirst
+   */
+  export type WalletOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WalletOperation to fetch.
+     */
+    where?: WalletOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of WalletOperations to fetch.
+     */
+    orderBy?: WalletOperationOrderByWithRelationInput | WalletOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for WalletOperations.
+     */
+    cursor?: WalletOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` WalletOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` WalletOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of WalletOperations.
+     */
+    distinct?: WalletOperationScalarFieldEnum | WalletOperationScalarFieldEnum[]
+  }
+
+  /**
+   * WalletOperation findFirstOrThrow
+   */
+  export type WalletOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WalletOperation to fetch.
+     */
+    where?: WalletOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of WalletOperations to fetch.
+     */
+    orderBy?: WalletOperationOrderByWithRelationInput | WalletOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for WalletOperations.
+     */
+    cursor?: WalletOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` WalletOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` WalletOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of WalletOperations.
+     */
+    distinct?: WalletOperationScalarFieldEnum | WalletOperationScalarFieldEnum[]
+  }
+
+  /**
+   * WalletOperation findMany
+   */
+  export type WalletOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which WalletOperations to fetch.
+     */
+    where?: WalletOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of WalletOperations to fetch.
+     */
+    orderBy?: WalletOperationOrderByWithRelationInput | WalletOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing WalletOperations.
+     */
+    cursor?: WalletOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` WalletOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` WalletOperations.
+     */
+    skip?: number
+    distinct?: WalletOperationScalarFieldEnum | WalletOperationScalarFieldEnum[]
+  }
+
+  /**
+   * WalletOperation create
+   */
+  export type WalletOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a WalletOperation.
+     */
+    data: XOR<WalletOperationCreateInput, WalletOperationUncheckedCreateInput>
+  }
+
+  /**
+   * WalletOperation createMany
+   */
+  export type WalletOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many WalletOperations.
+     */
+    data: WalletOperationCreateManyInput | WalletOperationCreateManyInput[]
+  }
+
+  /**
+   * WalletOperation createManyAndReturn
+   */
+  export type WalletOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many WalletOperations.
+     */
+    data: WalletOperationCreateManyInput | WalletOperationCreateManyInput[]
+  }
+
+  /**
+   * WalletOperation update
+   */
+  export type WalletOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a WalletOperation.
+     */
+    data: XOR<WalletOperationUpdateInput, WalletOperationUncheckedUpdateInput>
+    /**
+     * Choose, which WalletOperation to update.
+     */
+    where: WalletOperationWhereUniqueInput
+  }
+
+  /**
+   * WalletOperation updateMany
+   */
+  export type WalletOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update WalletOperations.
+     */
+    data: XOR<WalletOperationUpdateManyMutationInput, WalletOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which WalletOperations to update
+     */
+    where?: WalletOperationWhereInput
+    /**
+     * Limit how many WalletOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * WalletOperation updateManyAndReturn
+   */
+  export type WalletOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update WalletOperations.
+     */
+    data: XOR<WalletOperationUpdateManyMutationInput, WalletOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which WalletOperations to update
+     */
+    where?: WalletOperationWhereInput
+    /**
+     * Limit how many WalletOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * WalletOperation upsert
+   */
+  export type WalletOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the WalletOperation to update in case it exists.
+     */
+    where: WalletOperationWhereUniqueInput
+    /**
+     * In case the WalletOperation found by the `where` argument doesn't exist, create a new WalletOperation with this data.
+     */
+    create: XOR<WalletOperationCreateInput, WalletOperationUncheckedCreateInput>
+    /**
+     * In case the WalletOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<WalletOperationUpdateInput, WalletOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * WalletOperation delete
+   */
+  export type WalletOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+    /**
+     * Filter which WalletOperation to delete.
+     */
+    where: WalletOperationWhereUniqueInput
+  }
+
+  /**
+   * WalletOperation deleteMany
+   */
+  export type WalletOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which WalletOperations to delete
+     */
+    where?: WalletOperationWhereInput
+    /**
+     * Limit how many WalletOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * WalletOperation without action
+   */
+  export type WalletOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the WalletOperation
+     */
+    select?: WalletOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the WalletOperation
+     */
+    omit?: WalletOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model ConversationCreationOperation
+   */
+
+  export type AggregateConversationCreationOperation = {
+    _count: ConversationCreationOperationCountAggregateOutputType | null
+    _min: ConversationCreationOperationMinAggregateOutputType | null
+    _max: ConversationCreationOperationMaxAggregateOutputType | null
+  }
+
+  export type ConversationCreationOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    conversationId: string | null
+  }
+
+  export type ConversationCreationOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    conversationId: string | null
+  }
+
+  export type ConversationCreationOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    conversationId: number
+    _all: number
+  }
+
+
+  export type ConversationCreationOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    conversationId?: true
+  }
+
+  export type ConversationCreationOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    conversationId?: true
+  }
+
+  export type ConversationCreationOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    conversationId?: true
+    _all?: true
+  }
+
+  export type ConversationCreationOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ConversationCreationOperation to aggregate.
+     */
+    where?: ConversationCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ConversationCreationOperations to fetch.
+     */
+    orderBy?: ConversationCreationOperationOrderByWithRelationInput | ConversationCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: ConversationCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ConversationCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ConversationCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned ConversationCreationOperations
+    **/
+    _count?: true | ConversationCreationOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: ConversationCreationOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: ConversationCreationOperationMaxAggregateInputType
+  }
+
+  export type GetConversationCreationOperationAggregateType<T extends ConversationCreationOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateConversationCreationOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateConversationCreationOperation[P]>
+      : GetScalarType<T[P], AggregateConversationCreationOperation[P]>
+  }
+
+
+
+
+  export type ConversationCreationOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ConversationCreationOperationWhereInput
+    orderBy?: ConversationCreationOperationOrderByWithAggregationInput | ConversationCreationOperationOrderByWithAggregationInput[]
+    by: ConversationCreationOperationScalarFieldEnum[] | ConversationCreationOperationScalarFieldEnum
+    having?: ConversationCreationOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ConversationCreationOperationCountAggregateInputType | true
+    _min?: ConversationCreationOperationMinAggregateInputType
+    _max?: ConversationCreationOperationMaxAggregateInputType
+  }
+
+  export type ConversationCreationOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    conversationId: string
+    _count: ConversationCreationOperationCountAggregateOutputType | null
+    _min: ConversationCreationOperationMinAggregateOutputType | null
+    _max: ConversationCreationOperationMaxAggregateOutputType | null
+  }
+
+  type GetConversationCreationOperationGroupByPayload<T extends ConversationCreationOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ConversationCreationOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ConversationCreationOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ConversationCreationOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], ConversationCreationOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ConversationCreationOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    conversationId?: boolean
+  }, ExtArgs["result"]["conversationCreationOperation"]>
+
+  export type ConversationCreationOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    conversationId?: boolean
+  }, ExtArgs["result"]["conversationCreationOperation"]>
+
+  export type ConversationCreationOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    conversationId?: boolean
+  }, ExtArgs["result"]["conversationCreationOperation"]>
+
+  export type ConversationCreationOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    conversationId?: boolean
+  }
+
+  export type ConversationCreationOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "conversationId", ExtArgs["result"]["conversationCreationOperation"]>
+
+  export type $ConversationCreationOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ConversationCreationOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      conversationId: string
+    }, ExtArgs["result"]["conversationCreationOperation"]>
+    composites: {}
+  }
+
+  type ConversationCreationOperationGetPayload<S extends boolean | null | undefined | ConversationCreationOperationDefaultArgs> = $Result.GetResult<Prisma.$ConversationCreationOperationPayload, S>
+
+  type ConversationCreationOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ConversationCreationOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ConversationCreationOperationCountAggregateInputType | true
+    }
+
+  export interface ConversationCreationOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ConversationCreationOperation'], meta: { name: 'ConversationCreationOperation' } }
+    /**
+     * Find zero or one ConversationCreationOperation that matches the filter.
+     * @param {ConversationCreationOperationFindUniqueArgs} args - Arguments to find a ConversationCreationOperation
+     * @example
+     * // Get one ConversationCreationOperation
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ConversationCreationOperationFindUniqueArgs>(args: SelectSubset<T, ConversationCreationOperationFindUniqueArgs<ExtArgs>>): Prisma__ConversationCreationOperationClient<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ConversationCreationOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ConversationCreationOperationFindUniqueOrThrowArgs} args - Arguments to find a ConversationCreationOperation
+     * @example
+     * // Get one ConversationCreationOperation
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ConversationCreationOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, ConversationCreationOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ConversationCreationOperationClient<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ConversationCreationOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationCreationOperationFindFirstArgs} args - Arguments to find a ConversationCreationOperation
+     * @example
+     * // Get one ConversationCreationOperation
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ConversationCreationOperationFindFirstArgs>(args?: SelectSubset<T, ConversationCreationOperationFindFirstArgs<ExtArgs>>): Prisma__ConversationCreationOperationClient<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ConversationCreationOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationCreationOperationFindFirstOrThrowArgs} args - Arguments to find a ConversationCreationOperation
+     * @example
+     * // Get one ConversationCreationOperation
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ConversationCreationOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, ConversationCreationOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__ConversationCreationOperationClient<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ConversationCreationOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationCreationOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ConversationCreationOperations
+     * const conversationCreationOperations = await prisma.conversationCreationOperation.findMany()
+     *
+     * // Get first 10 ConversationCreationOperations
+     * const conversationCreationOperations = await prisma.conversationCreationOperation.findMany({ take: 10 })
+     *
+     * // Only select the `userId`
+     * const conversationCreationOperationWithUserIdOnly = await prisma.conversationCreationOperation.findMany({ select: { userId: true } })
+     *
+     */
+    findMany<T extends ConversationCreationOperationFindManyArgs>(args?: SelectSubset<T, ConversationCreationOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ConversationCreationOperation.
+     * @param {ConversationCreationOperationCreateArgs} args - Arguments to create a ConversationCreationOperation.
+     * @example
+     * // Create one ConversationCreationOperation
+     * const ConversationCreationOperation = await prisma.conversationCreationOperation.create({
+     *   data: {
+     *     // ... data to create a ConversationCreationOperation
+     *   }
+     * })
+     *
+     */
+    create<T extends ConversationCreationOperationCreateArgs>(args: SelectSubset<T, ConversationCreationOperationCreateArgs<ExtArgs>>): Prisma__ConversationCreationOperationClient<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ConversationCreationOperations.
+     * @param {ConversationCreationOperationCreateManyArgs} args - Arguments to create many ConversationCreationOperations.
+     * @example
+     * // Create many ConversationCreationOperations
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends ConversationCreationOperationCreateManyArgs>(args?: SelectSubset<T, ConversationCreationOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ConversationCreationOperations and returns the data saved in the database.
+     * @param {ConversationCreationOperationCreateManyAndReturnArgs} args - Arguments to create many ConversationCreationOperations.
+     * @example
+     * // Create many ConversationCreationOperations
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many ConversationCreationOperations and only return the `userId`
+     * const conversationCreationOperationWithUserIdOnly = await prisma.conversationCreationOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends ConversationCreationOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, ConversationCreationOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ConversationCreationOperation.
+     * @param {ConversationCreationOperationDeleteArgs} args - Arguments to delete one ConversationCreationOperation.
+     * @example
+     * // Delete one ConversationCreationOperation
+     * const ConversationCreationOperation = await prisma.conversationCreationOperation.delete({
+     *   where: {
+     *     // ... filter to delete one ConversationCreationOperation
+     *   }
+     * })
+     *
+     */
+    delete<T extends ConversationCreationOperationDeleteArgs>(args: SelectSubset<T, ConversationCreationOperationDeleteArgs<ExtArgs>>): Prisma__ConversationCreationOperationClient<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ConversationCreationOperation.
+     * @param {ConversationCreationOperationUpdateArgs} args - Arguments to update one ConversationCreationOperation.
+     * @example
+     * // Update one ConversationCreationOperation
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends ConversationCreationOperationUpdateArgs>(args: SelectSubset<T, ConversationCreationOperationUpdateArgs<ExtArgs>>): Prisma__ConversationCreationOperationClient<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ConversationCreationOperations.
+     * @param {ConversationCreationOperationDeleteManyArgs} args - Arguments to filter ConversationCreationOperations to delete.
+     * @example
+     * // Delete a few ConversationCreationOperations
+     * const { count } = await prisma.conversationCreationOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends ConversationCreationOperationDeleteManyArgs>(args?: SelectSubset<T, ConversationCreationOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ConversationCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationCreationOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ConversationCreationOperations
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends ConversationCreationOperationUpdateManyArgs>(args: SelectSubset<T, ConversationCreationOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ConversationCreationOperations and returns the data updated in the database.
+     * @param {ConversationCreationOperationUpdateManyAndReturnArgs} args - Arguments to update many ConversationCreationOperations.
+     * @example
+     * // Update many ConversationCreationOperations
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more ConversationCreationOperations and only return the `userId`
+     * const conversationCreationOperationWithUserIdOnly = await prisma.conversationCreationOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends ConversationCreationOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, ConversationCreationOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ConversationCreationOperation.
+     * @param {ConversationCreationOperationUpsertArgs} args - Arguments to update or create a ConversationCreationOperation.
+     * @example
+     * // Update or create a ConversationCreationOperation
+     * const conversationCreationOperation = await prisma.conversationCreationOperation.upsert({
+     *   create: {
+     *     // ... data to create a ConversationCreationOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ConversationCreationOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ConversationCreationOperationUpsertArgs>(args: SelectSubset<T, ConversationCreationOperationUpsertArgs<ExtArgs>>): Prisma__ConversationCreationOperationClient<$Result.GetResult<Prisma.$ConversationCreationOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ConversationCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationCreationOperationCountArgs} args - Arguments to filter ConversationCreationOperations to count.
+     * @example
+     * // Count the number of ConversationCreationOperations
+     * const count = await prisma.conversationCreationOperation.count({
+     *   where: {
+     *     // ... the filter for the ConversationCreationOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends ConversationCreationOperationCountArgs>(
+      args?: Subset<T, ConversationCreationOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ConversationCreationOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ConversationCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationCreationOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ConversationCreationOperationAggregateArgs>(args: Subset<T, ConversationCreationOperationAggregateArgs>): Prisma.PrismaPromise<GetConversationCreationOperationAggregateType<T>>
+
+    /**
+     * Group by ConversationCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ConversationCreationOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends ConversationCreationOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ConversationCreationOperationGroupByArgs['orderBy'] }
+        : { orderBy?: ConversationCreationOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ConversationCreationOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetConversationCreationOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ConversationCreationOperation model
+   */
+  readonly fields: ConversationCreationOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ConversationCreationOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ConversationCreationOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ConversationCreationOperation model
+   */
+  interface ConversationCreationOperationFieldRefs {
+    readonly userId: FieldRef<"ConversationCreationOperation", 'String'>
+    readonly clientId: FieldRef<"ConversationCreationOperation", 'String'>
+    readonly requestHash: FieldRef<"ConversationCreationOperation", 'String'>
+    readonly conversationId: FieldRef<"ConversationCreationOperation", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * ConversationCreationOperation findUnique
+   */
+  export type ConversationCreationOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ConversationCreationOperation to fetch.
+     */
+    where: ConversationCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ConversationCreationOperation findUniqueOrThrow
+   */
+  export type ConversationCreationOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ConversationCreationOperation to fetch.
+     */
+    where: ConversationCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ConversationCreationOperation findFirst
+   */
+  export type ConversationCreationOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ConversationCreationOperation to fetch.
+     */
+    where?: ConversationCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ConversationCreationOperations to fetch.
+     */
+    orderBy?: ConversationCreationOperationOrderByWithRelationInput | ConversationCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ConversationCreationOperations.
+     */
+    cursor?: ConversationCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ConversationCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ConversationCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ConversationCreationOperations.
+     */
+    distinct?: ConversationCreationOperationScalarFieldEnum | ConversationCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ConversationCreationOperation findFirstOrThrow
+   */
+  export type ConversationCreationOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ConversationCreationOperation to fetch.
+     */
+    where?: ConversationCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ConversationCreationOperations to fetch.
+     */
+    orderBy?: ConversationCreationOperationOrderByWithRelationInput | ConversationCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ConversationCreationOperations.
+     */
+    cursor?: ConversationCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ConversationCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ConversationCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ConversationCreationOperations.
+     */
+    distinct?: ConversationCreationOperationScalarFieldEnum | ConversationCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ConversationCreationOperation findMany
+   */
+  export type ConversationCreationOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ConversationCreationOperations to fetch.
+     */
+    where?: ConversationCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ConversationCreationOperations to fetch.
+     */
+    orderBy?: ConversationCreationOperationOrderByWithRelationInput | ConversationCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing ConversationCreationOperations.
+     */
+    cursor?: ConversationCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ConversationCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ConversationCreationOperations.
+     */
+    skip?: number
+    distinct?: ConversationCreationOperationScalarFieldEnum | ConversationCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ConversationCreationOperation create
+   */
+  export type ConversationCreationOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ConversationCreationOperation.
+     */
+    data: XOR<ConversationCreationOperationCreateInput, ConversationCreationOperationUncheckedCreateInput>
+  }
+
+  /**
+   * ConversationCreationOperation createMany
+   */
+  export type ConversationCreationOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ConversationCreationOperations.
+     */
+    data: ConversationCreationOperationCreateManyInput | ConversationCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * ConversationCreationOperation createManyAndReturn
+   */
+  export type ConversationCreationOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many ConversationCreationOperations.
+     */
+    data: ConversationCreationOperationCreateManyInput | ConversationCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * ConversationCreationOperation update
+   */
+  export type ConversationCreationOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ConversationCreationOperation.
+     */
+    data: XOR<ConversationCreationOperationUpdateInput, ConversationCreationOperationUncheckedUpdateInput>
+    /**
+     * Choose, which ConversationCreationOperation to update.
+     */
+    where: ConversationCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ConversationCreationOperation updateMany
+   */
+  export type ConversationCreationOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ConversationCreationOperations.
+     */
+    data: XOR<ConversationCreationOperationUpdateManyMutationInput, ConversationCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which ConversationCreationOperations to update
+     */
+    where?: ConversationCreationOperationWhereInput
+    /**
+     * Limit how many ConversationCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ConversationCreationOperation updateManyAndReturn
+   */
+  export type ConversationCreationOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update ConversationCreationOperations.
+     */
+    data: XOR<ConversationCreationOperationUpdateManyMutationInput, ConversationCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which ConversationCreationOperations to update
+     */
+    where?: ConversationCreationOperationWhereInput
+    /**
+     * Limit how many ConversationCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ConversationCreationOperation upsert
+   */
+  export type ConversationCreationOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ConversationCreationOperation to update in case it exists.
+     */
+    where: ConversationCreationOperationWhereUniqueInput
+    /**
+     * In case the ConversationCreationOperation found by the `where` argument doesn't exist, create a new ConversationCreationOperation with this data.
+     */
+    create: XOR<ConversationCreationOperationCreateInput, ConversationCreationOperationUncheckedCreateInput>
+    /**
+     * In case the ConversationCreationOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ConversationCreationOperationUpdateInput, ConversationCreationOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * ConversationCreationOperation delete
+   */
+  export type ConversationCreationOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter which ConversationCreationOperation to delete.
+     */
+    where: ConversationCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ConversationCreationOperation deleteMany
+   */
+  export type ConversationCreationOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ConversationCreationOperations to delete
+     */
+    where?: ConversationCreationOperationWhereInput
+    /**
+     * Limit how many ConversationCreationOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ConversationCreationOperation without action
+   */
+  export type ConversationCreationOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ConversationCreationOperation
+     */
+    select?: ConversationCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ConversationCreationOperation
+     */
+    omit?: ConversationCreationOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model ScheduledCreationOperation
+   */
+
+  export type AggregateScheduledCreationOperation = {
+    _count: ScheduledCreationOperationCountAggregateOutputType | null
+    _min: ScheduledCreationOperationMinAggregateOutputType | null
+    _max: ScheduledCreationOperationMaxAggregateOutputType | null
+  }
+
+  export type ScheduledCreationOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    scheduledId: string | null
+  }
+
+  export type ScheduledCreationOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    scheduledId: string | null
+  }
+
+  export type ScheduledCreationOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    scheduledId: number
+    _all: number
+  }
+
+
+  export type ScheduledCreationOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    scheduledId?: true
+  }
+
+  export type ScheduledCreationOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    scheduledId?: true
+  }
+
+  export type ScheduledCreationOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    scheduledId?: true
+    _all?: true
+  }
+
+  export type ScheduledCreationOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ScheduledCreationOperation to aggregate.
+     */
+    where?: ScheduledCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledCreationOperations to fetch.
+     */
+    orderBy?: ScheduledCreationOperationOrderByWithRelationInput | ScheduledCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: ScheduledCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned ScheduledCreationOperations
+    **/
+    _count?: true | ScheduledCreationOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: ScheduledCreationOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: ScheduledCreationOperationMaxAggregateInputType
+  }
+
+  export type GetScheduledCreationOperationAggregateType<T extends ScheduledCreationOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateScheduledCreationOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateScheduledCreationOperation[P]>
+      : GetScalarType<T[P], AggregateScheduledCreationOperation[P]>
+  }
+
+
+
+
+  export type ScheduledCreationOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ScheduledCreationOperationWhereInput
+    orderBy?: ScheduledCreationOperationOrderByWithAggregationInput | ScheduledCreationOperationOrderByWithAggregationInput[]
+    by: ScheduledCreationOperationScalarFieldEnum[] | ScheduledCreationOperationScalarFieldEnum
+    having?: ScheduledCreationOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ScheduledCreationOperationCountAggregateInputType | true
+    _min?: ScheduledCreationOperationMinAggregateInputType
+    _max?: ScheduledCreationOperationMaxAggregateInputType
+  }
+
+  export type ScheduledCreationOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    scheduledId: string
+    _count: ScheduledCreationOperationCountAggregateOutputType | null
+    _min: ScheduledCreationOperationMinAggregateOutputType | null
+    _max: ScheduledCreationOperationMaxAggregateOutputType | null
+  }
+
+  type GetScheduledCreationOperationGroupByPayload<T extends ScheduledCreationOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ScheduledCreationOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ScheduledCreationOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ScheduledCreationOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], ScheduledCreationOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ScheduledCreationOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    scheduledId?: boolean
+  }, ExtArgs["result"]["scheduledCreationOperation"]>
+
+  export type ScheduledCreationOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    scheduledId?: boolean
+  }, ExtArgs["result"]["scheduledCreationOperation"]>
+
+  export type ScheduledCreationOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    scheduledId?: boolean
+  }, ExtArgs["result"]["scheduledCreationOperation"]>
+
+  export type ScheduledCreationOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    scheduledId?: boolean
+  }
+
+  export type ScheduledCreationOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "scheduledId", ExtArgs["result"]["scheduledCreationOperation"]>
+
+  export type $ScheduledCreationOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ScheduledCreationOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      scheduledId: string
+    }, ExtArgs["result"]["scheduledCreationOperation"]>
+    composites: {}
+  }
+
+  type ScheduledCreationOperationGetPayload<S extends boolean | null | undefined | ScheduledCreationOperationDefaultArgs> = $Result.GetResult<Prisma.$ScheduledCreationOperationPayload, S>
+
+  type ScheduledCreationOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ScheduledCreationOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ScheduledCreationOperationCountAggregateInputType | true
+    }
+
+  export interface ScheduledCreationOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ScheduledCreationOperation'], meta: { name: 'ScheduledCreationOperation' } }
+    /**
+     * Find zero or one ScheduledCreationOperation that matches the filter.
+     * @param {ScheduledCreationOperationFindUniqueArgs} args - Arguments to find a ScheduledCreationOperation
+     * @example
+     * // Get one ScheduledCreationOperation
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ScheduledCreationOperationFindUniqueArgs>(args: SelectSubset<T, ScheduledCreationOperationFindUniqueArgs<ExtArgs>>): Prisma__ScheduledCreationOperationClient<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ScheduledCreationOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ScheduledCreationOperationFindUniqueOrThrowArgs} args - Arguments to find a ScheduledCreationOperation
+     * @example
+     * // Get one ScheduledCreationOperation
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ScheduledCreationOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, ScheduledCreationOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ScheduledCreationOperationClient<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ScheduledCreationOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledCreationOperationFindFirstArgs} args - Arguments to find a ScheduledCreationOperation
+     * @example
+     * // Get one ScheduledCreationOperation
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ScheduledCreationOperationFindFirstArgs>(args?: SelectSubset<T, ScheduledCreationOperationFindFirstArgs<ExtArgs>>): Prisma__ScheduledCreationOperationClient<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ScheduledCreationOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledCreationOperationFindFirstOrThrowArgs} args - Arguments to find a ScheduledCreationOperation
+     * @example
+     * // Get one ScheduledCreationOperation
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ScheduledCreationOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, ScheduledCreationOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__ScheduledCreationOperationClient<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ScheduledCreationOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledCreationOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ScheduledCreationOperations
+     * const scheduledCreationOperations = await prisma.scheduledCreationOperation.findMany()
+     *
+     * // Get first 10 ScheduledCreationOperations
+     * const scheduledCreationOperations = await prisma.scheduledCreationOperation.findMany({ take: 10 })
+     *
+     * // Only select the `userId`
+     * const scheduledCreationOperationWithUserIdOnly = await prisma.scheduledCreationOperation.findMany({ select: { userId: true } })
+     *
+     */
+    findMany<T extends ScheduledCreationOperationFindManyArgs>(args?: SelectSubset<T, ScheduledCreationOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ScheduledCreationOperation.
+     * @param {ScheduledCreationOperationCreateArgs} args - Arguments to create a ScheduledCreationOperation.
+     * @example
+     * // Create one ScheduledCreationOperation
+     * const ScheduledCreationOperation = await prisma.scheduledCreationOperation.create({
+     *   data: {
+     *     // ... data to create a ScheduledCreationOperation
+     *   }
+     * })
+     *
+     */
+    create<T extends ScheduledCreationOperationCreateArgs>(args: SelectSubset<T, ScheduledCreationOperationCreateArgs<ExtArgs>>): Prisma__ScheduledCreationOperationClient<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ScheduledCreationOperations.
+     * @param {ScheduledCreationOperationCreateManyArgs} args - Arguments to create many ScheduledCreationOperations.
+     * @example
+     * // Create many ScheduledCreationOperations
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends ScheduledCreationOperationCreateManyArgs>(args?: SelectSubset<T, ScheduledCreationOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ScheduledCreationOperations and returns the data saved in the database.
+     * @param {ScheduledCreationOperationCreateManyAndReturnArgs} args - Arguments to create many ScheduledCreationOperations.
+     * @example
+     * // Create many ScheduledCreationOperations
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many ScheduledCreationOperations and only return the `userId`
+     * const scheduledCreationOperationWithUserIdOnly = await prisma.scheduledCreationOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends ScheduledCreationOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, ScheduledCreationOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ScheduledCreationOperation.
+     * @param {ScheduledCreationOperationDeleteArgs} args - Arguments to delete one ScheduledCreationOperation.
+     * @example
+     * // Delete one ScheduledCreationOperation
+     * const ScheduledCreationOperation = await prisma.scheduledCreationOperation.delete({
+     *   where: {
+     *     // ... filter to delete one ScheduledCreationOperation
+     *   }
+     * })
+     *
+     */
+    delete<T extends ScheduledCreationOperationDeleteArgs>(args: SelectSubset<T, ScheduledCreationOperationDeleteArgs<ExtArgs>>): Prisma__ScheduledCreationOperationClient<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ScheduledCreationOperation.
+     * @param {ScheduledCreationOperationUpdateArgs} args - Arguments to update one ScheduledCreationOperation.
+     * @example
+     * // Update one ScheduledCreationOperation
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends ScheduledCreationOperationUpdateArgs>(args: SelectSubset<T, ScheduledCreationOperationUpdateArgs<ExtArgs>>): Prisma__ScheduledCreationOperationClient<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ScheduledCreationOperations.
+     * @param {ScheduledCreationOperationDeleteManyArgs} args - Arguments to filter ScheduledCreationOperations to delete.
+     * @example
+     * // Delete a few ScheduledCreationOperations
+     * const { count } = await prisma.scheduledCreationOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends ScheduledCreationOperationDeleteManyArgs>(args?: SelectSubset<T, ScheduledCreationOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ScheduledCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledCreationOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ScheduledCreationOperations
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends ScheduledCreationOperationUpdateManyArgs>(args: SelectSubset<T, ScheduledCreationOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ScheduledCreationOperations and returns the data updated in the database.
+     * @param {ScheduledCreationOperationUpdateManyAndReturnArgs} args - Arguments to update many ScheduledCreationOperations.
+     * @example
+     * // Update many ScheduledCreationOperations
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more ScheduledCreationOperations and only return the `userId`
+     * const scheduledCreationOperationWithUserIdOnly = await prisma.scheduledCreationOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends ScheduledCreationOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, ScheduledCreationOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ScheduledCreationOperation.
+     * @param {ScheduledCreationOperationUpsertArgs} args - Arguments to update or create a ScheduledCreationOperation.
+     * @example
+     * // Update or create a ScheduledCreationOperation
+     * const scheduledCreationOperation = await prisma.scheduledCreationOperation.upsert({
+     *   create: {
+     *     // ... data to create a ScheduledCreationOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ScheduledCreationOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ScheduledCreationOperationUpsertArgs>(args: SelectSubset<T, ScheduledCreationOperationUpsertArgs<ExtArgs>>): Prisma__ScheduledCreationOperationClient<$Result.GetResult<Prisma.$ScheduledCreationOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ScheduledCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledCreationOperationCountArgs} args - Arguments to filter ScheduledCreationOperations to count.
+     * @example
+     * // Count the number of ScheduledCreationOperations
+     * const count = await prisma.scheduledCreationOperation.count({
+     *   where: {
+     *     // ... the filter for the ScheduledCreationOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends ScheduledCreationOperationCountArgs>(
+      args?: Subset<T, ScheduledCreationOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ScheduledCreationOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ScheduledCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledCreationOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ScheduledCreationOperationAggregateArgs>(args: Subset<T, ScheduledCreationOperationAggregateArgs>): Prisma.PrismaPromise<GetScheduledCreationOperationAggregateType<T>>
+
+    /**
+     * Group by ScheduledCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledCreationOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends ScheduledCreationOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ScheduledCreationOperationGroupByArgs['orderBy'] }
+        : { orderBy?: ScheduledCreationOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ScheduledCreationOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetScheduledCreationOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ScheduledCreationOperation model
+   */
+  readonly fields: ScheduledCreationOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ScheduledCreationOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ScheduledCreationOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ScheduledCreationOperation model
+   */
+  interface ScheduledCreationOperationFieldRefs {
+    readonly userId: FieldRef<"ScheduledCreationOperation", 'String'>
+    readonly clientId: FieldRef<"ScheduledCreationOperation", 'String'>
+    readonly requestHash: FieldRef<"ScheduledCreationOperation", 'String'>
+    readonly scheduledId: FieldRef<"ScheduledCreationOperation", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * ScheduledCreationOperation findUnique
+   */
+  export type ScheduledCreationOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledCreationOperation to fetch.
+     */
+    where: ScheduledCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ScheduledCreationOperation findUniqueOrThrow
+   */
+  export type ScheduledCreationOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledCreationOperation to fetch.
+     */
+    where: ScheduledCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ScheduledCreationOperation findFirst
+   */
+  export type ScheduledCreationOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledCreationOperation to fetch.
+     */
+    where?: ScheduledCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledCreationOperations to fetch.
+     */
+    orderBy?: ScheduledCreationOperationOrderByWithRelationInput | ScheduledCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ScheduledCreationOperations.
+     */
+    cursor?: ScheduledCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ScheduledCreationOperations.
+     */
+    distinct?: ScheduledCreationOperationScalarFieldEnum | ScheduledCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledCreationOperation findFirstOrThrow
+   */
+  export type ScheduledCreationOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledCreationOperation to fetch.
+     */
+    where?: ScheduledCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledCreationOperations to fetch.
+     */
+    orderBy?: ScheduledCreationOperationOrderByWithRelationInput | ScheduledCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ScheduledCreationOperations.
+     */
+    cursor?: ScheduledCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ScheduledCreationOperations.
+     */
+    distinct?: ScheduledCreationOperationScalarFieldEnum | ScheduledCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledCreationOperation findMany
+   */
+  export type ScheduledCreationOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledCreationOperations to fetch.
+     */
+    where?: ScheduledCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledCreationOperations to fetch.
+     */
+    orderBy?: ScheduledCreationOperationOrderByWithRelationInput | ScheduledCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing ScheduledCreationOperations.
+     */
+    cursor?: ScheduledCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledCreationOperations.
+     */
+    skip?: number
+    distinct?: ScheduledCreationOperationScalarFieldEnum | ScheduledCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledCreationOperation create
+   */
+  export type ScheduledCreationOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ScheduledCreationOperation.
+     */
+    data: XOR<ScheduledCreationOperationCreateInput, ScheduledCreationOperationUncheckedCreateInput>
+  }
+
+  /**
+   * ScheduledCreationOperation createMany
+   */
+  export type ScheduledCreationOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ScheduledCreationOperations.
+     */
+    data: ScheduledCreationOperationCreateManyInput | ScheduledCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * ScheduledCreationOperation createManyAndReturn
+   */
+  export type ScheduledCreationOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many ScheduledCreationOperations.
+     */
+    data: ScheduledCreationOperationCreateManyInput | ScheduledCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * ScheduledCreationOperation update
+   */
+  export type ScheduledCreationOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ScheduledCreationOperation.
+     */
+    data: XOR<ScheduledCreationOperationUpdateInput, ScheduledCreationOperationUncheckedUpdateInput>
+    /**
+     * Choose, which ScheduledCreationOperation to update.
+     */
+    where: ScheduledCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ScheduledCreationOperation updateMany
+   */
+  export type ScheduledCreationOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ScheduledCreationOperations.
+     */
+    data: XOR<ScheduledCreationOperationUpdateManyMutationInput, ScheduledCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which ScheduledCreationOperations to update
+     */
+    where?: ScheduledCreationOperationWhereInput
+    /**
+     * Limit how many ScheduledCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledCreationOperation updateManyAndReturn
+   */
+  export type ScheduledCreationOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update ScheduledCreationOperations.
+     */
+    data: XOR<ScheduledCreationOperationUpdateManyMutationInput, ScheduledCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which ScheduledCreationOperations to update
+     */
+    where?: ScheduledCreationOperationWhereInput
+    /**
+     * Limit how many ScheduledCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledCreationOperation upsert
+   */
+  export type ScheduledCreationOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ScheduledCreationOperation to update in case it exists.
+     */
+    where: ScheduledCreationOperationWhereUniqueInput
+    /**
+     * In case the ScheduledCreationOperation found by the `where` argument doesn't exist, create a new ScheduledCreationOperation with this data.
+     */
+    create: XOR<ScheduledCreationOperationCreateInput, ScheduledCreationOperationUncheckedCreateInput>
+    /**
+     * In case the ScheduledCreationOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ScheduledCreationOperationUpdateInput, ScheduledCreationOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * ScheduledCreationOperation delete
+   */
+  export type ScheduledCreationOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter which ScheduledCreationOperation to delete.
+     */
+    where: ScheduledCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ScheduledCreationOperation deleteMany
+   */
+  export type ScheduledCreationOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ScheduledCreationOperations to delete
+     */
+    where?: ScheduledCreationOperationWhereInput
+    /**
+     * Limit how many ScheduledCreationOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledCreationOperation without action
+   */
+  export type ScheduledCreationOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledCreationOperation
+     */
+    select?: ScheduledCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledCreationOperation
+     */
+    omit?: ScheduledCreationOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model ReadIntentState
+   */
+
+  export type AggregateReadIntentState = {
+    _count: ReadIntentStateCountAggregateOutputType | null
+    _min: ReadIntentStateMinAggregateOutputType | null
+    _max: ReadIntentStateMaxAggregateOutputType | null
+  }
+
+  export type ReadIntentStateMinAggregateOutputType = {
+    participantId: string | null
+    revision: string | null
+  }
+
+  export type ReadIntentStateMaxAggregateOutputType = {
+    participantId: string | null
+    revision: string | null
+  }
+
+  export type ReadIntentStateCountAggregateOutputType = {
+    participantId: number
+    revision: number
+    _all: number
+  }
+
+
+  export type ReadIntentStateMinAggregateInputType = {
+    participantId?: true
+    revision?: true
+  }
+
+  export type ReadIntentStateMaxAggregateInputType = {
+    participantId?: true
+    revision?: true
+  }
+
+  export type ReadIntentStateCountAggregateInputType = {
+    participantId?: true
+    revision?: true
+    _all?: true
+  }
+
+  export type ReadIntentStateAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ReadIntentState to aggregate.
+     */
+    where?: ReadIntentStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ReadIntentStates to fetch.
+     */
+    orderBy?: ReadIntentStateOrderByWithRelationInput | ReadIntentStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: ReadIntentStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ReadIntentStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ReadIntentStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned ReadIntentStates
+    **/
+    _count?: true | ReadIntentStateCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: ReadIntentStateMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: ReadIntentStateMaxAggregateInputType
+  }
+
+  export type GetReadIntentStateAggregateType<T extends ReadIntentStateAggregateArgs> = {
+        [P in keyof T & keyof AggregateReadIntentState]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateReadIntentState[P]>
+      : GetScalarType<T[P], AggregateReadIntentState[P]>
+  }
+
+
+
+
+  export type ReadIntentStateGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ReadIntentStateWhereInput
+    orderBy?: ReadIntentStateOrderByWithAggregationInput | ReadIntentStateOrderByWithAggregationInput[]
+    by: ReadIntentStateScalarFieldEnum[] | ReadIntentStateScalarFieldEnum
+    having?: ReadIntentStateScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ReadIntentStateCountAggregateInputType | true
+    _min?: ReadIntentStateMinAggregateInputType
+    _max?: ReadIntentStateMaxAggregateInputType
+  }
+
+  export type ReadIntentStateGroupByOutputType = {
+    participantId: string
+    revision: string
+    _count: ReadIntentStateCountAggregateOutputType | null
+    _min: ReadIntentStateMinAggregateOutputType | null
+    _max: ReadIntentStateMaxAggregateOutputType | null
+  }
+
+  type GetReadIntentStateGroupByPayload<T extends ReadIntentStateGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ReadIntentStateGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ReadIntentStateGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ReadIntentStateGroupByOutputType[P]>
+            : GetScalarType<T[P], ReadIntentStateGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ReadIntentStateSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    participantId?: boolean
+    revision?: boolean
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["readIntentState"]>
+
+  export type ReadIntentStateSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    participantId?: boolean
+    revision?: boolean
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["readIntentState"]>
+
+  export type ReadIntentStateSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    participantId?: boolean
+    revision?: boolean
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["readIntentState"]>
+
+  export type ReadIntentStateSelectScalar = {
+    participantId?: boolean
+    revision?: boolean
+  }
+
+  export type ReadIntentStateOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"participantId" | "revision", ExtArgs["result"]["readIntentState"]>
+  export type ReadIntentStateInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+  }
+  export type ReadIntentStateIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+  }
+  export type ReadIntentStateIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    participant?: boolean | ConversationParticipantDefaultArgs<ExtArgs>
+  }
+
+  export type $ReadIntentStatePayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ReadIntentState"
+    objects: {
+      participant: Prisma.$ConversationParticipantPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      participantId: string
+      revision: string
+    }, ExtArgs["result"]["readIntentState"]>
+    composites: {}
+  }
+
+  type ReadIntentStateGetPayload<S extends boolean | null | undefined | ReadIntentStateDefaultArgs> = $Result.GetResult<Prisma.$ReadIntentStatePayload, S>
+
+  type ReadIntentStateCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ReadIntentStateFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ReadIntentStateCountAggregateInputType | true
+    }
+
+  export interface ReadIntentStateDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ReadIntentState'], meta: { name: 'ReadIntentState' } }
+    /**
+     * Find zero or one ReadIntentState that matches the filter.
+     * @param {ReadIntentStateFindUniqueArgs} args - Arguments to find a ReadIntentState
+     * @example
+     * // Get one ReadIntentState
+     * const readIntentState = await prisma.readIntentState.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ReadIntentStateFindUniqueArgs>(args: SelectSubset<T, ReadIntentStateFindUniqueArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ReadIntentState that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ReadIntentStateFindUniqueOrThrowArgs} args - Arguments to find a ReadIntentState
+     * @example
+     * // Get one ReadIntentState
+     * const readIntentState = await prisma.readIntentState.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ReadIntentStateFindUniqueOrThrowArgs>(args: SelectSubset<T, ReadIntentStateFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ReadIntentState that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadIntentStateFindFirstArgs} args - Arguments to find a ReadIntentState
+     * @example
+     * // Get one ReadIntentState
+     * const readIntentState = await prisma.readIntentState.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ReadIntentStateFindFirstArgs>(args?: SelectSubset<T, ReadIntentStateFindFirstArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ReadIntentState that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadIntentStateFindFirstOrThrowArgs} args - Arguments to find a ReadIntentState
+     * @example
+     * // Get one ReadIntentState
+     * const readIntentState = await prisma.readIntentState.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ReadIntentStateFindFirstOrThrowArgs>(args?: SelectSubset<T, ReadIntentStateFindFirstOrThrowArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ReadIntentStates that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadIntentStateFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ReadIntentStates
+     * const readIntentStates = await prisma.readIntentState.findMany()
+     *
+     * // Get first 10 ReadIntentStates
+     * const readIntentStates = await prisma.readIntentState.findMany({ take: 10 })
+     *
+     * // Only select the `participantId`
+     * const readIntentStateWithParticipantIdOnly = await prisma.readIntentState.findMany({ select: { participantId: true } })
+     *
+     */
+    findMany<T extends ReadIntentStateFindManyArgs>(args?: SelectSubset<T, ReadIntentStateFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ReadIntentState.
+     * @param {ReadIntentStateCreateArgs} args - Arguments to create a ReadIntentState.
+     * @example
+     * // Create one ReadIntentState
+     * const ReadIntentState = await prisma.readIntentState.create({
+     *   data: {
+     *     // ... data to create a ReadIntentState
+     *   }
+     * })
+     *
+     */
+    create<T extends ReadIntentStateCreateArgs>(args: SelectSubset<T, ReadIntentStateCreateArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ReadIntentStates.
+     * @param {ReadIntentStateCreateManyArgs} args - Arguments to create many ReadIntentStates.
+     * @example
+     * // Create many ReadIntentStates
+     * const readIntentState = await prisma.readIntentState.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends ReadIntentStateCreateManyArgs>(args?: SelectSubset<T, ReadIntentStateCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ReadIntentStates and returns the data saved in the database.
+     * @param {ReadIntentStateCreateManyAndReturnArgs} args - Arguments to create many ReadIntentStates.
+     * @example
+     * // Create many ReadIntentStates
+     * const readIntentState = await prisma.readIntentState.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many ReadIntentStates and only return the `participantId`
+     * const readIntentStateWithParticipantIdOnly = await prisma.readIntentState.createManyAndReturn({
+     *   select: { participantId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends ReadIntentStateCreateManyAndReturnArgs>(args?: SelectSubset<T, ReadIntentStateCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ReadIntentState.
+     * @param {ReadIntentStateDeleteArgs} args - Arguments to delete one ReadIntentState.
+     * @example
+     * // Delete one ReadIntentState
+     * const ReadIntentState = await prisma.readIntentState.delete({
+     *   where: {
+     *     // ... filter to delete one ReadIntentState
+     *   }
+     * })
+     *
+     */
+    delete<T extends ReadIntentStateDeleteArgs>(args: SelectSubset<T, ReadIntentStateDeleteArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ReadIntentState.
+     * @param {ReadIntentStateUpdateArgs} args - Arguments to update one ReadIntentState.
+     * @example
+     * // Update one ReadIntentState
+     * const readIntentState = await prisma.readIntentState.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends ReadIntentStateUpdateArgs>(args: SelectSubset<T, ReadIntentStateUpdateArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ReadIntentStates.
+     * @param {ReadIntentStateDeleteManyArgs} args - Arguments to filter ReadIntentStates to delete.
+     * @example
+     * // Delete a few ReadIntentStates
+     * const { count } = await prisma.readIntentState.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends ReadIntentStateDeleteManyArgs>(args?: SelectSubset<T, ReadIntentStateDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ReadIntentStates.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadIntentStateUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ReadIntentStates
+     * const readIntentState = await prisma.readIntentState.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends ReadIntentStateUpdateManyArgs>(args: SelectSubset<T, ReadIntentStateUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ReadIntentStates and returns the data updated in the database.
+     * @param {ReadIntentStateUpdateManyAndReturnArgs} args - Arguments to update many ReadIntentStates.
+     * @example
+     * // Update many ReadIntentStates
+     * const readIntentState = await prisma.readIntentState.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more ReadIntentStates and only return the `participantId`
+     * const readIntentStateWithParticipantIdOnly = await prisma.readIntentState.updateManyAndReturn({
+     *   select: { participantId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends ReadIntentStateUpdateManyAndReturnArgs>(args: SelectSubset<T, ReadIntentStateUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ReadIntentState.
+     * @param {ReadIntentStateUpsertArgs} args - Arguments to update or create a ReadIntentState.
+     * @example
+     * // Update or create a ReadIntentState
+     * const readIntentState = await prisma.readIntentState.upsert({
+     *   create: {
+     *     // ... data to create a ReadIntentState
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ReadIntentState we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ReadIntentStateUpsertArgs>(args: SelectSubset<T, ReadIntentStateUpsertArgs<ExtArgs>>): Prisma__ReadIntentStateClient<$Result.GetResult<Prisma.$ReadIntentStatePayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ReadIntentStates.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadIntentStateCountArgs} args - Arguments to filter ReadIntentStates to count.
+     * @example
+     * // Count the number of ReadIntentStates
+     * const count = await prisma.readIntentState.count({
+     *   where: {
+     *     // ... the filter for the ReadIntentStates we want to count
+     *   }
+     * })
+    **/
+    count<T extends ReadIntentStateCountArgs>(
+      args?: Subset<T, ReadIntentStateCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ReadIntentStateCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ReadIntentState.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadIntentStateAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ReadIntentStateAggregateArgs>(args: Subset<T, ReadIntentStateAggregateArgs>): Prisma.PrismaPromise<GetReadIntentStateAggregateType<T>>
+
+    /**
+     * Group by ReadIntentState.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReadIntentStateGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends ReadIntentStateGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ReadIntentStateGroupByArgs['orderBy'] }
+        : { orderBy?: ReadIntentStateGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ReadIntentStateGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetReadIntentStateGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ReadIntentState model
+   */
+  readonly fields: ReadIntentStateFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ReadIntentState.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ReadIntentStateClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    participant<T extends ConversationParticipantDefaultArgs<ExtArgs> = {}>(args?: Subset<T, ConversationParticipantDefaultArgs<ExtArgs>>): Prisma__ConversationParticipantClient<$Result.GetResult<Prisma.$ConversationParticipantPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ReadIntentState model
+   */
+  interface ReadIntentStateFieldRefs {
+    readonly participantId: FieldRef<"ReadIntentState", 'String'>
+    readonly revision: FieldRef<"ReadIntentState", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * ReadIntentState findUnique
+   */
+  export type ReadIntentStateFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * Filter, which ReadIntentState to fetch.
+     */
+    where: ReadIntentStateWhereUniqueInput
+  }
+
+  /**
+   * ReadIntentState findUniqueOrThrow
+   */
+  export type ReadIntentStateFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * Filter, which ReadIntentState to fetch.
+     */
+    where: ReadIntentStateWhereUniqueInput
+  }
+
+  /**
+   * ReadIntentState findFirst
+   */
+  export type ReadIntentStateFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * Filter, which ReadIntentState to fetch.
+     */
+    where?: ReadIntentStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ReadIntentStates to fetch.
+     */
+    orderBy?: ReadIntentStateOrderByWithRelationInput | ReadIntentStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ReadIntentStates.
+     */
+    cursor?: ReadIntentStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ReadIntentStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ReadIntentStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ReadIntentStates.
+     */
+    distinct?: ReadIntentStateScalarFieldEnum | ReadIntentStateScalarFieldEnum[]
+  }
+
+  /**
+   * ReadIntentState findFirstOrThrow
+   */
+  export type ReadIntentStateFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * Filter, which ReadIntentState to fetch.
+     */
+    where?: ReadIntentStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ReadIntentStates to fetch.
+     */
+    orderBy?: ReadIntentStateOrderByWithRelationInput | ReadIntentStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ReadIntentStates.
+     */
+    cursor?: ReadIntentStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ReadIntentStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ReadIntentStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ReadIntentStates.
+     */
+    distinct?: ReadIntentStateScalarFieldEnum | ReadIntentStateScalarFieldEnum[]
+  }
+
+  /**
+   * ReadIntentState findMany
+   */
+  export type ReadIntentStateFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * Filter, which ReadIntentStates to fetch.
+     */
+    where?: ReadIntentStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ReadIntentStates to fetch.
+     */
+    orderBy?: ReadIntentStateOrderByWithRelationInput | ReadIntentStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing ReadIntentStates.
+     */
+    cursor?: ReadIntentStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ReadIntentStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ReadIntentStates.
+     */
+    skip?: number
+    distinct?: ReadIntentStateScalarFieldEnum | ReadIntentStateScalarFieldEnum[]
+  }
+
+  /**
+   * ReadIntentState create
+   */
+  export type ReadIntentStateCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * The data needed to create a ReadIntentState.
+     */
+    data: XOR<ReadIntentStateCreateInput, ReadIntentStateUncheckedCreateInput>
+  }
+
+  /**
+   * ReadIntentState createMany
+   */
+  export type ReadIntentStateCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ReadIntentStates.
+     */
+    data: ReadIntentStateCreateManyInput | ReadIntentStateCreateManyInput[]
+  }
+
+  /**
+   * ReadIntentState createManyAndReturn
+   */
+  export type ReadIntentStateCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * The data used to create many ReadIntentStates.
+     */
+    data: ReadIntentStateCreateManyInput | ReadIntentStateCreateManyInput[]
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * ReadIntentState update
+   */
+  export type ReadIntentStateUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * The data needed to update a ReadIntentState.
+     */
+    data: XOR<ReadIntentStateUpdateInput, ReadIntentStateUncheckedUpdateInput>
+    /**
+     * Choose, which ReadIntentState to update.
+     */
+    where: ReadIntentStateWhereUniqueInput
+  }
+
+  /**
+   * ReadIntentState updateMany
+   */
+  export type ReadIntentStateUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ReadIntentStates.
+     */
+    data: XOR<ReadIntentStateUpdateManyMutationInput, ReadIntentStateUncheckedUpdateManyInput>
+    /**
+     * Filter which ReadIntentStates to update
+     */
+    where?: ReadIntentStateWhereInput
+    /**
+     * Limit how many ReadIntentStates to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ReadIntentState updateManyAndReturn
+   */
+  export type ReadIntentStateUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * The data used to update ReadIntentStates.
+     */
+    data: XOR<ReadIntentStateUpdateManyMutationInput, ReadIntentStateUncheckedUpdateManyInput>
+    /**
+     * Filter which ReadIntentStates to update
+     */
+    where?: ReadIntentStateWhereInput
+    /**
+     * Limit how many ReadIntentStates to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * ReadIntentState upsert
+   */
+  export type ReadIntentStateUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * The filter to search for the ReadIntentState to update in case it exists.
+     */
+    where: ReadIntentStateWhereUniqueInput
+    /**
+     * In case the ReadIntentState found by the `where` argument doesn't exist, create a new ReadIntentState with this data.
+     */
+    create: XOR<ReadIntentStateCreateInput, ReadIntentStateUncheckedCreateInput>
+    /**
+     * In case the ReadIntentState was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ReadIntentStateUpdateInput, ReadIntentStateUncheckedUpdateInput>
+  }
+
+  /**
+   * ReadIntentState delete
+   */
+  export type ReadIntentStateDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
+    /**
+     * Filter which ReadIntentState to delete.
+     */
+    where: ReadIntentStateWhereUniqueInput
+  }
+
+  /**
+   * ReadIntentState deleteMany
+   */
+  export type ReadIntentStateDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ReadIntentStates to delete
+     */
+    where?: ReadIntentStateWhereInput
+    /**
+     * Limit how many ReadIntentStates to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ReadIntentState without action
+   */
+  export type ReadIntentStateDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReadIntentState
+     */
+    select?: ReadIntentStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReadIntentState
+     */
+    omit?: ReadIntentStateOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ReadIntentStateInclude<ExtArgs> | null
   }
 
 
@@ -54922,6 +61421,65 @@ export namespace Prisma {
   };
 
   export type PushTokenScalarFieldEnum = (typeof PushTokenScalarFieldEnum)[keyof typeof PushTokenScalarFieldEnum]
+
+
+  export const MessageSendOperationScalarFieldEnum: {
+    senderId: 'senderId',
+    clientId: 'clientId',
+    conversationId: 'conversationId',
+    requestHash: 'requestHash',
+    messageId: 'messageId'
+  };
+
+  export type MessageSendOperationScalarFieldEnum = (typeof MessageSendOperationScalarFieldEnum)[keyof typeof MessageSendOperationScalarFieldEnum]
+
+
+  export const WhiteboardStrokeOperationScalarFieldEnum: {
+    senderId: 'senderId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    strokeId: 'strokeId'
+  };
+
+  export type WhiteboardStrokeOperationScalarFieldEnum = (typeof WhiteboardStrokeOperationScalarFieldEnum)[keyof typeof WhiteboardStrokeOperationScalarFieldEnum]
+
+
+  export const WalletOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    result: 'result'
+  };
+
+  export type WalletOperationScalarFieldEnum = (typeof WalletOperationScalarFieldEnum)[keyof typeof WalletOperationScalarFieldEnum]
+
+
+  export const ConversationCreationOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    conversationId: 'conversationId'
+  };
+
+  export type ConversationCreationOperationScalarFieldEnum = (typeof ConversationCreationOperationScalarFieldEnum)[keyof typeof ConversationCreationOperationScalarFieldEnum]
+
+
+  export const ScheduledCreationOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    scheduledId: 'scheduledId'
+  };
+
+  export type ScheduledCreationOperationScalarFieldEnum = (typeof ScheduledCreationOperationScalarFieldEnum)[keyof typeof ScheduledCreationOperationScalarFieldEnum]
+
+
+  export const ReadIntentStateScalarFieldEnum: {
+    participantId: 'participantId',
+    revision: 'revision'
+  };
+
+  export type ReadIntentStateScalarFieldEnum = (typeof ReadIntentStateScalarFieldEnum)[keyof typeof ReadIntentStateScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -56462,6 +63020,7 @@ export namespace Prisma {
     draft?: StringNullableFilter<"ConversationParticipant"> | string | null
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
+    readIntentState?: XOR<ReadIntentStateNullableScalarRelationFilter, ReadIntentStateWhereInput> | null
   }
 
   export type ConversationParticipantOrderByWithRelationInput = {
@@ -56480,6 +63039,7 @@ export namespace Prisma {
     draft?: SortOrderInput | SortOrder
     user?: UserOrderByWithRelationInput
     conversation?: ConversationOrderByWithRelationInput
+    readIntentState?: ReadIntentStateOrderByWithRelationInput
   }
 
   export type ConversationParticipantWhereUniqueInput = Prisma.AtLeast<{
@@ -56502,6 +63062,7 @@ export namespace Prisma {
     draft?: StringNullableFilter<"ConversationParticipant"> | string | null
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
+    readIntentState?: XOR<ReadIntentStateNullableScalarRelationFilter, ReadIntentStateWhereInput> | null
   }, "id" | "userId_conversationId">
 
   export type ConversationParticipantOrderByWithAggregationInput = {
@@ -58146,6 +64707,291 @@ export namespace Prisma {
     updatedAt?: DateTimeWithAggregatesFilter<"PushToken"> | Date | string
   }
 
+  export type MessageSendOperationWhereInput = {
+    AND?: MessageSendOperationWhereInput | MessageSendOperationWhereInput[]
+    OR?: MessageSendOperationWhereInput[]
+    NOT?: MessageSendOperationWhereInput | MessageSendOperationWhereInput[]
+    senderId?: StringFilter<"MessageSendOperation"> | string
+    clientId?: StringFilter<"MessageSendOperation"> | string
+    conversationId?: StringFilter<"MessageSendOperation"> | string
+    requestHash?: StringFilter<"MessageSendOperation"> | string
+    messageId?: StringFilter<"MessageSendOperation"> | string
+  }
+
+  export type MessageSendOperationOrderByWithRelationInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    conversationId?: SortOrder
+    requestHash?: SortOrder
+    messageId?: SortOrder
+  }
+
+  export type MessageSendOperationWhereUniqueInput = Prisma.AtLeast<{
+    messageId?: string
+    senderId_clientId?: MessageSendOperationSenderIdClientIdCompoundUniqueInput
+    AND?: MessageSendOperationWhereInput | MessageSendOperationWhereInput[]
+    OR?: MessageSendOperationWhereInput[]
+    NOT?: MessageSendOperationWhereInput | MessageSendOperationWhereInput[]
+    senderId?: StringFilter<"MessageSendOperation"> | string
+    clientId?: StringFilter<"MessageSendOperation"> | string
+    conversationId?: StringFilter<"MessageSendOperation"> | string
+    requestHash?: StringFilter<"MessageSendOperation"> | string
+  }, "senderId_clientId" | "messageId">
+
+  export type MessageSendOperationOrderByWithAggregationInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    conversationId?: SortOrder
+    requestHash?: SortOrder
+    messageId?: SortOrder
+    _count?: MessageSendOperationCountOrderByAggregateInput
+    _max?: MessageSendOperationMaxOrderByAggregateInput
+    _min?: MessageSendOperationMinOrderByAggregateInput
+  }
+
+  export type MessageSendOperationScalarWhereWithAggregatesInput = {
+    AND?: MessageSendOperationScalarWhereWithAggregatesInput | MessageSendOperationScalarWhereWithAggregatesInput[]
+    OR?: MessageSendOperationScalarWhereWithAggregatesInput[]
+    NOT?: MessageSendOperationScalarWhereWithAggregatesInput | MessageSendOperationScalarWhereWithAggregatesInput[]
+    senderId?: StringWithAggregatesFilter<"MessageSendOperation"> | string
+    clientId?: StringWithAggregatesFilter<"MessageSendOperation"> | string
+    conversationId?: StringWithAggregatesFilter<"MessageSendOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"MessageSendOperation"> | string
+    messageId?: StringWithAggregatesFilter<"MessageSendOperation"> | string
+  }
+
+  export type WhiteboardStrokeOperationWhereInput = {
+    AND?: WhiteboardStrokeOperationWhereInput | WhiteboardStrokeOperationWhereInput[]
+    OR?: WhiteboardStrokeOperationWhereInput[]
+    NOT?: WhiteboardStrokeOperationWhereInput | WhiteboardStrokeOperationWhereInput[]
+    senderId?: StringFilter<"WhiteboardStrokeOperation"> | string
+    clientId?: StringFilter<"WhiteboardStrokeOperation"> | string
+    requestHash?: StringFilter<"WhiteboardStrokeOperation"> | string
+    strokeId?: StringFilter<"WhiteboardStrokeOperation"> | string
+  }
+
+  export type WhiteboardStrokeOperationOrderByWithRelationInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    strokeId?: SortOrder
+  }
+
+  export type WhiteboardStrokeOperationWhereUniqueInput = Prisma.AtLeast<{
+    strokeId?: string
+    senderId_clientId?: WhiteboardStrokeOperationSenderIdClientIdCompoundUniqueInput
+    AND?: WhiteboardStrokeOperationWhereInput | WhiteboardStrokeOperationWhereInput[]
+    OR?: WhiteboardStrokeOperationWhereInput[]
+    NOT?: WhiteboardStrokeOperationWhereInput | WhiteboardStrokeOperationWhereInput[]
+    senderId?: StringFilter<"WhiteboardStrokeOperation"> | string
+    clientId?: StringFilter<"WhiteboardStrokeOperation"> | string
+    requestHash?: StringFilter<"WhiteboardStrokeOperation"> | string
+  }, "senderId_clientId" | "strokeId">
+
+  export type WhiteboardStrokeOperationOrderByWithAggregationInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    strokeId?: SortOrder
+    _count?: WhiteboardStrokeOperationCountOrderByAggregateInput
+    _max?: WhiteboardStrokeOperationMaxOrderByAggregateInput
+    _min?: WhiteboardStrokeOperationMinOrderByAggregateInput
+  }
+
+  export type WhiteboardStrokeOperationScalarWhereWithAggregatesInput = {
+    AND?: WhiteboardStrokeOperationScalarWhereWithAggregatesInput | WhiteboardStrokeOperationScalarWhereWithAggregatesInput[]
+    OR?: WhiteboardStrokeOperationScalarWhereWithAggregatesInput[]
+    NOT?: WhiteboardStrokeOperationScalarWhereWithAggregatesInput | WhiteboardStrokeOperationScalarWhereWithAggregatesInput[]
+    senderId?: StringWithAggregatesFilter<"WhiteboardStrokeOperation"> | string
+    clientId?: StringWithAggregatesFilter<"WhiteboardStrokeOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"WhiteboardStrokeOperation"> | string
+    strokeId?: StringWithAggregatesFilter<"WhiteboardStrokeOperation"> | string
+  }
+
+  export type WalletOperationWhereInput = {
+    AND?: WalletOperationWhereInput | WalletOperationWhereInput[]
+    OR?: WalletOperationWhereInput[]
+    NOT?: WalletOperationWhereInput | WalletOperationWhereInput[]
+    userId?: StringFilter<"WalletOperation"> | string
+    clientId?: StringFilter<"WalletOperation"> | string
+    requestHash?: StringFilter<"WalletOperation"> | string
+    result?: StringFilter<"WalletOperation"> | string
+  }
+
+  export type WalletOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    result?: SortOrder
+  }
+
+  export type WalletOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: WalletOperationUserIdClientIdCompoundUniqueInput
+    AND?: WalletOperationWhereInput | WalletOperationWhereInput[]
+    OR?: WalletOperationWhereInput[]
+    NOT?: WalletOperationWhereInput | WalletOperationWhereInput[]
+    userId?: StringFilter<"WalletOperation"> | string
+    clientId?: StringFilter<"WalletOperation"> | string
+    requestHash?: StringFilter<"WalletOperation"> | string
+    result?: StringFilter<"WalletOperation"> | string
+  }, "userId_clientId">
+
+  export type WalletOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    result?: SortOrder
+    _count?: WalletOperationCountOrderByAggregateInput
+    _max?: WalletOperationMaxOrderByAggregateInput
+    _min?: WalletOperationMinOrderByAggregateInput
+  }
+
+  export type WalletOperationScalarWhereWithAggregatesInput = {
+    AND?: WalletOperationScalarWhereWithAggregatesInput | WalletOperationScalarWhereWithAggregatesInput[]
+    OR?: WalletOperationScalarWhereWithAggregatesInput[]
+    NOT?: WalletOperationScalarWhereWithAggregatesInput | WalletOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"WalletOperation"> | string
+    clientId?: StringWithAggregatesFilter<"WalletOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"WalletOperation"> | string
+    result?: StringWithAggregatesFilter<"WalletOperation"> | string
+  }
+
+  export type ConversationCreationOperationWhereInput = {
+    AND?: ConversationCreationOperationWhereInput | ConversationCreationOperationWhereInput[]
+    OR?: ConversationCreationOperationWhereInput[]
+    NOT?: ConversationCreationOperationWhereInput | ConversationCreationOperationWhereInput[]
+    userId?: StringFilter<"ConversationCreationOperation"> | string
+    clientId?: StringFilter<"ConversationCreationOperation"> | string
+    requestHash?: StringFilter<"ConversationCreationOperation"> | string
+    conversationId?: StringFilter<"ConversationCreationOperation"> | string
+  }
+
+  export type ConversationCreationOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    conversationId?: SortOrder
+  }
+
+  export type ConversationCreationOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: ConversationCreationOperationUserIdClientIdCompoundUniqueInput
+    AND?: ConversationCreationOperationWhereInput | ConversationCreationOperationWhereInput[]
+    OR?: ConversationCreationOperationWhereInput[]
+    NOT?: ConversationCreationOperationWhereInput | ConversationCreationOperationWhereInput[]
+    userId?: StringFilter<"ConversationCreationOperation"> | string
+    clientId?: StringFilter<"ConversationCreationOperation"> | string
+    requestHash?: StringFilter<"ConversationCreationOperation"> | string
+    conversationId?: StringFilter<"ConversationCreationOperation"> | string
+  }, "userId_clientId">
+
+  export type ConversationCreationOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    conversationId?: SortOrder
+    _count?: ConversationCreationOperationCountOrderByAggregateInput
+    _max?: ConversationCreationOperationMaxOrderByAggregateInput
+    _min?: ConversationCreationOperationMinOrderByAggregateInput
+  }
+
+  export type ConversationCreationOperationScalarWhereWithAggregatesInput = {
+    AND?: ConversationCreationOperationScalarWhereWithAggregatesInput | ConversationCreationOperationScalarWhereWithAggregatesInput[]
+    OR?: ConversationCreationOperationScalarWhereWithAggregatesInput[]
+    NOT?: ConversationCreationOperationScalarWhereWithAggregatesInput | ConversationCreationOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"ConversationCreationOperation"> | string
+    clientId?: StringWithAggregatesFilter<"ConversationCreationOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"ConversationCreationOperation"> | string
+    conversationId?: StringWithAggregatesFilter<"ConversationCreationOperation"> | string
+  }
+
+  export type ScheduledCreationOperationWhereInput = {
+    AND?: ScheduledCreationOperationWhereInput | ScheduledCreationOperationWhereInput[]
+    OR?: ScheduledCreationOperationWhereInput[]
+    NOT?: ScheduledCreationOperationWhereInput | ScheduledCreationOperationWhereInput[]
+    userId?: StringFilter<"ScheduledCreationOperation"> | string
+    clientId?: StringFilter<"ScheduledCreationOperation"> | string
+    requestHash?: StringFilter<"ScheduledCreationOperation"> | string
+    scheduledId?: StringFilter<"ScheduledCreationOperation"> | string
+  }
+
+  export type ScheduledCreationOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    scheduledId?: SortOrder
+  }
+
+  export type ScheduledCreationOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: ScheduledCreationOperationUserIdClientIdCompoundUniqueInput
+    AND?: ScheduledCreationOperationWhereInput | ScheduledCreationOperationWhereInput[]
+    OR?: ScheduledCreationOperationWhereInput[]
+    NOT?: ScheduledCreationOperationWhereInput | ScheduledCreationOperationWhereInput[]
+    userId?: StringFilter<"ScheduledCreationOperation"> | string
+    clientId?: StringFilter<"ScheduledCreationOperation"> | string
+    requestHash?: StringFilter<"ScheduledCreationOperation"> | string
+    scheduledId?: StringFilter<"ScheduledCreationOperation"> | string
+  }, "userId_clientId">
+
+  export type ScheduledCreationOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    scheduledId?: SortOrder
+    _count?: ScheduledCreationOperationCountOrderByAggregateInput
+    _max?: ScheduledCreationOperationMaxOrderByAggregateInput
+    _min?: ScheduledCreationOperationMinOrderByAggregateInput
+  }
+
+  export type ScheduledCreationOperationScalarWhereWithAggregatesInput = {
+    AND?: ScheduledCreationOperationScalarWhereWithAggregatesInput | ScheduledCreationOperationScalarWhereWithAggregatesInput[]
+    OR?: ScheduledCreationOperationScalarWhereWithAggregatesInput[]
+    NOT?: ScheduledCreationOperationScalarWhereWithAggregatesInput | ScheduledCreationOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"ScheduledCreationOperation"> | string
+    clientId?: StringWithAggregatesFilter<"ScheduledCreationOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"ScheduledCreationOperation"> | string
+    scheduledId?: StringWithAggregatesFilter<"ScheduledCreationOperation"> | string
+  }
+
+  export type ReadIntentStateWhereInput = {
+    AND?: ReadIntentStateWhereInput | ReadIntentStateWhereInput[]
+    OR?: ReadIntentStateWhereInput[]
+    NOT?: ReadIntentStateWhereInput | ReadIntentStateWhereInput[]
+    participantId?: StringFilter<"ReadIntentState"> | string
+    revision?: StringFilter<"ReadIntentState"> | string
+    participant?: XOR<ConversationParticipantScalarRelationFilter, ConversationParticipantWhereInput>
+  }
+
+  export type ReadIntentStateOrderByWithRelationInput = {
+    participantId?: SortOrder
+    revision?: SortOrder
+    participant?: ConversationParticipantOrderByWithRelationInput
+  }
+
+  export type ReadIntentStateWhereUniqueInput = Prisma.AtLeast<{
+    participantId?: string
+    AND?: ReadIntentStateWhereInput | ReadIntentStateWhereInput[]
+    OR?: ReadIntentStateWhereInput[]
+    NOT?: ReadIntentStateWhereInput | ReadIntentStateWhereInput[]
+    revision?: StringFilter<"ReadIntentState"> | string
+    participant?: XOR<ConversationParticipantScalarRelationFilter, ConversationParticipantWhereInput>
+  }, "participantId">
+
+  export type ReadIntentStateOrderByWithAggregationInput = {
+    participantId?: SortOrder
+    revision?: SortOrder
+    _count?: ReadIntentStateCountOrderByAggregateInput
+    _max?: ReadIntentStateMaxOrderByAggregateInput
+    _min?: ReadIntentStateMinOrderByAggregateInput
+  }
+
+  export type ReadIntentStateScalarWhereWithAggregatesInput = {
+    AND?: ReadIntentStateScalarWhereWithAggregatesInput | ReadIntentStateScalarWhereWithAggregatesInput[]
+    OR?: ReadIntentStateScalarWhereWithAggregatesInput[]
+    NOT?: ReadIntentStateScalarWhereWithAggregatesInput | ReadIntentStateScalarWhereWithAggregatesInput[]
+    participantId?: StringWithAggregatesFilter<"ReadIntentState"> | string
+    revision?: StringWithAggregatesFilter<"ReadIntentState"> | string
+  }
+
   export type UserCreateInput = {
     id?: string
     name: string
@@ -59711,6 +66557,7 @@ export namespace Prisma {
     draft?: string | null
     user: UserCreateNestedOneWithoutParticipationsInput
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
+    readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
   }
 
   export type ConversationParticipantUncheckedCreateInput = {
@@ -59727,6 +66574,7 @@ export namespace Prisma {
     screenPrivacy?: boolean
     manualUnread?: boolean
     draft?: string | null
+    readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
   }
 
   export type ConversationParticipantUpdateInput = {
@@ -59743,6 +66591,7 @@ export namespace Prisma {
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
+    readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateInput = {
@@ -59759,6 +66608,7 @@ export namespace Prisma {
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
+    readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantCreateManyInput = {
@@ -61499,6 +68349,292 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
+  export type MessageSendOperationCreateInput = {
+    senderId: string
+    clientId: string
+    conversationId: string
+    requestHash: string
+    messageId: string
+  }
+
+  export type MessageSendOperationUncheckedCreateInput = {
+    senderId: string
+    clientId: string
+    conversationId: string
+    requestHash: string
+    messageId: string
+  }
+
+  export type MessageSendOperationUpdateInput = {
+    senderId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MessageSendOperationUncheckedUpdateInput = {
+    senderId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MessageSendOperationCreateManyInput = {
+    senderId: string
+    clientId: string
+    conversationId: string
+    requestHash: string
+    messageId: string
+  }
+
+  export type MessageSendOperationUpdateManyMutationInput = {
+    senderId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MessageSendOperationUncheckedUpdateManyInput = {
+    senderId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type WhiteboardStrokeOperationCreateInput = {
+    senderId: string
+    clientId: string
+    requestHash: string
+    strokeId: string
+  }
+
+  export type WhiteboardStrokeOperationUncheckedCreateInput = {
+    senderId: string
+    clientId: string
+    requestHash: string
+    strokeId: string
+  }
+
+  export type WhiteboardStrokeOperationUpdateInput = {
+    senderId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    strokeId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type WhiteboardStrokeOperationUncheckedUpdateInput = {
+    senderId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    strokeId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type WhiteboardStrokeOperationCreateManyInput = {
+    senderId: string
+    clientId: string
+    requestHash: string
+    strokeId: string
+  }
+
+  export type WhiteboardStrokeOperationUpdateManyMutationInput = {
+    senderId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    strokeId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type WhiteboardStrokeOperationUncheckedUpdateManyInput = {
+    senderId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    strokeId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type WalletOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    result: string
+  }
+
+  export type WalletOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    result: string
+  }
+
+  export type WalletOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    result?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type WalletOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    result?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type WalletOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    result: string
+  }
+
+  export type WalletOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    result?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type WalletOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    result?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ConversationCreationOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    conversationId: string
+  }
+
+  export type ConversationCreationOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    conversationId: string
+  }
+
+  export type ConversationCreationOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ConversationCreationOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ConversationCreationOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    conversationId: string
+  }
+
+  export type ConversationCreationOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ConversationCreationOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ScheduledCreationOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    scheduledId: string
+  }
+
+  export type ScheduledCreationOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    scheduledId: string
+  }
+
+  export type ScheduledCreationOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    scheduledId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ScheduledCreationOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    scheduledId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ScheduledCreationOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    scheduledId: string
+  }
+
+  export type ScheduledCreationOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    scheduledId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ScheduledCreationOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    scheduledId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReadIntentStateCreateInput = {
+    revision: string
+    participant: ConversationParticipantCreateNestedOneWithoutReadIntentStateInput
+  }
+
+  export type ReadIntentStateUncheckedCreateInput = {
+    participantId: string
+    revision: string
+  }
+
+  export type ReadIntentStateUpdateInput = {
+    revision?: StringFieldUpdateOperationsInput | string
+    participant?: ConversationParticipantUpdateOneRequiredWithoutReadIntentStateNestedInput
+  }
+
+  export type ReadIntentStateUncheckedUpdateInput = {
+    participantId?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReadIntentStateCreateManyInput = {
+    participantId: string
+    revision: string
+  }
+
+  export type ReadIntentStateUpdateManyMutationInput = {
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReadIntentStateUncheckedUpdateManyInput = {
+    participantId?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -62714,6 +69850,11 @@ export namespace Prisma {
     createdAt?: SortOrder
   }
 
+  export type ReadIntentStateNullableScalarRelationFilter = {
+    is?: ReadIntentStateWhereInput | null
+    isNot?: ReadIntentStateWhereInput | null
+  }
+
   export type ConversationParticipantUserIdConversationIdCompoundUniqueInput = {
     userId: string
     conversationId: string
@@ -63778,6 +70919,159 @@ export namespace Prisma {
     endpoint?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+  }
+
+  export type MessageSendOperationSenderIdClientIdCompoundUniqueInput = {
+    senderId: string
+    clientId: string
+  }
+
+  export type MessageSendOperationCountOrderByAggregateInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    conversationId?: SortOrder
+    requestHash?: SortOrder
+    messageId?: SortOrder
+  }
+
+  export type MessageSendOperationMaxOrderByAggregateInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    conversationId?: SortOrder
+    requestHash?: SortOrder
+    messageId?: SortOrder
+  }
+
+  export type MessageSendOperationMinOrderByAggregateInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    conversationId?: SortOrder
+    requestHash?: SortOrder
+    messageId?: SortOrder
+  }
+
+  export type WhiteboardStrokeOperationSenderIdClientIdCompoundUniqueInput = {
+    senderId: string
+    clientId: string
+  }
+
+  export type WhiteboardStrokeOperationCountOrderByAggregateInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    strokeId?: SortOrder
+  }
+
+  export type WhiteboardStrokeOperationMaxOrderByAggregateInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    strokeId?: SortOrder
+  }
+
+  export type WhiteboardStrokeOperationMinOrderByAggregateInput = {
+    senderId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    strokeId?: SortOrder
+  }
+
+  export type WalletOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type WalletOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    result?: SortOrder
+  }
+
+  export type WalletOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    result?: SortOrder
+  }
+
+  export type WalletOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    result?: SortOrder
+  }
+
+  export type ConversationCreationOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type ConversationCreationOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    conversationId?: SortOrder
+  }
+
+  export type ConversationCreationOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    conversationId?: SortOrder
+  }
+
+  export type ConversationCreationOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    conversationId?: SortOrder
+  }
+
+  export type ScheduledCreationOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type ScheduledCreationOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    scheduledId?: SortOrder
+  }
+
+  export type ScheduledCreationOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    scheduledId?: SortOrder
+  }
+
+  export type ScheduledCreationOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    scheduledId?: SortOrder
+  }
+
+  export type ConversationParticipantScalarRelationFilter = {
+    is?: ConversationParticipantWhereInput
+    isNot?: ConversationParticipantWhereInput
+  }
+
+  export type ReadIntentStateCountOrderByAggregateInput = {
+    participantId?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type ReadIntentStateMaxOrderByAggregateInput = {
+    participantId?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type ReadIntentStateMinOrderByAggregateInput = {
+    participantId?: SortOrder
+    revision?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {
@@ -65530,6 +72824,18 @@ export namespace Prisma {
     connect?: ConversationWhereUniqueInput
   }
 
+  export type ReadIntentStateCreateNestedOneWithoutParticipantInput = {
+    create?: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
+    connectOrCreate?: ReadIntentStateCreateOrConnectWithoutParticipantInput
+    connect?: ReadIntentStateWhereUniqueInput
+  }
+
+  export type ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput = {
+    create?: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
+    connectOrCreate?: ReadIntentStateCreateOrConnectWithoutParticipantInput
+    connect?: ReadIntentStateWhereUniqueInput
+  }
+
   export type UserUpdateOneRequiredWithoutParticipationsNestedInput = {
     create?: XOR<UserCreateWithoutParticipationsInput, UserUncheckedCreateWithoutParticipationsInput>
     connectOrCreate?: UserCreateOrConnectWithoutParticipationsInput
@@ -65544,6 +72850,26 @@ export namespace Prisma {
     upsert?: ConversationUpsertWithoutParticipantsInput
     connect?: ConversationWhereUniqueInput
     update?: XOR<XOR<ConversationUpdateToOneWithWhereWithoutParticipantsInput, ConversationUpdateWithoutParticipantsInput>, ConversationUncheckedUpdateWithoutParticipantsInput>
+  }
+
+  export type ReadIntentStateUpdateOneWithoutParticipantNestedInput = {
+    create?: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
+    connectOrCreate?: ReadIntentStateCreateOrConnectWithoutParticipantInput
+    upsert?: ReadIntentStateUpsertWithoutParticipantInput
+    disconnect?: ReadIntentStateWhereInput | boolean
+    delete?: ReadIntentStateWhereInput | boolean
+    connect?: ReadIntentStateWhereUniqueInput
+    update?: XOR<XOR<ReadIntentStateUpdateToOneWithWhereWithoutParticipantInput, ReadIntentStateUpdateWithoutParticipantInput>, ReadIntentStateUncheckedUpdateWithoutParticipantInput>
+  }
+
+  export type ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput = {
+    create?: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
+    connectOrCreate?: ReadIntentStateCreateOrConnectWithoutParticipantInput
+    upsert?: ReadIntentStateUpsertWithoutParticipantInput
+    disconnect?: ReadIntentStateWhereInput | boolean
+    delete?: ReadIntentStateWhereInput | boolean
+    connect?: ReadIntentStateWhereUniqueInput
+    update?: XOR<XOR<ReadIntentStateUpdateToOneWithWhereWithoutParticipantInput, ReadIntentStateUpdateWithoutParticipantInput>, ReadIntentStateUncheckedUpdateWithoutParticipantInput>
   }
 
   export type UserCreateNestedOneWithoutMessagesInput = {
@@ -66554,6 +73880,20 @@ export namespace Prisma {
     set?: Bytes
   }
 
+  export type ConversationParticipantCreateNestedOneWithoutReadIntentStateInput = {
+    create?: XOR<ConversationParticipantCreateWithoutReadIntentStateInput, ConversationParticipantUncheckedCreateWithoutReadIntentStateInput>
+    connectOrCreate?: ConversationParticipantCreateOrConnectWithoutReadIntentStateInput
+    connect?: ConversationParticipantWhereUniqueInput
+  }
+
+  export type ConversationParticipantUpdateOneRequiredWithoutReadIntentStateNestedInput = {
+    create?: XOR<ConversationParticipantCreateWithoutReadIntentStateInput, ConversationParticipantUncheckedCreateWithoutReadIntentStateInput>
+    connectOrCreate?: ConversationParticipantCreateOrConnectWithoutReadIntentStateInput
+    upsert?: ConversationParticipantUpsertWithoutReadIntentStateInput
+    connect?: ConversationParticipantWhereUniqueInput
+    update?: XOR<XOR<ConversationParticipantUpdateToOneWithWhereWithoutReadIntentStateInput, ConversationParticipantUpdateWithoutReadIntentStateInput>, ConversationParticipantUncheckedUpdateWithoutReadIntentStateInput>
+  }
+
   export type NestedStringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -66984,6 +74324,7 @@ export namespace Prisma {
     manualUnread?: boolean
     draft?: string | null
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
+    readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
   }
 
   export type ConversationParticipantUncheckedCreateWithoutUserInput = {
@@ -66999,6 +74340,7 @@ export namespace Prisma {
     screenPrivacy?: boolean
     manualUnread?: boolean
     draft?: string | null
+    readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
   }
 
   export type ConversationParticipantCreateOrConnectWithoutUserInput = {
@@ -70753,6 +78095,7 @@ export namespace Prisma {
     manualUnread?: boolean
     draft?: string | null
     user: UserCreateNestedOneWithoutParticipationsInput
+    readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
   }
 
   export type ConversationParticipantUncheckedCreateWithoutConversationInput = {
@@ -70768,6 +78111,7 @@ export namespace Prisma {
     screenPrivacy?: boolean
     manualUnread?: boolean
     draft?: string | null
+    readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
   }
 
   export type ConversationParticipantCreateOrConnectWithoutConversationInput = {
@@ -72288,6 +79632,19 @@ export namespace Prisma {
     create: XOR<ConversationCreateWithoutParticipantsInput, ConversationUncheckedCreateWithoutParticipantsInput>
   }
 
+  export type ReadIntentStateCreateWithoutParticipantInput = {
+    revision: string
+  }
+
+  export type ReadIntentStateUncheckedCreateWithoutParticipantInput = {
+    revision: string
+  }
+
+  export type ReadIntentStateCreateOrConnectWithoutParticipantInput = {
+    where: ReadIntentStateWhereUniqueInput
+    create: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
+  }
+
   export type UserUpsertWithoutParticipationsInput = {
     update: XOR<UserUpdateWithoutParticipationsInput, UserUncheckedUpdateWithoutParticipationsInput>
     create: XOR<UserCreateWithoutParticipationsInput, UserUncheckedCreateWithoutParticipationsInput>
@@ -72444,6 +79801,25 @@ export namespace Prisma {
     tournaments?: TournamentUncheckedUpdateManyWithoutConversationNestedInput
     folderEntries?: FolderConversationUncheckedUpdateManyWithoutConversationNestedInput
     automations?: AutomationUncheckedUpdateManyWithoutConversationNestedInput
+  }
+
+  export type ReadIntentStateUpsertWithoutParticipantInput = {
+    update: XOR<ReadIntentStateUpdateWithoutParticipantInput, ReadIntentStateUncheckedUpdateWithoutParticipantInput>
+    create: XOR<ReadIntentStateCreateWithoutParticipantInput, ReadIntentStateUncheckedCreateWithoutParticipantInput>
+    where?: ReadIntentStateWhereInput
+  }
+
+  export type ReadIntentStateUpdateToOneWithWhereWithoutParticipantInput = {
+    where?: ReadIntentStateWhereInput
+    data: XOR<ReadIntentStateUpdateWithoutParticipantInput, ReadIntentStateUncheckedUpdateWithoutParticipantInput>
+  }
+
+  export type ReadIntentStateUpdateWithoutParticipantInput = {
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReadIntentStateUncheckedUpdateWithoutParticipantInput = {
+    revision?: StringFieldUpdateOperationsInput | string
   }
 
   export type UserCreateWithoutMessagesInput = {
@@ -76787,6 +84163,86 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
+  export type ConversationParticipantCreateWithoutReadIntentStateInput = {
+    id?: string
+    role?: string
+    joinedAt?: Date | string
+    lastReadAt?: Date | string
+    pinnedAt?: Date | string | null
+    mutedUntil?: Date | string | null
+    archivedAt?: Date | string | null
+    handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
+    manualUnread?: boolean
+    draft?: string | null
+    user: UserCreateNestedOneWithoutParticipationsInput
+    conversation: ConversationCreateNestedOneWithoutParticipantsInput
+  }
+
+  export type ConversationParticipantUncheckedCreateWithoutReadIntentStateInput = {
+    id?: string
+    userId: string
+    conversationId: string
+    role?: string
+    joinedAt?: Date | string
+    lastReadAt?: Date | string
+    pinnedAt?: Date | string | null
+    mutedUntil?: Date | string | null
+    archivedAt?: Date | string | null
+    handRaisedAt?: Date | string | null
+    screenPrivacy?: boolean
+    manualUnread?: boolean
+    draft?: string | null
+  }
+
+  export type ConversationParticipantCreateOrConnectWithoutReadIntentStateInput = {
+    where: ConversationParticipantWhereUniqueInput
+    create: XOR<ConversationParticipantCreateWithoutReadIntentStateInput, ConversationParticipantUncheckedCreateWithoutReadIntentStateInput>
+  }
+
+  export type ConversationParticipantUpsertWithoutReadIntentStateInput = {
+    update: XOR<ConversationParticipantUpdateWithoutReadIntentStateInput, ConversationParticipantUncheckedUpdateWithoutReadIntentStateInput>
+    create: XOR<ConversationParticipantCreateWithoutReadIntentStateInput, ConversationParticipantUncheckedCreateWithoutReadIntentStateInput>
+    where?: ConversationParticipantWhereInput
+  }
+
+  export type ConversationParticipantUpdateToOneWithWhereWithoutReadIntentStateInput = {
+    where?: ConversationParticipantWhereInput
+    data: XOR<ConversationParticipantUpdateWithoutReadIntentStateInput, ConversationParticipantUncheckedUpdateWithoutReadIntentStateInput>
+  }
+
+  export type ConversationParticipantUpdateWithoutReadIntentStateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    role?: StringFieldUpdateOperationsInput | string
+    joinedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastReadAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draft?: NullableStringFieldUpdateOperationsInput | string | null
+    user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
+    conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
+  }
+
+  export type ConversationParticipantUncheckedUpdateWithoutReadIntentStateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    role?: StringFieldUpdateOperationsInput | string
+    joinedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    lastReadAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    pinnedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    mutedUntil?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    archivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
+    manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draft?: NullableStringFieldUpdateOperationsInput | string | null
+  }
+
   export type AppInstallCreateManyUserInput = {
     id?: string
     appId: string
@@ -77171,6 +84627,7 @@ export namespace Prisma {
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
+    readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateWithoutUserInput = {
@@ -77186,6 +84643,7 @@ export namespace Prisma {
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
+    readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateManyWithoutUserInput = {
@@ -77783,6 +85241,7 @@ export namespace Prisma {
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
+    readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateWithoutConversationInput = {
@@ -77798,6 +85257,7 @@ export namespace Prisma {
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
     draft?: NullableStringFieldUpdateOperationsInput | string | null
+    readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
   }
 
   export type ConversationParticipantUncheckedUpdateManyWithoutConversationInput = {

@@ -2692,10 +2692,13 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun markRead(conversationId: String): Result<Unit> = acknowledgeRead(conversationId, null)
 
-    override suspend fun markReadThrough(conversationId: String, messageId: String): Result<Unit> =
-        acknowledgeRead(conversationId, messageId)
+    override suspend fun captureReadIntent(conversationId: String): Result<String> =
+        ownedPeerRequest { owner -> api.captureReadIntent(conversationId, owner) }
 
-    private suspend fun acknowledgeRead(conversationId: String, messageId: String?): Result<Unit> {
+    override suspend fun markReadThrough(conversationId: String, messageId: String, readIntent: String?): Result<Unit> =
+        acknowledgeRead(conversationId, messageId, readIntent)
+
+    private suspend fun acknowledgeRead(conversationId: String, messageId: String?, readIntent: String? = null): Result<Unit> {
         return try {
             if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
                 mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
@@ -2713,7 +2716,7 @@ class PulseRepositoryImpl constructor(
             }
             conversationSnapshots.invalidate(conversationId)
             val result = try {
-                when (val response = api.markRead(conversationId, owner, messageId, anchor?.createdAt)) {
+                when (val response = api.markRead(conversationId, owner, messageId, anchor?.createdAt, readIntent)) {
                     is PulseResult.Success -> Result.success(Unit)
                     is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
                 }

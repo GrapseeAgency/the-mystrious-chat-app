@@ -388,21 +388,22 @@ model StoryView {
 }
 
 model ConversationParticipant {
-  id             String       @id @default(cuid())
-  userId         String
-  conversationId String
-  role           String       @default("member") // "admin" | "member" (groups: creator is admin)
-  joinedAt       DateTime     @default(now()) // join watermark (tie-breaker for admin succession)
-  lastReadAt     DateTime     @default(now()) // read receipts / unread counts
-  pinnedAt       DateTime? // per-user pinned-to-top
-  mutedUntil     DateTime? // per-user notification mute watermark (null = unmuted)
-  archivedAt     DateTime? // per-user archive watermark (null = active; cleared when others send new msgs)
-  handRaisedAt   DateTime? // Clubhouse-style raised hand (null = lowered)
-  screenPrivacy  Boolean      @default(false) // R42: per-VIEWER screen security (personal veil, OR'd with the conversation-wide flag)
-  manualUnread   Boolean      @default(false) // R44: mark-as-unread — row badge dot until the room is opened again
-  draft          String? // R45: server-synced composer draft (cross-device; null/'' = no draft)
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  id              String           @id @default(cuid())
+  userId          String
+  conversationId  String
+  role            String           @default("member") // "admin" | "member" (groups: creator is admin)
+  joinedAt        DateTime         @default(now()) // join watermark (tie-breaker for admin succession)
+  lastReadAt      DateTime         @default(now()) // read receipts / unread counts
+  pinnedAt        DateTime? // per-user pinned-to-top
+  mutedUntil      DateTime? // per-user notification mute watermark (null = unmuted)
+  archivedAt      DateTime? // per-user archive watermark (null = active; cleared when others send new msgs)
+  handRaisedAt    DateTime? // Clubhouse-style raised hand (null = lowered)
+  screenPrivacy   Boolean          @default(false) // R42: per-VIEWER screen security (personal veil, OR'd with the conversation-wide flag)
+  manualUnread    Boolean          @default(false) // R44: mark-as-unread — row badge dot until the room is opened again
+  draft           String? // R45: server-synced composer draft (cross-device; null/'' = no draft)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation    Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  readIntentState ReadIntentState?
 
   @@unique([userId, conversationId])
   @@index([conversationId])
@@ -796,4 +797,62 @@ model PushToken {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+// Durable delivery receipt, intentionally retained after the message is deleted.
+model MessageSendOperation {
+  senderId       String
+  clientId       String
+  conversationId String
+  requestHash    String
+  messageId      String @unique
+
+  @@id([senderId, clientId])
+}
+
+// Tombstone-capable drawing receipt, retained after Undo/Clear.
+model WhiteboardStrokeOperation {
+  senderId    String
+  clientId    String
+  requestHash String
+  strokeId    String @unique
+
+  @@id([senderId, clientId])
+}
+
+// Durable monetary operation verdict; retained independently of user/ledger cleanup.
+model WalletOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  result      String
+
+  @@id([userId, clientId])
+}
+
+// Durable group/channel creation identity, retained after removal/departure.
+model ConversationCreationOperation {
+  userId         String
+  clientId       String
+  requestHash    String
+  conversationId String
+
+  @@id([userId, clientId])
+}
+
+// Scheduled-send creation receipt, retained after cancellation/delivery/room removal.
+model ScheduledCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  scheduledId String
+
+  @@id([userId, clientId])
+}
+
+// Independent of message timestamps: a new manual action retires old read intent.
+model ReadIntentState {
+  participantId String                  @id
+  revision      String
+  participant   ConversationParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 }

@@ -1,6 +1,7 @@
 package app.pulse.feature.chat
 
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,9 +26,10 @@ fun ThreadReadReceipts(
     root: Message?,
     replies: List<Message>,
     listState: LazyListState,
-    onRead: suspend (String) -> Result<Unit>,
+    onRead: (String) -> app.pulse.domain.sync.VisibleReadIntent,
     onActive: () -> (() -> Unit) = { {} },
 ) {
+    val intents = remember(ownerKey, root?.id) { mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>() }
     val lifecycle = LocalLifecycleOwner.current
     val minimumPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
     val rows by rememberUpdatedState(root to replies)
@@ -51,7 +53,7 @@ fun ThreadReadReceipts(
                     if (id == null) return@collectLatest
                     app.pulse.domain.sync.acknowledgeVisibleRead(
                         isCurrent = { currentBoundary() == id },
-                        send = { reader(id) },
+                        send = intents.getOrPut(id) { reader(id) }::send,
                     )
                 }
             } finally { releaseAttention() }
