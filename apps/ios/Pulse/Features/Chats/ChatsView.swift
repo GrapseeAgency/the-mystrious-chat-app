@@ -2205,9 +2205,12 @@ private struct ChatActionSheet: View {
             sheetRow(
                 icon: conversation.manualUnread ? "envelope.open" : "envelope.badge",
                 tint: PulseTheme.textPrimary,
-                label: conversation.manualUnread ? "Mark as read" : "Mark as unread",
+                label: conversation.manualUnread ? "Clear unread reminder" : "Mark as unread",
             ) {
                 Task { await toggleMarkUnread() }
+            }
+            sheetRow(icon: "checkmark.circle", tint: PulseTheme.textPrimary, label: "Mark as read") {
+                Task { await markConversationRead() }
             }
             if mutedNow {
                 sheetRow(icon: "bell", tint: PulseTheme.textPrimary, label: "Unmute notifications") {
@@ -2320,6 +2323,20 @@ private struct ChatActionSheet: View {
             }
         } catch {
             await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not update the archive") }
+        }
+    }
+
+    private func markConversationRead() async {
+        let client = session.api, epoch = session.sessionGeneration
+        PulseHaptics.tap()
+        dismiss()
+        do {
+            try await client.markRead(conversationId: conversation.id)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            onChanged() // current counts, never an invented local zero
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            session.toasts.show("Could not confirm marking this chat read")
         }
     }
 

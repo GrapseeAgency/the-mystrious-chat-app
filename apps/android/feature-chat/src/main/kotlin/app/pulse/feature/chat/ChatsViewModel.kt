@@ -344,7 +344,7 @@ class ChatsViewModel @Inject constructor(
     ) { owned, id -> owned.setMutedUntil(id, until) }
 
     fun markUnread(conversationId: String, on: Boolean) = performConversationActions(
-        listOf(conversationId), success = { if (on) "Marked as unread" else "Marked as read" }, failure = "Could not update the unread flag",
+        listOf(conversationId), success = { "Unread reminder change confirmed" }, failure = "Could not update the unread flag",
     ) { owned, id -> owned.markUnread(id, on) }
 
     fun archive(conversationId: String, archived: Boolean) = performConversationActions(

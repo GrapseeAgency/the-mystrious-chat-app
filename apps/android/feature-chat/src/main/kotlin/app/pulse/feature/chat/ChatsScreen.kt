@@ -663,6 +663,10 @@ ConversationRowItem(
                 viewModel.markUnread(target.id, !target.myManualUnread)
                 actionTarget = null
             },
+            onMarkRead = {
+                viewModel.markRead(target.id)
+                actionTarget = null
+            },
             onMute = { until ->
                 viewModel.setMutedUntil(target.id, until)
                 actionTarget = null
@@ -852,6 +856,10 @@ ConversationRowItem(
             },
             onMarkUnread = {
                 viewModel.markUnread(target.id, !target.myManualUnread)
+                actionTarget = null
+            },
+            onMarkRead = {
+                viewModel.markRead(target.id)
                 actionTarget = null
             },
             onMute = { until ->
@@ -2015,6 +2023,7 @@ private fun ConversationActionSheet(
     onPin: () -> Unit,
     onArchive: () -> Unit,
     onMarkUnread: () -> Unit,
+    onMarkRead: () -> Unit,
     onMute: (String?) -> Unit,
     onExport: () -> Unit,
     onClear: () -> Unit,
@@ -2043,7 +2052,8 @@ private fun ConversationActionSheet(
             if (conversation.isArchived) "Unarchive" else "Archive",
             onArchive,
         )
-        SheetAction(PulseIcons.Checks, if (conversation.myManualUnread) "Mark as read" else "Mark as unread", onMarkUnread)
+        SheetAction(PulseIcons.Checks, if (conversation.myManualUnread) "Clear unread reminder" else "Mark as unread", onMarkUnread)
+        SheetAction(PulseIcons.Checks, "Mark as read", onMarkRead)
         SheetAction(PulseIcons.BellOff, "Mute for 8 hours") { onMute("8h") }
         SheetAction(PulseIcons.BellOff, "Mute for 1 week") { onMute("1w") }
         SheetAction(PulseIcons.BellOff, "Mute always") { onMute("always") }

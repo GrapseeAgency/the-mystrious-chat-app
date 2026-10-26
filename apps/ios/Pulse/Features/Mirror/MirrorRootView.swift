@@ -746,8 +746,11 @@ struct MirrorRowOptions: View {
                 MirrorPanelOption(icon: "archivebox", label: "Archive chat") {
                     perform { _ = try await $0.archive(conversationId: row.id, archived: true) }
                 }
-                MirrorPanelOption(icon: row.manualUnread ? "envelope.open" : "envelope", label: row.manualUnread ? "Mark as read" : "Mark as unread") {
+                MirrorPanelOption(icon: row.manualUnread ? "envelope.open" : "envelope", label: row.manualUnread ? "Clear unread reminder" : "Mark as unread") {
                     perform { try await $0.markUnread(conversationId: row.id, on: !row.manualUnread) }
+                }
+                MirrorPanelOption(icon: "checkmark.circle", label: "Mark as read") {
+                    perform { try await $0.markRead(conversationId: row.id) }
                 }
                 MirrorPanelOption(icon: "bell.slash", label: "Mute notifications") { muteStrip = true }
             }

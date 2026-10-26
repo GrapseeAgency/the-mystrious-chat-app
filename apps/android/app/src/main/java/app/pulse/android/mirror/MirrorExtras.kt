@@ -1788,8 +1788,11 @@ internal fun MirrorRowOptionsSheet(
                     MirrorOptionRow("LArchive", if (archived) "Unarchive chat" else "Archive chat") {
                         act { actionRepository.archive(conversationId, !archived) }
                     }
-                    MirrorOptionRow(if (manualUnread) "LMailOpen" else "LMail", if (manualUnread) "Mark as read" else "Mark as unread") {
+                    MirrorOptionRow(if (manualUnread) "LMailOpen" else "LMail", if (manualUnread) "Clear unread reminder" else "Mark as unread") {
                         act { actionRepository.markUnread(conversationId, !manualUnread) }
+                    }
+                    MirrorOptionRow("LMailOpen", "Mark as read") {
+                        act { actionRepository.markRead(conversationId) }
                     }
                     MirrorOptionRow("LBellOff", "Mute notifications") { muteStrip = true }
                     // Export runs WITHOUT closing the sheet - the saved file
