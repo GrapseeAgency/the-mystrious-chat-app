@@ -1,3 +1,4 @@
+import UIKit
 import Foundation
 import Combine
 
@@ -247,6 +248,8 @@ public final class PulseSession: ObservableObject {
     }
     @Published public private(set) var startupError: String?
     @Published public private(set) var isForeground = false
+    private(set) var nativeReadInactive = UIApplication.shared.applicationState != .active
+    var readAttentionRevision: UInt64 { readGate.revision }
     public private(set) var messageRevision: UInt64 = 0
     public private(set) var savedRevision: UInt64 = 0
     public func noteSavedMutation() { savedRevision &+= 1 }
@@ -642,7 +645,7 @@ public final class PulseSession: ObservableObject {
     }
 
     private var readAttentionBlocked: Bool {
-        !transientReadObscurations.isEmpty || (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
+        nativeReadInactive || !transientReadObscurations.isEmpty || (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
             groupCallEngine?.ring != nil || voiceRooms?.surface != nil || PulseAppLock.shared.needsLock ||
             readSurfaces.isObscured(shellPresented: shellObscuresReading, pipOpen: pip.isOpen)
     }
@@ -723,10 +726,22 @@ public final class PulseSession: ObservableObject {
     private var socket: PulseSocketClient?
     private var cancellables: Set<AnyCancellable> = []
 
-    public init() {
+    public init(notificationCenter: NotificationCenter = .default) {
         // Pre-login client: no viewer yet (no token to attach). start(as:)
         // rebuilds it with the real userId + persisted Keychain token.
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL)
+        for (name, inactive) in [(UIApplication.willResignActiveNotification, true),
+                                 (UIApplication.didBecomeActiveNotification, false)] {
+            let observer = notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // Preserve both events synchronously even if SwiftUI coalesces
+                // inactive -> active into one unchanged scenePhase frame.
+                MainActor.assumeIsolated {
+                    self?.nativeReadInactive = inactive
+                    self?.restartReadAttention()
+                }
+            }
+            AnyCancellable { notificationCenter.removeObserver(observer) }.store(in: &cancellables)
+        }
         // Timer publisher is not actor-isolated; hop back per tick.
         Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()

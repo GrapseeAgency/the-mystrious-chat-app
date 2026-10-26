@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import Pulse
 
@@ -417,6 +418,24 @@ extension ReadVisibilityTests {
             throw PulseAPIClient.Failure(kind: .forbidden, message: "Retired", status: 410)
         }
         XCTAssertFalse(try XCTUnwrap(store.message(id: "message")?.readByMembershipIds).contains("retired-member"))
+    }
+
+    @MainActor
+    func testUIKitLifecycleInterruptionsSurviveAnUnchangedSwiftUIScenePhase() {
+        let center = NotificationCenter()
+        let session = PulseSession(notificationCenter: center)
+        session.setForeground(true)
+        let before = session.readAttentionRevision
+        center.post(name: UIApplication.willResignActiveNotification, object: nil)
+        XCTAssertTrue(session.nativeReadInactive)
+        XCTAssertGreaterThan(session.readAttentionRevision, before)
+        let interrupted = session.readAttentionRevision
+        // No SwiftUI update occurs between these native notifications.
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        XCTAssertFalse(session.nativeReadInactive)
+        XCTAssertGreaterThan(session.readAttentionRevision, interrupted)
+        XCTAssertTrue(session.isForeground)
+        session.stop()
     }
 
     @MainActor
