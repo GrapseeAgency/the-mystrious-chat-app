@@ -47,6 +47,7 @@ data class ConversationMember(
     /** Wire role - "admin" | "member". */
     val role: String? = null,
     val readMembershipId: String? = null,
+    val readIntent: String? = null,
 )
 
 @Serializable

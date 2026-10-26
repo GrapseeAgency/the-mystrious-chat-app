@@ -2715,20 +2715,21 @@ class PulseRepositoryImpl constructor(
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
         if (!connectedFlow.value) {
-            val membership = conversationDao.byId(conversationId)?.toDomain()?.members
-                ?.firstOrNull { it.id == owner }?.readMembershipId
+            val member = conversationDao.byId(conversationId)?.toDomain()?.members
+                ?.firstOrNull { it.id == owner }
             requireConversationOwner(owner, epoch)
-            if (!membership.isNullOrBlank()) return Result.success("offline.$membership")
+            val membership = member?.readMembershipId
+            if (!membership.isNullOrBlank()) return Result.success(member?.readIntent ?: "offline.$membership")
         }
         val result = ownedPeerRequest { api.captureReadIntent(conversationId, it) }
         requireConversationOwner(owner, epoch)
         if (result.isSuccess || app.pulse.domain.sync.visibleReadRetryDelay(result.exceptionOrNull(), 1) == null) return result
-        // Offline observations have NO authority to clear a manual marker. The
-        // immutable membership ID still prevents replay into a later rejoin.
-        val membership = conversationDao.byId(conversationId)?.toDomain()?.members
-            ?.firstOrNull { it.id == owner }?.readMembershipId
+        // Reuse only already-cached server authority. Without it, membership-only
+        // offline observations cannot clear a manual marker or survive rejoin.
+        val member = conversationDao.byId(conversationId)?.toDomain()?.members
+            ?.firstOrNull { it.id == owner }
         requireConversationOwner(owner, epoch)
-        return membership?.takeIf { it.isNotBlank() }?.let { Result.success("offline.$it") } ?: result
+        return member?.readMembershipId?.takeIf { it.isNotBlank() }?.let { Result.success(member?.readIntent ?: "offline.$it") } ?: result
     }
 
     @kotlinx.serialization.Serializable
@@ -4499,6 +4500,7 @@ fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? =
                 lastReadAt = PulseTime.epochMs(dto.lastReadAt).takeIf { it > 0 },
                 role = dto.role,
                 readMembershipId = dto.readMembershipId,
+                readIntent = dto.readIntent,
             )
         },
     )

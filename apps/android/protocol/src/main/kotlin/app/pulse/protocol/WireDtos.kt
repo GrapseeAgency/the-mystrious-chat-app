@@ -242,6 +242,7 @@ data class ConversationMemberDto(
     val lastReadAt: String? = null,
     val role: String? = null,
     val readMembershipId: String? = null,
+    val readIntent: String? = null,
 )
 
 @Serializable

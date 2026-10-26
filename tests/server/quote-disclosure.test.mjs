@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { quoteSnippet, redactDeletedMessage } from '../../src/lib/message-disclosure.ts'
+import { privacyPreferenceEnabled } from '../../src/lib/privacy-preferences.ts'
 import { normalizedReactionGroups } from '../../src/lib/reaction-contract.ts'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -53,7 +54,7 @@ test('real Prisma quote projection and serializer carry anonymity and root lifet
     }
     const text = (await readFile(new URL('../../src/lib/serializers.ts', import.meta.url), 'utf8'))
       .replace(/^import[\s\S]*?from ['"][^'"]+['"];?\s*$/gm, '').replace(/^export \{[^}]+\} from [^\n]+$/gm, '').replace(/^export /gm, '')
-    const bindings = { path, db, normalizedReactionGroups, quoteSnippet, redactDeletedMessage }
+    const bindings = { path, db, privacyPreferenceEnabled, normalizedReactionGroups, quoteSnippet, redactDeletedMessage }
     const { MESSAGE_FULL_INCLUDE, mapMessage } = new Function(...Object.keys(bindings),
       stripTypeScriptTypes(text, { mode: 'transform' }) + ';return {MESSAGE_FULL_INCLUDE,mapMessage}')( ...Object.values(bindings))
     await db.user.create({ data: { id: 'author', name: 'Real Private Name', username: 'author' } })
@@ -62,6 +63,15 @@ test('real Prisma quote projection and serializer carry anonymity and root lifet
     await db.message.create({ data: { id: 'root', conversationId: 'room', senderId: 'author', content: 'root', expiresAt: expires } })
     await db.message.create({ data: { id: 'parent', conversationId: 'room', senderId: 'author', content: 'secret', parentId: 'root', anon: true, anonAlias: 'Quiet Raven' } })
     await db.message.create({ data: { id: 'child', conversationId: 'room', senderId: 'author', content: 'reply', replyToId: 'parent' } })
+    await db.conversationParticipant.create({data:{id:'member',userId:'author',conversationId:'room'}})
+    await db.messageReadObservation.create({data:{participantId:'member',messageId:'child',source:'legacy'}})
+    const proof = async viewer => mapMessage(await db.message.findUniqueOrThrow({where:{id:'child'},include:MESSAGE_FULL_INCLUDE}),viewer).readByMembershipIds
+    assert.deepEqual(await proof('peer'),[])
+    await db.messageReadObservation.updateMany({data:{source:'visible'}})
+    assert.deepEqual(await proof('peer'),['member'])
+    await db.user.update({where:{id:'author'},data:{preferences:'{"readReceipts":false}'}})
+    assert.deepEqual(await proof('peer'),[])
+    assert.deepEqual(await proof('author'),['member'])
     const read = async () => mapMessage(await db.message.findUniqueOrThrow({ where: { id: 'child' }, include: MESSAGE_FULL_INCLUDE })).replyTo
     assert.equal((await read()).senderName, 'Quiet Raven')
     assert.equal((await read()).expiresAt, expires.toISOString())

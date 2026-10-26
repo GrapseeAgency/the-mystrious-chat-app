@@ -358,6 +358,7 @@ const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompar
 const EPOCH_ISO = '1970-01-01T00:00:00.000Z'
 
 interface ParticipantRowForMap {
+  readIntentState?: { revision: string } | null
   id?: string
   lastReadAt: Date
   role: string
@@ -375,6 +376,7 @@ export function membersForViewer(
   return participants
     .map((p) => {
       const m = mapMember(p)
+      if (m.id === viewerId) return { ...m, readIntent: p.readIntentState && p.id ? `${p.readIntentState.revision}.${p.id}` : null }
       if (m.id !== viewerId && !privacyPreferenceEnabled(p.user.preferences, 'readReceipts')) {
         return { ...m, lastReadAt: EPOCH_ISO }
       }
@@ -390,7 +392,7 @@ const INBOX_MESSAGE_INCLUDE = {
 } satisfies Prisma.MessageInclude
 
 export const CONVERSATION_FULL_INCLUDE = {
-  participants: { include: { user: true } },
+  participants: { include: { user: true, readIntentState: true } },
   messages: {
     orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
     take: 1,

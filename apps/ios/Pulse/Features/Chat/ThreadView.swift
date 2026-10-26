@@ -61,11 +61,18 @@ struct ThreadView: View {
         guard phase == .loaded, !rootUnavailable, lightbox == nil, discardReply == nil,
               readScenePhase == .active, !session.threadAccessDenied(rootId: root.id),
               PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return [] }
-        return ([parent ?? root] + replies).filter {
-            visibleReadIDs.contains($0.id) && $0.conversationId == conversation.id &&
-                ($0.id == root.id || $0.parentId == root.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
-                PulseRemediationLogic.isAlive($0.expiresAt)
-        }.map(\.id)
+        let currentRoot: WireChatMessage = parent ?? root
+        let candidates: [WireChatMessage] = [currentRoot] + replies
+        var result: [String] = []
+        for message in candidates {
+            guard visibleReadIDs.contains(message.id) else { continue }
+            guard message.conversationId == conversation.id else { continue }
+            guard message.id == root.id || message.parentId == root.id else { continue }
+            guard !message.id.hasPrefix("local_"), message.deletedAt == nil else { continue }
+            guard PulseRemediationLogic.isAlive(message.expiresAt) else { continue }
+            result.append(message.id)
+        }
+        return result
     }
 
     private func updateReadBoundary() {

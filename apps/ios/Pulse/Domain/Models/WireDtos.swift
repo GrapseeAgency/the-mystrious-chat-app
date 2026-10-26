@@ -554,6 +554,7 @@ public struct WirePhraseEnvelope: Codable, Sendable {
 
 public struct WireConversationMember: Codable, Hashable, Sendable {
     public var readMembershipId: String? = nil
+    public var readIntent: String? = nil
     public let id: String
     public let name: String
     public let username: String?

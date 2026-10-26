@@ -598,15 +598,17 @@ public final class PulseSession: ObservableObject {
             else {
                 do {
                     if !connected, let cached = try store?.cachedConversation(id: conversationId),
-                       let membership = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id })?.readMembershipId {
-                        intent = "offline.\(membership)"
+                       let member = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id }),
+                       let membership = member.readMembershipId {
+                        intent = member.readIntent ?? "offline.\(membership)"
                     } else { intent = try await client.captureReadIntent(conversationId: conversationId) }
                 }
                 catch {
                     guard PulseVisibleReadRetry.delay(after: error, failures: 1) != nil,
                           let cached = try store?.cachedConversation(id: conversationId),
-                          let membership = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id })?.readMembershipId else { throw error }
-                    intent = "offline.\(membership)"
+                          let member = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id }),
+                       let membership = member.readMembershipId else { throw error }
+                    intent = member.readIntent ?? "offline.\(membership)"
                 }
                 guard generation == epoch, readGate.retainIntent(intent, for: request) else { return }
             }

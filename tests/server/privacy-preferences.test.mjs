@@ -30,6 +30,12 @@ test('actual serializers hide timestamps without viewer context and preserve the
  const {mapUser,membersForViewer}=new Function('privacyPreferenceEnabled','path',stripTypeScriptTypes(source,{mode:'transform'})+';return {mapUser,membersForViewer}')(privacyPreferenceEnabled,path)
  const stamp=new Date('2026-10-24T00:00:00Z')
  const user={id:'owner',name:'Owner',about:'',color:'amber',avatar:null,statusEmoji:null,statusText:null,createdAt:stamp,lastSeenAt:stamp}
+ const prepared=[{id:'membership',user:{...user,preferences:'{"readReceipts":false}'},lastReadAt:stamp,role:'member',readIntentState:{revision:'original'}}]
+ assert.equal(membersForViewer(prepared,'owner')[0].readIntent,'original.membership')
+ assert.equal(membersForViewer(prepared,'peer')[0].readIntent,undefined)
+ assert.equal(membersForViewer(prepared)[0].readIntent,undefined)
+ assert.equal(membersForViewer(prepared,'peer')[0].readMembershipId,'membership')
+
  for(const preferences of [undefined,'{broken','null','[]','{"lastSeenVisible":"true","readReceipts":"true"}', '{"lastSeenVisible":false,"readReceipts":false}']) {
   const row={...user,preferences}
   const members=[{user:row,lastReadAt:stamp,role:'member'}]
