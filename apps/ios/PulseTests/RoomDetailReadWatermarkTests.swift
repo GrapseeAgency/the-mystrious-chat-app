@@ -17,17 +17,30 @@ final class RoomDetailReadWatermarkTests: XCTestCase {
         var message = OutboxFixtures.makeMessage(id: "info", conversationId: "read-room", content: "Current edit")
         message.readByMembershipIds = ["retired-member"]
         model.injectCarrier(message)
-        XCTAssertTrue(model.applyMessageReadState("info", memberships: ["peer-membership"]))
+        XCTAssertTrue(model.applyMessageReadState("info", memberships: ["peer-membership"], startedAt: session.messageRevision))
         XCTAssertEqual(model.messageInfo("info")?.readByMembershipIds, ["peer-membership"])
         XCTAssertEqual(model.messageInfo("info")?.content, "Current edit")
-        XCTAssertFalse(model.applyMessageReadState("info", memberships: ["peer-membership"]))
-        XCTAssertTrue(model.applyMessageReadState("info", memberships: []))
+        XCTAssertFalse(model.applyMessageReadState("info", memberships: ["peer-membership"], startedAt: session.messageRevision))
+        XCTAssertTrue(model.applyMessageReadState("info", memberships: [], startedAt: session.messageRevision))
         XCTAssertEqual(model.messageInfo("info")?.readByMembershipIds, [])
-        XCTAssertFalse(model.applyMessageReadState("absent", memberships: ["peer-membership"]))
+        XCTAssertFalse(model.applyMessageReadState("absent", memberships: ["peer-membership"], startedAt: session.messageRevision))
         model.injectCarrier(OutboxFixtures.makeMessage(id: "local_pending", conversationId: "read-room", content: "Queued"))
-        XCTAssertFalse(model.applyMessageReadState("local_pending", memberships: ["peer-membership"]))
+        XCTAssertFalse(model.applyMessageReadState("local_pending", memberships: ["peer-membership"], startedAt: session.messageRevision))
         session.stop()
-        XCTAssertFalse(model.applyMessageReadState("info", memberships: ["peer-membership"]))
+        XCTAssertFalse(model.applyMessageReadState("info", memberships: ["peer-membership"], startedAt: session.messageRevision))
+    }
+
+    func testInfoAdoptionRechecksTheExactMessageRevisionAfterItsAsyncReturn() throws {
+        let session = PulseSession()
+        let model = RoomViewModel(conversation: try room("2026-10-24T12:00:00Z"), session: session, beginAutomaticWork: false)
+        let message = OutboxFixtures.makeMessage(id: "info", conversationId: "read-room", content: "Current")
+        model.injectCarrier(message)
+        let revision = session.messageRevision
+        try session.recordMessageMutation(OutboxFixtures.makeMessage(id: "other", conversationId: "read-room", content: "Unrelated"))
+        XCTAssertTrue(model.applyMessageReadState("info", memberships: ["peer-membership"], startedAt: revision))
+        try session.recordMessageMutation(message)
+        XCTAssertFalse(model.applyMessageReadState("info", memberships: [], startedAt: revision))
+        XCTAssertEqual(model.messageInfo("info")?.readByMembershipIds, ["peer-membership"])
     }
 
     func testReadTrafficCannotPreventCanonicalPrivacyAndMembershipAdoption() throws {

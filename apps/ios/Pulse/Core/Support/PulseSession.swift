@@ -513,7 +513,7 @@ public final class PulseSession: ObservableObject {
     }
 
     /// Read-only Info reconciliation. nil is unknown/superseded, not "unread".
-    func refreshMessageReadState(conversationId: String, messageId: String) async -> (available: Bool, memberships: [String])? {
+    func refreshMessageReadState(conversationId: String, messageId: String) async -> (available: Bool, memberships: [String], revision: UInt64)? {
         guard ready, isForeground, let store, !messageId.hasPrefix("local_") else { return nil }
         let epoch = sessionGeneration, revision = messageRevision, client = api
         let available: Bool
@@ -530,7 +530,7 @@ public final class PulseSession: ObservableObject {
             // page responses even when there was no stored row to update.
             noteMessageRevision(messageId)
             if changed { messageVisibilityClock.send(Date()) }
-            return (available, memberships)
+            return (available, memberships, messageRevision)
         } catch { return nil }
     }
 

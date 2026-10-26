@@ -2650,8 +2650,8 @@ private struct MessageInfoSheet: View {
             guard infoVisible, session.isForeground, epoch == session.sessionGeneration else { return }
             let proof = await session.refreshMessageReadState(conversationId: room, messageId: messageID)
             guard !Task.isCancelled, infoVisible, epoch == session.sessionGeneration else { return }
-            if let proof {
-                viewModel.applyMessageReadState(messageID, memberships: proof.memberships)
+            if let proof, session.acceptsSyncMessage(messageID, startedAt: proof.revision) {
+                viewModel.applyMessageReadState(messageID, memberships: proof.memberships, startedAt: proof.revision)
                 if !proof.available { dismiss(); return }
             }
             // An Info cover owns metadata refresh, not permission to mark Seen.
@@ -3863,8 +3863,9 @@ final class RoomViewModel: ObservableObject {
     /// The retained river is not a database observation; patch it explicitly,
     /// without replacing content, generating arrivals or inventing a local row.
     @discardableResult
-    func applyMessageReadState(_ id: String, memberships: [String]) -> Bool {
-        guard session?.sessionGeneration == readSessionGeneration, !id.hasPrefix("local_"),
+    func applyMessageReadState(_ id: String, memberships: [String], startedAt revision: UInt64) -> Bool {
+        guard let session, session.sessionGeneration == readSessionGeneration,
+              session.acceptsSyncMessage(id, startedAt: revision), !id.hasPrefix("local_"),
               let index = messages.firstIndex(where: { $0.id == id && $0.conversationId == conversationId }),
               (messages[index].readByMembershipIds ?? []) != memberships else { return false }
         messages[index].readByMembershipIds = memberships
