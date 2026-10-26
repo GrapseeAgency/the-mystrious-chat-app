@@ -280,6 +280,7 @@ class MainActivity : FragmentActivity() {
         // R6 - M4: the incoming-attention gate is foreground-only (single
         // activity → this is app-level truth).
         app.pulse.android.notify.IncomingAttention.foreground = true
+        OutboxWorker.enqueue(this) // authoritative inbox + exact delivered-alert reconciliation on return
         // Foreground outbox trigger (Wave 0): whatever queued while the app
         // was dead/backgrounded drains the moment the surface is up.
         lifecycleScope.launch { runCatching { repository.flushOutbox() } }

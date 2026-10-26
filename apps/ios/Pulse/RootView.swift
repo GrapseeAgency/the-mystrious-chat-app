@@ -114,6 +114,9 @@ struct RootView: View {
             // Wave 8 - prefs handoff: incoming attention gate, settings PATCH
             // funnel, quiet-gate refresh (idempotent, closures attach once).
             session.attach(prefs: prefs)
+            PulseReminderNotificationDelegate.shared.handlesForegroundMessage = { [weak session] owner in
+                session?.viewer?.id == owner && session?.ready == true && session?.isForeground == true && session?.connected == true
+            }
             session.setForeground(scenePhase == .active)
             // 3-d - push handoff: the registration center reads the live API
             // client through this closure (rebuilt per gateway override +

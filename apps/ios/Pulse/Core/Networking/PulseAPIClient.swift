@@ -325,6 +325,17 @@ public struct PulseAPIClient: Sendable {
         return snapshot
     }
 
+    public func notificationMessageUnread(conversationId: String, messageId: String) async throws -> Bool {
+        struct Proof: Decodable {
+            let notificationStateVersion: Int; let conversationId: String; let userId: String
+            let messageId: String; let messageUnread: Bool
+        }
+        let proof = try await get("/api/conversations/\(q(conversationId))/read-state?userId=\(q(userId))&messageId=\(q(messageId))", as: Proof.self)
+        guard proof.notificationStateVersion == 1, proof.userId == userId, proof.conversationId == conversationId,
+              proof.messageId == messageId else { throw Failure(kind: .validation, message: "Notification state was not confirmed.") }
+        return proof.messageUnread
+    }
+
     public func captureReadIntent(conversationId: String) async throws -> String {
         struct Receipt: Decodable { let readIntentVersion: Int; let conversationId: String; let userId: String; let readIntent: String }
         let receipt = try await get("/api/conversations/\(q(conversationId))/read-intent?userId=\(q(userId))", as: Receipt.self)

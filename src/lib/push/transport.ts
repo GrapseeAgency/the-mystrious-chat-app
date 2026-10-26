@@ -12,9 +12,9 @@
 //   • ios     → APNs token-based (JWT/ES256). Same fail-closed contract;
 //               arms when the Apple p8 key + ids are configured.
 //
-// Fanout policy: a user is skipped entirely while a socket session is online
-// (the socket already carries realtime events into the open app); everyone
-// else gets one push per registered device. Dead web endpoints (404/410) and
+// Fanout policy: opted-in native message/read-state delivery is per device;
+// an online desktop cannot suppress a phone. Legacy/web alerts and calls
+// retain online-user suppression. Dead web endpoints (404/410) and
 // unregistered mobile tokens prune their registry row so the registry
 // self-heals. Push must NEVER fail a user-facing request - every call site
 // is fire-and-forget.
@@ -29,6 +29,8 @@ export type PushPlatform = 'web' | 'android' | 'ios'
 
 export interface PushPayload {
   kind: 'message' | 'gcall' | 'call' | 'read-state'
+  /** Internal registry capability, overwritten by fanout (never caller authority). */
+  nativeReadStateHints?: boolean
   /** Notification title - sender display name (or "Group call"). */
   title: string
   /** Notification body - preview text, or a generic line when previews are off. */
@@ -293,10 +295,10 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
           token,
           // Call data must reach the native deadline/owner guard even when
           // backgrounded; an OS-rendered mixed notification bypasses it.
-          ...(payload.kind === 'message' ? { notification: { title: payload.title, body: payload.body } } : {}),
+          ...(payload.kind === 'message' && !payload.nativeReadStateHints ? { notification: { title: payload.title, body: payload.body } } : {}),
           data: {
             kind: payload.kind,
-            ...(payload.kind !== 'message' ? { title: payload.title, body: payload.body } : {}),
+            ...(payload.kind !== 'message' || payload.nativeReadStateHints ? { title: payload.title, body: payload.body } : {}),
             conversationId: payload.conversationId,
             ...(payload.messageId ? { messageId: payload.messageId } : {}),
             ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
@@ -307,7 +309,11 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
           },
           android: {
             ttl: `${window.ttlSeconds}s`,
-            priority: payload.kind === 'message' || payload.kind === 'read-state' ? 'normal' : 'high',
+            ...(payload.kind === 'message' && !payload.nativeReadStateHints && payload.recipientUserId && payload.messageId ? {
+              notification: { tag: 'pulse-msg-v1/' + [payload.recipientUserId, payload.conversationId, payload.messageId]
+                .map(encodeURIComponent).join('/') },
+            } : {}),
+            priority: payload.kind === 'read-state' || (payload.kind === 'message' && !payload.nativeReadStateHints) ? 'normal' : 'high',
             ...(payload.kind === 'read-state' ? { collapse_key: 'pulse-read-state' } : {}),
           },
         },
@@ -385,8 +391,8 @@ export interface FanoutOptions {
 }
 
 /**
- * Send `payload` to every registered device of `userIds`, skipping users
- * whose socket session is currently online. Fire-and-forget safe: never
+ * Deliver per-device native message/read-state invalidations, retaining
+ * online-user suppression for legacy/web alerts and call fanout. Fire-and-forget safe: never
  * throws, always returns an honest report. Call sites `void` it.
  */
 export async function fanoutPush(
@@ -401,7 +407,7 @@ export async function fanoutPush(
     // Read invalidations must reach another device even while this user is
     // reading on an online device. They carry no count or read authority.
     const online = payload.kind === 'read-state' ? new Set<string>() : await onlineUserIds()
-    const targets = ids.filter((id) => !online.has(id))
+    const targets = payload.kind === 'message' ? ids : ids.filter((id) => !online.has(id))
     report.users = targets.length
     if (targets.length === 0) return report
     const capability = payload.kind === 'read-state' ? { readStateCapability: { is: { version: 1 } } } : {}
@@ -413,11 +419,18 @@ export async function fanoutPush(
       if (!pushDeliveryWindow(payload)) { report.skipped += 1; continue }
       // A queued provider call must not use a registration rebound while earlier
       // devices were being processed. This is a preflight, not provider recall.
+      const nativeReadStateHints = (row.platform === 'android' || row.platform === 'ios') &&
+        !!await db.pushReadStateCapability.findFirst({ where: { tokenId: row.id, version: 1 }, select: { tokenId: true } })
+      // User presence is not device presence. A desktop socket cannot suppress
+      // an opted-in phone; the native foreground receiver avoids duplicate alerts.
+      if (online.has(row.userId) && !nativeReadStateHints) { report.skipped += 1; continue }
+      const expectedCapability = nativeReadStateHints ? { readStateCapability: { is: { version: 1 } } } : capability
       const binding = { id: row.id, userId: row.userId, platform: row.platform, token: row.token, updatedAt: row.updatedAt }
-      if (!await db.pushToken.findFirst({ where: { ...binding, ...capability }, select: { id: true } })) { report.skipped += 1; continue }
+      if (!await db.pushToken.findFirst({ where: { ...binding, ...expectedCapability }, select: { id: true } })) { report.skipped += 1; continue }
       const perUser: PushPayload = {
         ...payload,
         recipientUserId: row.userId,
+        nativeReadStateHints,
         ...(options?.bodyFor ? { body: options.bodyFor(row.userId) } : {}),
       }
       const result: SendResult =

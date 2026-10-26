@@ -114,3 +114,41 @@ extension ReadStateAcknowledgementTests {
         }
     }
 }
+
+private final class NotificationReadProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "notification-read.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let mode = request.value(forHTTPHeaderField: "X-Proof-Test") ?? "read"
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "messageId" })?.value, "message")
+        var body: [String: Any] = ["notificationStateVersion": mode == "version" ? 0 : 1,
+            "userId": mode == "owner" ? "other" : "me", "conversationId": mode == "room" ? "other" : "room",
+            "messageId": mode == "message" ? "other" : "message", "messageUnread": mode == "unread"]
+        if mode == "missing" { body.removeValue(forKey: "messageUnread") }
+        if mode == "string" { body["messageUnread"] = "false" }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
+            httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+extension ReadStateAcknowledgementTests {
+    func testNotificationRemovalRequiresExactTypedOwnerRoomMessageProof() async throws {
+        for mode in ["read", "unread", "version", "owner", "room", "message", "missing", "string"] {
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [NotificationReadProtocol.self]
+            config.httpAdditionalHeaders = ["X-Proof-Test": mode]
+            let transport = URLSession(configuration: config)
+            defer { transport.invalidateAndCancel() }
+            let api = PulseAPIClient(baseURL: URL(string: "https://notification-read.test")!, userId: "me", session: transport)
+            do {
+                let unread = try await api.notificationMessageUnread(conversationId: "room", messageId: "message")
+                XCTAssertTrue(mode == "read" || mode == "unread", "Invalid proof must retain the alert: \(mode)")
+                XCTAssertEqual(unread, mode == "unread")
+            } catch { XCTAssertFalse(mode == "read" || mode == "unread", "Valid proof failed: \(error)") }
+        }
+    }
+}

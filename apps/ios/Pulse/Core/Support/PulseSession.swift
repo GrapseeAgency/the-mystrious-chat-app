@@ -479,6 +479,8 @@ public final class PulseSession: ObservableObject {
     private var generation = UUID()
     public var sessionGeneration: UUID { generation }
     private var startupTask: Task<Void, Never>?
+    private var notificationRefreshTask: Task<Void, Never>?
+    private var notificationRefreshRevision: UInt64 = 0
 
     /// Visibility-only clock: no network work or whole-session re-render per tick.
     public let messageVisibilityClock = PassthroughSubject<Date, Never>()
@@ -491,6 +493,7 @@ public final class PulseSession: ObservableObject {
             readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
         }
         if active {
+            reconcileMessageNotifications()
             messageVisibilityClock.send(Date())
             if changed {
                 readFailureCount = 0
@@ -752,6 +755,7 @@ public final class PulseSession: ObservableObject {
         voiceRooms?.leaveSpace()
         PulsePushNotifications.deactivate()
         generation = UUID()
+        notificationRefreshTask?.cancel(); notificationRefreshTask = nil
         readReplayID = UUID()
         readReplayTask?.cancel()
         readReplayTask = nil
@@ -1049,6 +1053,7 @@ public final class PulseSession: ObservableObject {
         }
         outbox = engine
         PulseOutboxEngine.active = engine
+        reconcileMessageNotifications()
         PulseKeychain.shared.saveViewer(viewer)
         if engine.count() > 0 {
             flushOutbox()
@@ -1161,6 +1166,27 @@ public final class PulseSession: ObservableObject {
     /// Surfaces call this after inbox mutations (DM create, archive, …).
     public func noteInboxChanged() {
         inboxRefreshTick += 1
+        reconcileMessageNotifications()
+    }
+
+    private func reconcileMessageNotifications() {
+        guard ready, isForeground else { return }
+        notificationRefreshRevision &+= 1
+        guard notificationRefreshTask == nil else { return }
+        let epoch = generation, client = api
+        notificationRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.generation == epoch { self.notificationRefreshTask = nil } }
+            repeat {
+                let revision = self.notificationRefreshRevision
+                await PulsePushNotifications.reconcileDeliveredMessages(using: client, isCurrent: {
+                    self.ready && self.generation == epoch && self.viewer?.id == client.userId
+                })
+                guard !Task.isCancelled, self.ready, self.isForeground, self.generation == epoch,
+                      revision != self.notificationRefreshRevision else { return }
+                // A read arriving during the previous proof cannot be lost to coalescing.
+            } while true
+        }
     }
 
     /// Single enqueue entry point for queued sends (room send-path failures).

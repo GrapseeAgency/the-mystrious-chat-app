@@ -54,6 +54,15 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 - Native execution exposed a topic-cache normalization regression (nil emoji lost the existing `chat` fallback when read metadata JSON was present). The decoder now preserves canonical structural columns alongside the exact read metadata.
 - Provider delivery, OS background limits, disabled permissions, legacy already-delivered notifications and Android launcher behavior remain real platform acceptance work—not a claim of synchronized closed-app icons on every device.
 
+### Delivered-alert reconciliation follow-up
+
+- Added authenticated, read-only **notificationStateVersion 1** proofs for one exact message. The indexed query uses current membership, exact observations, join history, deletion and canonical-root expiry; it never creates Seen or changes a manual reminder.
+- Android message alerts have exact owner/room/message tags, not room hash identity. Quick-reply actions retain that exact identity, so replying to an old alert cannot dismiss a newer message. The worker removes only alerts with a validated negative-unread proof; an empty inbox, timestamp or malformed response is never sufficient.
+- Opted-in Android message pushes are genuinely data-only (no Android notification subobject), including cold starts. Every received alert schedules reconciliation, so a message delivered after an earlier read hint cannot remain permanently stale until the app opens. Cold receive checks persisted ownership without waiting for a screen to start the repository.
+- Swift background refresh and foreground/read invalidations reconcile delivered message alerts by their exact notification request identities. Both transports refuse wrong-owner/room/message, legacy or malformed proofs.
+- An online desktop no longer suppresses message pushes to opted-in Android/iOS devices. Connected foreground native clients keep their existing socket-based quiet-hours/mute/attention path instead of producing duplicate push alerts.
+- Android's active-notification query is unavailable on API 21/22; launcher counts/dots, notification permission and OS scheduling remain platform constraints. Legacy alerts without exact identity are not guessed away. No numeric launcher-count parity or physical-device completion is claimed.
+
 ### Wire and storage contracts
 
 - Capture response is **readIntentVersion 2**, visible/all acceptance is **readReceiptVersion 3**; manual marker acceptance remains **unreadReceiptVersion 2**. Both native transports reject timestamp-only read acknowledgements.

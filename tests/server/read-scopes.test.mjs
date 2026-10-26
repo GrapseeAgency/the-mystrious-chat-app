@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
-import { unreadSnapshot, threadRootAvailable } from '../../src/lib/message-visibility.ts'
+import { unreadSnapshot, threadRootAvailable, notificationMessageUnread } from '../../src/lib/message-visibility.ts'
 import { ReadReceiptError } from '../../src/lib/read-receipt.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 
@@ -33,7 +33,7 @@ async function fixture(run) {
     await db.$executeRawUnsafe("INSERT INTO MessageReadObservation(participantId,messageId,observedAt) VALUES ('membership','a',20)")
     const source = stripTypeScriptTypes(await readFile(new URL('../../src/app/api/conversations/[id]/read-state/route.ts', import.meta.url), 'utf8'))
       .replace(/^import .*$/gm, '').replace(/export /g, '')
-    const bindings = { db, unreadSnapshot, threadRootAvailable, ReadReceiptError, NextResponse: { json: Response.json },
+    const bindings = { db, unreadSnapshot, threadRootAvailable, notificationMessageUnread, ReadReceiptError, NextResponse: { json: Response.json },
       strField: v => typeof v === 'string' ? v.trim() : '',
       requireActionOwner: async (req, owner) => req.headers.get('authorization') === 'Bearer synthetic-reader' && owner === 'reader'
         ? null : Response.json({ error: 'denied' }, { status: 403 }),
@@ -92,4 +92,25 @@ test('topic list carries exact anchors and offline expiry schedules in its membe
   assert.equal((await topics({})).status,403)
   await db.$executeRawUnsafe("DELETE FROM ConversationParticipant WHERE id='membership'")
   assert.equal((await topics()).status,403)
+}))
+
+test('exact notification state preserves unseen gaps and does not create Seen or clear a manual reminder',()=>fixture(async(db,request)=>{
+ await db.conversationParticipant.updateMany({where:{id:'membership'},data:{manualUnread:true}})
+ for(const [id,unread] of [['a',false],['b',true],['root-a',true],['foreign-root',false],['missing',false]]) {
+  const response=await request(`&messageId=${id}`)
+  assert.equal(response.status,200)
+  assert.deepEqual(await response.json(),{notificationStateVersion:1,conversationId:'room',userId:'reader',messageId:id,messageUnread:unread})
+ }
+ assert.equal(await db.messageReadObservation.count(),1)
+ assert.equal((await db.conversationParticipant.findUnique({where:{id:'membership'},select:{manualUnread:true}})).manualUnread,true)
+ for(const query of ['&messageId=','&messageId=b&threadId=root-b','&messageId=b&topicId=topic-b'])
+  assert.equal((await request(query)).status,400)
+ assert.equal((await request('&messageId=b',{})).status,403)
+ await db.message.updateMany({where:{id:'root-b'},data:{expiresAt:new Date(0)}})
+ assert.equal((await (await request('&messageId=b')).json()).messageUnread,false)
+ await db.conversationParticipant.updateMany({where:{id:'membership'},data:{joinedAt:new Date(21)}})
+ assert.equal((await (await request('&messageId=root-a')).json()).messageUnread,false)
+ await db.conversationParticipant.deleteMany({where:{id:'membership'}})
+ assert.equal((await (await request('&messageId=b')).json()).messageUnread,false)
+ assert.equal((await request()).status,403)
 }))

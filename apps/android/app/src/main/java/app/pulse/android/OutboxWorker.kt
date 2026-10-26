@@ -50,7 +50,10 @@ class OutboxWorker(
             val pendingReads = target.flushReadReceipts().getOrThrow()
             // No count from a push is trusted. Read the full current inbox after replay.
             target.refreshConversations().getOrThrow()
-            if (report.pending > 0 || pendingReads > 0) Result.retry() else Result.success()
+            val notifications = app.pulse.android.push.PulseMessageNotifications.reconcile(applicationContext, target) {
+                prefs.viewerId.first() == owner && graph.tokens().cached == token && repo.viewerId == owner
+            }
+            if (report.pending > 0 || pendingReads > 0 || !notifications) Result.retry() else Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

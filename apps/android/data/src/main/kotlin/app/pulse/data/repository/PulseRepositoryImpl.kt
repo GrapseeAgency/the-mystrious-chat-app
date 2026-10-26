@@ -2726,6 +2726,9 @@ class PulseRepositoryImpl constructor(
     override suspend fun readStateSnapshot(conversationId: String, threadId: String?, topicId: String?): Result<Int> =
         ownedPeerRequest { api.readStateSnapshot(conversationId, it, threadId, topicId) }
 
+    override suspend fun notificationMessageUnread(conversationId: String, messageId: String): Result<Boolean> =
+        ownedPeerRequest { api.notificationMessageUnread(conversationId, it, messageId) }
+
     override suspend fun readScopeState(conversationId: String, threadId: String?, topicId: String?): Result<app.pulse.domain.model.ReadScopeState> =
         ownedPeerRequest { api.readScopeState(conversationId, it, threadId, topicId) }.map { snapshot ->
             app.pulse.domain.model.ReadScopeState(snapshot.unreadCount, snapshot.firstUnreadMessageId,

@@ -2,7 +2,7 @@ import { invalidateNativeReadState } from '@/lib/push/transport'
 // Native read acceptance distinguishes actual visibility from deliberate mark-all.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { unreadSnapshot, threadRootAvailable } from '@/lib/message-visibility'
+import { unreadSnapshot, threadRootAvailable, notificationMessageUnread } from '@/lib/message-visibility'
 import { memberIdsOf, notifySocket, safeJson, strField } from '@/lib/serializers'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { advanceReadReceipt, ReadReceiptError, receiptRecipients } from '@/lib/read-receipt'
@@ -38,8 +38,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params, query = new URL(req.url).searchParams
   const userId = strField(query.get('userId'))
-  const threadId = query.get('threadId'), topicId = query.get('topicId')
-  if (!userId || (threadId !== null && (!threadId.trim() || threadId.length > 128)) ||
+  const threadId = query.get('threadId'), topicId = query.get('topicId'), messageId = query.get('messageId')
+  if (!userId || (messageId !== null && (!messageId.trim() || messageId.length > 128 || threadId !== null || topicId !== null)) || (threadId !== null && (!threadId.trim() || threadId.length > 128)) ||
       (topicId !== null && (!topicId.trim() || topicId.length > 128)) || (threadId !== null && topicId !== null))
     return NextResponse.json({ error: 'Choose one read scope.' }, { status: 400 })
   const denied = await requireActionOwner(req, userId, 'read state')
@@ -48,9 +48,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const snapshot = await db.$transaction(async tx => {
       const member = await tx.conversationParticipant.findUnique({
         where: { userId_conversationId: { userId, conversationId: id } },
-        select: { id: true, lastReadAt: true, manualUnread: true },
+        select: { id: true, joinedAt: true, lastReadAt: true, manualUnread: true },
       })
-      if (!member) throw new ReadReceiptError(403, 'You are not a participant of this conversation.')
+      if (!member) {
+        // Authenticated owner-only alert cleanup: lost access retires that
+        // owner's alert without revealing whether the room/message exists.
+        if (messageId !== null) return { messageId, messageUnread: false }
+        throw new ReadReceiptError(403, 'You are not a participant of this conversation.')
+      }
       const now = new Date()
       if (threadId !== null) {
         const root = await tx.message.findUnique({ where: { id: threadId },
@@ -59,10 +64,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       }
       if (topicId !== null && !await tx.topic.findFirst({ where: { id: topicId, conversationId: id }, select: { id: true } }))
         throw new ReadReceiptError(404, 'Topic not found in this conversation.')
+      if (messageId !== null) return { messageId,
+        messageUnread: await notificationMessageUnread(tx, id, userId, member, messageId, now) }
       return { ...await unreadSnapshot(tx, id, userId, member.lastReadAt, now,
         { threadId: threadId ?? undefined, topicId: topicId ?? undefined }), manualUnread: member.manualUnread }
     }, { isolationLevel: 'Serializable' })
-    return NextResponse.json({ readStateVersion: 1, conversationId: id, userId, threadId, topicId, ...snapshot },
+    return NextResponse.json({ ...(messageId === null ? { readStateVersion: 1, threadId, topicId } : { notificationStateVersion: 1 }), conversationId: id, userId, ...snapshot },
       { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     if (error instanceof ReadReceiptError) return NextResponse.json({ error: error.message }, { status: error.status })

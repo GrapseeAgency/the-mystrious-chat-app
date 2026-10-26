@@ -64,8 +64,26 @@ public enum PulsePushNotifications {
                 .reduce(0) { $0 + $1.removingExpiredSummary().badgeUnreadCount }
             setUnreadBadge(count)
             await badgeTask?.value
+            await reconcileDeliveredMessages(using: client, isCurrent: isCurrent)
             return !Task.isCancelled && isCurrent() && appliedBadge == desiredBadge
         } catch { return false }
+    }
+
+    @MainActor
+    static func reconcileDeliveredMessages(using client: PulseAPIClient, isCurrent: () -> Bool) async {
+        let center = UNUserNotificationCenter.current()
+        for notification in await center.deliveredNotifications() {
+            guard !Task.isCancelled, isCurrent() else { return }
+            let info = notification.request.content.userInfo
+            guard info["kind"] as? String == "message", info["recipientUserId"] as? String == client.userId,
+                  let room = info["conversationId"] as? String, let message = info["messageId"] as? String else { continue }
+            // Empty room caches, timestamps and aggregate counts cannot prove
+            // whether THIS alert is obsolete; a new unseen gap must survive.
+            if let unread = try? await client.notificationMessageUnread(conversationId: room, messageId: message), !unread {
+                guard !Task.isCancelled, isCurrent() else { return }
+                center.removeDeliveredNotifications(withIdentifiers: [notification.request.identifier])
+            }
+        }
     }
 
     @MainActor

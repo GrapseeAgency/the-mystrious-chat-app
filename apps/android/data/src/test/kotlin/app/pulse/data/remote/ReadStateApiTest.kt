@@ -144,4 +144,27 @@ class ReadStateApiTest {
             } finally { http.close() }
         }
     }
+    @Test fun notificationRemovalRequiresExactTypedOwnerRoomMessageProof() = runTest {
+        for (mode in listOf("read", "unread", "version", "owner", "room", "message", "string", "missing")) {
+            val http = HttpClient(MockEngine { request ->
+                assertEquals("GET", request.method.value)
+                assertEquals("message", request.url.parameters["messageId"])
+                val body = buildJsonObject {
+                    put("notificationStateVersion", if (mode == "version") 0 else 1)
+                    put("userId", if (mode == "owner") "other" else "me")
+                    put("conversationId", if (mode == "room") "other" else "room")
+                    put("messageId", if (mode == "message") "other" else "message")
+                    if (mode == "string") put("messageUnread", "false")
+                    else if (mode != "missing") put("messageUnread", mode == "unread")
+                }
+                respond(body.toString(), HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+            })
+            try {
+                val result = PulseApi(http, gateway = { "https://read.test" }).notificationMessageUnread("room", "me", "message")
+                if (mode == "read" || mode == "unread") assertEquals(mode == "unread", (result as PulseResult.Success).value)
+                else assertTrue("$mode must retain the notification", result is PulseResult.Failure)
+            } finally { http.close() }
+        }
+    }
+
 }

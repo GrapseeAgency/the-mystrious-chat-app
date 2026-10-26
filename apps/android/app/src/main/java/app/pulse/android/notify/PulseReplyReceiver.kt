@@ -75,11 +75,16 @@ class PulseReplyReceiver : BroadcastReceiver() {
             PulseReplyPayload.postOpenPulseNotification(context, parsed.conversationId)
             return
         }
+        val notificationTag = intent.getStringExtra(PulseReplyPayload.EXTRA_NOTIFICATION_TAG)?.takeIf { tag ->
+            app.pulse.domain.sync.MessageNotificationIdentity.parse(tag)?.let {
+                it.ownerId == owner.userId && it.conversationId == parsed.conversationId
+            } == true
+        }
         val pending = goAsync()
         val appContext = context.applicationContext
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                deliver(appContext, parsed, owner)
+                deliver(appContext, parsed, owner, notificationTag)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -92,7 +97,7 @@ class PulseReplyReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun deliver(context: Context, parsed: PulseReplyPayload.Parsed, owner: NotificationReplyOwner) {
+    private suspend fun deliver(context: Context, parsed: PulseReplyPayload.Parsed, owner: NotificationReplyOwner, notificationTag: String?) {
         val notificationId = PulseReplyPayload.notificationId(parsed.conversationId)
         // No viewer identity → do NOT fake-send. Honest pointer back into the
         // app: the content intent opens the room.
@@ -110,7 +115,8 @@ class PulseReplyReceiver : BroadcastReceiver() {
                         PulseReplyPayload.toast(context, "Couldn't send - queued")
                     } else {
                         // Delivered - the notification did its job.
-                        NotificationManagerCompat.from(context).cancel(notificationId)
+                        if (notificationTag != null) NotificationManagerCompat.from(context).cancel(notificationTag, 0)
+                        else NotificationManagerCompat.from(context).cancel(notificationId)
                     }
                 }
                 .onFailure { failure ->
@@ -150,6 +156,7 @@ object PulseReplyPayload {
     /** Server cap - SendMessageUseCase.MAX_LENGTH (kept in lockstep). */
     const val MAX_CHARS = 2000
     const val EXTRA_RECIPIENT_USER_ID = "app.pulse.android.reply.recipientUserId"
+    const val EXTRA_NOTIFICATION_TAG = "app.pulse.android.reply.notificationTag"
 
     data class Parsed(val conversationId: String, val text: String)
 

@@ -85,7 +85,7 @@ async function fixture(run) {
   }
   const apns=async(origin,token,headers,body)=>{requests.push({platform:'ios',origin,token,headers,payload:body});await duringSend();return iosResponse}
   const web=async(subscription,body,options)=>{requests.push({platform:'web',subscription,body,options})}
-  const bindings={web,db,crypto,pushDeliveryWindow:p=>pushDeliveryWindow(p,now),shouldRetirePushToken,apnsInvalidatedAt,apnsOrigin,postApns:apns,fetch,process:{env:{}},console:{log(){},warn(){}}}
+  const bindings={web,db,crypto,pushDeliveryWindow:p=>pushDeliveryWindow(p,now),shouldRetirePushToken,apnsInvalidatedAt,apnsOrigin,postApns:apns,fetch,process:{env:{CRON_SECRET:"synthetic-relay-key"}},console:{log(){},warn(){}}}
   const methods=new Function(...Object.keys(bindings),stripTypeScriptTypes(source,{mode:'transform'})+`;
     fcmBearer=async()=>"test-token";fcmCredentials=()=>({projectId:"test-project"});apnsBearer=async()=>"test-token";
     webPushSender=async()=>({sendNotification:web});
@@ -231,4 +231,26 @@ test('logout removal cannot delete a token rebound during owner verification',()
  h.onAuth(async()=>{await h.db.pushToken.update({where:{id:'a'},data:{userId:'other'}})})
  assert.equal((await h.request('DELETE',{token:'token-a'})).status,200)
  assert.equal((await h.db.pushToken.findUnique({where:{id:'a'}})).userId,'other')
+}))
+
+test('opted-in Android messages are truly data-only so delayed alerts always trigger exact reconciliation',()=>fixture(async h=>{
+ await h.seed('modern');await h.seed('legacy')
+ await h.db.pushReadStateCapability.create({data:{tokenId:'modern',version:1}})
+ await h.fanoutPush(['owner'],{...payload,nativeReadStateHints:true})
+ const modern=h.requests.find(r=>r.payload.message.token==='token-modern').payload.message
+ const legacy=h.requests.find(r=>r.payload.message.token==='token-legacy').payload.message
+ assert.equal(modern.notification,undefined);assert.equal(modern.android.notification,undefined)
+ assert.equal(modern.data.title,payload.title);assert.equal(modern.data.body,payload.body)
+ assert.equal(modern.android.priority,'high')
+ assert.equal(legacy.notification.body,payload.body)
+ assert.equal(legacy.android.notification.tag,'pulse-msg-v1/owner/room/message')
+}))
+
+test('an online desktop cannot suppress messages to opted-in native phones',()=>fixture(async h=>{
+ for(const [id,platform] of [['android','android'],['ios','ios'],['legacy','android'],['web','web']]) await h.seed(id,platform)
+ for(const tokenId of ['android','ios']) await h.db.pushReadStateCapability.create({data:{tokenId,version:1}})
+ h.setOnline(['owner'])
+ const report=await h.fanoutPush(['owner'],payload)
+ assert.equal(report.sent,2);assert.equal(report.skipped,2)
+ assert.deepEqual(h.requests.map(r=>r.platform).sort(),['android','ios'])
 }))

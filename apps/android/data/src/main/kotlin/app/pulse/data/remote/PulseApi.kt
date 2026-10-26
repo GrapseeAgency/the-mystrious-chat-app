@@ -442,6 +442,19 @@ class PulseApi(
         }
     }
 
+    /** Only a bound, explicit negative proof may retire a delivered notification. */
+    suspend fun notificationMessageUnread(conversationId: String, userId: String, messageId: String): PulseResult<Boolean> {
+        fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
+        return get("/api/conversations/${q(conversationId)}/read-state?userId=${q(userId)}&messageId=${q(messageId)}") { raw ->
+            val fields = PulseJson.parseToJsonElement(raw) as? JsonObject
+            requireReadContract(fields?.get("notificationStateVersion") == JsonPrimitive(1) &&
+                fields?.get("conversationId") == JsonPrimitive(conversationId) && fields?.get("userId") == JsonPrimitive(userId) &&
+                fields?.get("messageId") == JsonPrimitive(messageId) &&
+                fields?.get("messageUnread") in listOf(JsonPrimitive(true), JsonPrimitive(false)))
+            fields?.get("messageUnread") == JsonPrimitive(true)
+        }
+    }
+
     suspend fun captureReadIntent(conversationId: String, userId: String): PulseResult<String> =
         get("/api/conversations/${java.net.URLEncoder.encode(conversationId, "UTF-8")}/read-intent?userId=${java.net.URLEncoder.encode(userId, "UTF-8")}") { raw ->
             val strict = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }

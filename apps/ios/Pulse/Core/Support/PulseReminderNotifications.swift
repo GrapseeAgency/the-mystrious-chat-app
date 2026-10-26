@@ -144,6 +144,8 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
 
     /// RootView assigns - receives the deep link parsed from the tapped
     /// notification (reminder taps produce PulseDeepLink.room).
+    @MainActor var handlesForegroundMessage: ((String) -> Bool)?
+
     @MainActor public var onDeepLink: ((PulseDeepLink) -> Void)?
 
     /// Cold-start handoff: a tap delivered before RootView attached its
@@ -161,6 +163,15 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
                 completionHandler([])
                 return
             }
+        }
+        if info["kind"] as? String == "read-state" { completionHandler([]); return }
+        if info["kind"] as? String == "message", let recipient = info["recipientUserId"] as? String {
+            Task { @MainActor in
+                guard PulseKeychain.shared.loadViewer()?.id == recipient else { completionHandler([]); return }
+                // Socket attention already honors the receiver's quiet/mute policy.
+                completionHandler(self.handlesForegroundMessage?(recipient) == true ? [] : [.banner, .list, .sound])
+            }
+            return
         }
         completionHandler([.banner, .list, .sound])
     }

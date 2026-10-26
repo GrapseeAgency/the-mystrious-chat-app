@@ -168,3 +168,16 @@ export async function readThreadSnapshot<Root extends ThreadRootRecord, Reply ex
     throw error
   }
 }
+
+/** Indexed exact alert projection, with the same membership/history/expiry rules
+ * as unreadSnapshot. No missing/partial local cache is involved. */
+export async function notificationMessageUnread(
+  db: Pick<import('../../prisma/generated-client').PrismaClient, 'message'>,
+  room: string, viewer: string, membership: { id: string; joinedAt: Date }, messageId: string, at: Date,
+): Promise<boolean> {
+  return !!await db.message.findFirst({ where: {
+    id: messageId, deletedAt: null, createdAt: { gte: membership.joinedAt },
+    readObservations: { none: { participantId: membership.id } },
+    AND: [inboxMessagesWhere(room, at), { OR: [{ senderId: { not: viewer } }, { viaAutomation: true }] }],
+  }, select: { id: true } })
+}
