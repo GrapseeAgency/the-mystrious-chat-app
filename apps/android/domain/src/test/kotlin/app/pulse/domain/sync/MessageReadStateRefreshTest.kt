@@ -43,6 +43,7 @@ class MessageReadStateRefreshTest {
         gateway.requests[1].complete(Result.success(true))
         runCurrent()
         assertEquals(listOf(true, true), seen)
+        assertEquals(2, gateway.requests.size, "No hidden buffered producer may retain another stale hint")
         advanceTimeBy(5_000); runCurrent()
         assertEquals(3, gateway.requests.size, "One fallback request at five seconds")
         gateway.requests[2].complete(Result.success(true))

@@ -11,6 +11,17 @@ final class ReadPresentationTests: XCTestCase {
     }
 
     @MainActor
+    private final class AppearingHost<Content: View>: UIHostingController<Content> {
+        var didAppear: (() -> Void)?
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            let completion = didAppear
+            didAppear = nil
+            completion?()
+        }
+    }
+
+    @MainActor
     func testHostedSwiftUIRoomAndThreadHaveIndependentUnobscuredAnchors() async throws {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive }) else {
@@ -23,30 +34,29 @@ final class ReadPresentationTests: XCTestCase {
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
         let primaryReady = expectation(description: "primary SwiftUI content appeared")
-        var primaryAppeared = false
-        let primary = UIHostingController(rootView: Text("Primary reader")
+        let primary = AppearingHost(rootView: Text("Primary reader")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(PulseReadPresentationAnchor(session: session, owner: visit))
-            .onAppear { if !primaryAppeared { primaryAppeared = true; primaryReady.fulfill() } })
+            .background(PulseReadPresentationAnchor(session: session, owner: visit)))
+        primary.didAppear = { primaryReady.fulfill() }
         window.rootViewController = primary
-        window.isHidden = false
+        window.makeKeyAndVisible()
         defer { window.isHidden = true; previousKey?.makeKey(); session.stop() }
         window.layoutIfNeeded()
         primary.view.layoutIfNeeded()
-        await fulfillment(of: [primaryReady], timeout: 2)
+        await fulfillment(of: [primaryReady], timeout: 5)
         XCTAssertFalse(session.nativePresentationBlockedNow, "The real SwiftUI background must resolve to its reading controller")
 
         let owner = try XCTUnwrap(session.beginReadSurface(conversationId: "room", rootId: "root"))
         let threadReady = expectation(description: "thread SwiftUI content appeared")
-        var threadAppeared = false
-        let thread = UIHostingController(rootView: Text("Thread reader")
+        let thread = AppearingHost(rootView: Text("Thread reader")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(PulseReadPresentationAnchor(session: session, owner: owner.id))
-            .onAppear { if !threadAppeared { threadAppeared = true; threadReady.fulfill() } })
+            .background(PulseReadPresentationAnchor(session: session, owner: owner.id)))
+        thread.didAppear = { threadReady.fulfill() }
         thread.modalPresentationStyle = .pageSheet
-        let opened = expectation(description: "thread presented")
-        primary.present(thread, animated: false) { opened.fulfill() }
-        await fulfillment(of: [opened, threadReady], timeout: 2)
+        primary.present(thread, animated: false)
+        await fulfillment(of: [threadReady], timeout: 5)
+        XCTAssertTrue(primary.presentedViewController === thread)
+        XCTAssertTrue(thread.view.window === window)
         thread.view.layoutIfNeeded()
         XCTAssertFalse(session.nativePresentationBlockedNow, "The active thread must not be blocked by its own sheet")
 

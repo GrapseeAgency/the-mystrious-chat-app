@@ -2,7 +2,9 @@ package app.pulse.domain.sync
 
 import app.pulse.domain.repository.PulseRepository
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -25,7 +27,6 @@ fun PulseRepository.messageReadStateRefreshes(room: String, message: String): Fl
 
 /** Typed operations keep suspension/cancellation tests on the real collector,
  * without reflection across Kotlin's inline Result suspend ABI. */
-@OptIn(ExperimentalCoroutinesApi::class)
 internal fun messageReadStateRefreshFlow(
     owner: () -> String?,
     revisions: Flow<Long>,
@@ -33,16 +34,26 @@ internal fun messageReadStateRefreshFlow(
     metadata: suspend () -> Unit,
 ): Flow<Boolean> = flow {
     val epoch = owner() ?: return@flow
-    val ticks = flow {
-        while (currentCoroutineContext().isActive) { delay(5_000); emit(Unit) }
-    }
-    merge(revisions.map { Unit }, ticks).conflate().collect {
-        currentCoroutineContext().ensureActive()
-        if (owner() != epoch) throw CancellationException("Info owner retired")
-        val available = refresh().getOrNull()
-        currentCoroutineContext().ensureActive()
-        if (owner() != epoch) throw CancellationException("Info owner retired")
-        if (available != null) emit(available)
-        if (available != false) metadata()
+    coroutineScope {
+        // trySend on one explicit conflated mailbox cannot leave suspended
+        // merge producers holding extra stale hints behind the pending pass.
+        val pending = Channel<Unit>(Channel.CONFLATED)
+        val hints = launch { revisions.collect { pending.trySend(Unit) } }
+        val timer = launch {
+            while (currentCoroutineContext().isActive) { delay(5_000); pending.trySend(Unit) }
+        }
+        try {
+            for (ignored in pending) {
+                currentCoroutineContext().ensureActive()
+                if (owner() != epoch) throw CancellationException("Info owner retired")
+                val available = refresh().getOrNull()
+                currentCoroutineContext().ensureActive()
+                if (owner() != epoch) throw CancellationException("Info owner retired")
+                if (available != null) emit(available)
+                if (available != false) metadata()
+            }
+        } finally {
+            hints.cancel(); timer.cancel(); pending.cancel()
+        }
     }
 }
