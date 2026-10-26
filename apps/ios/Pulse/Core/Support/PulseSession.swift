@@ -556,10 +556,17 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    private var shellObscuresReading = false
+    public func setShellReadObscured(_ obscured: Bool) {
+        guard shellObscuresReading != obscured else { return }
+        shellObscuresReading = obscured
+        restartReadAttention()
+    }
+
     private var readAttentionBlocked: Bool {
         (callEngine?.state ?? .idle) != .idle || (groupCallEngine?.uiState ?? .idle) != .idle ||
             groupCallEngine?.ring != nil || voiceRooms?.surface != nil || PulseAppLock.shared.needsLock ||
-            readSurfaces.obscuredByPip(isOpen: pip.isOpen)
+            readSurfaces.isObscured(shellPresented: shellObscuresReading, pipOpen: pip.isOpen)
     }
 
     private func restartReadAttention() {

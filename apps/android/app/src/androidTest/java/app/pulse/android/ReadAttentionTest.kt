@@ -75,4 +75,39 @@ class ReadAttentionTest {
             assertFalse(observed.contains("hidden"))
         }
     }
+    @Test fun realNotificationShadeInterruptsTheDwellUntilTheActualWindowRegainsFocus() {
+        val automation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+        val window = java.util.concurrent.atomic.AtomicReference<WindowInfo>()
+        val observed = CopyOnWriteArrayList<String>()
+        val root = Message("shade-root", "room", "peer", "Peer", Message.Kind.TEXT, "Root", "2026-10-26T00:00:00Z")
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            val actualWindow = LocalWindowInfo.current
+            androidx.compose.runtime.SideEffect { window.set(actualWindow) }
+            val list = rememberLazyListState()
+            LazyColumn(state = list, modifier = Modifier.height(120.dp).fillMaxWidth()) {
+                item(key = "thread-parent") { Text("Root", Modifier.height(64.dp)) }
+            }
+            ThreadReadReceipts(ownerKey = "real-window", enabled = true, connected = true,
+                root = root, replies = emptyList(), listState = list,
+                onRead = { id -> VisibleReadIntent({ Result.success("original.member") }, {
+                    observed.add(id); Result.success(Unit)
+                }) })
+        }
+        compose.waitForIdle()
+        compose.waitUntil(5000) { window.get()?.isWindowFocused == true }
+        compose.mainClock.advanceTimeBy(200)
+        try {
+            assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS))
+            compose.waitUntil(5000) { window.get()?.isWindowFocused == false }
+            compose.mainClock.advanceTimeBy(1000)
+            assertTrue("Notification shade must not acknowledge the covered row", observed.isEmpty())
+        } finally {
+            automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+        }
+        compose.waitUntil(5000) { window.get()?.isWindowFocused == true }
+        compose.mainClock.advanceTimeBy(1000)
+        compose.waitUntil(5000) { observed.contains("shade-root") }
+    }
+
 }

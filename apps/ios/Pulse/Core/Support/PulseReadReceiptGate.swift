@@ -105,6 +105,9 @@ struct PulseReadSurfaces {
     }
     // Root PiP is below a presented thread sheet, but above the primary room.
     func obscuredByPip(isOpen: Bool) -> Bool { isOpen && owner == nil }
+    func isObscured(shellPresented: Bool, pipOpen: Bool) -> Bool {
+        shellPresented || obscuredByPip(isOpen: pipOpen)
+    }
 
     mutating func begin(roomId: String, rootId: String? = nil) -> Owner {
         let next = Owner(roomId: roomId, rootId: rootId)

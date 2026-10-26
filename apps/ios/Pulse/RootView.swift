@@ -63,6 +63,10 @@ struct RootView: View {
     @Environment(\.colorScheme) private var systemScheme
     @Environment(\.scenePhase) private var scenePhase
 
+    private var shellObscuresReading: Bool {
+        newChatOpen || settingsOpen || storiesOpen || callsOpen || savedLibraryOpen || pendingInvite != nil
+    }
+
     private var colorScheme: ColorScheme? {
         switch prefs.appearance {
         case "light": return .light
@@ -114,6 +118,7 @@ struct RootView: View {
             // Wave 8 - prefs handoff: incoming attention gate, settings PATCH
             // funnel, quiet-gate refresh (idempotent, closures attach once).
             session.attach(prefs: prefs)
+            session.setShellReadObscured(shellObscuresReading)
             PulseReminderNotificationDelegate.shared.handlesForegroundMessage = { [weak session] owner in
                 session?.viewer?.id == owner && session?.ready == true && session?.isForeground == true && session?.connected == true
             }
@@ -204,9 +209,10 @@ struct RootView: View {
         // R2-D - the shared linked-room bridge: reminder-notification taps
         // (delegate) AND calls-history row taps land here and follow the
         // exact pulse://room path (fetch detail → Chats tab → open room).
-        .onDisappear { cancelLinkedRoom() }
+        .onDisappear { session.setShellReadObscured(true); cancelLinkedRoom() }
         .onChange(of: session.sessionGeneration) { _, _ in cancelLinkedRoom() }
-        .onChange(of: newChatOpen || settingsOpen || storiesOpen || callsOpen || savedLibraryOpen || pendingInvite != nil) { _, presented in
+        .onChange(of: shellObscuresReading, initial: true) { _, presented in
+            session.setShellReadObscured(presented)
             if presented { session.noteRoomNavigationIntent(); cancelLinkedRoom() }
         }
         // Profile's saved library can resolve a room while Chats is unmounted.

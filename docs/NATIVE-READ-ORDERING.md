@@ -41,7 +41,7 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 - Android primary, mirror and thread readers now require the hosting Compose window to be focused, in addition to RESUMED lifecycle. System panels/popups cannot rely on lifecycle alone. This follows the official AndroidX `WindowInfo.isWindowFocused` contract.
 - Primary Android collaboration/quick-phrase/safety/detail sheets and Swift packet-detail sheets now participate in read suppression. Thread root headings are separate from the message's lazy item.
 - PiP preview/stack surfaces no longer clear their own timestamp-based unread badges. They use canonical inbox counts on both platforms; a truncated preview is not exact Seen. Swift's primary reader is blocked while PiP covers it; a presented thread sheet above PiP retains its own attention lease.
-- Added a real Compose viewport/lifecycle test with controlled window focus and transport, plus Swift attention-lease coverage. These do not substitute for notification-shade, accessibility or paired-device acceptance.
+- Root-shell sheets now suspend Swift reading independently of room navigation; Android settings-to-profile-edit and saved-library overlays also keep their underlying room blocked. Added a real Android notification-shade window-focus test alongside controlled Compose viewport/lifecycle tests and Swift attention-lease coverage. These do not substitute for notification-shade, accessibility or paired-device acceptance.
 - The actual native compiler caught follow-up integration errors (a duplicate serializer annotation, an obsolete badge variable, and a thread snapshot/intent field-name collision); source fixes are published, with fresh execution still required.
 
 ### Cross-device background invalidation follow-up
@@ -77,7 +77,7 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 
 1. Back up the database. Apply `20261026_read_intent_state.sql` if not already applied.
 2. Apply `20261026_exact_read_observations.sql` as one transaction on one SQLite connection. Its one-time migration marker prevents subsequent reruns from turning new gaps into read progress. Legacy timestamp exclusions preserve badge state but are **not** advertised as exact Seen.
-3. Deploy the generated Prisma client and matching backend, then the matching native builds. Older clients must not silently fall back to cumulative read semantics. Web read callers require their own coordinated migration; this is the native workstream.
+3. Apply `20261026_native_read_push.sql` for explicit native notification capability registration. Deploy the generated Prisma client and matching backend, then the matching native builds. Older clients must not silently fall back to cumulative read semantics. Web read callers require their own coordinated migration; this is the native workstream.
 4. Execute the native and paired-device acceptance matrix above. Migration/source checks do not replace that step.
 
 ### Executed checks before publication

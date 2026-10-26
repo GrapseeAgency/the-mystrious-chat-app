@@ -12,6 +12,18 @@ final class ReadVisibilityTests: XCTestCase {
         XCTAssertFalse(fence.owns(newer))
     }
 
+    func testShellSheetsBlockBothPrimaryAndThreadLeasesWithoutLosingPipOwnershipRules() {
+        var surfaces = PulseReadSurfaces()
+        XCTAssertTrue(surfaces.isObscured(shellPresented: true, pipOpen: false))
+        XCTAssertTrue(surfaces.isObscured(shellPresented: false, pipOpen: true))
+        let thread = surfaces.begin(roomId: "room", rootId: "root")
+        XCTAssertTrue(surfaces.isObscured(shellPresented: true, pipOpen: false))
+        XCTAssertTrue(surfaces.isObscured(shellPresented: true, pipOpen: true))
+        XCTAssertFalse(surfaces.isObscured(shellPresented: false, pipOpen: true))
+        surfaces.end(thread)
+        XCTAssertFalse(surfaces.isObscured(shellPresented: false, pipOpen: false))
+    }
+
     func testThreadLeaseIgnoresUnderlyingRoomAndRestoresEitherDismissalOrder() {
         var surfaces = PulseReadSurfaces()
         surfaces.setPrimary(roomId: "room", messageId: "river")

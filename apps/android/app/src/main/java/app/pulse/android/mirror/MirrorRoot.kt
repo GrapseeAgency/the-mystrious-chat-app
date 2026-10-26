@@ -855,7 +855,7 @@ internal fun MirrorRoot(
                         readingEnabled = readingEnabled && openRoom?.id == convo.id && closingRoomId != convo.id &&
                             roomOpenRequest == null && viewingStory == null &&
                             roomInfoFor == null && managerFor == null && userPageFor == null &&
-                            !settingsOpen && !callsOpen && !spotlightOpen,
+                            !settingsOpen && !profileEditOpen && !profileSavedOpen && !callsOpen && !spotlightOpen,
                         accountRouter = repository,
                         viewerId = viewerId.orEmpty(),
                         presence = presence,
