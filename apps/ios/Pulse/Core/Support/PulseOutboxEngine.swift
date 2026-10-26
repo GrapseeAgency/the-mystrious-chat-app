@@ -185,7 +185,7 @@ public final class PulseOutboxEngine: ObservableObject {
         // Badge permission is optional; refusing it must not penalize OS scheduling
         // of successfully drained message/read journals.
         _ = await onBadgeRefresh?()
-        return messages && reads && badge
+        return messages && reads
     }
     /// Session fallback still blocks dispatch if recording a denial on disk failed.
     public var additionalThreadAccessDenied: ((String) -> Bool)?

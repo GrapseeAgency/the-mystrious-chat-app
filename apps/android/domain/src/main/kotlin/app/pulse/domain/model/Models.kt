@@ -51,7 +51,6 @@ data class ConversationMember(
 )
 
 @Serializable
-@Serializable
 data class UnreadExpiration(val expiresAtEpochMs: Long, val count: Int)
 
 /** Authoritative whole-scope count; never inferred from a loaded page. */
