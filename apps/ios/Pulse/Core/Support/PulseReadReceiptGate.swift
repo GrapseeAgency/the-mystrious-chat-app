@@ -226,6 +226,7 @@ struct PulseQueuedRead: Codable, Sendable, Equatable {
 enum PulseReadJournalReplay {
     static func flush(store: PulseStore, owner: String,
                              isCurrent: () -> Bool,
+                             onConfirmed: (PulseQueuedRead) -> Void = { _ in },
                              onSettled: (PulseQueuedRead) -> Void = { _ in },
                              send: (PulseQueuedRead) async throws -> Void) async -> Bool {
         do {
@@ -237,6 +238,7 @@ enum PulseReadJournalReplay {
                     try Task.checkCancellation()
                     guard isCurrent() else { return false }
                     onSettled(read)
+                    if try store.recordConfirmedRead(read) { onConfirmed(read) }
                     try store.acknowledgeRead(read)
                 } catch {
                     guard !Task.isCancelled, isCurrent(),

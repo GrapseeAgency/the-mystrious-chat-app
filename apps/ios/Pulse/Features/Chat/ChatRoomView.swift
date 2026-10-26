@@ -4080,6 +4080,7 @@ final class RoomViewModel: ObservableObject {
             .sink { [weak self] _ in
                 guard let self, self.readSessionGeneration == session.sessionGeneration else { return }
                 self.loadTopics(session: session)
+                self.scheduleReceiptMembersRefresh(session: session)
             }
             .store(in: &cancellables)
         if let store = session.store {
@@ -4138,6 +4139,7 @@ final class RoomViewModel: ObservableObject {
                 case .messageRead(let convId, let userId, let lastReadAt, let ids, _, let all):
                     guard convId == self.conversationId else { return }
                     loadTopics(session: session)
+                    scheduleReceiptMembersRefresh(session: session)
                     for id in ids {
                         if let message = try? session.store?.message(id: id) { upsert(message) }
                     }
@@ -4698,6 +4700,18 @@ final class RoomViewModel: ObservableObject {
         roomScreenPrivacy = detail.screenPrivacy
         dmBlocked = !detail.isGroup && detail.dmBlockedNow
         return true
+    }
+
+    private var receiptMembersRefreshTask: Task<Void, Never>?
+    private func scheduleReceiptMembersRefresh(session: PulseSession) {
+        receiptMembersRefreshTask?.cancel()
+        receiptMembersRefreshTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return }
+            guard let self, session.sessionGeneration == self.readSessionGeneration else { return }
+            // nil means either never-read or privacy-hidden. Only canonical
+            // membership metadata can distinguish them; a relay date cannot.
+            await self.loadPrivacyState(session: session)
+        }
     }
 
     /// One quiet detail GET on room open (web detail-query parity): refresh

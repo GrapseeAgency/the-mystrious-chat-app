@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class RoomDetailReadWatermarkTests: XCTestCase {
     private func room(_ stamp: String?, id: String = "read-room") throws -> WireConversationSummary {
-        var reader: [String: Any] = ["id": "peer", "name": "Peer", "color": "amber"]
+        var reader: [String: Any] = ["id": "peer", "name": "Peer", "color": "amber", "readMembershipId": "peer-membership"]
         reader["lastReadAt"] = stamp ?? NSNull()
         return try JSONDecoder().decode(WireConversationSummary.self, from: JSONSerialization.data(withJSONObject: [
             "id": id, "isGroup": false, "members": [reader], "screenPrivacy": false,
@@ -35,6 +35,21 @@ final class RoomDetailReadWatermarkTests: XCTestCase {
         XCTAssertNil(model.readReceiptMembers.first?.lastReadAt, "The visible info sheet must adopt current receipt privacy")
         session.stop()
         XCTAssertNil(model.messageInfo("info"), "An old sheet must not retain another session's message")
+    }
+
+    func testFirstReceiptRequiresFreshSharingMetadataAndHidingItRetiresSeen() throws {
+        let session = PulseSession()
+        let model = RoomViewModel(conversation: try room(nil), session: session, beginAutomaticWork: false)
+        func split() -> PulseRoomParityLogic.ReceiptSplit {
+            PulseRoomParityLogic.receiptSplit(members: model.readReceiptMembers.map {
+                .init(id: $0.id, lastReadAtIso: $0.lastReadAt, readMembershipId: $0.readMembershipId)
+            }, viewerId: "viewer-1", createdAtIso: "2026-10-26T00:00:00Z", readByMembershipIds: ["peer-membership"])
+        }
+        XCTAssertTrue(split().seenBy.isEmpty)
+        model.applyFreshDetail(try room("2026-10-26T00:01:00Z"))
+        XCTAssertEqual(split().seenBy.map(\.id), ["peer"])
+        model.applyFreshDetail(try room(nil))
+        XCTAssertTrue(split().seenBy.isEmpty(), "Retained exact proof cannot override current receipt privacy")
     }
 
     func testLateRoomMetadataDoesNotRewindSeenButHiddenReadersAreRemoved() throws {

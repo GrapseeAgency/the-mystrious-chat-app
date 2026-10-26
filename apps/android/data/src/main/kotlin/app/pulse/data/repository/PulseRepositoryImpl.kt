@@ -248,15 +248,14 @@ class PulseRepositoryImpl constructor(
     private val readStateRevisions = app.pulse.domain.sync.ReadStateInvalidations()
     override fun observeReadStateRevision(conversationId: String): Flow<Long> = readStateRevisions.observe(conversationId)
 
-    private fun noteReadStateChanged(room: String) {
-        conversationSnapshots.invalidate(room)
-        invalidateReadProjections(room)
-        scheduleConversationsRefresh()
-    }
+    private fun noteReadStateChanged(room: String) = invalidateReadProjections(room)
 
     override fun invalidateReadProjections(conversationId: String) {
         if (viewerId == null || conversationId.isBlank()) return
+        conversationSnapshots.invalidate(conversationId)
+        inboxRefreshVersion.incrementAndGet() // retire GETs started before this invalidation
         readStateRevisions.settled(conversationId)
+        scheduleConversationsRefresh()
         scope.launch { refreshTopics(conversationId) }
     }
 
@@ -547,6 +546,7 @@ class PulseRepositoryImpl constructor(
                         if (signal.all) scope.launch { refreshMessages(signal.conversationId, limit = 200) }
 
                         conversationSnapshots.invalidate(signal.conversationId)
+                        inboxRefreshVersion.incrementAndGet()
                         eventsBus.tryEmit(PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.lastReadAt))
                         scheduleConversationsRefresh()
                     }
@@ -555,6 +555,7 @@ class PulseRepositoryImpl constructor(
                     )
                     is PulseSocketClient.Signal.ConversationUpdated -> {
                         conversationSnapshots.invalidate(signal.conversationId)
+                        inboxRefreshVersion.incrementAndGet()
                         scheduleConversationsRefresh()
                     }
                     is PulseSocketClient.Signal.VoiceRoster -> eventsBus.tryEmit(
@@ -2794,6 +2795,23 @@ class PulseRepositoryImpl constructor(
         }
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
+    private suspend fun acknowledgeConfirmedRead(entry: Wave7CacheEntity, read: QueuedRead, epoch: String) {
+        messageCacheMutex.withLock {
+            database.withTransaction {
+                requireConversationOwner(read.owner, epoch)
+                val current = messageDao.byId(read.message)?.toDomain()
+                val updated = app.pulse.domain.sync.confirmedReadObservation(current, read.room, read.message, read.intent)
+                if (updated != null) {
+                    messageEventRevisions[updated.id] = messageEventClock.incrementAndGet()
+                    messageDao.upsertAll(listOf(MessageEntity.from(updated, reactionsJsonOf(updated))))
+                }
+                wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
+                requireConversationOwner(read.owner, epoch)
+            }
+            messageCacheChanges.value = messageEventClock.get()
+        }
+    }
+
     private suspend fun flushReadJournal() = readReplayMutex.withLock {
         val owner = viewerId ?: return@withLock
         val epoch = attachmentSession
@@ -2818,7 +2836,8 @@ class PulseRepositoryImpl constructor(
                 if (response is PulseResult.Success || failure?.status in setOf(400, 403, 404, 410, 422)) {
                     settledRooms += read.room
                     conversationSnapshots.invalidate(read.room)
-                    wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
+                    if (response is PulseResult.Success) acknowledgeConfirmedRead(entry, read, epoch)
+                    else wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
                 } else {
                     readReplayRetryAt = android.os.SystemClock.elapsedRealtime() + maxOf(SELF_HEAL_MS,
                         app.pulse.domain.sync.visibleReadRetryDelay(failure, 1) ?: SELF_HEAL_MS)
@@ -2883,7 +2902,12 @@ class PulseRepositoryImpl constructor(
             requireConversationOwner(owner, epoch)
             // Do not zero newer arrivals or roll an entire stale conversation back
             // over messages/pins received while the read request was in flight.
-            if (result.isSuccess && viewerId == owner) noteReadStateChanged(conversationId)
+            if (result.isSuccess && viewerId == owner) {
+                noteReadStateChanged(conversationId)
+                // Explicit-all has a frozen server set, not every local row.
+                // Reconcile the retained range just as an all-read socket echo does.
+                scope.launch { refreshMessages(conversationId, limit = 200) }
+            }
             result
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
             Result.failure(error)

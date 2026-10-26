@@ -384,6 +384,42 @@ extension ReadVisibilityTests {
     }
 
     @MainActor
+    func testHTTPReadProofIsPersistedOnlyAfterAcceptanceAndDoesNotRewriteCurrentContent() async throws {
+        let store = try PulseStore(path: ":memory:")
+        var message = OutboxFixtures.makeMessage(id: "message", conversationId: "room", content: "Current edited body")
+        message.readByMembershipIds = ["other-member"]
+        try store.upsert(messages: [message])
+        let read = PulseQueuedRead(owner: "owner", room: "room", message: "message",
+            minimumReadAt: message.createdAt, intent: "original.member")
+        _ = try store.enqueueRead(read)
+        var confirmed: [String] = []
+        let lost = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true },
+            onConfirmed: { confirmed.append($0.message) }) { _ in
+                throw PulseAPIClient.Failure(kind: .network, message: "Unknown ACK")
+            }
+        XCTAssertFalse(lost)
+        XCTAssertEqual(try store.message(id: "message")?.readByMembershipIds, ["other-member"])
+        XCTAssertTrue(confirmed.isEmpty())
+        let accepted = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true },
+            onConfirmed: { confirmed.append($0.message) }) { _ in }
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(confirmed, ["message"])
+        XCTAssertEqual(Set(try XCTUnwrap(store.message(id: "message")?.readByMembershipIds)), Set(["other-member", "member"]))
+        XCTAssertEqual(try store.message(id: "message")?.content, "Current edited body")
+        XCTAssertFalse(try store.recordConfirmedRead(read))
+        let foreign = PulseQueuedRead(owner: "owner", room: "other-room", message: "message",
+            minimumReadAt: message.createdAt, intent: "other.foreign-member")
+        XCTAssertFalse(try store.recordConfirmedRead(foreign))
+        let refused = PulseQueuedRead(owner: "owner", room: "room", message: "message",
+            minimumReadAt: message.createdAt, intent: "retired.retired-member")
+        _ = try store.enqueueRead(refused)
+        _ = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { _ in
+            throw PulseAPIClient.Failure(kind: .forbidden, message: "Retired", status: 410)
+        }
+        XCTAssertFalse(try XCTUnwrap(store.message(id: "message")?.readByMembershipIds).contains("retired-member"))
+    }
+
+    @MainActor
     func testPushScopeInvalidationNeverResurrectsAStoppedEngine() throws {
         let store = try PulseStore(path: ":memory:")
         let engine = PulseOutboxEngine(store: store, monitorNetwork: false) { nil }

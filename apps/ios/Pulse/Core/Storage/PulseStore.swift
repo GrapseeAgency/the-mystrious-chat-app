@@ -345,6 +345,23 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Called only after a validated exact HTTP ACK, never on enqueue or refusal.
+    /// Merge into the current row so edits/deletions and other readers survive.
+    @discardableResult
+    func recordConfirmedRead(_ observation: PulseQueuedRead) throws -> Bool {
+        let parts = observation.intent.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return false }
+        let membership = String(parts[1])
+        return try dbQueue.write { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [observation.message]),
+                  var message = Self.messageRow(from: row), message.id == observation.message, message.conversationId == observation.room,
+                  !message.id.hasPrefix("local_"), !(message.readByMembershipIds ?? []).contains(membership) else { return false }
+            message.readByMembershipIds = (message.readByMembershipIds ?? []) + [membership]
+            try Self.writeMessage(message, db: db)
+            return true
+        }
+    }
+
     func acknowledgeRead(_ observation: PulseQueuedRead) throws {
         try dbQueue.write { db in
             // Drain pre-upgrade records too, but never let their delayed ACK

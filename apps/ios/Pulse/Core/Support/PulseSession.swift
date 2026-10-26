@@ -153,6 +153,21 @@ public final class PulseSession: ObservableObject {
         noteInboxChanged()
     }
 
+    func noteReadAllChanged(_ room: String) {
+        noteReadStateChanged(room)
+        guard let owner = viewer?.id else { return }
+        // Ask live rooms to fetch the server's exact frozen set. Do not mark
+        // every cached row read: newer arrivals may be outside that set.
+        signals.send(.messageRead(conversationId: room, userId: owner, lastReadAt: nil, all: true))
+    }
+
+    private func publishConfirmedRead(_ read: PulseQueuedRead) {
+        noteMessageRevision(read.message)
+        // Exact proof is already committed; nil does not invent a read time.
+        signals.send(.messageRead(conversationId: read.room, userId: read.owner, lastReadAt: nil,
+            messageIds: [read.message], readerMembershipId: read.intent.split(separator: ".").last.map(String.init), all: false))
+    }
+
     private var readReplayTask: Task<Void, Never>?
     private var readReplayID = UUID()
 
@@ -179,6 +194,7 @@ public final class PulseSession: ObservableObject {
                             minimumReadAt: read.minimumReadAt, readIntent: read.intent)
                         guard self.generation == epoch else { return }
                         settledRooms.insert(read.room)
+                        if try store.recordConfirmedRead(read) { self.publishConfirmedRead(read) }
                         try store.acknowledgeRead(read)
                         failures = 0
                     } catch {
@@ -1114,14 +1130,19 @@ public final class PulseSession: ObservableObject {
             guard let self, self.ready, let owner = self.viewer?.id, let store = self.store else { return false }
             let client = self.api, epoch = self.generation
             var settledRooms = Set<String>()
+            var confirmed: [PulseQueuedRead] = []
             let succeeded = await PulseReadJournalReplay.flush(store: store, owner: owner,
                 isCurrent: { self.generation == epoch && self.viewer?.id == owner },
+                onConfirmed: { confirmed.append($0) },
                 onSettled: { settledRooms.insert($0.room) },
                 send: { read in
                     try await client.markRead(conversationId: read.room, messageId: read.message,
                         minimumReadAt: read.minimumReadAt, readIntent: read.intent)
                 })
-            if self.generation == epoch { settledRooms.forEach { self.noteReadStateChanged($0) } }
+            if self.generation == epoch {
+                confirmed.forEach { self.publishConfirmedRead($0) }
+                settledRooms.forEach { self.noteReadStateChanged($0) }
+            }
             return succeeded
         }
         engine.onBadgeRefresh = { [weak self] in
