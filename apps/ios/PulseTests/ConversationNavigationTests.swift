@@ -115,13 +115,14 @@ final class ConversationNavigationTests: XCTestCase {
     func testNavigationIntentIsSeparateFromRoomVisibilityRestoration() throws {
         let session = PulseSession()
         let initial = session.roomNavigationGeneration
-        session.activeRoomId = "existing-room"
-        session.activeRoomId = nil
+        let visit = UUID()
+        session.showRoomReadVisit(conversationId: "existing-room", entryID: visit)
+        session.hideRoomReadVisit(conversationId: "existing-room", entryID: visit)
         XCTAssertEqual(session.roomNavigationGeneration, initial)
         session.noteRoomNavigationIntent()
         let next = session.roomNavigationGeneration
         XCTAssertNotEqual(initial, next)
-        session.activeRoomId = "existing-room"
+        session.showRoomReadVisit(conversationId: "existing-room", entryID: visit)
         XCTAssertEqual(session.roomNavigationGeneration, next)
         let target = try row("target", members: ["me", "peer"])
         session.requestOpenRoom(target, jumpMessageId: "message")

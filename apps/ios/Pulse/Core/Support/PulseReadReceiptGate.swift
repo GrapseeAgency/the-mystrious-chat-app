@@ -98,6 +98,31 @@ struct PulseReadReceiptGate {
 }
 
 
+/// Navigation identity outlives temporary presentation visibility. In particular,
+/// an old same-room destination cannot retire its replacement during a transition.
+struct PulseRoomReadVisit {
+    struct Owner: Equatable { let entryID: UUID; let roomID: String }
+    private(set) var owner: Owner?
+    private(set) var active = false
+
+    mutating func activate(entryID: UUID, roomID: String) -> Bool {
+        let next = Owner(entryID: entryID, roomID: roomID)
+        let changed = owner != next
+        owner = next
+        active = true
+        return changed
+    }
+    func owns(entryID: UUID, roomID: String) -> Bool {
+        active && owner == Owner(entryID: entryID, roomID: roomID)
+    }
+    mutating func suspend(entryID: UUID, roomID: String) -> Bool {
+        guard owns(entryID: entryID, roomID: roomID) else { return false }
+        active = false
+        return true
+    }
+    mutating func reset() { owner = nil; active = false }
+}
+
 /// The presented thread owns visibility while the obscured room keeps its
 /// latest base boundary. Dismissal order must not let either erase the other.
 struct PulseReadSurfaces {

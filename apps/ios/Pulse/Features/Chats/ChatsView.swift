@@ -130,7 +130,7 @@ struct ChatsView: View {
             .navigationBarHidden(true)
             .navigationDestination(for: RoomRoute.self) { route in
                 ChatRoomView(conversation: route.conversation, session: session, prefs: prefs,
-                    jumpMessageId: route.jumpMessageId, onLeft: {
+                    jumpMessageId: route.jumpMessageId, readVisitID: route.entryID, onLeft: {
                         // A completed departure isn't a new navigation intent:
                         // don't invalidate another destination still resolving.
                         path = RoomRoute.retiring(route, from: path)

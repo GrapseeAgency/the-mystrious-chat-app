@@ -125,16 +125,17 @@ public final class PulseSession: ObservableObject {
     /// Wave 8 - the conversation currently owning the screen (ChatRoomView
     /// writes it). The incoming-attention gate uses it as the "you are
     /// reading this room" check - no ping for the room in front of you.
-    @Published public var activeRoomId: String? {
+    @Published public private(set) var activeRoomId: String? {
         didSet {
             if oldValue != activeRoomId {
-                readGate.reset()
-                readSurfaces.reset()
+                // Only showRoomReadVisit can create fresh read authority.
+                readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
                 readFailureCount = 0
                 readReceiptTask?.cancel()
             }
         }
     }
+    private var roomReadVisit = PulseRoomReadVisit()
     private var readGate = PulseReadReceiptGate()
     private var readSurfaces = PulseReadSurfaces()
     private var readFailureCount = 0
@@ -502,6 +503,33 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    func showRoomReadVisit(conversationId: String, entryID: UUID) {
+        if roomReadVisit.activate(entryID: entryID, roomID: conversationId) {
+            readGate.reset()
+            readSurfaces.reset()
+        }
+        readFailureCount = 0
+        readReceiptTask?.cancel()
+        readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
+        activeRoomId = conversationId
+        roomVisible = true
+        if isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+    }
+
+    func ownsRoomReadVisit(conversationId: String, entryID: UUID) -> Bool {
+        roomReadVisit.owns(entryID: entryID, roomID: conversationId)
+    }
+
+    @discardableResult
+    func hideRoomReadVisit(conversationId: String, entryID: UUID) -> Bool {
+        guard roomReadVisit.suspend(entryID: entryID, roomID: conversationId) else { return false }
+        readSurfaces.setPrimary(roomId: conversationId, messageIds: [])
+        readReceiptTask?.cancel()
+        activeRoomId = nil
+        roomVisible = false
+        return true
+    }
+
     public func setVisibleReadBoundary(conversationId: String, messageId: String?) {
         guard activeRoomId == conversationId else { return }
         setVisibleReadBoundaries(conversationId: conversationId, messageIds: messageId.map { [$0] } ?? [])
@@ -810,6 +838,10 @@ public final class PulseSession: ObservableObject {
         connected = false
         onlineUserIds = []
         typers = [:]
+        roomReadVisit.reset()
+        readGate.reset()
+        readSurfaces.reset()
+        readReceiptTask?.cancel()
         activeRoomId = nil
         roomVisible = false
         api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL)

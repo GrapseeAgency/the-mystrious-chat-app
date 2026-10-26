@@ -1505,6 +1505,7 @@ struct MirrorRoomView: View {
     let row: MirrorViewModel.MirrorRow
     @ObservedObject var session: PulseSession
     let onBack: () -> Void
+    @State private var readVisitID = UUID()
     @State private var isReadingTail = false
     @State private var visibleReadIDs: Set<String> = []
     @State private var didInitialScroll = false
@@ -1875,7 +1876,7 @@ struct MirrorRoomView: View {
         }
         .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
         .onAppear {
-            session.activeRoomId = row.id
+            session.showRoomReadVisit(conversationId: row.id, entryID: readVisitID)
             if draftJournal == nil, let store = session.store {
                 let journal = PulseDraftJournal(store: store, conversationId: row.id)
                 draftJournal = journal
@@ -1886,7 +1887,7 @@ struct MirrorRoomView: View {
         .onDisappear {
             cancelVoiceRecording()
             roomOperations.stop()
-            if session.activeRoomId == row.id { session.activeRoomId = nil }
+            session.hideRoomReadVisit(conversationId: row.id, entryID: readVisitID)
         }
         .task(id: readRevision) {
             if readRevision > 0 && !Task.isCancelled && scenePhase == .active {
@@ -1934,6 +1935,7 @@ struct MirrorRoomView: View {
     }
 
     private func updateReadBoundary() {
+        guard session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID) else { return }
         let ids = !trayOpen && activeSheet == nil && !menuOpen && !trayEffectsOpen && !docPickerOpen && !photoPickerOpen ? messages.filter {
             visibleReadIDs.contains($0.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
                 PulseRemediationLogic.isAlive($0.expiresAt)

@@ -18,6 +18,7 @@ struct ChatRoomView: View {
     /// Global-search jump - the room scrolls to + flashes this message after
     /// its initial load (bounded history expansion if it sits out of window).
     var jumpMessageId: String? = nil
+    let readVisitID: UUID
     var onLeft: () -> Void
 
     @State private var viewModel: RoomViewModel?
@@ -44,29 +45,23 @@ struct ChatRoomView: View {
         .toolbarBackground(PulseTheme.emberChrome.opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .onAppear {
+            session.showRoomReadVisit(conversationId: conversation.id, entryID: readVisitID)
             if viewModel == nil {
-                viewModel = RoomViewModel(conversation: conversation, session: session, initialJumpMessageId: jumpMessageId)
+                viewModel = RoomViewModel(conversation: conversation, session: session,
+                    initialJumpMessageId: jumpMessageId, readVisitID: readVisitID)
             }
-            // The dock hides itself while a room owns the screen (web §12).
-            session.roomVisible = true
-            // Wave 8 - the incoming-attention gate treats THIS room as read.
-            session.activeRoomId = conversation.id
             viewModel?.updateReadBoundary()
             viewModel?.requestRefresh(session: session)
             // 3-d - the group-call engine tracks the OPEN room: this drives
             // the 20s ongoing-call probe + the 'Ongoing group call' banner
             // (web useGroupCallSession options.conversationId parity). Groups
             // only - DMs never host group calls.
-            if conversation.isGroup {
-                session.groupCallEngine?.setActiveConversation(conversation.id)
-            }
+            session.groupCallEngine?.setActiveConversation(conversation.isGroup ? conversation.id : nil)
         }
         .onDisappear {
-            session.roomVisible = false
-            viewModel?.updateReadViewport(visibleIDs: [], tailVisible: false)
-            if session.activeRoomId == conversation.id {
-                session.activeRoomId = nil
-            }
+            // The destination keeps its measured viewport while temporarily
+            // covered. Only its owned session visibility is suspended.
+            guard session.hideRoomReadVisit(conversationId: conversation.id, entryID: readVisitID) else { return }
             // 3-d - room closed: the probe + banner stand down for THIS room
             // (the engine keeps an in-flight call alive regardless).
             if conversation.isGroup,
@@ -3820,7 +3815,8 @@ final class RoomViewModel: ObservableObject {
     }
 
     func updateReadBoundary() {
-        guard let session, session.sessionGeneration == readSessionGeneration else { return }
+        guard let session, session.sessionGeneration == readSessionGeneration,
+              session.ownsRoomReadVisit(conversationId: conversationId, entryID: readVisitID) else { return }
         let boundaries = readSurfaceObscured ? [] : messages.filter {
             visibleReadIDs.contains($0.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
                 PulseRemediationLogic.isAlive($0.expiresAt)
@@ -3866,6 +3862,7 @@ final class RoomViewModel: ObservableObject {
 
     private let conversationId: String
     fileprivate let readSessionGeneration: UUID
+    private let readVisitID: UUID
     private let isGroupRoom: Bool
     private weak var session: PulseSession?
     private var cancellables: Set<AnyCancellable> = []
@@ -3970,7 +3967,8 @@ final class RoomViewModel: ObservableObject {
             && !isRecording
     }
 
-    init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil, beginAutomaticWork: Bool = true) {
+    init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil, beginAutomaticWork: Bool = true, readVisitID: UUID = UUID()) {
+        self.readVisitID = readVisitID
         self.conversationId = conversation.id
         self.readSessionGeneration = session.sessionGeneration
         self.draftJournal = session.store.map { PulseDraftJournal(store: $0, conversationId: conversation.id) }

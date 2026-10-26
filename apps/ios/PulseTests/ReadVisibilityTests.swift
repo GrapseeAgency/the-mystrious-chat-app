@@ -2,6 +2,40 @@ import XCTest
 @testable import Pulse
 
 final class ReadVisibilityTests: XCTestCase {
+    func testRoomVisitSurvivesCoverButSameRoomReentryIsNewAuthority() {
+        var visit = PulseRoomReadVisit()
+        let old = UUID(), replacement = UUID()
+        XCTAssertTrue(visit.activate(entryID: old, roomID: "room"))
+        XCTAssertTrue(visit.suspend(entryID: old, roomID: "room"))
+        XCTAssertFalse(visit.owns(entryID: old, roomID: "room"))
+        XCTAssertFalse(visit.activate(entryID: old, roomID: "room"), "A cover must not renew authority")
+        XCTAssertTrue(visit.activate(entryID: replacement, roomID: "room"))
+        XCTAssertFalse(visit.suspend(entryID: old, roomID: "room"), "Late disappearance belongs to the old entry")
+        XCTAssertTrue(visit.owns(entryID: replacement, roomID: "room"))
+        visit.reset()
+        XCTAssertTrue(visit.activate(entryID: replacement, roomID: "room"), "Session replacement retires authority")
+    }
+
+    @MainActor
+    func testOldRoomDisappearanceCannotHideNewSameRoomVisit() {
+        let session = PulseSession()
+        let old = UUID(), current = UUID()
+        session.showRoomReadVisit(conversationId: "room", entryID: old)
+        session.showRoomReadVisit(conversationId: "room", entryID: current)
+        XCTAssertFalse(session.hideRoomReadVisit(conversationId: "room", entryID: old))
+        XCTAssertEqual(session.activeRoomId, "room")
+        XCTAssertTrue(session.roomVisible)
+        XCTAssertFalse(session.ownsRoomReadVisit(conversationId: "room", entryID: old))
+        XCTAssertTrue(session.ownsRoomReadVisit(conversationId: "room", entryID: current))
+        XCTAssertTrue(session.hideRoomReadVisit(conversationId: "room", entryID: current))
+        XCTAssertNil(session.activeRoomId)
+        XCTAssertFalse(session.roomVisible)
+        session.showRoomReadVisit(conversationId: "room", entryID: current)
+        XCTAssertTrue(session.ownsRoomReadVisit(conversationId: "room", entryID: current))
+        session.stop()
+        XCTAssertFalse(session.ownsRoomReadVisit(conversationId: "room", entryID: current))
+    }
+
     func testOldMenuDismissalCannotReleaseANewerPresentation() throws {
         var menu = PulseMenuVisibility()
         menu.begin()
