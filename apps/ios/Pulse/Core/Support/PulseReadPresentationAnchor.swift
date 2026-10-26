@@ -31,7 +31,7 @@ struct PulseReadPresentationAnchor: UIViewRepresentable {
         var owner: UUID?
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            session?.refreshNativeReadPresentation()
+            if let owner { session?.nativeReadAnchorWindowChanged(self, owner: owner) }
         }
     }
 

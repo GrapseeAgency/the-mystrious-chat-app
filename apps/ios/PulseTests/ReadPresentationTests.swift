@@ -10,6 +10,32 @@ final class ReadPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testAnchorReplacementAndWindowMovesRetireDwellButStaleCleanupDoesNot() {
+        let session = PulseSession(notificationCenter: NotificationCenter())
+        let owner = UUID(), inactiveOwner = UUID()
+        session.showRoomReadVisit(conversationId: "room", entryID: owner)
+        let initial = session.readAttentionRevision
+        let inactive = UIView(), first = UIView(), replacement = UIView()
+        session.setNativeReadAnchor(inactive, owner: inactiveOwner)
+        session.nativeReadAnchorWindowChanged(inactive, owner: inactiveOwner)
+        XCTAssertEqual(session.readAttentionRevision, initial)
+        session.setNativeReadAnchor(first, owner: owner)
+        let attached = session.readAttentionRevision
+        XCTAssertGreaterThan(attached, initial)
+        session.setNativeReadAnchor(first, owner: owner)
+        XCTAssertEqual(session.readAttentionRevision, attached)
+        session.setNativeReadAnchor(replacement, owner: owner)
+        let replaced = session.readAttentionRevision
+        XCTAssertGreaterThan(replaced, attached)
+        session.removeNativeReadAnchor(first, owner: owner)
+        session.nativeReadAnchorWindowChanged(first, owner: owner)
+        XCTAssertEqual(session.readAttentionRevision, replaced)
+        session.nativeReadAnchorWindowChanged(replacement, owner: owner)
+        XCTAssertGreaterThan(session.readAttentionRevision, replaced)
+        session.stop()
+    }
+
+    @MainActor
     func testDetachedAnchorDoesNotGrantReadingAuthority() {
         XCTAssertTrue(PulseReadPresentation.hasPresentationAbove(UIView()))
     }

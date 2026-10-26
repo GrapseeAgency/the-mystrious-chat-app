@@ -646,8 +646,18 @@ public final class PulseSession: ObservableObject {
     }
 
     func setNativeReadAnchor(_ view: UIView, owner: UUID) {
+        guard nativeReadAnchors.object(forKey: owner as NSUUID) !== view else { return }
         nativeReadAnchors.setObject(view, forKey: owner as NSUUID)
-        refreshNativeReadPresentation()
+        if activeNativeReadView === view { restartReadAttention() }
+        else { refreshNativeReadPresentation() }
+    }
+
+    func nativeReadAnchorWindowChanged(_ view: UIView, owner: UUID) {
+        guard nativeReadAnchors.object(forKey: owner as NSUUID) === view,
+              activeNativeReadView === view else { return }
+        // Moving directly between two active windows need not pass through a
+        // detached state. Preserve that interruption even if the probe is still false.
+        restartReadAttention()
     }
 
     func removeNativeReadAnchor(_ view: UIView, owner: UUID) {
