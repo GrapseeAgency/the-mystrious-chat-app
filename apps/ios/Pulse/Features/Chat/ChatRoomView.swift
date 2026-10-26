@@ -2648,9 +2648,12 @@ private struct MessageInfoSheet: View {
         let epoch = session.sessionGeneration, room = message.conversationId
         proofRefresh.request {
             guard infoVisible, session.isForeground, epoch == session.sessionGeneration else { return }
-            let available = await session.refreshMessageReadState(conversationId: room, messageId: messageID)
+            let proof = await session.refreshMessageReadState(conversationId: room, messageId: messageID)
             guard !Task.isCancelled, infoVisible, epoch == session.sessionGeneration else { return }
-            if available == false { dismiss(); return }
+            if let proof {
+                viewModel.applyMessageReadState(messageID, memberships: proof.memberships)
+                if !proof.available { dismiss(); return }
+            }
             // An Info cover owns metadata refresh, not permission to mark Seen.
             await viewModel.loadPrivacyState(session: session)
         }
@@ -3854,6 +3857,18 @@ final class RoomViewModel: ObservableObject {
         guard session?.sessionGeneration == readSessionGeneration else { return nil }
         return messages.first { $0.id == id && $0.conversationId == conversationId &&
             PulseRemediationLogic.isAlive($0.expiresAt, now: now) }
+    }
+
+    /// Only a bound, revision-accepted canonical response reaches this method.
+    /// The retained river is not a database observation; patch it explicitly,
+    /// without replacing content, generating arrivals or inventing a local row.
+    @discardableResult
+    func applyMessageReadState(_ id: String, memberships: [String]) -> Bool {
+        guard session?.sessionGeneration == readSessionGeneration, !id.hasPrefix("local_"),
+              let index = messages.firstIndex(where: { $0.id == id && $0.conversationId == conversationId }),
+              (messages[index].readByMembershipIds ?? []) != memberships else { return false }
+        messages[index].readByMembershipIds = memberships
+        return true
     }
 
     private var readerMemberships: [String: String] = [:]

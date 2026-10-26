@@ -11,6 +11,25 @@ final class RoomDetailReadWatermarkTests: XCTestCase {
         ]))
     }
 
+    func testInfoProofPatchesTheLiveRiverEvenWithoutACachedRowAndNeverRewritesContent() throws {
+        let session = PulseSession()
+        let model = RoomViewModel(conversation: try room("2026-10-24T12:00:00Z"), session: session, beginAutomaticWork: false)
+        var message = OutboxFixtures.makeMessage(id: "info", conversationId: "read-room", content: "Current edit")
+        message.readByMembershipIds = ["retired-member"]
+        model.injectCarrier(message)
+        XCTAssertTrue(model.applyMessageReadState("info", memberships: ["peer-membership"]))
+        XCTAssertEqual(model.messageInfo("info")?.readByMembershipIds, ["peer-membership"])
+        XCTAssertEqual(model.messageInfo("info")?.content, "Current edit")
+        XCTAssertFalse(model.applyMessageReadState("info", memberships: ["peer-membership"]))
+        XCTAssertTrue(model.applyMessageReadState("info", memberships: []))
+        XCTAssertEqual(model.messageInfo("info")?.readByMembershipIds, [])
+        XCTAssertFalse(model.applyMessageReadState("absent", memberships: ["peer-membership"]))
+        model.injectCarrier(OutboxFixtures.makeMessage(id: "local_pending", conversationId: "read-room", content: "Queued"))
+        XCTAssertFalse(model.applyMessageReadState("local_pending", memberships: ["peer-membership"]))
+        session.stop()
+        XCTAssertFalse(model.applyMessageReadState("info", memberships: ["peer-membership"]))
+    }
+
     func testReadTrafficCannotPreventCanonicalPrivacyAndMembershipAdoption() throws {
         let session = PulseSession()
         let model = RoomViewModel(conversation: try room("2026-10-24T12:00:00Z"), session: session, beginAutomaticWork: false)

@@ -236,3 +236,12 @@ canonical unread/receipt projections; no native optimistic sweep was introduced.
 The deterministic server cases freeze the join clock and cover existing equal-time
 and forward-skewed history, future equal-time arrivals, retries and retired intents.
 They do not certify arbitrary backwards server-clock jumps after joining.
+
+
+The iOS Info refresh also patches the retained room model's exact reader IDs.
+That model is not a GRDB message observation, so changing storage plus sending an
+expiry clock tick alone is insufficient. The patch preserves current text and
+other fields, supports live carriers not yet in storage, rejects queued/absent or
+retired-session rows, and does not classify a receipt update as a new arrival.
+Every accepted snapshot fences earlier message-page responses, including when
+there was no stored row to patch.
