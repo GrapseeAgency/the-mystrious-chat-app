@@ -20,6 +20,7 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 
 ### Durability follow-up
 
+- The alternate Swift room uses the same coalescing refresh owner, independently of message-window tickets. Message traffic cannot continually retire its roster request. It subscribes to scoped read invalidations and conversation updates, and drops reader metadata on a current definitive access refusal.
 - Swift receipt-membership refresh now completes one canonical request and coalesces intervening events into a trailing pass, instead of cancelling/restarting on every receipt. Ordinary read traffic no longer prevents canonical privacy/member adoption. Conversation updates invalidate older metadata tickets; a current definitive access refusal removes displayed reader metadata. Leaving/backgrounding cancels the refresh generation, and foreground return catches up.
 
 - On both platforms, a qualified attempt that found no usable membership now permanently limits that mounted visit to non-clearing authority. Later metadata can supply the membership ID for exact progress, but cannot lend it a newer manual-unread fence. A genuine new room/thread visit resets that limitation; cancellation/dwell restarts do not.

@@ -1517,6 +1517,7 @@ struct MirrorRoomView: View {
     @State private var messages: [WireChatMessage] = []
     @State private var memberNames: [String] = []
     @State private var memberRows: [WireConversationMember] = []
+    @State private var receiptMembersRefresh = PulseCoalescedRefresh()
     @State private var draftText = ""
     @State private var draftJournal: PulseDraftJournal?
     private var draft: String {
@@ -1857,8 +1858,13 @@ struct MirrorRoomView: View {
                 if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
                 else { refreshRevision &+= 1 }
                 readRevision &+= 1
+            case .conversationUpdated(let id, _):
+                guard id == row.id else { return }
+                receiptMembersRefresh.cancel()
+                scheduleReadMembersRefresh()
             case .messageRead(let id, let reader, _, let ids, _, let all):
                 if id == row.id {
+                    scheduleReadMembersRefresh()
                     if all { roomOperations.invalidateReads() }
                     for messageId in ids {
                         if let message = try? session.store?.message(id: messageId) { acceptCarrier(message) }
@@ -1879,6 +1885,7 @@ struct MirrorRoomView: View {
         .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
         .onAppear {
             session.showRoomReadVisit(conversationId: row.id, entryID: readVisitID)
+            scheduleReadMembersRefresh()
             if draftJournal == nil, let store = session.store {
                 let journal = PulseDraftJournal(store: store, conversationId: row.id)
                 draftJournal = journal
@@ -1889,7 +1896,12 @@ struct MirrorRoomView: View {
         .onDisappear {
             cancelVoiceRecording()
             roomOperations.stop()
+            receiptMembersRefresh.cancel()
             session.hideRoomReadVisit(conversationId: row.id, entryID: readVisitID)
+        }
+        .task(id: "members:\(session.readStateRevision(row.id)):\(scenePhase):\(session.isForeground):\(session.ready)") {
+            if scenePhase == .active && session.isForeground { scheduleReadMembersRefresh() }
+            else { receiptMembersRefresh.cancel() }
         }
         .task(id: readRevision) {
             if readRevision > 0 && !Task.isCancelled && scenePhase == .active {
@@ -1954,9 +1966,34 @@ struct MirrorRoomView: View {
         messages = (try? session.store?.projectCachedQuotes(local)) ?? local
     }
 
+    private func scheduleReadMembersRefresh() {
+        guard session.ready, session.isForeground,
+              session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID),
+              let viewer = session.viewer?.id, session.api.userId == viewer else { return }
+        let api = session.api, epoch = session.sessionGeneration
+        receiptMembersRefresh.request {
+            guard !Task.isCancelled, session.isForeground, session.sessionGeneration == epoch,
+                  session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID) else { return }
+            do {
+                let summary = try await api.conversationDetail(id: row.id, userId: viewer)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, summary.id == row.id,
+                      session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID) else { return }
+                memberNames = summary.members.map { $0.name }
+                memberRows = summary.members
+            } catch let failure as PulseAPIClient.Failure {
+                guard !Task.isCancelled, session.sessionGeneration == epoch,
+                      session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID),
+                      [403, 404, 410].contains(failure.status ?? 0) else { return }
+                memberNames = []
+                memberRows = []
+            } catch { /* Keep last known readers through an ordinary outage. */ }
+        }
+    }
+
     @discardableResult
     private func load() async -> Bool {
         guard scenePhase == .active else { return false }
+        scheduleReadMembersRefresh()
         guard let ticket = roomOperations.beginRead() else { return false }
         let api = session.api
         let generation = session.sessionGeneration
@@ -1973,11 +2010,6 @@ struct MirrorRoomView: View {
                 loadError = "Could not refresh messages. Previous messages are kept."
             }
             return false
-        }
-        if let summary = try? await api.conversationDetail(id: row.id, userId: api.userId),
-           roomOperations.accepts(ticket), generation == session.sessionGeneration {
-            memberNames = summary.members.map { $0.name }
-            memberRows = summary.members
         }
         return roomOperations.accepts(ticket) && generation == session.sessionGeneration
     }
