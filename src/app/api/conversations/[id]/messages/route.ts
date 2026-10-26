@@ -198,7 +198,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     const last = page.at(-1)
     const nextSyncCursor = hasMore && last ? encodeMessageSyncCursor({ ...cursor,
       after: { at: last.createdAt.toISOString(), id: last.id } }) : null
-    return privateHistoryJson({ messages: page.map(m => mapMessage(m)), hasMore,
+    return privateHistoryJson({ messages: page.map(m => mapMessage(m, actor.userId)), hasMore,
       total: page.length, syncVersion: 1, nextSyncCursor })
   }
 
@@ -223,7 +223,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     const total = matched.length
     const window = matched.slice(0, searchLimit)
     window.reverse()
-    return privateHistoryJson({ messages: window.map((m) => mapMessage(m)), hasMore: false, total })
+    return privateHistoryJson({ messages: window.map((m) => mapMessage(m, actor.userId)), hasMore: false, total })
   }
 
   if (before) {
@@ -242,7 +242,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
       db.message.count({ where: { conversationId: id, ...(topicFilter ?? {}) } }),
     ])
     rows.reverse()
-    return privateHistoryJson({ messages: rows.map((m) => mapMessage(m)), hasMore: rows.length === limit, total })
+    return privateHistoryJson({ messages: rows.map((m) => mapMessage(m, actor.userId)), hasMore: rows.length === limit, total })
   }
 
   // Newest window (also the polling path - `after`/`since` narrow it when
@@ -262,7 +262,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   ])
   messages.reverse()
   return privateHistoryJson({
-    messages: messages.map((m) => mapMessage(m)),
+    messages: messages.map((m) => mapMessage(m, actor.userId)),
     hasMore: messages.length === limit,
     total,
   })
