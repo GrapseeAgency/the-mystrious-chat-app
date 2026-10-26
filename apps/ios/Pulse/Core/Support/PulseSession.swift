@@ -151,7 +151,7 @@ public final class PulseSession: ObservableObject {
                 guard let reads = try? store.pendingReads(owner: owner), !reads.isEmpty else { return }
                 var retry: TimeInterval?
                 for read in reads {
-                    guard self.generation == epoch, !Task.isCancelled else { return }
+                    guard self.generation == epoch, !Task.isCancelled, read.owner == owner else { return }
                     do {
                         try await client.markRead(conversationId: read.room, messageId: read.message,
                             minimumReadAt: read.minimumReadAt, readIntent: read.intent)
@@ -161,7 +161,7 @@ public final class PulseSession: ObservableObject {
                         failures = 0
                     } catch {
                         if [400, 403, 404, 410, 422].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
-                            try? store.acknowledgeRead(read)
+                            do { try store.acknowledgeRead(read) } catch { return }
                         } else {
                             failures += 1
                             guard let wait = PulseVisibleReadRetry.delay(after: error, failures: failures) else { return }
@@ -585,7 +585,6 @@ public final class PulseSession: ObservableObject {
                 return
             }
         }
-        let client = api
         let epoch = generation
         do {
             guard let anchor = try store?.message(id: request.boundary.messageId), anchor.conversationId == conversationId,
@@ -596,20 +595,12 @@ public final class PulseSession: ObservableObject {
             let intent: String
             if let retained = readGate.intent(for: request) { intent = retained }
             else {
-                do {
-                    if !connected, let cached = try store?.cachedConversation(id: conversationId),
-                       let member = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id }),
-                       let membership = member.readMembershipId {
-                        intent = member.readIntent ?? "offline.\(membership)"
-                    } else { intent = try await client.captureReadIntent(conversationId: conversationId) }
+                guard let cached = try store?.cachedConversation(id: conversationId),
+                      let member = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id }),
+                      let membership = member.readMembershipId, !membership.isEmpty else {
+                    throw PulseAPIClient.Failure(kind: .network, message: "Waiting for current room membership")
                 }
-                catch {
-                    guard PulseVisibleReadRetry.delay(after: error, failures: 1) != nil,
-                          let cached = try store?.cachedConversation(id: conversationId),
-                          let member = WireConversationSummary(cached: cached).members.first(where: { $0.id == viewer?.id }),
-                       let membership = member.readMembershipId else { throw error }
-                    intent = member.readIntent ?? "offline.\(membership)"
-                }
+                intent = member.readIntent ?? "offline.\(membership)"
                 guard generation == epoch, readGate.retainIntent(intent, for: request) else { return }
             }
             try Task.checkCancellation()
@@ -1029,6 +1020,18 @@ public final class PulseSession: ObservableObject {
             if let line = PulseStreakVerdict.toastLine(count: receipt.streak?.count, continued: receipt.streak?.continued) {
                 self?.toasts.show(line)
             }
+        }
+        engine.onReadJournalFlush = { [weak self] in
+            guard let self, self.ready, let owner = self.viewer?.id, let store = self.store else { return false }
+            let client = self.api, epoch = self.generation
+            let succeeded = await PulseReadJournalReplay.flush(store: store, owner: owner,
+                isCurrent: { self.generation == epoch && self.viewer?.id == owner },
+                send: { read in
+                    try await client.markRead(conversationId: read.room, messageId: read.message,
+                        minimumReadAt: read.minimumReadAt, readIntent: read.intent)
+                })
+            if self.generation == epoch { self.noteInboxChanged() }
+            return succeeded
         }
         engine.onEvent = { [weak self] event in
             self?.routeOutboxEvent(event)

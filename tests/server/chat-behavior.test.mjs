@@ -586,3 +586,16 @@ test('unfenced legacy entrypoints cannot fabricate exact Seen or consume unseen 
   assert.equal(await db.messageReadObservation.count(),0)
   assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,true)
 }))
+
+test('fresh authorized reading of an older row clears a known manual reminder without inferring its gaps', () => fixture(async db => {
+  await seedRead(db)
+  await db.$executeRaw`INSERT INTO Conversation(id,updatedAt) VALUES ('room',${t(0)})`
+  const old = (await captureReadIntent(db,'room','reader')).readIntent
+  await advanceReadReceipt(db,'room','reader','not-displayed',old)
+  await setManualUnread(db,'room','reader',true,old)
+  await advanceReadReceipt(db,'room','reader','displayed',old)
+  assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,true)
+  const fresh = (await captureReadIntent(db,'room','reader')).readIntent
+  await advanceReadReceipt(db,'room','reader','displayed',fresh)
+  assert.equal((await db.conversationParticipant.findUnique({where:{id:'p'}})).manualUnread,false)
+}))

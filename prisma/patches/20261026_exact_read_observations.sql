@@ -1,6 +1,11 @@
 -- Run after read_intent_state, before deploying exact-read clients/server.
 -- One transaction. Re-running must NEVER infer new observations from lastReadAt.
 BEGIN IMMEDIATE;
+-- Existing manual reminders need server authority in the first cached snapshot.
+-- Never rotate an existing revision while migrating/re-running this patch.
+INSERT OR IGNORE INTO "ReadIntentState" ("participantId", "revision")
+SELECT id, lower(hex(randomblob(16))) FROM "ConversationParticipant";
+
 CREATE TABLE IF NOT EXISTS "MessageReadObservation" (
   "participantId" TEXT NOT NULL, "messageId" TEXT NOT NULL,
   "observedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

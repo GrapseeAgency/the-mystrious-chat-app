@@ -18,6 +18,15 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 | 8. Obscuring surfaces | Existing lifecycle/lock/modal gates plus missing call/ring/permission/share/invite gates on Android; central call/live-room/lock gates on Swift; measured mirror viewport replaces lazy onAppear; explicit photo/document picker visibility. | OS interruptions, sheet nesting, accessibility, PiP, and rendered geometry. |
 | 9. Convergence | One exact unread aggregate backs inbox counts, expiration schedules and first-unread identity; channel badges use it too. Read events update exact cached Seen and invalidate authoritative inbox/topic state, including the reader's other devices with privacy enabled. | Room/inbox/launcher badges across two devices. |
 
+### Durability follow-up
+
+- Visible reads now capture only the membership/fence already known in the cached room snapshot. They do not await a newer network preparation after the observation. Missing membership fails closed until room metadata arrives.
+- Android shields the short local capture/journal write from navigation cancellation. Swift captures and journals on the main actor without an intervening network await. Durable acceptance is not rendered as server Seen.
+- Read replay no longer occupies Android's outgoing-message dispatch lock. Its independent retry gate respects Retry-After.
+- Android queue observers follow account hydration/switches, and WorkManager awaits both journals. Empty-to-pending transitions append work without cancelling running delivery or losing the completion/enqueue race. Swift's live and cold BGAppRefresh paths both await an original-intent read-journal pass.
+- A current fence can clear a known manual reminder while reading an older thread; message age is no longer mistaken for intent order. Stale fences still cannot clear newer manual choices.
+- Native build evidence: iOS `f3f3489` archive and simulator/build-test jobs succeeded. Subsequent durability changes require their own native execution; this does not establish device acceptance.
+
 ### Wire and storage contracts
 
 - Capture response is **readIntentVersion 2**, visible/all acceptance is **readReceiptVersion 3**; manual marker acceptance remains **unreadReceiptVersion 2**. Both native transports reject timestamp-only read acknowledgements.

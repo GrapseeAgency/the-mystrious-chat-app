@@ -12,6 +12,12 @@ class VisibleReadIntent(private val capture: suspend () -> Result<String>, priva
     private var intent: String? = null
     private var acknowledged = false
     suspend fun send(): Result<Unit> {
+        currentCoroutineContext().ensureActive()
+        // Dwell already proved visibility. Navigation may cancel delivery, but
+        // cannot interrupt the short LOCAL fence + journal write halfway through.
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { persist() }
+    }
+    private suspend fun persist(): Result<Unit> {
         if (acknowledged) return Result.success(Unit)
         val token = intent ?: capture().getOrElse { return Result.failure(it) }.also {
             currentCoroutineContext().ensureActive()

@@ -188,4 +188,50 @@ extension ReadVisibilityTests {
         try reopened.acknowledgeRead(original) // lost/duplicated old ACK must not delete the new observation
         XCTAssertEqual(try reopened.pendingReads(owner: "owner").map(\.intent), [newer.intent])
     }
+
+    @MainActor
+    func testBackgroundReplayKeepsOriginalIntentAcrossLostAckAndIdentityChange() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let read = PulseQueuedRead(owner: "owner", room: "room", message: "message",
+            minimumReadAt: "2026-10-26T00:00:00Z", intent: "original.member")
+        _ = try store.enqueueRead(read)
+        var sent: [String] = []
+        let lost = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { row in
+            sent.append(row.intent)
+            throw PulseAPIClient.Failure(kind: .network, message: "ACK lost")
+        }
+        XCTAssertFalse(lost)
+        XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
+        var owned = true
+        let switched = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { owned }) { row in
+            sent.append(row.intent)
+            owned = false
+        }
+        XCTAssertFalse(switched)
+        XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
+        let delivered = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { row in
+            sent.append(row.intent)
+        }
+        XCTAssertTrue(delivered)
+        XCTAssertEqual(sent, Array(repeating: "original.member", count: 3))
+        XCTAssertTrue(try store.pendingReads(owner: "owner").isEmpty)
+    }
+
+    @MainActor
+    func testBackgroundReplayRetiresRemovedMembershipButPreservesRetryableFailure() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let read = PulseQueuedRead(owner: "owner", room: "room", message: "message",
+            minimumReadAt: "2026-10-26T00:00:00Z", intent: "original.member")
+        _ = try store.enqueueRead(read)
+        let retry = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { _ in
+            throw PulseAPIClient.Failure(kind: .network, message: "Rate limited", status: 429)
+        }
+        XCTAssertFalse(retry)
+        XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
+        let retired = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { _ in
+            throw PulseAPIClient.Failure(kind: .forbidden, message: "Membership retired", status: 410)
+        }
+        XCTAssertTrue(retired)
+        XCTAssertTrue(try store.pendingReads(owner: "owner").isEmpty)
+    }
 }

@@ -31,6 +31,7 @@ class ReadStateApiTest {
             try {
                 val result = PulseApi(http, gateway = { "https://read.test" }).markRead("room", "me", anchor, "2026-10-22T00:00:05Z")
                 assertEquals("$mode: $result", mode == "valid", result is PulseResult.Success)
+                if (result is PulseResult.Failure) assertEquals("Malformed contracts are not connectivity outages", PulseResult.Failure.Kind.VALIDATION, result.kind)
             } finally { http.close() }
         }
     }
@@ -96,7 +97,7 @@ class ReadStateApiTest {
             })
             try {
                 val api = PulseApi(http, gateway = { "https://read.test" })
-                assertTrue(api.markRead("room", "me", "anchor") is PulseResult.Failure)
+                assertEquals(PulseResult.Failure.Kind.VALIDATION, (api.markRead("room", "me", "anchor") as PulseResult.Failure).kind)
                 assertTrue(api.markUnread("room", "me", true) is PulseResult.Failure)
                 assertEquals(mode, 0, writes)
             } finally { http.close() }

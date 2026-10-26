@@ -419,12 +419,16 @@ class PulseApi(
             row
         }
 
+    private inline fun requireReadContract(valid: Boolean, message: () -> String = { "Read state was not confirmed" }) {
+        if (!valid) throw kotlinx.serialization.SerializationException(message())
+    }
+
     suspend fun readStateSnapshot(conversationId: String, userId: String, threadId: String? = null, topicId: String? = null): PulseResult<Int> {
         fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
         val query = "userId=${q(userId)}" + (threadId?.let { "&threadId=${q(it)}" } ?: "") + (topicId?.let { "&topicId=${q(it)}" } ?: "")
         return get("/api/conversations/${q(conversationId)}/read-state?$query") { raw ->
             val receipt = PulseJson.decodeFromString(app.pulse.protocol.ReadStateSnapshotDto.serializer(), raw)
-            require(receipt.readStateVersion == 1 && receipt.conversationId == conversationId && receipt.userId == userId &&
+            requireReadContract(receipt.readStateVersion == 1 && receipt.conversationId == conversationId && receipt.userId == userId &&
                 receipt.threadId == threadId && receipt.topicId == topicId && receipt.unreadCount >= 0)
             receipt.unreadCount
         }
@@ -434,10 +438,10 @@ class PulseApi(
         get("/api/conversations/${java.net.URLEncoder.encode(conversationId, "UTF-8")}/read-intent?userId=${java.net.URLEncoder.encode(userId, "UTF-8")}") { raw ->
             val strict = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
             val fields = strict.parseToJsonElement(raw) as? JsonObject
-            require(fields?.get("readIntentVersion") == JsonPrimitive(2) &&
+            requireReadContract(fields?.get("readIntentVersion") == JsonPrimitive(2) &&
                 listOf("conversationId", "userId", "readIntent").all { (fields?.get(it) as? JsonPrimitive)?.isString == true }) { "Read intent identity or version is missing" }
             val receipt = strict.decodeFromString(app.pulse.protocol.ReadIntentDto.serializer(), raw)
-            require(receipt.readIntentVersion == 2 && receipt.conversationId == conversationId && receipt.userId == userId &&
+            requireReadContract(receipt.readIntentVersion == 2 && receipt.conversationId == conversationId && receipt.userId == userId &&
                 receipt.readIntent.isNotBlank() && receipt.readIntent.length <= 128) { "Read intent was not confirmed" }
             receipt.readIntent
         }
@@ -485,15 +489,18 @@ class PulseApi(
         return post("/api/conversations/$conversationId/read-state", jsonOf("userId" to userId,
             "mode" to if (messageId == null) "all" else "visible", "messageId" to messageId, "readIntent" to intent)) { raw ->
             val strict = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-            val fields = requireNotNull(strict.parseToJsonElement(raw) as? JsonObject)
-            require(fields["readReceiptVersion"] == JsonPrimitive(3) && fields["ok"] == JsonPrimitive(true) &&
+            val fields = strict.parseToJsonElement(raw) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Read receipt is not an object")
+            requireReadContract(fields["readReceiptVersion"] == JsonPrimitive(3) && fields["ok"] == JsonPrimitive(true) &&
                 fields["readIntent"] == JsonPrimitive(intent)) { "Read receipt tokens are invalid" }
             val receipt = strict.decodeFromString(app.pulse.protocol.ReadReceiptDto.serializer(), raw)
-            require(receipt.ok && receipt.readReceiptVersion == 3 && receipt.readIntent == intent && receipt.conversationId == conversationId &&
+            requireReadContract(receipt.ok && receipt.readReceiptVersion == 3 && receipt.readIntent == intent && receipt.conversationId == conversationId &&
                 receipt.userId == userId && receipt.messageId == messageId &&
                 receipt.mode == if (messageId == null) "all" else "visible") { "Read state was not confirmed." }
-            val acknowledged = java.time.Instant.parse(receipt.lastReadAt)
-            require(minimumReadAt == null || !acknowledged.isBefore(java.time.Instant.parse(minimumReadAt))) {
+            val acknowledged = runCatching { java.time.Instant.parse(receipt.lastReadAt) }.getOrElse {
+                throw kotlinx.serialization.SerializationException("Read receipt date is invalid", it)
+            }
+            requireReadContract(minimumReadAt == null || !acknowledged.isBefore(java.time.Instant.parse(minimumReadAt))) {
                 "The displayed read boundary was not confirmed."
             }
             Unit

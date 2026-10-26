@@ -95,7 +95,9 @@ export async function advanceReadReceipt(db: PrismaClient, room: string, owner: 
       })
       // Timestamp ordering alone cannot fence equal/newer delayed receipts.
       // Legacy unfenced reads may advance progress but cannot erase a manual dot.
-      const clearManual = ownsIntent && (!messageId || boundary >= participant.lastReadAt)
+      // Fresh reading authority, not message age, clears a manual reminder.
+      // A newly opened older thread is still an intentional reading surface.
+      const clearManual = ownsIntent
       if (!messageId && ownsIntent) await tx.readIntentState.update({
         where: { participantId: participant.id }, data: { revision: randomUUID() },
       })

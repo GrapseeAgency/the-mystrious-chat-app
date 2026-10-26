@@ -7,6 +7,7 @@ import app.pulse.domain.sync.withMessageExpiry
 
 import app.pulse.protocol.objectPayloadText
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.flatMapLatest
 
 import androidx.room.withTransaction
 import app.pulse.data.local.PulseDatabase
@@ -257,6 +258,8 @@ class PulseRepositoryImpl constructor(
     /** Demo companion rotation counter - cycles the default reply bank. */
     @Volatile private var demoReplyTurn: Int = 0
 
+    private val queueOwner = MutableStateFlow<String?>(null)
+
     @Volatile override var viewerId: String? = null
         private set
 
@@ -271,6 +274,7 @@ class PulseRepositoryImpl constructor(
     override fun stop() {
         attachmentSession = java.util.UUID.randomUUID().toString()
         viewerId = null
+        queueOwner.value = null
         conversationSnapshots.clear()
         socket.disconnect()
         scope.coroutineContext.cancelChildren()
@@ -284,6 +288,7 @@ class PulseRepositoryImpl constructor(
         if (viewerId == userId && socket.isJoined) return
         if (viewerId != userId) stop()
         viewerId = userId
+        queueOwner.value = userId
         scope.launch {
             // One ordering barrier, shared by UI and cold-process workers.
             sessionTokenStore.load()
@@ -2440,9 +2445,16 @@ class PulseRepositoryImpl constructor(
         Result.failure(e)
     }
 
-    override fun observeOutbox(): Flow<List<OutboxEntry>> {
-        val owner = viewerId ?: return kotlinx.coroutines.flow.flowOf(emptyList())
-        return outboxDao.observeOwned(owner).map { rows -> rows.map { it.toEntry() } }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    override fun observeOutbox(): Flow<List<OutboxEntry>> = queueOwner.flatMapLatest { owner ->
+        if (owner == null) kotlinx.coroutines.flow.flowOf(emptyList())
+        else outboxDao.observeOwned(owner).map { rows -> rows.map { it.toEntry() } }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    override fun observePendingReads(): Flow<Boolean> = queueOwner.flatMapLatest { owner ->
+        if (owner == null) kotlinx.coroutines.flow.flowOf(false)
+        else wave7Dao.observeReadJournalCount("read-journal:v1|$owner|").map { it > 0 }
     }
 
     override suspend fun outboxPending(): List<OutboxEntry> {
@@ -2566,20 +2578,22 @@ class PulseRepositoryImpl constructor(
      * self-heal). The drain policy itself is FlushOutboxUseCase - single
      * source of truth, unit-tested at the domain layer.
      */
-    override suspend fun flushOutbox(): FlushReport = dispatchGate.serialized(
-        onFailure = { if (viewerId != null) scheduleSelfHeal() },
-    ) {
-        if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
-            return@serialized FlushReport(sent = 0, dropped = 0, pending = pendingOutboxCount())
+    override suspend fun flushOutbox(): FlushReport {
+        scheduleReadReplay()
+        return dispatchGate.serialized(
+            onFailure = { if (viewerId != null) scheduleSelfHeal() },
+        ) {
+            if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
+                return@serialized FlushReport(sent = 0, dropped = 0, pending = pendingOutboxCount())
+            }
+            if (dispatchGate.remainingDelayMillis() > 0L) {
+                scheduleSelfHeal()
+                return@serialized FlushReport(pending = pendingOutboxCount())
+            }
+            val report = FlushOutboxUseCase(this).invoke()
+            if (report.pending > 0) scheduleSelfHeal()
+            report
         }
-        if (dispatchGate.remainingDelayMillis() > 0L) {
-            scheduleSelfHeal()
-            return@serialized FlushReport(pending = pendingOutboxCount())
-        }
-        flushReadJournal()
-        val report = FlushOutboxUseCase(this).invoke()
-        if (report.pending > 0) scheduleSelfHeal()
-        report
     }
 
     /** 20s self-heal - a pending queue never waits longer than one beat. */
@@ -2711,35 +2725,49 @@ class PulseRepositoryImpl constructor(
     override suspend fun readStateSnapshot(conversationId: String, threadId: String?, topicId: String?): Result<Int> =
         ownedPeerRequest { api.readStateSnapshot(conversationId, it, threadId, topicId) }
 
+    // Capture is LOCAL: the fence must describe authority known when the row
+    // was observed, not a later network response after a new manual marker.
     override suspend fun captureReadIntent(conversationId: String): Result<String> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
-        if (!connectedFlow.value) {
-            val member = conversationDao.byId(conversationId)?.toDomain()?.members
-                ?.firstOrNull { it.id == owner }
-            requireConversationOwner(owner, epoch)
-            val membership = member?.readMembershipId
-            if (!membership.isNullOrBlank()) return Result.success(member?.readIntent ?: "offline.$membership")
-        }
-        val result = ownedPeerRequest { api.captureReadIntent(conversationId, it) }
+        val member = conversationDao.byId(conversationId)?.toDomain()?.members?.firstOrNull { it.id == owner }
         requireConversationOwner(owner, epoch)
-        if (result.isSuccess || app.pulse.domain.sync.visibleReadRetryDelay(result.exceptionOrNull(), 1) == null) return result
-        // Reuse only already-cached server authority. Without it, membership-only
-        // offline observations cannot clear a manual marker or survive rejoin.
-        val member = conversationDao.byId(conversationId)?.toDomain()?.members
-            ?.firstOrNull { it.id == owner }
-        requireConversationOwner(owner, epoch)
-        return member?.readMembershipId?.takeIf { it.isNotBlank() }?.let { Result.success(member?.readIntent ?: "offline.$it") } ?: result
+        val membership = member?.readMembershipId?.takeIf { it.isNotBlank() }
+            ?: return Result.failure(IllegalStateException("Waiting for current room membership"))
+        return Result.success(member?.readIntent ?: "offline.$membership")
     }
 
     @kotlinx.serialization.Serializable
     private data class QueuedRead(val owner: String, val room: String, val message: String,
         val minimumReadAt: String, val intent: String)
     private val readReplayMutex = Mutex()
+    private var readReplayRetryAt = 0L // guarded by readReplayMutex
+
+    private fun scheduleReadReplay() {
+        if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) return
+        scope.launch {
+            try { flushReadJournal() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Read observation remains queued", error); scheduleSelfHeal() }
+        }
+    }
+
+    override suspend fun flushReadReceipts(): Result<Int> = try {
+        val owner = viewerId
+        val epoch = attachmentSession
+        if (owner == null) Result.success(0) else {
+            flushReadJournal()
+            requireConversationOwner(owner, epoch)
+            Result.success(wave7Dao.readJournal("read-journal:v1|$owner|").size)
+        }
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
     private suspend fun flushReadJournal() = readReplayMutex.withLock {
         val owner = viewerId ?: return@withLock
         val epoch = attachmentSession
+        if (sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) return@withLock
+        if (android.os.SystemClock.elapsedRealtime() < readReplayRetryAt) {
+            scheduleSelfHeal()
+            return@withLock
+        }
         for (entry in wave7Dao.readJournal("read-journal:v1|$owner|")) {
             requireConversationOwner(owner, epoch)
             val read = runCatching { PulseJson.decodeFromString(QueuedRead.serializer(), entry.json) }.getOrNull()
@@ -2756,6 +2784,8 @@ class PulseRepositoryImpl constructor(
                 conversationSnapshots.invalidate(read.room)
                 scheduleConversationsRefresh()
             } else {
+                readReplayRetryAt = android.os.SystemClock.elapsedRealtime() + maxOf(SELF_HEAL_MS,
+                    app.pulse.domain.sync.visibleReadRetryDelay(failure, 1) ?: SELF_HEAL_MS)
                 scheduleSelfHeal()
                 break
             }
@@ -2792,13 +2822,17 @@ class PulseRepositoryImpl constructor(
                     requireNotNull(wave7Dao.get(key))
                 }
             } else null
-            val durable = journal?.let { PulseJson.decodeFromString(QueuedRead.serializer(), it.json) }
-            // A cancelled UI may leave now; the session-owned journal survives it.
-            if (journal != null) scheduleSelfHeal()
+            // Success here means durable observation, NOT a guessed server Seen.
+            // Network delivery belongs to the session and cannot stall the composer.
+            if (journal != null) {
+                scheduleSelfHeal()
+                scheduleReadReplay()
+                return Result.success(Unit)
+            }
             requireConversationOwner(owner, epoch)
             conversationSnapshots.invalidate(conversationId)
             val result = try {
-                when (val response = api.markRead(conversationId, owner, messageId, anchor?.createdAt, durable?.intent ?: readIntent)) {
+                when (val response = api.markRead(conversationId, owner, messageId, anchor?.createdAt, readIntent)) {
                     is PulseResult.Success -> Result.success(Unit)
                     is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
                 }
@@ -2808,9 +2842,6 @@ class PulseRepositoryImpl constructor(
             requireConversationOwner(owner, epoch)
             // Do not zero newer arrivals or roll an entire stale conversation back
             // over messages/pins received while the read request was in flight.
-            if (journal != null && (result.isSuccess || (result.exceptionOrNull() as? PulseApiException)?.status in setOf(400, 403, 404, 410, 422))) {
-                wave7Dao.acknowledgeReadIntent(journal.key, journal.json)
-            }
             if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
             result
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {

@@ -43,7 +43,8 @@ class OutboxWorker(
             val repo = graph.pulseRepository()
             repo.start(owner)
             val report = repo.flushOutbox()
-            if (report.pending > 0) Result.retry() else Result.success()
+            val pendingReads = repo.flushReadReceipts().getOrThrow()
+            if (report.pending > 0 || pendingReads > 0) Result.retry() else Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -68,8 +69,9 @@ class OutboxWorker(
         }
 
         /**
-         * Network-constrained, unique-name KEEP: multiple
-         * enqueue bursts collapse into one pending flush.
+         * Enqueued on empty → pending transitions. Append never cancels a
+         * running delivery and cannot lose an observation enqueued as that
+         * worker completes. Failed/cancelled chains are replaced safely.
          */
         fun enqueue(context: Context) {
             val request = OneTimeWorkRequestBuilder<OutboxWorker>()
@@ -80,7 +82,7 @@ class OutboxWorker(
                 )
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.KEEP, request)
+                .enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
         }
     }
 }

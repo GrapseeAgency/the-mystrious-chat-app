@@ -172,6 +172,16 @@ public final class PulseOutboxEngine: ObservableObject {
     /// Engine → session pipe (delivered/dropped events feed the UI).
     public var onEvent: ((Event) -> Void)?
     public var onAcknowledgement: ((PulseSendResult) -> Void)?
+    /// The background task awaits this pass, rather than returning success with
+    /// an unowned fire-and-forget read delivery still in flight.
+    public var onReadJournalFlush: (() async -> Bool)?
+
+    public func flushBackgroundQueues() async -> Bool {
+        let messages = await flush() // Reads never hold up outgoing messages.
+        guard !Task.isCancelled, !stopped else { return false }
+        let reads = await onReadJournalFlush?() ?? true
+        return messages && reads
+    }
     /// Session fallback still blocks dispatch if recording a denial on disk failed.
     public var additionalThreadAccessDenied: ((String) -> Bool)?
 

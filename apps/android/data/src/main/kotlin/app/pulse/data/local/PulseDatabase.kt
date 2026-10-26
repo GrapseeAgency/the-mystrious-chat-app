@@ -1095,6 +1095,9 @@ interface Wave7Dao {
     @Query("SELECT * FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix ORDER BY updatedAt, `key`")
     suspend fun readJournal(prefix: String): List<Wave7CacheEntity>
 
+    @Query("SELECT COUNT(*) FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix")
+    fun observeReadJournalCount(prefix: String): Flow<Int>
+
     @Query("DELETE FROM wave7_cache WHERE `key` = :key AND json = :json")
     suspend fun acknowledgeReadIntent(key: String, json: String)
 
@@ -1111,7 +1114,7 @@ interface Wave7Dao {
     suspend fun delete(key: String)
 
     // Access refusals are durable metadata, not disposable feature snapshots.
-    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|' AND substr(`key`, 1, 16) != 'read-journal:v1|' AND substr(`key`, 1, 15) != 'read-fence:v1|'")
+    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|' AND substr(`key`, 1, 16) != 'read-journal:v1|' AND substr(`key`, 1, 14) != 'read-fence:v1|'")
     suspend fun clearAll()
 }
 

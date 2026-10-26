@@ -82,7 +82,7 @@ struct PulseApp: App {
 
     @MainActor
     private static func flushBackgroundOutbox() async -> Bool {
-        if let active = PulseOutboxEngine.active { return await active.flush() }
+        if let active = PulseOutboxEngine.active { return await active.flushBackgroundQueues() }
         guard let viewer = PulseKeychain.shared.loadViewer(),
               let token = PulseKeychain.shared.loadSessionToken() else { return false }
         PulseEndpoints.loadPersistedOverride()
@@ -93,8 +93,18 @@ struct PulseApp: App {
             let store = try PulseStore.openAccount(gateway: PulseEndpoints.gatewayURL.absoluteString, viewerId: viewer.id)
             let api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: token)
             let engine = PulseOutboxEngine(store: store) { api }
+            engine.onReadJournalFlush = {
+                await PulseReadJournalReplay.flush(store: store, owner: viewer.id,
+                    isCurrent: { PulseKeychain.shared.loadViewer()?.id == viewer.id &&
+                        PulseKeychain.shared.loadSessionToken() == token &&
+                        PulseEndpoints.gatewayURL == api.baseURL },
+                    send: { read in
+                        try await api.markRead(conversationId: read.room, messageId: read.message,
+                            minimumReadAt: read.minimumReadAt, readIntent: read.intent)
+                    })
+            }
             defer { engine.stop() }
-            return await engine.flush()
+            return await engine.flushBackgroundQueues()
         } catch { return false }
     }
 

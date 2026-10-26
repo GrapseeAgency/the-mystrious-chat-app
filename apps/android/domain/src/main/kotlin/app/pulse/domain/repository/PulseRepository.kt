@@ -367,7 +367,11 @@ interface PulseRepository {
     /** Displayed server message boundary; never acknowledge unseen arrivals. */
     suspend fun readStateSnapshot(conversationId: String, threadId: String? = null, topicId: String? = null): Result<Int> =
         Result.failure(UnsupportedOperationException("Read state is unavailable"))
+    /** LOCAL-only snapshot. VisibleReadIntent shields capture + persistence from UI cancellation. */
+    fun observePendingReads(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    suspend fun flushReadReceipts(): Result<Int> = Result.success(0)
     suspend fun captureReadIntent(conversationId: String): Result<String> = Result.failure(UnsupportedOperationException("Read intent is unavailable"))
+    /** Persist locally and schedule independent replay; success does not imply server delivery. */
     suspend fun markReadThrough(conversationId: String, messageId: String, readIntent: String? = null): Result<Unit> =
         Result.failure(UnsupportedOperationException("Visible read is unavailable"))
     suspend fun setTyping(conversationId: String, userName: String, typing: Boolean)

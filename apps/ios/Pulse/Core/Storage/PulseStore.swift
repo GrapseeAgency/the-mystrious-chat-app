@@ -338,7 +338,7 @@ public final class PulseStore: Sendable {
         try dbQueue.read { db in
             let prefix = "read-journal:v1|\(owner)|"
             return try String.fetchAll(db, sql: "SELECT json FROM wave7Cache WHERE substr(key, 1, length(?)) = ? ORDER BY updatedAt, key",
-                arguments: [prefix, prefix]).compactMap { try? JSONDecoder().decode(PulseQueuedRead.self, from: Data($0.utf8)) }
+                arguments: [prefix, prefix]).map { try JSONDecoder().decode(PulseQueuedRead.self, from: Data($0.utf8)) }
         }
     }
 

@@ -1,6 +1,9 @@
 package app.pulse.domain.sync
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -26,5 +29,31 @@ class VisibleReadIntentTest {
         })
         assertTrue(reader.send().isFailure); assertEquals(0,writes)
         assertTrue(reader.send().isSuccess); assertEquals(1,writes)
+    }
+    @Test fun `navigation after capture begins cannot drop the local journal write`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        var saved: String? = null
+        val reader = VisibleReadIntent({
+            started.complete(Unit)
+            finish.await()
+            Result.success("original.membership")
+        }, { saved = it; Result.success(Unit) })
+        val job = launch { reader.send() }
+        started.await()
+        job.cancel()
+        finish.complete(Unit)
+        job.join()
+        assertEquals("original.membership", saved)
+        assertTrue(job.isCancelled)
+    }
+
+    @Test fun `already cancelled work never starts an observation`() = runTest {
+        var writes = 0
+        val reader = VisibleReadIntent({ Result.success("fence") }, { writes++; Result.success(Unit) })
+        val job = launch { reader.send() }
+        job.cancel()
+        runCurrent()
+        assertEquals(0, writes)
     }
 }

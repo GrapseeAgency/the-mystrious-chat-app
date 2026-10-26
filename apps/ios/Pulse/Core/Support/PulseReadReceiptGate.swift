@@ -152,3 +152,32 @@ struct PulseQueuedRead: Codable, Sendable {
     let intent: String
     var key: String { "read-journal:v1|\(owner)|\(intent.split(separator: ".").last.map(String.init) ?? intent)|\(message)" }
 }
+
+/// One cancellation-aware background pass over ORIGINAL durable observations.
+/// Used by both a live account and a cold BGAppRefresh launch; no UI or fresh
+/// read-intent preparation is allowed here. Unconfirmed records stay on disk.
+@MainActor
+enum PulseReadJournalReplay {
+    static func flush(store: PulseStore, owner: String,
+                             isCurrent: () -> Bool,
+                             send: (PulseQueuedRead) async throws -> Void) async -> Bool {
+        do {
+            guard !Task.isCancelled, isCurrent() else { return false }
+            for read in try store.pendingReads(owner: owner) {
+                guard !Task.isCancelled, isCurrent(), read.owner == owner else { return false }
+                do {
+                    try await send(read)
+                    try Task.checkCancellation()
+                    guard isCurrent() else { return false }
+                    try store.acknowledgeRead(read)
+                } catch {
+                    guard !Task.isCancelled, isCurrent(),
+                          [400, 403, 404, 410, 422].contains((error as? PulseAPIClient.Failure)?.status ?? 0) else { return false }
+                    try store.acknowledgeRead(read)
+                }
+            }
+            let empty = try store.pendingReads(owner: owner).isEmpty
+            return isCurrent() && empty
+        } catch { return false }
+    }
+}

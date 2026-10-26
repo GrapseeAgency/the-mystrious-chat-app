@@ -15,6 +15,7 @@ import app.pulse.protocol.PulseJson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -119,11 +120,13 @@ class SessionViewModel @Inject constructor(
                 }
             }
         }
-        // One network-constrained worker owns retries; KEEP avoids canceling
-        // an in-flight delivery on each queue emission.
+        // Observe both durable queues across hydration and account changes.
+        // Empty-to-pending edges append work without cancelling a running delivery.
         viewModelScope.launch {
-            repo.observeOutbox().collect { entries ->
-                if (entries.any { it.failureReason == null }) OutboxWorker.enqueue(appContext)
+            kotlinx.coroutines.flow.combine(repo.observeOutbox(), repo.observePendingReads()) { entries, reads ->
+                reads || entries.any { it.failureReason == null }
+            }.distinctUntilChanged().collect { pending ->
+                if (pending) OutboxWorker.enqueue(appContext)
             }
         }
     }
