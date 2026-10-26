@@ -26,6 +26,18 @@ final class PulseReceiptSplitTests: XCTestCase {
         XCTAssertEqual(split.deliveredTo.map(\.id), ["u3"])
     }
 
+    func testIncomingMessageInfoExcludesTheAuthorRatherThanItsReader() {
+        let split = PulseRoomParityLogic.receiptSplit(
+            members: [member("author", readAt: "2026-01-05T10:00:05Z"),
+                      member("me", readAt: "2026-01-05T10:00:05Z"),
+                      member("hidden", readAt: "1970-01-01T00:00:00Z"),
+                      member("unseen", readAt: "2026-01-05T10:00:05Z")],
+            viewerId: "me", createdAtIso: "2026-01-05T10:00:00Z",
+            readByMembershipIds: ["membership-author", "membership-me", "membership-hidden"], senderId: "author")
+        XCTAssertEqual(split.seenBy.map(\.id), ["me"])
+        XCTAssertEqual(split.deliveredTo.map(\.id), ["hidden", "unseen"])
+    }
+
     func testViewerIsNeverARecipient() {
         let split = PulseRoomParityLogic.receiptSplit(
             members: [

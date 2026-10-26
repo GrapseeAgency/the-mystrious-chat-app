@@ -2628,7 +2628,7 @@ private struct RoomContent: View {
 private struct MessageInfoSheet: View {
     let message: WireChatMessage
     let conversation: WireConversationSummary
-    /// R2-D - the viewer id (excluded from both receipt lists, web parity).
+    /// Authenticated viewer; incoming-message info excludes the sender, not this reader.
     var viewerId: String? = nil
 
     @Environment(\.dismiss) private var dismiss
@@ -2640,6 +2640,7 @@ private struct MessageInfoSheet: View {
             },
             viewerId: viewerId,
             createdAtIso: message.createdAt, readByMembershipIds: message.readByMembershipIds ?? [],
+            senderId: message.senderId,
         )
     }
 

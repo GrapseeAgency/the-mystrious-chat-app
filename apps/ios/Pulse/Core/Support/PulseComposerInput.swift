@@ -109,7 +109,7 @@ struct PulseComposerInput: UIViewRepresentable {
             } else { parent.focused = focused }
         }
 
-        func textView(_ textView: UITextView, willPresentEditMenuWithAnimator animator: UIEditMenuInteractionAnimating) {
+        func textView(_ textView: UITextView, willPresentEditMenuWith animator: UIEditMenuInteractionAnimating) {
             if menuSession !== parent.session {
                 menuSession?.setTransientReadObscured(menuID, false)
                 menuSession = parent.session
@@ -117,7 +117,7 @@ struct PulseComposerInput: UIViewRepresentable {
             menu.begin()
             menuSession?.setTransientReadObscured(menuID, true)
         }
-        func textView(_ textView: UITextView, willDismissEditMenuWithAnimator animator: UIEditMenuInteractionAnimating) {
+        func textView(_ textView: UITextView, willDismissEditMenuWith animator: UIEditMenuInteractionAnimating) {
             let ticket = menu.ticket
             animator.addCompletion { [weak self] in self?.finishMenu(ticket) }
         }

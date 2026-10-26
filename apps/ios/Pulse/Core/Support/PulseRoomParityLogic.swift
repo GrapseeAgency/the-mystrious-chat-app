@@ -117,8 +117,8 @@ public enum PulseRoomParityLogic {
 
     /// The seen/delivered split behind the message-info sheet (web
     /// chat-room.tsx:5893-5960 + Android MessageSheets.kt:379-424 parity):
-    ///   • the viewer is never a recipient (excluded first);
-    ///   • "Seen by" = members whose lastReadAt >= the message's createdAt;
+    ///   • the sender is not a recipient (the viewer for own-message callers);
+    ///   • "Seen by" requires this message's exact current-membership proof;
     ///   • the rest have no read confirmation (privacy/offline/unread unknown).
     /// `deliveredTo` retains its legacy API name, but is NOT a device-delivery
     /// receipt. The native sheets must label it as unconfirmed.
@@ -132,10 +132,12 @@ public enum PulseRoomParityLogic {
         viewerId: String?,
         createdAtIso: String,
         readByMembershipIds: [String] = [],
+        senderId: String? = nil,
     ) -> ReceiptSplit {
+        let excludedSender = senderId ?? viewerId
         let others = members.filter { member in
-            guard let viewerId, !viewerId.isEmpty else { return true }
-            return member.id != viewerId
+            guard let excludedSender, !excludedSender.isEmpty else { return true }
+            return member.id != excludedSender
         }
         guard let viewerId, !viewerId.isEmpty, PulseFormat.date(createdAtIso) != nil else {
             return ReceiptSplit(seenBy: [], deliveredTo: others)
