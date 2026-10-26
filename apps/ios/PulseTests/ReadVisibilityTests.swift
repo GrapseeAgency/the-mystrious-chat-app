@@ -343,7 +343,7 @@ extension ReadVisibilityTests {
             throw PulseAPIClient.Failure(kind: .network, message: "ACK lost")
         }
         XCTAssertFalse(lost)
-        XCTAssertTrue(settled.isEmpty())
+        XCTAssertTrue(settled.isEmpty)
         XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
         var owned = true
         let switched = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { owned }, onSettled: { settled.append($0.room) }) { row in
@@ -351,7 +351,7 @@ extension ReadVisibilityTests {
             owned = false
         }
         XCTAssertFalse(switched)
-        XCTAssertTrue(settled.isEmpty(), "Retired sessions cannot invalidate the new account's scopes")
+        XCTAssertTrue(settled.isEmpty, "Retired sessions cannot invalidate the new account's scopes")
         XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
         let delivered = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }, onSettled: { settled.append($0.room) }) { row in
             sent.append(row.intent)
@@ -373,7 +373,7 @@ extension ReadVisibilityTests {
             throw PulseAPIClient.Failure(kind: .network, message: "Rate limited", status: 429)
         }
         XCTAssertFalse(retry)
-        XCTAssertTrue(settled.isEmpty())
+        XCTAssertTrue(settled.isEmpty)
         XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
         let retired = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }, onSettled: { settled.append($0.room) }) { _ in
             throw PulseAPIClient.Failure(kind: .forbidden, message: "Membership retired", status: 410)
@@ -399,7 +399,7 @@ extension ReadVisibilityTests {
             }
         XCTAssertFalse(lost)
         XCTAssertEqual(try store.message(id: "message")?.readByMembershipIds, ["other-member"])
-        XCTAssertTrue(confirmed.isEmpty())
+        XCTAssertTrue(confirmed.isEmpty)
         let accepted = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true },
             onConfirmed: { confirmed.append($0.message) }) { _ in }
         XCTAssertTrue(accepted)

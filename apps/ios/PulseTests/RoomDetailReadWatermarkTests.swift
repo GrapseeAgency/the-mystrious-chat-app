@@ -49,7 +49,7 @@ final class RoomDetailReadWatermarkTests: XCTestCase {
         model.applyFreshDetail(try room("2026-10-26T00:01:00Z"))
         XCTAssertEqual(split().seenBy.map(\.id), ["peer"])
         model.applyFreshDetail(try room(nil))
-        XCTAssertTrue(split().seenBy.isEmpty(), "Retained exact proof cannot override current receipt privacy")
+        XCTAssertTrue(split().seenBy.isEmpty, "Retained exact proof cannot override current receipt privacy")
     }
 
     func testLateRoomMetadataDoesNotRewindSeenButHiddenReadersAreRemoved() throws {
