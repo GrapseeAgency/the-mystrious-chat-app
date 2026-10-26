@@ -24,4 +24,16 @@ final class RoomDetailReadWatermarkTests: XCTestCase {
         model.applyFreshDetail(try room(nil))
         XCTAssertNil(model.partnerLastReadAt, "Hidden privacy timestamps must not survive a fresh metadata snapshot")
     }
+    func testCanonicalEpochPrivacySentinelRetiresPreviouslyPublishedSeen() throws {
+        let session = PulseSession()
+        for hidden in ["1970-01-01T00:00:00.000Z", "1969-12-31T23:59:59.999Z", "invalid"] {
+            let model = RoomViewModel(conversation: try room("2026-10-24T12:00:00.000Z"), session: session, beginAutomaticWork: false)
+            XCTAssertNotNil(model.partnerLastReadAt)
+            model.applyFreshDetail(try room(hidden))
+            XCTAssertNil(model.partnerLastReadAt, "A private/unknown reader cannot retain their old positive watermark")
+            let cold = RoomViewModel(conversation: try room(hidden), session: session, beginAutomaticWork: false)
+            XCTAssertNil(cold.partnerLastReadAt)
+        }
+    }
+
 }

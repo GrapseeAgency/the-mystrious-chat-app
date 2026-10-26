@@ -4040,8 +4040,8 @@ final class RoomViewModel: ObservableObject {
         )
         self.roomScreenPrivacy = conversation.screenPrivacy
         for member in conversation.members where member.id != viewerId {
-            if let stamp = member.lastReadAt {
-                memberWatermarks[member.id] = PulseFormat.date(stamp)
+            if let stamp = member.lastReadAt, let at = PulseFormat.date(stamp), at.timeIntervalSince1970 > 0 {
+                memberWatermarks[member.id] = at
             }
         }
         partnerLastReadAt = memberWatermarks.values.max()
@@ -4165,7 +4165,8 @@ final class RoomViewModel: ObservableObject {
                 case .messageRead(let convId, let userId, let lastReadAt):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
                     // Missing or reordered receipts cannot invent/regress Seen.
-                    guard let at = lastReadAt.flatMap({ PulseFormat.date($0) }) else { return }
+                    guard memberWatermarks[userId] != nil,
+                          let at = lastReadAt.flatMap({ PulseFormat.date($0) }), at.timeIntervalSince1970 > 0 else { return }
                     receiptRevision += 1
                     memberWatermarks[userId] = max(memberWatermarks[userId] ?? .distantPast, at)
                     partnerLastReadAt = max(partnerLastReadAt ?? .distantPast, at)
@@ -4695,7 +4696,7 @@ final class RoomViewModel: ObservableObject {
         let previous = memberWatermarks
         memberWatermarks = detail.members.reduce(into: [String: Date]()) { stamps, member in
             guard member.id != session?.viewer?.id, let stamp = member.lastReadAt,
-                  let at = PulseFormat.date(stamp) else { return }
+                  let at = PulseFormat.date(stamp), at.timeIntervalSince1970 > 0 else { return }
             // Room-info responses can predate a live Seen event. Preserve its
             // newer positive watermark, but do not retain hidden/absent readers:
             // the guards above deliberately remove revoked/missing timestamps.

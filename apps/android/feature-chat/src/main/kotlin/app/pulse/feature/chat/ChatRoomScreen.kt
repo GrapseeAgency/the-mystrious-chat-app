@@ -3866,11 +3866,11 @@ private fun MessageRow(
             } else {
                 val createdAtMs = PulseTime.epochMs(message.createdAt)
                 val others = conversation?.members?.filter { it.id != viewerId }.orEmpty()
-                val seen = createdAtMs > 0L && (
-                    others.any { (it.lastReadAt ?: 0L) >= createdAtMs } ||
-                        (partnerLastReadAt ?: 0L) >= createdAtMs
-                    )
-                val readCount = others.count { createdAtMs > 0L && (it.lastReadAt ?: 0L) >= createdAtMs }
+                // Live signals trigger an owned repository refresh. Never let an
+                // unscoped old timestamp bypass a newly hidden/removed member.
+                val confirmed = app.pulse.domain.sync.confirmedReaders(others, viewerId, createdAtMs)
+                val seen = confirmed.isNotEmpty()
+                val readCount = confirmed.size
                 val readLabel = if (conversation?.kind == Conversation.Kind.GROUP || conversation?.kind == Conversation.Kind.CHANNEL) {
                     if (readCount > 0) "Read by $readCount" else "Read"
                 } else "Seen"

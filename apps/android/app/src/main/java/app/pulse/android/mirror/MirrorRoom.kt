@@ -1711,9 +1711,7 @@ internal fun MirrorRoom(
                             val showReadBy = mine && isGroup &&
                                 entry.message.id == lastOwnId && entry.message.deletedAt == null
                             val created = MirrorRoomEpoch(entry.message.createdAt)
-                            val readers = members.filter {
-                                it.id != viewerId && (it.lastReadAt ?: 0L) >= created
-                            }
+                            val readers = app.pulse.domain.sync.confirmedReaders(members, viewerId, created)
                             // R73 - the web bubble entrance (chat-room.tsx:7510-7520):
                             // the NEWEST row plays the Telegram squash & stretch on
                             // arrival; history rows render settled.
