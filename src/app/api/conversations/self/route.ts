@@ -41,13 +41,16 @@ export async function POST(req: Request) {
   if (denied) return denied
   try {
     const opened = await openSelfConversation(db, userId)
-    const full = await db.conversation.findFirst({
-      where: { id: opened.id, isSelf: true, isGroup: false,
-        participants: { some: { userId }, every: { userId } } },
-      include: CONVERSATION_FULL_INCLUDE,
-    })
-    if (!full) return NextResponse.json({ error: 'Note to Self is no longer available.' }, { status: 404 })
-    return NextResponse.json({ notebookReceiptVersion: 1, userId, conversation: await buildConversationSummary(full, userId) },
+    const conversation = await db.$transaction(async tx => {
+      const full = await tx.conversation.findFirst({
+        where: { id: opened.id, isSelf: true, isGroup: false,
+          participants: { some: { userId }, every: { userId } } },
+        include: CONVERSATION_FULL_INCLUDE,
+      })
+      return full ? buildConversationSummary(full, userId, tx) : null
+    }, { isolationLevel: 'Serializable' })
+    if (!conversation) return NextResponse.json({ error: 'Note to Self is no longer available.' }, { status: 404 })
+    return NextResponse.json({ notebookReceiptVersion: 1, userId, conversation },
       { status: opened.created ? 201 : 200, headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     if (error instanceof DirectConversationError) return NextResponse.json({ error: error.message }, { status: error.status })

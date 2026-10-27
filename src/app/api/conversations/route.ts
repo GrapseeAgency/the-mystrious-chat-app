@@ -34,22 +34,18 @@ export async function GET(req: Request) {
   const denied = await requireActionOwner(req, userId, 'conversation list')
   if (denied) return denied
 
-  const participations = await db.conversationParticipant.findMany({
-    where: { userId },
-    select: { conversationId: true },
-  })
-  const conversationIds = participations.map((p) => p.conversationId)
-
-  // Single round-trip: conversations + members(+users) + newest message each.
-  const conversations = await db.conversation.findMany({
-    where: { id: { in: conversationIds } },
-    include: CONVERSATION_FULL_INCLUDE,
-    orderBy: { updatedAt: 'desc' },
-  })
-
-  const summaries = await Promise.all(
-    conversations.map((conv) => buildConversationSummary(conv, userId)),
-  )
+  // Membership, manual markers, read intent and exact counts are one snapshot.
+  // A preflight ID list can otherwise disclose a room after membership removal,
+  // and separate aggregate reads can pair old markers with newly read counts.
+  const summaries = await db.$transaction(async tx => {
+    const at = new Date()
+    const conversations = await tx.conversation.findMany({
+      where: { participants: { some: { userId } } },
+      include: CONVERSATION_FULL_INCLUDE,
+      orderBy: { updatedAt: 'desc' },
+    })
+    return Promise.all(conversations.map(conv => buildConversationSummary(conv, userId, tx, at)))
+  }, { isolationLevel: 'Serializable', timeout: 15_000 })
 
   // Pinned (by this viewer) float to the top, then freshest first.
   summaries.sort((a, b) => {
@@ -109,9 +105,14 @@ export async function POST(req: Request) {
 
     try {
       const direct = await openDirectConversation(db, distinctIds)
-      const full = await db.conversation.findUnique({ where: { id: direct.id }, include: CONVERSATION_FULL_INCLUDE })
-      if (!full) return NextResponse.json({ error: 'Conversation is no longer available.' }, { status: 404 })
-      return NextResponse.json({ conversation: await buildConversationSummary(full, creatorId) }, { status: direct.created ? 201 : 200 })
+      const conversation = await db.$transaction(async tx => {
+        const full = await tx.conversation.findFirst({
+          where: { id: direct.id, participants: { some: { userId: creatorId } } }, include: CONVERSATION_FULL_INCLUDE,
+        })
+        return full ? buildConversationSummary(full, creatorId, tx) : null
+      }, { isolationLevel: 'Serializable' })
+      if (!conversation) return NextResponse.json({ error: 'Conversation is no longer available.' }, { status: 404 })
+      return NextResponse.json({ conversation }, { status: direct.created ? 201 : 200 })
     } catch (error) {
       if (error instanceof DirectConversationError) return NextResponse.json({ error: error.message }, { status: error.status })
       throw error
@@ -148,17 +149,21 @@ export async function POST(req: Request) {
           select: { id: true },
         })
       })
-    const full = await db.conversation.findFirst({
-      where: { id: created.id, participants: { some: { userId: creatorId } } },
-      include: CONVERSATION_FULL_INCLUDE,
-    })
-    if (!full) return NextResponse.json({ error: 'The created conversation is no longer available.' }, { status: 404 })
+    const snapshot = await db.$transaction(async tx => {
+      const full = await tx.conversation.findFirst({
+        where: { id: created.id, participants: { some: { userId: creatorId } } },
+        include: CONVERSATION_FULL_INCLUDE,
+      })
+      return full ? { full, conversation: await buildConversationSummary(full, creatorId, tx) } : null
+    }, { isolationLevel: 'Serializable' })
+    if (!snapshot) return NextResponse.json({ error: 'The created conversation is no longer available.' }, { status: 404 })
+    const { full, conversation } = snapshot
     const recipients = full.participants.map(member => member.userId)
     await notifySocket('conversation:updated', recipients, {
       type: 'conversation:updated', conversationId: full.id, recipientIds: recipients,
     })
     return NextResponse.json(
-      { conversation: await buildConversationSummary(full, creatorId), clientId: created.clientId, replayed: created.replayed },
+      { conversation, clientId: created.clientId, replayed: created.replayed },
       { status: created.replayed ? 200 : 201 },
     )
   } catch (error) {

@@ -39,19 +39,18 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (denied) return denied
   // Include queries share the same authorized snapshot, not a separate preflight
   // that can race removal and then disclose a newer message to a former member.
-  const conv = await db.$transaction(
-    (tx) =>
-      tx.conversation.findFirst({
-        where: { id, participants: { some: { userId } } },
-        include: CONVERSATION_FULL_INCLUDE,
-      }),
-    { isolationLevel: 'Serializable' },
-  )
+  const conv = await db.$transaction(async tx => {
+    const row = await tx.conversation.findFirst({
+      where: { id, participants: { some: { userId } } },
+      include: CONVERSATION_FULL_INCLUDE,
+    })
+    return row ? buildConversationDetail(row, userId, tx) : null
+  }, { isolationLevel: 'Serializable' })
   if (!conv) {
     return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
   }
 
-  return NextResponse.json({ conversation: await buildConversationDetail(conv, userId) }, {
+  return NextResponse.json({ conversation: conv }, {
     headers: { 'Cache-Control': 'private, no-store' },
   })
 }

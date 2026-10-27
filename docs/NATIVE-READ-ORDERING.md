@@ -302,3 +302,26 @@ and signal fanout so its independent room/thread/Mirror arrays agree; Android
 publishes its retained Room row. Definitive canonical Info snapshots can still
 remove the owner's proof. The Swift generic-envelope path also no longer writes
 the same socket row twice.
+
+
+### Coherent backend inbox projections (2026-10-28 follow-up)
+
+The canonical inbox formerly loaded membership/manual markers and then calculated
+unread through separate database reads. A real SQLite/serializer regression
+reproduces an impossible zero-badge tuple: metadata captured before a manual
+unread action combined with progress accepted afterward under the older intent.
+The server correctly kept the reminder; the split response nevertheless lost it.
+
+Inbox authorization, participant/read-intent data, exact unread aggregates,
+streaks and fallback previews now share one Serializable transaction. All rooms
+use one expiry evaluation instant. The list no longer authorizes through a stale
+preflight membership-ID list. DM/group/notebook/channel creation responses also
+serialize within their own authorized read transaction, with network fanout
+outside the transaction. Room detail keeps its derived reads in its membership
+snapshot. The summary serializer requires the transaction client explicitly.
+
+`read-projection-snapshot.test.mjs` executes the real serializers and generated
+Prisma delegates against SQLite, reproduces the old split, exercises a competing
+writer connection, verifies removal/error behavior, and covers all four creation
+entry points. Errors remain failures, never successful empty inboxes. This is
+implementation evidence, not production deployment or paired-device acceptance.

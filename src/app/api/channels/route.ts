@@ -173,12 +173,15 @@ export async function POST(req: Request) {
       recipientIds: recipients,
     })
 
-    const current = await db.conversation.findFirst({
-      where: { id: created.id, participants: { some: { userId } } },
-      include: CONVERSATION_FULL_INCLUDE,
-    })
-    if (!current) return NextResponse.json({ error: 'The created channel is no longer available.' }, { status: 404 })
-    const conversation = await buildConversationSummary(current, userId)
+    const snapshot = await db.$transaction(async tx => {
+      const current = await tx.conversation.findFirst({
+        where: { id: created.id, participants: { some: { userId } } },
+        include: CONVERSATION_FULL_INCLUDE,
+      })
+      return current ? { current, conversation: await buildConversationSummary(current, userId, tx) } : null
+    }, { isolationLevel: 'Serializable' })
+    if (!snapshot) return NextResponse.json({ error: 'The created channel is no longer available.' }, { status: 404 })
+    const { current, conversation } = snapshot
     const channel: ChannelSummary & { conversationId: string } = {
       ...channelIdentity(current.id), name: current.name ?? 'Channel', description: current.description,
       createdAt: current.createdAt.toISOString(), memberCount: current.participants.length,

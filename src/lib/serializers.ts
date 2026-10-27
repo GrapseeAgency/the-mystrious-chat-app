@@ -410,26 +410,28 @@ type MemberWithWatermark = AppUser & { lastReadAt: string }
 
 /**
  * Build a ConversationSummary for ONE viewer.
- * `viewerId` must be a participant of `conv` (unread watermark lookup).
+ * `conv` and every derived field must be read through the same transaction.
+ * A fresh aggregate beside an older manual marker/membership is not a snapshot.
  */
 export async function buildConversationSummary(
   conv: ConversationRowWithRelations,
   viewerId: string,
+  client: Prisma.TransactionClient,
+  at: Date = new Date(),
 ): Promise<ConversationSummary> {
   const myReadAt =
     conv.participants.find((p) => p.userId === viewerId)?.lastReadAt ?? new Date(0)
-  const at = new Date()
   const preview = visibleInboxPreview(conv.messages[0], conv.id, at)
   const [unread, streakRow, lastRow] = await Promise.all([
-    unreadSnapshot(db, conv.id, viewerId, myReadAt, at),
-    db.conversationStreak.findUnique({
+    unreadSnapshot(client, conv.id, viewerId, myReadAt, at),
+    client.conversationStreak.findUnique({
       where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
       select: { lastDay: true, count: true, best: true },
     }),
     // Root deletion/expiry can hide the newest reply without changing its own
     // expiresAt. Select the next visible row, not merely the next unexpired one.
     !preview && conv.messages.length > 0
-      ? db.message.findFirst({ where: inboxMessagesWhere(conv.id, at),
+      ? client.message.findFirst({ where: inboxMessagesWhere(conv.id, at),
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: INBOX_MESSAGE_INCLUDE })
           .then(row => visibleInboxPreview(row, conv.id, new Date()))
       : Promise.resolve(preview),
@@ -475,10 +477,11 @@ export async function buildConversationSummary(
 export async function buildConversationDetail(
   conv: ConversationRowWithRelations,
   viewerId?: string,
+  client: Prisma.TransactionClient = db,
 ): Promise<ConversationDetail> {
   const mine = viewerId ? conv.participants.find((p) => p.userId === viewerId) : undefined
   const streakRow = viewerId
-    ? await db.conversationStreak.findUnique({
+    ? await client.conversationStreak.findUnique({
         where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
         select: { lastDay: true, count: true, best: true },
       })
@@ -491,7 +494,7 @@ export async function buildConversationDetail(
     const otherId = conv.participants.find((p) => p.userId !== viewerId)?.userId
     if (otherId) {
       dmBlocked =
-        (await db.userBlock.count({
+        (await client.userBlock.count({
           where: {
             OR: [
               { blockerId: viewerId, blockedId: otherId },
