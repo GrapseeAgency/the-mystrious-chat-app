@@ -46,6 +46,11 @@ public final class PulseStore: Sendable {
     }
 
     private let dbQueue: DatabaseQueue
+    private let messageSnapshotVersions = MessageSnapshotVersions()
+
+    func messageSnapshotVersion(_ id: String) -> UInt64 { messageSnapshotVersions.version(id) }
+    struct SupersededMessageReadState: Error {}
+
     let storageIdentity: String
 
     public init(path: String) throws {
@@ -365,8 +370,11 @@ public final class PulseStore: Sendable {
     /// A canonical GET may remove hidden/retired proof as well as add readers.
     /// Change only this field on the current row, preserving concurrent content.
     @discardableResult
-    func replaceMessageReadState(conversationId: String, messageId: String, memberships: [String]) throws -> Bool {
+    func replaceMessageReadState(conversationId: String, messageId: String, memberships: [String], snapshotVersion: UInt64? = nil) throws -> Bool {
         try dbQueue.write { db in
+            if let snapshotVersion, messageSnapshotVersions.version(messageId) != snapshotVersion {
+                throw SupersededMessageReadState()
+            }
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [messageId]),
                   var message = Self.messageRow(from: row), message.conversationId == conversationId,
                   !message.id.hasPrefix("local_"), (message.readByMembershipIds ?? []) != memberships else { return false }
@@ -424,7 +432,9 @@ public final class PulseStore: Sendable {
                 throw ThreadAccessError()
             }
             try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [Self.threadDenialKey(rootId)])
-            return WireThreadPage(parent: parent, replies: try Self.projectCachedQuotes(replies, db: db))
+            let projected = try Self.projectCachedQuotes(replies, db: db)
+            messageSnapshotVersions.note(messages.filter { $0.conversationId == roomId && ($0.id == rootId || $0.parentId == rootId) }.map(\.id))
+            return WireThreadPage(parent: parent, replies: projected)
         }
     }
 
@@ -485,7 +495,9 @@ public final class PulseStore: Sendable {
         try dbQueue.write { db in
             for message in messages { try Self.writeMessage(message, db: db) }
             // A later source in the same page may have revoked an earlier quote.
-            return try Self.projectCachedQuotes(messages, db: db)
+            let projected = try Self.projectCachedQuotes(messages, db: db)
+            messageSnapshotVersions.note(messages.map(\.id))
+            return projected
         }
     }
 
@@ -1013,6 +1025,7 @@ public final class PulseStore: Sendable {
                     ],
                 )
             }
+            messageSnapshotVersions.note(savedItems.map { $0.message.id }.filter { !preservingMessageIds.contains($0) })
         }
     }
 
@@ -1692,4 +1705,20 @@ enum PulseOutboxClock {
 struct ThreadReplyCountSnapshot: Equatable {
     var counts: [String: Int] = [:]
     var nextExpiry: Date?
+}
+
+/// In-memory ordering evidence, scoped to this account's store lifetime. The
+/// database queue serializes writers; the lock also permits a pre-HTTP capture
+/// from another executor. This never supplies Seen proof or survives a restart.
+private final class MessageSnapshotVersions: @unchecked Sendable {
+    private let lock = NSLock()
+    private var versions: [String: UInt64] = [:]
+    func version(_ id: String) -> UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        return versions[id] ?? 0
+    }
+    func note(_ ids: [String]) {
+        lock.lock(); defer { lock.unlock() }
+        for id in Set(ids) { versions[id, default: 0] &+= 1 }
+    }
 }

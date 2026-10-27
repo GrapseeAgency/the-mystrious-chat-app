@@ -2650,8 +2650,10 @@ private struct MessageInfoSheet: View {
             guard infoVisible, session.isForeground, epoch == session.sessionGeneration else { return }
             let proof = await session.refreshMessageReadState(conversationId: room, messageId: messageID)
             guard !Task.isCancelled, infoVisible, epoch == session.sessionGeneration else { return }
-            if let proof, session.acceptsSyncMessage(messageID, startedAt: proof.revision) {
-                viewModel.applyMessageReadState(messageID, memberships: proof.memberships, startedAt: proof.revision)
+            if let proof, session.acceptsSyncMessage(messageID, startedAt: proof.revision),
+               session.store?.messageSnapshotVersion(messageID) == proof.snapshotVersion {
+                viewModel.applyMessageReadState(messageID, memberships: proof.memberships, startedAt: proof.revision,
+                    snapshotVersion: proof.snapshotVersion)
                 if !proof.available { dismiss(); return }
             }
             // An Info cover owns metadata refresh, not permission to mark Seen.
@@ -3866,8 +3868,9 @@ final class RoomViewModel: ObservableObject {
     /// The retained river is not a database observation; patch it explicitly,
     /// without replacing content, generating arrivals or inventing a local row.
     @discardableResult
-    func applyMessageReadState(_ id: String, memberships: [String], startedAt revision: UInt64) -> Bool {
+    func applyMessageReadState(_ id: String, memberships: [String], startedAt revision: UInt64, snapshotVersion: UInt64? = nil) -> Bool {
         guard let session, session.sessionGeneration == readSessionGeneration,
+              snapshotVersion == nil || session.store?.messageSnapshotVersion(id) == snapshotVersion,
               session.acceptsSyncMessage(id, startedAt: revision), !id.hasPrefix("local_"),
               let index = messages.firstIndex(where: { $0.id == id && $0.conversationId == conversationId }),
               (messages[index].readByMembershipIds ?? []) != memberships else { return false }

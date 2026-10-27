@@ -36,6 +36,50 @@ private final class MessageReadStateProtocol: URLProtocol {
 
 @MainActor
 final class MessageReadStateTests: XCTestCase {
+    func testCanonicalCacheCommitsFenceOlderInfoEvenWhenTheirProofIsUnchanged() throws {
+        let store = try PulseStore(path: ":memory:")
+        var message = OutboxFixtures.makeMessage(id: "anchor", conversationId: "room", content: "Current page body")
+        message.readByMembershipIds = []
+        try store.upsert(messages: [message])
+        for path in ["page", "thread", "saved"] {
+            let captured = store.messageSnapshotVersion(message.id)
+            switch path {
+            case "thread": _ = try store.acceptThreadSnapshot(rootId: message.id, roomId: "room", messages: [message])
+            case "saved": try store.upsert(savedItems: [WireSavedItem(savedAt: message.createdAt,
+                conversation: WireSavedConversation(id: "room", isGroup: false, name: "Room"), message: message)])
+            default: try store.upsert(messages: [message])
+            }
+            XCTAssertNotEqual(store.messageSnapshotVersion(message.id), captured, path)
+            XCTAssertThrowsError(try store.replaceMessageReadState(conversationId: "room", messageId: message.id,
+                memberships: ["retired-peer"], snapshotVersion: captured)) { error in
+                XCTAssertTrue(error is PulseStore.SupersededMessageReadState, path)
+            }
+            XCTAssertEqual(try store.message(id: message.id)?.readByMembershipIds, [], path)
+            XCTAssertEqual(try store.message(id: message.id)?.content, message.content, path)
+        }
+        let captured = store.messageSnapshotVersion(message.id)
+        try store.upsert(messages: [OutboxFixtures.makeMessage(id: "unrelated", conversationId: "room", content: "Other")])
+        XCTAssertTrue(try store.replaceMessageReadState(conversationId: "room", messageId: message.id,
+            memberships: ["current-peer"], snapshotVersion: captured), "Unrelated messages must not starve Info")
+        XCTAssertEqual(try store.message(id: message.id)?.readByMembershipIds, ["current-peer"])
+        let otherAccount = try PulseStore(path: ":memory:")
+        XCTAssertEqual(otherAccount.messageSnapshotVersion(message.id), 0)
+    }
+
+    func testLaterPositivePageCannotBeClearedByAnEarlierNegativeInfoResponse() throws {
+        let store = try PulseStore(path: ":memory:")
+        var message = OutboxFixtures.makeMessage(id: "anchor", conversationId: "room", content: "Edited body")
+        let captured = store.messageSnapshotVersion(message.id)
+        message.readByMembershipIds = ["current-peer"]
+        try store.upsert(messages: [message])
+        XCTAssertThrowsError(try store.replaceMessageReadState(conversationId: "room", messageId: message.id,
+            memberships: [], snapshotVersion: captured))
+        XCTAssertEqual(try store.message(id: message.id)?.readByMembershipIds, ["current-peer"])
+        let current = store.messageSnapshotVersion(message.id)
+        XCTAssertTrue(try store.replaceMessageReadState(conversationId: "room", messageId: message.id,
+            memberships: [], snapshotVersion: current), "A fresh canonical negative still removes proof")
+    }
+
     func testExactInfoProofRejectsForeignLegacyMalformedAndUnboundResponses() async throws {
         for mode in ["valid", "empty", "unavailable", "legacy", "owner", "room", "message", "version",
                      "available", "missing", "numeric", "duplicate", "blank", "contradiction", "old-server"] {

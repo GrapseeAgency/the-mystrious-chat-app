@@ -37,7 +37,16 @@ class ReadSnapshotOrderingTest {
         negativeProofWins(cached = true, retire = true)
     }
 
-    private suspend fun negativeProofWins(cached: Boolean, retire: Boolean = false) = withTimeout(30_000) {
+    @Test fun laterCanonicalPageRetiresAnOlderExactInfoResponse() = runBlocking {
+        negativeProofWins(cached = true, infoFirst = true)
+    }
+
+    @Test fun unchangedCanonicalPageAlsoRetiresOlderPositiveInfoProof() = runBlocking {
+        negativeProofWins(cached = true, infoFirst = true, unchangedPage = true)
+    }
+
+    private suspend fun negativeProofWins(cached: Boolean, retire: Boolean = false,
+        infoFirst: Boolean = false, unchangedPage: Boolean = false) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
         val prefsJob = SupervisorJob()
@@ -58,16 +67,24 @@ class ReadSnapshotOrderingTest {
         })
         val pageEntered = CompletableDeferred<Unit>()
         val releasePage = CompletableDeferred<Unit>()
+        val infoEntered = CompletableDeferred<Unit>()
+        val releaseInfo = CompletableDeferred<Unit>()
+        val pageProof = if (unchangedPage) "[]" else "[\"old-peer\"]"
+        val infoProof = if (unchangedPage) "[\"retired-peer\"]" else "[]"
         val http = HttpClient(MockEngine { request ->
             val body = when (request.url.encodedPath) {
                 "/api/conversations/room/messages" -> {
                     pageEntered.complete(Unit)
-                    releasePage.await()
+                    if (!infoFirst) releasePage.await()
                     """{"syncVersion":1,"hasMore":false,"messages":[
-                      {"id":"anchor","conversationId":"room","senderId":"peer","content":"old page","createdAt":"2026-10-26T00:00:00Z","readByMembershipIds":["old-peer"]},
+                      {"id":"anchor","conversationId":"room","senderId":"peer","content":"old page","createdAt":"2026-10-26T00:00:00Z","readByMembershipIds":$pageProof},
                       {"id":"unrelated","conversationId":"room","senderId":"peer","content":"keep this row","createdAt":"2026-10-26T00:00:01Z"}]}"""
                 }
-                "/api/messages/anchor/read-state" -> """{"messageReadStateVersion":1,"conversationId":"room","userId":"owner","messageId":"anchor","messageAvailable":$cached,"readByMembershipIds":[]}"""
+                "/api/messages/anchor/read-state" -> {
+                    infoEntered.complete(Unit)
+                    if (infoFirst) releaseInfo.await()
+                    """{"messageReadStateVersion":1,"conversationId":"room","userId":"owner","messageId":"anchor","messageAvailable":$cached,"readByMembershipIds":$infoProof}"""
+                }
                 else -> error("Unexpected request: ${request.url}")
             }
             respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
@@ -81,6 +98,19 @@ class ReadSnapshotOrderingTest {
                 "anchor", "room", "peer", "Peer", Message.Kind.TEXT, "current body", "2026-10-26T00:00:00Z"))))
             repo.start("owner")
             startupEntered.await()
+            if (infoFirst) {
+                coroutineScope {
+                    val oldInfo = async { repo.refreshMessageReadState("room", "anchor") }
+                    infoEntered.await()
+                    try { repo.refreshMessages("room", limit = 200).getOrThrow() }
+                    finally { releaseInfo.complete(Unit) }
+                    assertTrue("A page committed after this Info request began", oldInfo.await().isFailure)
+                }
+                val stored = checkNotNull(db.messageDao().byId("anchor")).toDomain()
+                assertEquals(if (unchangedPage) emptyList<String>() else listOf("old-peer"), stored.readByMembershipIds)
+                assertEquals("old page", stored.body)
+                return@withTimeout
+            }
             coroutineScope {
                 val oldPage = async { repo.refreshMessages("room", limit = 200) }
                 pageEntered.await()

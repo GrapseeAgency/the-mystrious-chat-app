@@ -513,9 +513,10 @@ public final class PulseSession: ObservableObject {
     }
 
     /// Read-only Info reconciliation. nil is unknown/superseded, not "unread".
-    func refreshMessageReadState(conversationId: String, messageId: String) async -> (available: Bool, memberships: [String], revision: UInt64)? {
+    func refreshMessageReadState(conversationId: String, messageId: String) async -> (available: Bool, memberships: [String], revision: UInt64, snapshotVersion: UInt64)? {
         guard ready, isForeground, let store, !messageId.hasPrefix("local_") else { return nil }
         let epoch = sessionGeneration, revision = messageRevision, client = api
+        let snapshotVersion = store.messageSnapshotVersion(messageId)
         let available: Bool
         let memberships: [String]
         do {
@@ -525,12 +526,12 @@ public final class PulseSession: ObservableObject {
         guard !Task.isCancelled, epoch == sessionGeneration, isForeground,
               acceptsSyncMessage(messageId, startedAt: revision) else { return nil }
         do {
-            let changed = try store.replaceMessageReadState(conversationId: conversationId, messageId: messageId, memberships: memberships)
+            let changed = try store.replaceMessageReadState(conversationId: conversationId, messageId: messageId, memberships: memberships, snapshotVersion: snapshotVersion)
             // The live room can retain a carrier absent from storage. Fence older
             // page responses even when there was no stored row to update.
             noteMessageRevision(messageId)
             if changed { messageVisibilityClock.send(Date()) }
-            return (available, memberships, messageRevision)
+            return (available, memberships, messageRevision, snapshotVersion)
         } catch { return nil }
     }
 

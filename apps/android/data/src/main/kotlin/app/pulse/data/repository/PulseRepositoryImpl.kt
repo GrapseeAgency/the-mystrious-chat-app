@@ -727,6 +727,15 @@ class PulseRepositoryImpl constructor(
     private val messageEventClock = java.util.concurrent.atomic.AtomicLong()
     private val messageCacheChanges = MutableStateFlow(0L)
     private val messageEventRevisions = mutableMapOf<String, Long>()
+    // Read-only page commits are not socket mutations. Still fence an older
+    // exact-proof GET, including when the committed proof did not change.
+    private val messageSnapshotVersions = mutableMapOf<String, Long>() // messageCacheMutex
+    private fun noteMessageSnapshots(rows: List<Message>) {
+        rows.map { it.id }.distinct().forEach { id ->
+            messageSnapshotVersions[id] = (messageSnapshotVersions[id] ?: 0L) + 1L
+        }
+    }
+
 
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
         val dto = signal.dto ?: return
@@ -763,6 +772,7 @@ class PulseRepositoryImpl constructor(
     private suspend fun cacheFetchedMessagesLocked(rows: List<Message>, watermark: Long): List<Message> {
         val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
         messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+        noteMessageSnapshots(fresh)
         val stored = rows.map { it.id }.distinct().chunked(400).flatMap { messageDao.byIds(it) }.associateBy { it.id }
         return rows.mapNotNull { stored[it.id]?.toDomain() }
     }
@@ -973,10 +983,9 @@ class PulseRepositoryImpl constructor(
                     database.withTransaction {
                         kotlin.coroutines.coroutineContext.ensureActive()
                         requireConversationOwner(owner, epoch)
-                        messageDao.upsertAll(page.messages.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }.map { dto ->
-                            val message = dto.toDomain()
-                            MessageEntity.from(message, reactionsJsonOf(message))
-                        })
+                        val fresh = page.messages.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }.map { it.toDomain() }
+                        messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+                        noteMessageSnapshots(fresh)
                         requireConversationOwner(owner, epoch)
                     }
                 }
@@ -2822,7 +2831,10 @@ class PulseRepositoryImpl constructor(
         val epoch = attachmentSession
         if (messageId.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) return Result.success(true)
         return try {
-            val watermark = messageEventClock.get()
+            val (watermark, snapshotVersion) = messageCacheMutex.withLock {
+                requireConversationOwner(owner, epoch)
+                messageEventClock.get() to (messageSnapshotVersions[messageId] ?: 0L)
+            }
             val response = api.messageReadState(conversationId, owner, messageId)
             requireConversationOwner(owner, epoch)
             val available: Boolean
@@ -2837,7 +2849,8 @@ class PulseRepositoryImpl constructor(
                     requireConversationOwner(owner, epoch)
                     // A later exact ACK/event owns this row; never replace it with
                     // an earlier GET, even if another message has also changed.
-                    if ((messageEventRevisions[messageId] ?: 0L) > watermark)
+                    if ((messageEventRevisions[messageId] ?: 0L) > watermark ||
+                        (messageSnapshotVersions[messageId] ?: 0L) != snapshotVersion)
                         return@withTransaction false
                     val current = messageDao.byId(messageId)?.toDomain()
                     if (current != null && current.conversationId == conversationId && current.readByMembershipIds != proof) {
