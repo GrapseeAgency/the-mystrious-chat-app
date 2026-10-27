@@ -44,7 +44,8 @@ targets:
       properties:
         CFBundleDisplayName: Pulse
         # Bundle marketing versions are numeric; suffixes belong to Git tags.
-        CFBundleShortVersionString: 0.10.0
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         # R8 push/callkit readiness — UIBackgroundModes lets the signed app
         # receive remote-notification + voip pushes (PushKit/CallKit path);
@@ -80,6 +81,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.pulse.chat
+        # Generated Info processing derives standard version keys from these
+        # settings; a plist-only literal is not sufficient with generation on.
+        MARKETING_VERSION: "0.10.0"
+        CURRENT_PROJECT_VERSION: "1"
         ENABLE_PREVIEWS: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_STANDALONE_ICON_NAME: AppIcon

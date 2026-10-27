@@ -22,7 +22,9 @@ final class InfoPlistContractTests: XCTestCase {
         }
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String, "Pulse")
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        XCTAssertNotNil(version.range(of: #"^\d+(\.\d+){0,2}$"#, options: .regularExpression))
+        XCTAssertEqual(version, "0.10.0", "The product must use the explicit marketing build setting")
+        XCTAssertNotNil(version.range(of: #"^\d+(\.\d+){0,2}$"#, options: .regularExpression), "Built marketing version: \(version)")
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String, "1")
         let orientations = Bundle.main.object(forInfoDictionaryKey: "UISupportedInterfaceOrientations") as? [String] ?? []
         XCTAssertTrue(orientations.contains("UIInterfaceOrientationPortrait"))
     }

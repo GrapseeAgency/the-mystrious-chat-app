@@ -12,6 +12,9 @@ test('iOS declares background reads and attention permissions through supported 
     'NSLocationWhenInUseUsageDescription', 'CFBundleURLTypes', 'UIApplicationShortcutItems']) {
     assert.match(app, new RegExp(`^        ${key}:`, 'm'))
   }
+  assert.match(app, /CFBundleShortVersionString: "\$\(MARKETING_VERSION\)"/)
+  assert.match(app, /MARKETING_VERSION: "0\.10\.0"/)
+  assert.match(app, /CURRENT_PROJECT_VERSION: "1"/)
   const entry = await readFile(new URL('../../apps/ios/Pulse/PulseApp.swift', import.meta.url), 'utf8')
   const identifier = entry.match(/static let outboxTaskID = "([^"]+)"/)[1]
   assert.ok(app.includes(`BGTaskSchedulerPermittedIdentifiers: ["${identifier}"]`))
