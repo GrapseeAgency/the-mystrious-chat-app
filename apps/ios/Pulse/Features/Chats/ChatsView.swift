@@ -2697,7 +2697,7 @@ final class ChatsViewModel: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var expiryTask: Task<Void, Never>?
     private var hasLoadedSummary = false
-    private var refreshGeneration: UInt64 = 0
+    private var inboxSnapshotFence = PulseInboxSnapshotFence()
     private var sideQueryTask: Task<Void, Never>?
     private var sideQueryGeneration = UUID()
     private var sideQueryOwner: UUID?
@@ -3014,6 +3014,9 @@ final class ChatsViewModel: ObservableObject {
                 default: return false
                 }
             }
+            // The event is a mutation barrier now, not after the debounce or
+            // when a replacement request happens to start/succeed.
+            .handleEvents(receiveOutput: { [weak self] _ in self?.inboxSnapshotFence.invalidate() })
             .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -3023,6 +3026,9 @@ final class ChatsViewModel: ObservableObject {
 
         session.$inboxRefreshTick
             .dropFirst()
+            // The event is a mutation barrier now, not after the debounce or
+            // when a replacement request happens to start/succeed.
+            .handleEvents(receiveOutput: { [weak self] _ in self?.inboxSnapshotFence.invalidate() })
             .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -3034,6 +3040,9 @@ final class ChatsViewModel: ObservableObject {
         // the session's realtimeRefreshTick; the inbox re-fetches on it.
         session.$realtimeRefreshTick
             .dropFirst()
+            // The event is a mutation barrier now, not after the debounce or
+            // when a replacement request happens to start/succeed.
+            .handleEvents(receiveOutput: { [weak self] _ in self?.inboxSnapshotFence.invalidate() })
             .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -3045,7 +3054,11 @@ final class ChatsViewModel: ObservableObject {
     /// A background badge fetch already obtained and persisted canonical truth.
     /// Do not wait for another network request to replace a loaded inbox.
     func acceptCanonicalInbox(_ fresh: [WireConversationSummary], session: PulseSession) {
-        refreshGeneration &+= 1
+        inboxSnapshotFence.invalidate()
+        applyCanonicalInbox(fresh, session: session)
+    }
+
+    private func applyCanonicalInbox(_ fresh: [WireConversationSummary], session: PulseSession) {
         hasLoadedSummary = true
         summaries = fresh.map { $0.removingExpiredSummary() }
         confirmedSelf = nil
@@ -3057,18 +3070,17 @@ final class ChatsViewModel: ObservableObject {
     // ── refresh ──────────────────────────────────────────────
 
     func refresh(session: PulseSession, force: Bool = false) async {
-        refreshGeneration &+= 1
-        let request = refreshGeneration, epoch = session.sessionGeneration
+        let request = inboxSnapshotFence.begin(), epoch = session.sessionGeneration
         let store = session.store
         if force || summaries.isEmpty { phase = phase == .loaded ? phase : .loading }
         do {
             let fresh = try await session.api.conversations()
-            guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
-            acceptCanonicalInbox(fresh, session: session)
+            guard epoch == session.sessionGeneration, inboxSnapshotFence.accept(request) else { return }
+            applyCanonicalInbox(fresh, session: session)
             entranceOn = false
             try? store?.upsert(conversations: fresh.map { $0.toDomain() }, replacingSnapshot: true)
         } catch {
-            guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
+            guard epoch == session.sessionGeneration, inboxSnapshotFence.isCurrent(request) else { return }
             if summaries.isEmpty {
                 phase = .failed(Self.describe(error))
             } else {
@@ -3078,16 +3090,15 @@ final class ChatsViewModel: ObservableObject {
     }
 
     func refreshQuiet(session: PulseSession) async {
-        refreshGeneration &+= 1
-        let request = refreshGeneration, epoch = session.sessionGeneration
+        let request = inboxSnapshotFence.begin(), epoch = session.sessionGeneration
         let store = session.store
         do {
             let fresh = try await session.api.conversations()
-            guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
-            acceptCanonicalInbox(fresh, session: session)
+            guard epoch == session.sessionGeneration, inboxSnapshotFence.accept(request) else { return }
+            applyCanonicalInbox(fresh, session: session)
             try? store?.upsert(conversations: fresh.map { $0.toDomain() }, replacingSnapshot: true)
         } catch {
-            guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
+            guard epoch == session.sessionGeneration, inboxSnapshotFence.isCurrent(request) else { return }
             // Poll failures stay silent - the list keeps its cached rows.
         }
         reloadDrafts(session: session)
@@ -3277,7 +3288,7 @@ final class ChatsViewModel: ObservableObject {
         guard !ids.isEmpty, conversationActions.values.allSatisfy({ $0.ids.isDisjoint(with: ids) }) else { return nil }
         let ticket = ConversationActionTicket(id: UUID(), epoch: epoch, ids: ids, batch: batch)
         conversationActions[ticket.id] = ticket
-        refreshBatchPending(); refreshGeneration &+= 1
+        refreshBatchPending(); inboxSnapshotFence.invalidate()
         return ticket
     }
 
@@ -3307,7 +3318,7 @@ final class ChatsViewModel: ObservableObject {
     }
 
     private func updateSummaries(_ transform: (WireConversationSummary) -> WireConversationSummary, ids: Set<String>) {
-        refreshGeneration &+= 1 // a pre-confirmation list response cannot undo this action
+        inboxSnapshotFence.invalidate() // a pre-confirmation list response cannot undo this action
         summaries = summaries.map { ids.contains($0.id) ? transform($0) : $0 }
     }
 
@@ -3558,7 +3569,7 @@ final class ChatsViewModel: ObservableObject {
                     try await client.createSelfChat()
                 }
                 guard owns() else { return }
-                refreshGeneration &+= 1
+                inboxSnapshotFence.invalidate()
                 confirmedSelf = conv
                 sheet = nil
                 try? store?.upsert(conversations: [conv.toDomain()])

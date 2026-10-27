@@ -796,7 +796,10 @@ class PulseRepositoryImpl constructor(
     private val refreshScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** A background cache failure must not crash the app after an acknowledged action. */
-    private fun scheduleConversationsRefresh() {
+    private fun scheduleConversationsRefresh(invalidate: Boolean = true) {
+        // Mutation/event callers retire old snapshots immediately, even when a
+        // fetch is already queued. Metadata repair is a fetch, not a mutation.
+        if (invalidate) inboxRefreshVersion.incrementAndGet()
         if (!refreshScheduled.compareAndSet(false, true)) return
         val awaitingDelay = java.util.concurrent.atomic.AtomicBoolean(true)
         val job = scope.launch {
@@ -844,7 +847,13 @@ class PulseRepositoryImpl constructor(
 
     override fun events(): Flow<PulseEvent> = eventsBus.asSharedFlow()
 
+    // Mutation authority and GET ordering are different clocks. Merely starting
+    // another GET (which may fail) cannot retire a valid pending snapshot.
     private val inboxRefreshVersion = java.util.concurrent.atomic.AtomicLong()
+    private val inboxRequestSequence = java.util.concurrent.atomic.AtomicLong()
+    private val inboxSnapshotMutex = Mutex()
+    private var inboxCommittedRequest = 0L // guarded by inboxSnapshotMutex
+
 
     private class SupersededConversationSnapshot : Exception()
 
@@ -936,23 +945,34 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun refreshConversations(): Result<Unit> {
-        val version = inboxRefreshVersion.incrementAndGet()
+        val version = inboxRefreshVersion.get()
+        val request = inboxRequestSequence.incrementAndGet()
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
         return when (val r = api.conversations(owner)) {
             is PulseResult.Success -> {
                 try {
-                    database.withTransaction {
-                        requireConversationOwner(owner, epoch)
-                        if (version != inboxRefreshVersion.get()) return@withTransaction
-                        val rows = r.value.conversations.map { ConversationEntity.from(it.toDomain(owner)) }
-                        conversationDao.clearServerSnapshot(app.pulse.domain.model.PulseDemo.CONVERSATION_ID)
-                        conversationDao.upsertAll(rows)
-                        requireConversationOwner(owner, epoch)
-                        if (version != inboxRefreshVersion.get()) throw SupersededConversationSnapshot()
+                    inboxSnapshotMutex.withLock {
+                        val accepted = database.withTransaction {
+                            requireConversationOwner(owner, epoch)
+                            if (version != inboxRefreshVersion.get()) throw SupersededConversationSnapshot()
+                            if (request < inboxCommittedRequest) return@withTransaction false
+                            val rows = r.value.conversations.map { ConversationEntity.from(it.toDomain(owner)) }
+                            conversationDao.clearServerSnapshot(app.pulse.domain.model.PulseDemo.CONVERSATION_ID)
+                            conversationDao.upsertAll(rows)
+                            requireConversationOwner(owner, epoch)
+                            if (version != inboxRefreshVersion.get()) throw SupersededConversationSnapshot()
+                            true
+                        }
+                        // Record only a committed transaction. A failed write or
+                        // another request starting must not suppress older work.
+                        if (accepted) inboxCommittedRequest = request
                     }
                 } catch (_: SupersededConversationSnapshot) {
-                    // A newer read or mutation owns the inbox; the old transaction rolled back.
+                    // No canonical projection was accepted for this mutation
+                    // epoch. Background callers must retain their retry rather
+                    // than reporting a converged inbox from a discarded reply.
+                    return Result.failure(IllegalStateException("Inbox changed while refreshing. Retry to reconcile."))
                 }
                 Result.success(Unit)
             }
@@ -2821,7 +2841,7 @@ class PulseRepositoryImpl constructor(
     // Capture is LOCAL: the fence must describe authority known when the row
     // was observed, not a later network response after a new manual marker.
     override fun requestReadMembershipRefresh(conversationId: String) {
-        if (viewerId != null && conversationId.isNotBlank()) scheduleConversationsRefresh()
+        if (viewerId != null && conversationId.isNotBlank()) scheduleConversationsRefresh(invalidate = false)
     }
 
     override suspend fun captureReadIntent(conversationId: String): Result<String> {
@@ -2831,7 +2851,7 @@ class PulseRepositoryImpl constructor(
         requireConversationOwner(owner, epoch)
         val membership = member?.readMembershipId?.takeIf { it.isNotBlank() }
             ?: run {
-                scheduleConversationsRefresh()
+                scheduleConversationsRefresh(invalidate = false)
                 return Result.failure(IllegalStateException("Waiting for current room membership"))
             }
         return Result.success(member?.readIntent ?: "offline.$membership")

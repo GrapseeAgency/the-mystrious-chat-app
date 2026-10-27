@@ -9,6 +9,7 @@ import app.pulse.data.local.*
 import app.pulse.data.remote.PulseApi
 import app.pulse.data.remote.PulseSocketClient
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.Conversation
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -18,6 +19,8 @@ import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.channels.Channel
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -158,11 +161,119 @@ class ReadSnapshotOrderingTest {
             })
     }
 
+    @Test fun loadedInboxObservesCanonicalRefreshAndRetainsItWhenTheNextFetchFails() = runBlocking {
+        val online = java.util.concurrent.atomic.AtomicBoolean(true)
+        val body = """{"conversations":[
+            {"id":"room","name":"Room","isGroup":false,"members":[],"unreadCount":0,"myManualUnread":true},
+            {"id":"other","name":"Other","isGroup":false,"members":[],"unreadCount":4},
+            {"id":"archive","name":"Archive","isGroup":false,"members":[],"unreadCount":40,"archivedAt":"2026-01-01T00:00:00Z"},
+            {"id":"self","name":"Notes","isGroup":false,"members":[],"unreadCount":50,"isSelf":true}
+        ]}"""
+        exerciseReadOrdering(cached = false, inboxResponse = {
+            check(online.get()) { "Second fetch unavailable" }
+            body
+        }, onReady = { repo, db, tokens ->
+            tokens.save("fixture-credential")
+            db.conversationDao().upsertAll(listOf(ConversationEntity.from(
+                Conversation("room", Conversation.Kind.DM, "Room", unreadCount = 9))))
+            coroutineScope {
+                val updates = Channel<List<Conversation>>(Channel.UNLIMITED)
+                val observer = launch(start = CoroutineStart.UNDISPATCHED) {
+                    repo.observeConversations("").collect { updates.send(it) }
+                }
+                try {
+                    assertEquals(9, updates.receive().single().unreadCount)
+                    repo.refreshConversations().getOrThrow()
+                    var canonical: List<Conversation>
+                    do {
+                        canonical = updates.receive()
+                        assertTrue("Atomic snapshot replacement must not emit a fabricated empty inbox", canonical.isNotEmpty())
+                    } while (canonical.size != 4)
+                    assertEquals(0, canonical.single { it.id == "room" }.unreadCount)
+                    assertTrue(canonical.single { it.id == "room" }.myManualUnread)
+                    assertEquals(5, canonical.filter { !it.isArchived && !it.isSelf }.sumOf { it.badgeUnreadCount })
+                    online.set(false)
+                    assertTrue(repo.refreshConversations().isFailure)
+                    assertEquals(canonical, repo.observeConversations("").first())
+                } finally {
+                    observer.cancelAndJoin()
+                    updates.close()
+                }
+            }
+        })
+    }
+
+    @Test fun inboxFetchStartsDoNotRetireUsefulRepliesButAcceptedNewerSnapshotsDo() = runBlocking {
+        for (mode in listOf("older-first", "newer-first", "newer-fails")) {
+            val olderEntered = CompletableDeferred<Unit>()
+            val newerEntered = CompletableDeferred<Unit>()
+            val releaseOlder = CompletableDeferred<Unit>()
+            val releaseNewer = CompletableDeferred<Unit>()
+            val calls = java.util.concurrent.atomic.AtomicInteger()
+            exerciseReadOrdering(cached = false, inboxResponse = {
+                val first = calls.incrementAndGet() == 1
+                if (first) { olderEntered.complete(Unit); releaseOlder.await() }
+                else { newerEntered.complete(Unit); releaseNewer.await() }
+                check(first || mode != "newer-fails") { "Newer request failed" }
+                """{"conversations":[{"id":"room","name":"Room","isGroup":false,"members":[],"unreadCount":${if (first) 2 else 4}}]}"""
+            }, onReady = { repo, db, tokens ->
+                tokens.save("fixture-credential")
+                suspend fun count() = db.conversationDao().byId("room")?.toDomain()?.unreadCount
+                coroutineScope {
+                    val older = async { repo.refreshConversations() }
+                    olderEntered.await()
+                    val newer = async { repo.refreshConversations() }
+                    newerEntered.await()
+                    if (mode == "older-first") {
+                        releaseOlder.complete(Unit)
+                        older.await().getOrThrow()
+                        assertEquals(2, count()) // newer request is only pending
+                        releaseNewer.complete(Unit)
+                        newer.await().getOrThrow()
+                        assertEquals(4, count())
+                    } else {
+                        releaseNewer.complete(Unit)
+                        if (mode == "newer-fails") assertTrue(newer.await().isFailure)
+                        else { newer.await().getOrThrow(); assertEquals(4, count()) }
+                        releaseOlder.complete(Unit)
+                        older.await().getOrThrow()
+                        assertEquals(if (mode == "newer-fails") 2 else 4, count())
+                    }
+                }
+            })
+        }
+    }
+
+    @Test fun mutationSupersessionCannotBeReportedAsACompletedBackgroundInboxRefresh() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        exerciseReadOrdering(cached = false, inboxResponse = {
+            if (calls.incrementAndGet() > 1) awaitCancellation() // scheduled trailing refresh is separate work
+            entered.complete(Unit)
+            release.await()
+            """{"conversations":[]}"""
+        }, onReady = { repo, db, tokens ->
+            tokens.save("fixture-credential")
+            db.conversationDao().upsertAll(listOf(ConversationEntity.from(
+                Conversation("room", Conversation.Kind.DM, "Room", unreadCount = 9))))
+            coroutineScope {
+                val pending = async { repo.refreshConversations() }
+                entered.await()
+                repo.invalidateReadProjections("room")
+                release.complete(Unit)
+                assertTrue("A discarded response must leave background reconciliation incomplete", pending.await().isFailure)
+                assertEquals(9, db.conversationDao().byId("room")?.toDomain()?.unreadCount)
+            }
+        })
+    }
+
     private suspend fun exerciseReadOrdering(cached: Boolean, retire: Boolean = false,
         infoFirst: Boolean = false, unchangedPage: Boolean = false,
         overlappingPages: Boolean = false, olderCommitsFirst: Boolean = false, unrelatedOnly: Boolean = false,
         readFailureBody: String? = null, readSuccessRoom: String? = null,
         lostReadAck: Boolean = false, readRequests: MutableList<String>? = null,
+        inboxResponse: (suspend () -> String)? = null,
         onReady: (suspend (PulseRepositoryImpl, PulseDatabase, SessionTokenStore) -> Unit)? = null) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
@@ -191,6 +302,8 @@ class ReadSnapshotOrderingTest {
         val pageProof = if (unchangedPage) "[]" else "[\"old-peer\"]"
         val infoProof = if (unchangedPage) "[\"retired-peer\"]" else "[]"
         val http = HttpClient(MockEngine { request ->
+            if (request.url.encodedPath == "/api/conversations" && inboxResponse != null)
+                return@MockEngine respond(inboxResponse(), HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
             if (lostReadAck && request.url.encodedPath == "/api/conversations/room/read-intent") {
                 readRequests?.add("read-intent")
                 return@MockEngine respond("""{"readIntentVersion":2,"userId":"owner","conversationId":"room","readIntent":"original.member"}""",

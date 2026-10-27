@@ -126,6 +126,7 @@ final class MirrorViewModel: ObservableObject {
     private var inboxRequestID: UUID?
     private var inboxRefreshQueued = false
     private var inboxSnapshots: AnyCancellable?
+    private var inboxInvalidations: AnyCancellable?
     private var client: PulseAPIClient?
 
 
@@ -188,6 +189,14 @@ final class MirrorViewModel: ObservableObject {
             guard let session, session.sessionGeneration == inboxEpoch else { return }
             self?.acceptCanonicalInbox(rooms, viewerId: viewerId)
         }
+        inboxInvalidations = Publishers.Merge(session.$inboxRefreshTick.dropFirst(), session.$realtimeRefreshTick.dropFirst())
+            .sink { [weak self, weak session] _ in
+                guard let self, let session, session.sessionGeneration == inboxEpoch else { return }
+                self.refreshRevision &+= 1
+                // refresh() coalesces a trailing request; ordinary timer polls
+                // still cannot repeatedly invalidate an in-flight request.
+                self.refresh()
+            }
         inbox = ((try? store?.cachedConversations()) ?? []).map { WireConversationSummary(cached: $0) }
         projectInbox()
         expiryTimer?.invalidate()
@@ -206,6 +215,7 @@ final class MirrorViewModel: ObservableObject {
 
     func stop() {
         inboxSnapshots?.cancel(); inboxSnapshots = nil
+        inboxInvalidations?.cancel(); inboxInvalidations = nil
         timer?.invalidate(); timer = nil
         expiryTimer?.invalidate(); expiryTimer = nil
         refreshRevision &+= 1

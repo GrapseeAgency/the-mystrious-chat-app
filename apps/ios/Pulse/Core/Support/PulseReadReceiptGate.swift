@@ -278,3 +278,31 @@ enum PulseReadJournalReplay {
         } catch { return false }
     }
 }
+
+/// Request order is not mutation authority. A pending/failed newer fetch does
+/// not invalidate useful truth; a newer accepted snapshot does. Explicit
+/// actions, unsolicited canonical handoffs and session retirement still fence
+/// every older response independently of this request sequence.
+struct PulseInboxSnapshotFence {
+    struct Ticket: Equatable {
+        fileprivate let revision: UInt64
+        fileprivate let request: UInt64
+    }
+    private var revision: UInt64 = 0
+    private var nextRequest: UInt64 = 0
+    private var committedRequest: UInt64 = 0
+
+    mutating func begin() -> Ticket {
+        nextRequest &+= 1
+        return Ticket(revision: revision, request: nextRequest)
+    }
+    func isCurrent(_ ticket: Ticket) -> Bool {
+        ticket.revision == revision && ticket.request >= committedRequest
+    }
+    mutating func accept(_ ticket: Ticket) -> Bool {
+        guard isCurrent(ticket) else { return false }
+        committedRequest = ticket.request
+        return true
+    }
+    mutating func invalidate() { revision &+= 1 }
+}

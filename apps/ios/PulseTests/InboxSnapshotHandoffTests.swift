@@ -29,6 +29,30 @@ private final class InboxSnapshotProtocol: URLProtocol {
 
 @MainActor
 final class InboxSnapshotHandoffTests: XCTestCase {
+    func testStartingOrFailingAnotherFetchDoesNotRetireUsefulCanonicalTruth() {
+        var fence = PulseInboxSnapshotFence()
+        let older = fence.begin(), newer = fence.begin()
+        XCTAssertTrue(fence.isCurrent(older), "Newer is still pending, not accepted")
+        XCTAssertTrue(fence.accept(older))
+        XCTAssertTrue(fence.accept(newer), "Earlier completion must not suppress a later-started response")
+        XCTAssertFalse(fence.accept(older), "A later-started accepted response fences the old one")
+
+        var failing = PulseInboxSnapshotFence()
+        let useful = failing.begin()
+        _ = failing.begin() // fails: no accept, no invalidation
+        XCTAssertTrue(failing.accept(useful))
+    }
+
+    func testExplicitActionsAndBackgroundHandoffsStillRetireEveryPendingFetch() {
+        var fence = PulseInboxSnapshotFence()
+        let older = fence.begin(), newer = fence.begin()
+        fence.invalidate()
+        XCTAssertFalse(fence.accept(older))
+        XCTAssertFalse(fence.accept(newer))
+        let current = fence.begin()
+        XCTAssertTrue(fence.accept(current))
+    }
+
     private func fixture(_ json: String) throws -> [WireConversationSummary] {
         try JSONDecoder().decode(WireConversationsPage.self, from: Data(json.utf8)).conversations
     }

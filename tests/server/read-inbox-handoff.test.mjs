@@ -23,11 +23,36 @@ test('Both Swift inboxes consume confirmed snapshots and retire earlier requests
   for (const src of [primary, mirror]) {
     assert.match(src, /session.inboxSnapshots[\s\S]*?sink[\s\S]*?session.sessionGeneration == inboxEpoch[\s\S]*?acceptCanonicalInbox\(rooms,/)
     const adopt = src.split('func acceptCanonicalInbox(')[1].split('\n    }')[0]
-    assert.match(adopt, /refresh(?:Generation|Revision) &\+= 1/)
+    assert.match(adopt, /(?:refreshRevision &\+= 1|inboxSnapshotFence.invalidate\(\))/)
     assert.doesNotMatch(adopt, /await |Task\s*\{|\.conversations\(|markRead\(/)
   }
-  assert.match(primary, /guard request == refreshGeneration, epoch == session.sessionGeneration/)
+  assert.match(primary, /guard epoch == session.sessionGeneration, inboxSnapshotFence.accept\(request\)/)
   assert.match(mirror, /if let page, revision == refreshRevision/)
   const android = await source('apps/android/data/src/main/kotlin/app/pulse/data/repository/PulseRepositoryImpl.kt')
   assert.match(android, /observeConversations\(query: String\)[\s\S]*?combine\(conversationDao.observeAll\(\), draftDao.observeAll\(\)\)/)
+})
+
+test('inbox GET ordering is separate from immediate mutation invalidation on both native platforms', async () => {
+  const android = await source('apps/android/data/src/main/kotlin/app/pulse/data/repository/PulseRepositoryImpl.kt')
+  const fetch = android.split('override suspend fun refreshConversations():')[1].split('override suspend fun refreshMessages(')[0]
+  assert.match(fetch, /val version = inboxRefreshVersion.get\(\)/)
+  assert.match(fetch, /request < inboxCommittedRequest/)
+  assert.match(fetch, /inboxSnapshotMutex.withLock/)
+  assert.match(fetch, /catch \(_: SupersededConversationSnapshot\)[\s\S]*?return Result.failure\(IllegalStateException/)
+
+  assert.ok(fetch.indexOf('val accepted = database.withTransaction') < fetch.indexOf('if (accepted) inboxCommittedRequest = request'))
+  const schedule = android.split('private fun scheduleConversationsRefresh(')[1].split('val awaitingDelay')[0]
+  assert.ok(schedule.indexOf('inboxRefreshVersion.incrementAndGet()') < schedule.indexOf('refreshScheduled.compareAndSet'))
+  assert.match(android, /requestReadMembershipRefresh\(conversationId: String\)[\s\S]*?scheduleConversationsRefresh\(invalidate = false\)/)
+  const primary = await source('apps/ios/Pulse/Features/Chats/ChatsView.swift')
+  const observer = primary.split('private func observe(session: PulseSession)')[1].split('func acceptCanonicalInbox(')[0]
+  assert.equal((observer.match(/handleEvents\(receiveOutput:/g) ?? []).length, 3)
+  assert.equal((observer.match(/inboxSnapshotFence.invalidate\(\)/g) ?? []).length, 3)
+  for (const part of observer.split('.handleEvents(receiveOutput:').slice(1)) {
+    assert.ok(part.indexOf('inboxSnapshotFence.invalidate()') < part.indexOf('.debounce('))
+  }
+  const mirror = await source('apps/ios/Pulse/Features/Mirror/MirrorRootView.swift')
+  const invalidation = mirror.split('inboxInvalidations = Publishers.Merge')[1].split('inbox = ((try?')[0]
+  assert.match(invalidation, /self.refreshRevision &\+= 1[\s\S]*?self.refresh\(\)/)
+  assert.match(mirror, /inboxInvalidations\?\.cancel\(\)/)
 })
