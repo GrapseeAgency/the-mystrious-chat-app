@@ -49,15 +49,23 @@ class OutboxWorker(
             // A slow upload must not postpone the open thread's canonical refresh.
             inputData.getString("readStateRoom")?.takeIf { it.isNotBlank() && it.length <= 128 }
                 ?.let(target::invalidateReadProjections)
-            val report = target.flushOutbox()
-            val pendingReads = target.flushReadReceipts().getOrThrow()
-            // No count from a push is trusted. Read the full current inbox after replay.
-            target.refreshConversations().getOrThrow()
-            if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) return Result.retry()
-            val notifications = app.pulse.android.push.PulseMessageNotifications.reconcile(applicationContext, target) {
-                prefs.viewerId.first() == owner && graph.tokens().cached == token && repo.viewerId == owner
-            }
-            if (report.pending > 0 || pendingReads > 0 || !notifications) Result.retry() else Result.success()
+            val complete = app.pulse.domain.sync.flushBackgroundQueues(
+                messages = { target.flushOutbox().pending == 0 },
+                readState = {
+                    val pendingReads = target.flushReadReceipts().getOrThrow()
+                    // No count from a push is trusted. Replay, then fetch the
+                    // canonical inbox and exact alert proofs while media sends run.
+                    target.refreshConversations().getOrThrow()
+                    if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) false
+                    else {
+                        val notifications = app.pulse.android.push.PulseMessageNotifications.reconcile(applicationContext, target) {
+                            prefs.viewerId.first() == owner && graph.tokens().cached == token && repo.viewerId == owner
+                        }
+                        pendingReads == 0 && notifications
+                    }
+                },
+            )
+            if (complete) Result.success() else Result.retry()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

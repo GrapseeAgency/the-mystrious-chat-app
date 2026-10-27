@@ -20,8 +20,10 @@ final class PulseOutboxTests: XCTestCase {
 
         var uploadCount = 0
         var beforeUploadReturn: (() throws -> Void)?
+        var beforeUploadAsync: (() async -> Void)?
         func uploadMedia(dataUrl: String) async throws -> String {
             uploadCount += 1
+            await beforeUploadAsync?()
             try beforeUploadReturn?()
             return "uploaded-file.pdf"
         }
@@ -168,6 +170,139 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertThrowsError(try PulseQuickReply.persist(text:"not saved",conversationId:"c1",clientId:"failed",locked:false,store:store))
         XCTAssertThrowsError(try PulseQuickReply.persist(text:"not held",conversationId:"c1",clientId:"held-failed",locked:true,store:store))
         XCTAssertEqual(try store.outboxAll().map(\.clientId),["operation"])
+    }
+
+    private actor BackgroundBarrier {
+        private var open = false
+        private var waiter: CheckedContinuation<Void, Never>?
+        func wait() async {
+            if open { return }
+            await withCheckedContinuation { waiter = $0 }
+        }
+        func release() {
+            open = true
+            waiter?.resume()
+            waiter = nil
+        }
+    }
+
+    func testBackgroundReadsAndBadgesFinishWhileMediaUploadIsSuspended() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let sender = StubSender(behaviors: [:]), barrier = BackgroundBarrier()
+        let upload = expectation(description: "upload suspended")
+        let projected = expectation(description: "read replay and badge reconciliation completed")
+        sender.beforeUploadAsync = { upload.fulfill(); await barrier.wait() }
+        let engine = makeEngine(store, sender)
+        XCTAssertTrue(engine.appendForward(conversationId: "c1", clientId: "large-file", content: "attachment",
+            forward: PulseOutboxForward(kind: "file", fileName: "large.pdf", uploadDataUrl: "data:application/pdf;base64,cGRm")))
+        var replayed = false, finished = false
+        engine.onReadJournalFlush = { replayed = true; return true }
+        engine.onBadgeRefresh = { XCTAssertTrue(replayed); projected.fulfill(); return true }
+        let work = Task { let result = await engine.flushBackgroundQueues(); finished = true; return result }
+        defer { work.cancel(); engine.stop(); Task { await barrier.release() } }
+        await fulfillment(of: [upload, projected], timeout: 5)
+        XCTAssertFalse(finished, "The background task must still own the upload")
+        XCTAssertEqual(try store.countPendingOutbox(), 1)
+        await barrier.release()
+        let complete = await work.value
+        XCTAssertTrue(complete)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
+    }
+
+    func testSlowBackgroundReadReplayDoesNotBlockOutgoingMessagesOrRunBadgesBeforeReplay() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let engine = makeEngine(store, StubSender(behaviors: [:])), barrier = BackgroundBarrier()
+        XCTAssertTrue(engine.append(conversationId: "c1", clientId: "send", content: "hello"))
+        let read = expectation(description: "read replay suspended")
+        let sent = expectation(description: "outgoing message committed")
+        var projected = false, finished = false
+        engine.onReadJournalFlush = { read.fulfill(); await barrier.wait(); return false }
+        engine.onAcknowledgement = { _ in sent.fulfill() }
+        engine.onBadgeRefresh = { projected = true; return true }
+        let work = Task { let result = await engine.flushBackgroundQueues(); finished = true; return result }
+        defer { work.cancel(); engine.stop(); Task { await barrier.release() } }
+        await fulfillment(of: [read, sent], timeout: 5)
+        XCTAssertFalse(projected)
+        XCTAssertFalse(finished)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
+        await barrier.release()
+        let complete = await work.value
+        XCTAssertFalse(complete, "An incomplete read journal keeps the wake retryable")
+        XCTAssertTrue(projected, "Current canonical state still reconciles after a failed replay")
+    }
+
+    func testBackgroundExpirationCancelsUploadAndReadReplayWithoutPublishingBadges() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let sender = StubSender(behaviors: [:])
+        let upload = expectation(description: "upload started"), read = expectation(description: "read replay started")
+        let uploadCancelled = expectation(description: "upload cancelled"), readCancelled = expectation(description: "read cancelled")
+        sender.beforeUploadAsync = {
+            upload.fulfill()
+            do { try await Task.sleep(nanoseconds: 60_000_000_000) }
+            catch { uploadCancelled.fulfill() }
+        }
+        let engine = makeEngine(store, sender)
+        XCTAssertTrue(engine.appendForward(conversationId: "c1", clientId: "original", content: "attachment",
+            forward: PulseOutboxForward(kind: "file", fileName: "large.pdf", uploadDataUrl: "data:application/pdf;base64,cGRm")))
+        var projected = false
+        engine.onReadJournalFlush = {
+            read.fulfill()
+            do { try await Task.sleep(nanoseconds: 60_000_000_000) }
+            catch { readCancelled.fulfill() }
+            return false
+        }
+        engine.onBadgeRefresh = { projected = true; return true }
+        let work = Task { await engine.flushBackgroundQueues() }
+        defer { work.cancel(); engine.stop() }
+        await fulfillment(of: [upload, read], timeout: 5)
+        work.cancel()
+        await fulfillment(of: [uploadCancelled, readCancelled], timeout: 5)
+        let complete = await work.value
+        XCTAssertFalse(complete)
+        XCTAssertFalse(projected)
+        XCTAssertEqual(try store.countPendingOutbox(), 1)
+        XCTAssertEqual(sender.attempts(of: "attachment"), 0)
+    }
+
+    func testColdWakeLosingOwnershipDuringUploadCannotPersistOrPostThroughTheLiveAccount() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let sender = StubSender(behaviors: [:]), barrier = BackgroundBarrier()
+        let started = expectation(description: "cold upload suspended")
+        var current = true
+        sender.beforeUploadAsync = { started.fulfill(); await barrier.wait() }
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false, isCurrent: { current }) { sender }
+        XCTAssertTrue(engine.appendForward(conversationId: "c1", clientId: "original", content: "attachment",
+            forward: PulseOutboxForward(kind: "file", fileName: "large.pdf", uploadDataUrl: "data:application/pdf;base64,cGRm")))
+        let work = Task { await engine.flush() }
+        defer { work.cancel(); engine.stop(); Task { await barrier.release() } }
+        await fulfillment(of: [started], timeout: 5)
+        current = false // foreground takeover, credential change, or gateway switch
+        await barrier.release()
+        let complete = await work.value
+        XCTAssertFalse(complete)
+        XCTAssertEqual(sender.attempts(of: "attachment"), 0)
+        let entry = try XCTUnwrap(store.outboxPending().first)
+        XCTAssertEqual(entry.clientId, "original")
+        XCTAssertNil(PulseOutboxForward.decode(entry.payloadJson)?.filePath)
+        XCTAssertNotNil(PulseOutboxForward.decode(entry.payloadJson)?.uploadDataUrl)
+    }
+
+    func testExpiredBackgroundOwnerCannotStartAProjectionAfterSuspendedReadReplay() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let sender = StubSender(behaviors: [:]), barrier = BackgroundBarrier()
+        var current = true, projected = false
+        let started = expectation(description: "read replay suspended")
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false, isCurrent: { current }) { sender }
+        engine.onReadJournalFlush = { started.fulfill(); await barrier.wait(); return true }
+        engine.onBadgeRefresh = { projected = true; return true }
+        let work = Task { await engine.flushBackgroundQueues() }
+        defer { work.cancel(); engine.stop(); Task { await barrier.release() } }
+        await fulfillment(of: [started], timeout: 5)
+        current = false
+        await barrier.release()
+        let complete = await work.value
+        XCTAssertFalse(complete)
+        XCTAssertFalse(projected)
     }
 
     func testBackgroundCompletionRequiresUnreadProjectionAsWellAsDurableQueues() async throws {

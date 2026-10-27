@@ -1235,7 +1235,8 @@ public final class PulseSession: ObservableObject {
             self.noteReadStateChanged(room)
         }
         engine.onReadJournalFlush = { [weak self] in
-            guard let self, self.ready, let owner = self.viewer?.id, let store = self.store else { return false }
+            guard let self, self.ready, self.generation == readHintEpoch,
+                  let owner = self.viewer?.id, let store = self.store else { return false }
             let client = self.api, epoch = self.generation
             var settledRooms = Set<String>()
             var confirmed: [PulseQueuedRead] = []
@@ -1254,7 +1255,7 @@ public final class PulseSession: ObservableObject {
             return succeeded
         }
         engine.onBadgeRefresh = { [weak self] in
-            guard let self, self.ready, let store = self.store else { return false }
+            guard let self, self.ready, self.generation == readHintEpoch, let store = self.store else { return false }
             let epoch = self.generation, inboxRevision = self.inboxRefreshTick, liveRevision = self.realtimeRefreshTick
             return await PulsePushNotifications.refreshUnreadBadge(using: self.api, store: store, isCurrent: {
                 self.generation == epoch && self.inboxRefreshTick == inboxRevision && self.realtimeRefreshTick == liveRevision
