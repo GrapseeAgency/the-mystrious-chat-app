@@ -71,7 +71,12 @@ final class ReadPresentationTests: XCTestCase {
         let threadDiagnostics = {
             "expectedThread=\(ObjectIdentifier(thread)); expectedPrimary=\(ObjectIdentifier(primary)); expectedOwner=\(owner.id); " + session.nativeReadPresentationDiagnostics()
         }
-        primary.present(thread, animated: false)
+        // Exercise the animated sheet lifecycle used by the SwiftUI surface.
+        // The secondary-window, non-animated hosting fixture was observed with
+        // presenting=true and a zero-duration coordinator still at progress 0.
+        // That is correctly blocked, not permission to bypass the runtime gate.
+        primary.present(thread, animated: true)
+        XCTAssertTrue(session.nativePresentationBlockedNow, "Presentation must interrupt reading")
         try await awaitPresentation("Thread sheet attached, settled, and owns its real reading anchor", timeout: 5, diagnostics: threadDiagnostics) {
             primary.presentedViewController === thread && thread.viewIfLoaded?.window === window &&
                 !thread.isBeingPresented && thread.transitionCoordinator == nil &&
