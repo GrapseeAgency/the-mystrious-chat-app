@@ -15,6 +15,7 @@ final class CallPreparationOwnershipTests: XCTestCase {
         }
     }
     private final class Media: PulseCallMediaProviding {
+        var cameraRequests = 0
         var cameraRequested: (() -> Void)?
         var camera: CheckedContinuation<Bool, Never>?
         var micRequests = 0
@@ -33,7 +34,8 @@ final class CallPreparationOwnershipTests: XCTestCase {
             }
         }
         func requestCameraPermission() async -> Bool {
-            await withCheckedContinuation { continuation in
+            cameraRequests += 1
+            return await withCheckedContinuation { continuation in
                 camera = continuation
                 cameraRequested?()
             }
@@ -118,6 +120,82 @@ final class CallPreparationOwnershipTests: XCTestCase {
         XCTAssertTrue(signals.events.isEmpty)
         XCTAssertTrue(try store.callLogQueueAll().isEmpty)
         engine.dismissError()
+        XCTAssertEqual(engine.state, .idle)
+    }
+
+    func testIncomingCallWinsBeforeQueuedCameraSetupWithoutOpeningCameraPrompt() async throws {
+        let signals = Signals(), media = Media()
+        let engine = PulseCallEngine(store: try PulseStore(), viewer: PulseViewer(id: "me", name: "Me"),
+            signaling: signals, media: media, apiProvider: { nil }, toasts: ToastCenter())
+        defer { engine.endCall() }
+        // If the stale request is reached, return immediately so the regression
+        // fails on the request count rather than hanging on a fake permission.
+        media.cameraRequested = { [weak media] in media?.camera?.resume(returning: true) }
+        engine.startOutgoing(to: CallPeer(id: "peer", name: "Peer"), conversationId: "room", kind: .video)
+        let queued = try XCTUnwrap(engine.outgoingPreparationTask)
+        engine.handleCallSignal(event: "call:offer", raw: [
+            "callId": "incoming-winner", "conversationId": "other-room", "from": "other-peer", "to": "me",
+            "kind": "voice", "sdp": "offer-sdp", "callerName": "Other Peer",
+        ])
+        await queued.value
+        XCTAssertEqual(engine.state, .incomingRinging)
+        XCTAssertEqual(media.cameraRequests, 0)
+        XCTAssertEqual(media.micRequests, 0)
+        XCTAssertTrue(signals.events.isEmpty)
+    }
+
+    func testCancelledBeforeQueuedVoiceSetupDoesNotOpenMicPrompt() async throws {
+        let signals = Signals(), media = Media(), store = try PulseStore()
+        let engine = PulseCallEngine(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            signaling: signals, media: media, apiProvider: { nil }, toasts: ToastCenter())
+        engine.startOutgoing(to: CallPeer(id: "peer", name: "Peer"), conversationId: "room")
+        let queued = try XCTUnwrap(engine.mediaPreparationTask)
+        // No suspension before cancellation: setup has not entered the actor yet.
+        engine.endCall()
+        engine.dismissError()
+        await queued.value
+        XCTAssertEqual(media.micRequests, 0)
+        XCTAssertEqual(media.peerRequests, 0)
+        XCTAssertTrue(signals.events.isEmpty)
+        XCTAssertTrue(try store.callLogQueueAll().isEmpty)
+        XCTAssertEqual(engine.state, .idle)
+    }
+
+    func testDisconnectedBeforeQueuedVoiceSetupDoesNotPromptAfterReconnect() async throws {
+        let signals = Signals(), media = Media(), store = try PulseStore()
+        let engine = PulseCallEngine(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            signaling: signals, media: media, apiProvider: { nil }, toasts: ToastCenter())
+        engine.startOutgoing(to: CallPeer(id: "peer", name: "Peer"), conversationId: "room")
+        let queued = try XCTUnwrap(engine.mediaPreparationTask)
+        signals.isReady = false
+        engine.handleSocketDisconnected()
+        signals.isReady = true
+        await queued.value
+        XCTAssertEqual(media.micRequests, 0)
+        XCTAssertEqual(media.peerRequests, 0)
+        XCTAssertTrue(signals.events.isEmpty)
+        XCTAssertTrue(try store.callLogQueueAll().isEmpty)
+    }
+
+    func testCancelledBeforeQueuedAnswerDoesNotOpenMicPrompt() async throws {
+        let signals = Signals(), media = Media(), store = try PulseStore()
+        let engine = PulseCallEngine(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            signaling: signals, media: media, apiProvider: { nil }, toasts: ToastCenter())
+        engine.handleCallSignal(event: "call:offer", raw: [
+            "callId": "queued-answer", "conversationId": "room", "from": "peer", "to": "me",
+            "kind": "voice", "sdp": "offer-sdp", "callerName": "Peer",
+        ])
+        XCTAssertEqual(engine.state, .incomingRinging)
+        engine.acceptIncoming()
+        let queued = try XCTUnwrap(engine.mediaPreparationTask)
+        engine.endCall()
+        let terminalEvents = signals.events
+        engine.dismissError()
+        await queued.value
+        XCTAssertEqual(media.micRequests, 0)
+        XCTAssertEqual(media.peerRequests, 0)
+        XCTAssertEqual(signals.events, terminalEvents, "Retired answer must not dispatch another signal")
+        XCTAssertTrue(try store.callLogQueueAll().isEmpty)
         XCTAssertEqual(engine.state, .idle)
     }
 

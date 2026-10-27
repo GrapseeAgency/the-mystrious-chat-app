@@ -84,6 +84,8 @@ class CallHistoryViewModel @Inject constructor(
         }
     }
 
+    fun callPermissionOwnerKey(): String? = repo.attachmentSessionKey()
+
     /** R3-B item 5 - the redial fallback surfaces through the same channel. */
     fun notify(text: String) {
         _notice.value = text
@@ -140,13 +142,15 @@ fun CallsView(
 
     // Wave 3 gate (contacts precedent): RECORD_AUDIO must be live before the
     // engine touches the mic; denial keeps the call unstarted (honest).
-    var pendingRedial by remember { mutableStateOf<CallLogEntry?>(null) }
+    val redialPermission = remember { OutgoingCallPermissionGate<CallLogEntry>() }
+    androidx.compose.runtime.DisposableEffect(redialPermission) {
+        onDispose { redialPermission.cancel() }
+    }
     val micLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        val target = pendingRedial
-        pendingRedial = null
-        if (granted && target != null) {
+        val target = redialPermission.complete(granted, vm.callPermissionOwnerKey())
+        if (target != null) {
             onRedial(target)
         } else {
             redialBusyId = null
@@ -202,9 +206,8 @@ fun CallsView(
                         onClick = { onOpenRoom(row.conversationId) },
                         onRedial = if (row.peer != null) {
                             {
-                                if (redialBusyId == null) {
+                                if (redialBusyId == null && redialPermission.begin(vm.callPermissionOwnerKey(), row)) {
                                     redialBusyId = row.id
-                                    pendingRedial = row
                                     micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                                 }
                             }

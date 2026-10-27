@@ -75,6 +75,7 @@ public final class PulseCallEngine: ObservableObject {
     private var pendingLocalCandidates: [[String: Any]] = []
     private var outgoingIntent = UUID()
     private(set) var outgoingPreparationTask: Task<Void, Never>?
+    private(set) var mediaPreparationTask: Task<Void, Never>?
     private var incomingOffer: CallOfferEnvelope?
     /// When the machine reached .ended (auto-reset ≈2.5s, web parity).
     private var endedAt: Date?
@@ -135,7 +136,9 @@ public final class PulseCallEngine: ObservableObject {
             return
         }
         outgoingPreparationTask = Task { [weak self] in
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, self.outgoingIntent == intent,
+                  case .idle = self.machine.state, self.signaling.isReady,
+                  PulseGroupCallEngine.active?.isBusy != true else { return }
             let cameraOk = await self.media.requestCameraPermission() && self.media.canCaptureVideo()
             // Something else (another call) took over while the prompt was up.
             guard !Task.isCancelled, self.outgoingIntent == intent,
@@ -166,13 +169,20 @@ public final class PulseCallEngine: ObservableObject {
         errorText = nil
         summary = nil
         apply(.startOutgoing(info), now: Date())
-        Task { await prepareAndSendOffer(callId: info.callId) }
+        mediaPreparationTask = Task { [weak self] in
+            guard let self else { return }
+            await self.prepareAndSendOffer(callId: info.callId)
+        }
     }
 
     private func prepareAndSendOffer(callId: String) async {
+        // Teardown can win before this queued main-actor task first runs.
+        // Do not open an OS permission panel on behalf of a retired call.
+        guard !Task.isCancelled, machine.owns(callId: callId), machine.state == .outgoingRinging else { return }
+        guard signaling.isReady else { handleSocketDisconnected(); return }
         let granted = await media.requestMicPermission()
         // Canceled (or a new call took over) while the prompt was up.
-        guard machine.owns(callId: callId), machine.state == .outgoingRinging else { return }
+        guard !Task.isCancelled, machine.owns(callId: callId), machine.state == .outgoingRinging else { return }
         guard granted else {
             errorText = Self.micDeniedMessage
             apply(.abortLocal, now: Date())
@@ -236,12 +246,17 @@ public final class PulseCallEngine: ObservableObject {
         guard case .incomingRinging = machine.state, let call = machine.call else { return }
         guard signaling.isReady else { handleSocketDisconnected(); return }
         apply(.acceptRequested, now: Date())
-        Task { await prepareAndSendAnswer(call) }
+        mediaPreparationTask = Task { [weak self] in
+            guard let self else { return }
+            await self.prepareAndSendAnswer(call)
+        }
     }
 
     private func prepareAndSendAnswer(_ call: CallInfo) async {
+        guard !Task.isCancelled, machine.owns(callId: call.callId), machine.state == .connecting else { return }
+        guard signaling.isReady else { handleSocketDisconnected(); return }
         let granted = await media.requestMicPermission()
-        guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
+        guard !Task.isCancelled, machine.owns(callId: call.callId), machine.state == .connecting else { return }
         guard signaling.isReady else { handleSocketDisconnected(); return }
         guard granted else {
             // Callee could not join → reject politely; the caller logs the row.
@@ -668,6 +683,8 @@ public final class PulseCallEngine: ObservableObject {
     }
 
     private func teardownMedia() {
+        mediaPreparationTask?.cancel()
+        mediaPreparationTask = nil
         localSdpDispatched = false
         pendingLocalCandidates.removeAll()
         pc?.close()

@@ -601,12 +601,16 @@ fun PulseRoot(
                 }
                 var activeCallRoomId by remember { mutableStateOf<String?>(null) }
                 var pendingCallPermission by remember { mutableStateOf<Pair<app.pulse.domain.model.Conversation, Boolean>?>(null) }
+                var pendingCallPermissionOwner by remember { mutableStateOf<String?>(null) }
                 val callPermissions = rememberLauncherForActivityResult(
                     androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
                 ) { grants ->
                     val pending = pendingCallPermission
+                    val permissionOwner = pendingCallPermissionOwner
                     pendingCallPermission = null
-                    if (pending != null && repository.viewerId == viewerId && pending.first.id == activeCallRoomId) {
+                    pendingCallPermissionOwner = null
+                    if (pending != null && permissionOwner != null && repository.attachmentSessionKey() == permissionOwner &&
+                        repository.viewerId == viewerId && pending.first.id == activeCallRoomId) {
                         if (grants[android.Manifest.permission.RECORD_AUDIO] == true) {
                             val (convo, video) = pending
                             val kind = if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE
@@ -651,7 +655,9 @@ fun PulseRoot(
                         groupCallVm.setActiveConversation(convo?.takeIf { it.isGroupish }?.id, convo?.title)
                     },
                     onStartCall = { convo, video ->
-                        if (pendingCallPermission == null) {
+                        val permissionOwner = repository.attachmentSessionKey()
+                        if (pendingCallPermission == null && permissionOwner != null) {
+                            pendingCallPermissionOwner = permissionOwner
                             pendingCallPermission = convo to video
                             callPermissions.launch(if (video) arrayOf(android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.CAMERA)
                                 else arrayOf(android.Manifest.permission.RECORD_AUDIO))

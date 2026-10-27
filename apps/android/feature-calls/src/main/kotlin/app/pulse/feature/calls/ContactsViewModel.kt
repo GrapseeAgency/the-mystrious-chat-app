@@ -153,6 +153,8 @@ class ContactsViewModel @Inject constructor(
     }
 
     fun block(user: User) = safetyAction(user) { it.block(user.id) }
+    fun callPermissionOwnerKey(): String? = repo.attachmentSessionKey()
+
     fun safetyOwnerKey(): String? = repo.attachmentSessionKey()
 
     fun report(user: User, reason: String, details: String?, formOwner: String?, onConfirmed: () -> Unit) {
