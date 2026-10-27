@@ -17,6 +17,8 @@ No production migration or deployment has been executed in this workstream. The 
 - Record OS versions, Android launcher, notification permissions, battery restrictions, app lock, and receipt-privacy settings. Confirm both reader sessions remain authorized; if one invalidates the other, report that prerequisite failure instead of bypassing authentication.
 - Use at least two seconds of stable, unobscured viewing for deliberate reads. Scrolling, transitions, backgrounding, and covers must interrupt dwell.
 - Use the native Message Info/exact read-state response to verify Seen. A legacy web watermark or two displayed times rounded to the same minute is not exact proof.
+- Enable read receipts for baseline Seen assertions. In the privacy-off variant, verify R's own counts/proof and that S does **not** receive hidden receipt evidence; do not expect public Seen.
+- Keep the other R session outside the tested room/thread unless a step deliberately asks it to read. Inspect Seen from S or an authorized read-only proof query. Opening a control message on R's other device would itself legitimately read it and invalidate the unseen-gap control.
 - Run the Android-first direction, then reverse the roles so iOS originates the offline reads, interruptions, and actions.
 
 For each case report **PASS**, **FAIL**, or **BLOCKED**, with the exact step and observed state. Missing tooling, unsupported launcher behavior, or an unobserved OS background wake is not a pass. Record permission/OS limitations separately from app behavior.
@@ -36,7 +38,7 @@ For each case report **PASS**, **FAIL**, or **BLOCKED**, with the exact step and
 1. An authorized staging fixture must create two distinct message IDs with exactly the same canonical `createdAt`, including milliseconds. Do not change phone clocks or edit production rows.
 2. Expose only one message long enough to qualify. Keep the other offscreen.
 3. **Expected:** only the visible identity receives exact proof; the unseen identity still contributes to actual unread count.
-4. Explicitly mark all read, then create another identity with the same timestamp after that operation commits.
+4. Explicitly mark all read, keep both R sessions outside the room, then create another identity with the same timestamp after that operation commits.
 5. **Expected:** the later identity remains unread. Mark-all must not create an open-ended timestamp range.
 6. If an exact-time fixture is unavailable, mark this case BLOCKED; visual timestamp formatting is not a substitute.
 
@@ -80,7 +82,7 @@ For each case report **PASS**, **FAIL**, or **BLOCKED**, with the exact step and
 ## 7. New-member history must be consistent, not invented Seen
 
 1. Seed messages before R joins the group/channel. Join through the supported product flow.
-2. **Expected policy:** existing history is exempt from new unread counts without being advertised as actual Seen by R.
+2. **Expected policy:** existing history is exempt from new unread counts without being advertised as actual Seen by R. Verify before R opens the room, or use an offscreen historical control. If a join flow automatically opens visible history, that history can legitimately qualify after dwell; do not misreport that real observation as invented Seen.
 3. Send a new message after membership creation. It must be unread until observed or deliberately included in mark-all.
 4. Use the exact-time staging fixture to cover messages present at join versus identities inserted later with the same timestamp.
 5. Read selected historical messages. Their proof may now reflect a real observation.
@@ -108,7 +110,7 @@ Record geometry, accessibility settings, interruption timing, and a short screen
 
 1. Establish a known unread set across rooms, threads, and topics. Record room/inbox/in-app badge counts on A and B.
 2. Read only one exact message on A. **Expected:** B's canonical projections converge; a separate unseen gap remains counted.
-3. Deliver alerts for `READ` and `GAP`. While exact cleanup for `READ` is in flight, deliver `NEWER`.
+3. Deliver alerts for `READ` and `GAP` and verify both are present before cleanup. Do not manually dismiss either. While exact cleanup for `READ` is in flight, deliver `NEWER`.
 4. **Expected:** only the alert proven no longer unread is removed. `GAP` and `NEWER` remain. Repeat with read receipts private; R's other device must still reconcile its own unread state.
 5. Hold one outgoing upload while read replay/badge reconciliation is otherwise online. **Expected:** outgoing work does not serially prevent read-state work from running.
 6. Repeat background/cold-start scenarios when the OS grants execution, then return to foreground to verify catch-up. Record whether a wake actually occurred; force-quit/background throttling is not evidence that application work executed.
