@@ -19,6 +19,10 @@ struct ScheduleSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .preset
     @State private var presetIndex = 0
+    @State private var presetDates = PulseScheduledChip.presetDates()
+    @State private var calendar = Calendar.current
+    @State private var attemptedDate: Date?
+    @StateObject private var operations = PulseRoomOperations()
     @State private var customDate = Date().addingTimeInterval(3_600)
     @State private var customTime = Date().addingTimeInterval(3_600)
 
@@ -30,22 +34,17 @@ struct ScheduleSheet: View {
         ("In 1 week", 7 * 86_400),
     ]
 
-    /// Computed per open - the web remindPresets pattern (never cached).
+    /// Stable for this presentation, including retries after an uncertain response.
     private var resolvedDate: Date? {
         switch mode {
         case .preset:
-            let preset = Self.presets[presetIndex]
-            if preset.seconds > 0 { return Date().addingTimeInterval(preset.seconds) }
-            var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-            components.hour = 9
-            components.minute = 0
-            return Calendar.current.date(from: components).flatMap { $0 > Date() ? $0 : Calendar.current.date(byAdding: .day, value: 1, to: $0) }
+            return presetDates[presetIndex]
         case .custom:
-            var components = Calendar.current.dateComponents([.year, .month, .day], from: customDate)
-            let time = Calendar.current.dateComponents([.hour, .minute], from: customTime)
+            var components = calendar.dateComponents([.year, .month, .day], from: customDate)
+            let time = calendar.dateComponents([.hour, .minute], from: customTime)
             components.hour = time.hour
             components.minute = time.minute
-            return Calendar.current.date(from: components)
+            return calendar.date(from: components)
         }
     }
 
@@ -84,6 +83,7 @@ struct ScheduleSheet: View {
                     }
                 }
             }
+            .disabled(!operations.pending.isEmpty)
             .navigationTitle("Schedule message")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -91,20 +91,21 @@ struct ScheduleSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Schedule") { dismissAndArm() }
+                    Button(operations.pending.isEmpty ? "Schedule" : "Scheduling…") { submit() }
                         .font(.subheadline.weight(.semibold))
-                        .disabled(!isInServerWindow)
+                        .disabled(!isInServerWindow || !operations.pending.isEmpty)
                 }
             }
         }
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
+        .onDisappear { operations.stop() }
     }
 
     private var isInServerWindow: Bool {
         guard let when = resolvedDate else { return false }
         let seconds = when.timeIntervalSinceNow
-        return seconds >= 30 && seconds <= 30 * 24 * 3_600
+        return attemptedDate == when || (seconds >= 30 && seconds <= 30 * 24 * 3_600)
     }
 
     private func isoOf(_ date: Date) -> String {
@@ -119,13 +120,13 @@ struct ScheduleSheet: View {
         return formatter
     }()
 
-    private func dismissAndArm() {
-        guard let when = resolvedDate, isInServerWindow else { return }
-        onSchedule(when)
-        dismiss()
+    private func submit() {
+        guard let when = resolvedDate, isInServerWindow, operations.pending.isEmpty else { return }
+        attemptedDate = when
+        operations.run(key: "schedule", operation: { await onSchedule(when) }, onSuccess: { dismiss() })
     }
 
-    var onSchedule: (Date) -> Void = { _ in }
+    var onSchedule: (Date) async -> Bool = { _ in false }
 }
 
 /// F-MS-18 - the sender's pending scheduled rows with cancel (GET/POST
@@ -137,10 +138,14 @@ struct ScheduledManagerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var items: [WireScheduledItem] = []
     @State private var loading = true
+    @State private var busy = false
+    @State private var loadError: String?
+    @State private var request = UUID()
 
     var body: some View {
         NavigationStack {
             List {
+                if let loadError { Button("\(loadError) Retry") { Task { await load() } } }
                 if loading && items.isEmpty {
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
                 }
@@ -174,9 +179,10 @@ struct ScheduledManagerSheet: View {
                     }
                 }
             }
+            .disabled(busy)
             .listStyle(.insetGrouped)
             .overlay {
-                if !loading && items.isEmpty {
+                if !loading && items.isEmpty && loadError == nil {
                     ContentUnavailableCompat(title: "Nothing scheduled", systemImage: "hourglass", note: "Arm a delayed send from the composer banner.")
                 }
             }
@@ -188,14 +194,25 @@ struct ScheduledManagerSheet: View {
                 }
             }
             .refreshable { await load() }
-            .task { await load() }
+            .task(id: session.sessionGeneration) { items = []; busy = false; await load() }
+            .onDisappear { request = UUID() }
         }
         .presentationDetents([.medium, .large])
     }
 
     private func load() async {
-        items = (try? await session.api.scheduledMessages(conversationId: conversationId)) ?? []
-        loading = false
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        request = ticket; loading = true
+        do {
+            let rows = try await api.scheduledMessages(conversationId: conversationId)
+            guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
+            items = rows; loading = false; loadError = nil
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
+            if let failure = error as? PulseAPIClient.Failure, [.auth, .forbidden, .notFound].contains(failure.kind) { items = [] }
+            loading = false; loadError = RoomViewModel.describe(error)
+        }
     }
 
     private func refusalLabel(_ reason: String?) -> String {
@@ -209,12 +226,18 @@ struct ScheduledManagerSheet: View {
     }
 
     private func cancel(_ item: WireScheduledItem) {
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        request = ticket; busy = true; loading = false
         Task {
+            defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
-                try await session.api.cancelScheduled(item.id)
+                try await api.cancelScheduled(item.id)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 withAnimation { items.removeAll { $0.id == item.id } }
                 PulseHaptics.tap()
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }
@@ -272,14 +295,18 @@ struct WhoReactedSheet: View {
     let members: [WireConversationMember]
     let viewerId: String?
     @ObservedObject var session: PulseSession
+    let onReact: (Bool) async throws -> Void
     var onClosed: () -> Void = {}
+    @State private var updating = false
+    @State private var errorText: String?
+    @State private var actionTask: Task<Void, Never>?
 
     @Environment(\.dismiss) private var dismiss
 
     private var reaction: PulseReactionId { PulseReactionId.normalize(emoji) }
 
     private var group: WireReactionGroup? {
-        (message.reactions ?? []).first { $0.emoji == emoji }
+        PulseReactionId.groups(message.reactions).first { $0.emoji == reaction.rawValue }
     }
     private var iReacted: Bool {
         group?.userIds.contains(viewerId ?? "") == true
@@ -310,23 +337,31 @@ struct WhoReactedSheet: View {
                 }
             }
             .listStyle(.plain)
+            if let errorText {
+                Text(errorText).font(.caption).foregroundStyle(.red).padding(.horizontal, 14)
+            }
             Button {
+                guard !updating, let viewerId, session.viewer?.id == viewerId else { return }
+                let epoch = session.sessionGeneration, present = !iReacted
+                updating = true; errorText = nil
                 PulseHaptics.tap()
-                if let viewerId {
-                    Task {
-                        do {
-                            _ = try await session.api.react(messageId: message.id, emoji: reaction.rawValue)
-                        } catch {
-                            session.toasts.show(RoomViewModel.describe(error))
-                        }
+                actionTask = Task { @MainActor in
+                    defer { updating = false }
+                    do {
+                        guard session.sessionGeneration == epoch else { return }
+                        try await onReact(present)
+                        guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                        dismiss()
+                    } catch is CancellationError { return } catch {
+                        guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                        errorText = RoomViewModel.describe(error)
                     }
                 }
-                dismiss()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: reaction.symbolName)
                         .font(.system(size: 14, weight: .medium))
-                    Text(iReacted ? "Remove your reaction" : "React with \(reaction.label)")
+                    Text(updating ? "Updating…" : (iReacted ? "Remove your reaction" : "React with \(reaction.label)"))
                         .font(.subheadline.weight(.bold))
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
@@ -334,12 +369,13 @@ struct WhoReactedSheet: View {
                 .foregroundStyle(PulseTheme.onAccent)
             }
             .buttonStyle(PulseButtonStyle())
-            .disabled(viewerId == nil)
+            .disabled(viewerId == nil || updating)
             .padding(.horizontal, 14)
             .padding(.bottom, 14)
         }
         .presentationDetents([.medium, .large])
-        .onDisappear { onClosed() }
+        .onChange(of: session.sessionGeneration) { _ in actionTask?.cancel(); dismiss() }
+        .onDisappear { actionTask?.cancel(); onClosed() }
     }
 }
 
@@ -712,13 +748,16 @@ struct QuickPhrasesSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var phrases: [WireQuickPhrase] = []
     @State private var draft = ""
+    @State private var busy = false
+    @State private var loadError: String?
+    @State private var ticket = UUID()
     @State private var loading = true
 
     private static let maxPhrases = 12
     private static let maxChars = 120
 
     private var canAdd: Bool {
-        !draft.trimmingCharacters(in: .whitespaces).isEmpty && phrases.count < Self.maxPhrases
+        !busy && !draft.trimmingCharacters(in: .whitespaces).isEmpty && draft.utf16.count <= Self.maxChars && phrases.count < Self.maxPhrases
     }
 
     var body: some View {
@@ -746,6 +785,7 @@ struct QuickPhrasesSheet: View {
                 } footer: {
                     Text("One-tap lines above the composer. Up to \(Self.maxPhrases) phrases, \(Self.maxChars) characters each.")
                 }
+                if let loadError { Section { Button("\(loadError) Retry") { Task { await load() } } } }
                 Section("Add a phrase") {
                     TextField("Type a phrase…", text: $draft, axis: .vertical)
                         .lineLimit(1...3)
@@ -758,6 +798,7 @@ struct QuickPhrasesSheet: View {
                     .disabled(!canAdd)
                 }
             }
+            .disabled(busy)
             .listStyle(.insetGrouped)
             .navigationTitle("Quick phrases")
             .navigationBarTitleDisplayMode(.inline)
@@ -767,39 +808,65 @@ struct QuickPhrasesSheet: View {
                 }
             }
             .refreshable { await load() }
-            .task { await load() }
+            .task(id: session.sessionGeneration) {
+                phrases = []; draft = ""; busy = false
+                await load()
+            }
+            .onDisappear { ticket = UUID() }
         }
         .presentationDetents([.medium, .large])
     }
 
     private func load() async {
-        phrases = (try? await session.api.quickPhrases()) ?? []
-        loading = false
-        onChanged()
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; loading = true
+        do {
+            let rows = try await api.quickPhrases()
+            guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+            phrases = rows; loadError = nil; loading = false
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+            loadError = "Could not refresh quick phrases."; loading = false
+        }
     }
 
     private func add() {
-        let text = draft.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty, text.count <= Self.maxChars, phrases.count < Self.maxPhrases else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, !text.isEmpty, text.utf16.count <= 120, phrases.count < 12 else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; busy = true
         Task {
+            defer { if session.sessionGeneration == epoch && ticket == request { busy = false } }
             do {
-                _ = try await session.api.createQuickPhrase(text: text)
-                draft = ""
+                let phrase = try await api.createQuickPhrase(text: text)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                phrases.removeAll { $0.id == phrase.id }; phrases.append(phrase)
+                if draft.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft = "" }
+                loadError = nil; loading = false
                 PulseHaptics.success()
-                await load()
+                onChanged()
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }
     }
 
     private func delete(_ phrase: WireQuickPhrase) {
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; busy = true
         Task {
+            defer { if session.sessionGeneration == epoch && ticket == request { busy = false } }
             do {
-                try await session.api.deleteQuickPhrase(phrase.id)
+                try await api.deleteQuickPhrase(phrase.id)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                phrases.removeAll { $0.id == phrase.id }
                 PulseHaptics.tap()
-                await load()
+                onChanged()
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }

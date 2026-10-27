@@ -48,19 +48,32 @@ struct SavedLibraryView: View {
         }
         .presentationDetents([.large])
         .task {
+            let epoch = session.sessionGeneration
             if let store = session.store {
                 libraryObservation = store.observeSavedItems()
                     .receive(on: DispatchQueue.main)
                     .sink(receiveCompletion: { completion in
                         if case .failure = completion { session.toasts.show("Saved messages could not be read from storage") }
-                    }, receiveValue: { rows in items = rows })
+                    }, receiveValue: { rows in if session.sessionGeneration == epoch { items = visibleItems(rows) } })
             }
             await load()
         }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            libraryObservation?.cancel(); libraryObservation = nil
+            loadGeneration = UUID(); items = []; phase = .failed("Reopen Saved messages for the current account")
+        }
         .onDisappear { libraryObservation?.cancel(); libraryObservation = nil; loadGeneration = UUID() }
         .onReceive(session.messageVisibilityClock) { now in
-            let visible = items.filter { $0.message.deletedAt == nil && PulseRemediationLogic.isAlive($0.message.expiresAt, now: now) }
+            let visible = visibleItems(items, now: now)
             if visible.count != items.count { items = visible }
+        }
+    }
+
+    private func visibleItems(_ rows: [WireSavedItem], now: Date = Date()) -> [WireSavedItem] {
+        rows.filter { item in
+            item.message.deletedAt == nil && item.message.viewOnce != true &&
+                PulseRemediationLogic.isAlive(item.message.expiresAt, now: now) &&
+                !(item.message.parentId.map(session.deniedThreadRoots.contains) ?? false)
         }
     }
 
@@ -75,22 +88,21 @@ struct SavedLibraryView: View {
         loadGeneration = ticket
         let epoch = session.sessionGeneration
         let api = session.api
-        let store = session.store
+        guard let store = session.store else {
+            items = []; phase = .failed("Saved-message storage is unavailable"); return
+        }
         let watermark = session.messageRevision
+        let snapshotRequest = store.beginMessageSnapshot()
         let savedWatermark = session.savedRevision
-        if items.isEmpty, let cached = try? store?.cachedSavedItems() { items = cached }
+        if items.isEmpty, let cached = try? store.cachedSavedItems() { items = visibleItems(cached) }
         phase = items.isEmpty ? .loading : .loaded
         do {
             let fresh = try await api.savedLibrary(userId: viewer.id)
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             guard savedWatermark == session.savedRevision else { phase = .loaded; return }
             let changed = Set(fresh.filter { !session.acceptsSyncMessage($0.message.id, startedAt: watermark) }.map { $0.message.id })
-            if let store {
-                try store.upsert(savedItems: fresh, replacingSnapshot: true, preservingMessageIds: changed)
-                items = try store.cachedSavedItems()
-            } else {
-                items = fresh.filter { !changed.contains($0.message.id) && $0.message.deletedAt == nil && PulseRemediationLogic.isAlive($0.message.expiresAt) }
-            }
+            try store.upsert(savedItems: fresh, replacingSnapshot: true, preservingMessageIds: changed, snapshotRequest: snapshotRequest)
+            items = visibleItems(try store.cachedSavedItems())
             phase = .loaded
         } catch {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
@@ -104,23 +116,23 @@ struct SavedLibraryView: View {
     }
 
     private func unsave(_ item: WireSavedItem) {
-        guard let viewer = session.viewer, !removingIds.contains(item.message.id) else { return }
+        guard session.viewer != nil, !removingIds.contains(item.message.id) else { return }
         removingIds.insert(item.message.id)
         loadGeneration = UUID()
         let epoch = session.sessionGeneration
-        let api = session.api
-        let store = session.store
         Task {
             defer { removingIds.remove(item.message.id) }
             do {
-                try await api.unsaveMessage(id: item.message.id, userId: viewer.id)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                try await session.setMessageSaved(item.message, saved: false)
                 guard session.sessionGeneration == epoch else { return }
                 loadGeneration = UUID()
-                session.noteSavedMutation()
-                try store?.deleteSaved(messageId: item.message.id)
                 items.removeAll { $0.message.id == item.message.id }
                 await load()
+            } catch is CancellationError {
             } catch {
+                guard session.sessionGeneration == epoch else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }
@@ -264,9 +276,9 @@ struct SavedLibraryView: View {
     }
 
     private func rowTitle(_ item: WireSavedItem) -> String {
-        let sender = item.message.senderId == session.viewer?.id
+        let sender = item.message.integrationLabel ?? (item.message.senderId == session.viewer?.id
             ? "You"
-            : (item.message.sender?.name ?? "Someone")
+            : (item.message.sender?.name ?? "Someone"))
         let place = item.conversation.name ?? "chat"
         return "\(sender) in \(place)"
     }

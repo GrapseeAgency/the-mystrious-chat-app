@@ -7,10 +7,21 @@ import Foundation
 /// response shapes verified against the live routes (send + react return
 /// `{ message }`, conversation create returns `{ conversation }`).
 public struct PulseAPIClient: Sendable {
+    public struct ReadRetirement: Decodable, Equatable, Sendable {
+        let version: Int
+        let userId: String, conversationId: String, messageId: String, readIntent: String
+        func matches(owner: String, room: String, message: String, intent: String) -> Bool {
+            version == 1 && !owner.isEmpty && !room.isEmpty && !message.isEmpty && !intent.isEmpty &&
+                userId == owner && conversationId == room && messageId == message && readIntent == intent
+        }
+    }
+    private struct ReadRetirementEnvelope: Decodable { let readRetirement: ReadRetirement }
+
     public struct Failure: Error, Equatable {
         public enum Kind: Equatable { case network, auth, forbidden, rateLimited, notFound, validation, server, unknown }
         public let kind: Kind
         public let message: String?
+        var invalidatesPrivateGameSnapshot: Bool { [.auth, .forbidden, .notFound].contains(kind) }
         /// N3-b - machine code from the body (e.g. "username_taken").
         public var code: String?
         /// N3-b - server-suggested alternative (username_taken flow).
@@ -21,8 +32,13 @@ public struct PulseAPIClient: Sendable {
         /// wait (body { error, retryAfter } or the Retry-After header).
         public var retryAfter: Int?
         public var receiptClientId: String?
+        public var readRetirement: ReadRetirement?
+        func retiresRead(owner: String, room: String, message: String, intent: String) -> Bool {
+            [403, 404, 410].contains(status ?? 0) &&
+                readRetirement?.matches(owner: owner, room: room, message: message, intent: intent) == true
+        }
 
-        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil, receiptClientId: String? = nil) {
+        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil, receiptClientId: String? = nil, readRetirement: ReadRetirement? = nil) {
             self.kind = kind
             self.message = message
             self.code = code
@@ -30,6 +46,7 @@ public struct PulseAPIClient: Sendable {
             self.status = status
             self.retryAfter = retryAfter
             self.receiptClientId = receiptClientId
+            self.readRetirement = readRetirement
         }
     }
 
@@ -303,44 +320,188 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extractSendResult(from: data)
     }
 
-    public func markRead(conversationId: String, messageId: String? = nil) async throws {
-        var body = ["userId": userId]
+    public func unreadCount(conversationId: String, threadId: String? = nil, topicId: String? = nil) async throws -> Int {
+        try await readScopeState(conversationId: conversationId, threadId: threadId, topicId: topicId).unread()
+    }
+
+    public func readScopeState(conversationId: String, threadId: String? = nil, topicId: String? = nil) async throws -> WireReadScopeState {
+        let query = "userId=\(q(userId))" + (threadId.map { "&threadId=\(q($0))" } ?? "") + (topicId.map { "&topicId=\(q($0))" } ?? "")
+        let snapshot = try await get("/api/conversations/\(q(conversationId))/read-state?\(query)", as: WireReadScopeState.self)
+        guard snapshot.readStateVersion == 1, snapshot.conversationId == conversationId, snapshot.userId == userId,
+              snapshot.threadId == threadId, snapshot.topicId == topicId, snapshot.unreadCount >= 0 else {
+            throw Failure(kind: .validation, message: "Read scope was not confirmed.")
+        }
+        var remaining = snapshot.unreadCount
+        for bucket in snapshot.unreadExpirations ?? [] {
+            guard bucket.count >= 0, bucket.count <= remaining, PulseFormat.date(bucket.expiresAt) != nil else {
+                throw Failure(kind: .validation, message: "Read scope expiration was not confirmed.")
+            }
+            remaining -= bucket.count
+        }
+        return snapshot
+    }
+
+    public func messageReadState(conversationId: String, messageId: String) async throws -> (available: Bool, memberships: [String]) {
+        struct Proof: Decodable {
+            let messageReadStateVersion: Int; let conversationId: String; let userId: String
+            let messageId: String; let messageAvailable: Bool; let readByMembershipIds: [String]
+        }
+        let proof = try await get("/api/messages/\(q(messageId))/read-state?userId=\(q(userId))&conversationId=\(q(conversationId))", as: Proof.self)
+        guard proof.messageReadStateVersion == 1, proof.userId == userId, proof.conversationId == conversationId,
+              proof.messageId == messageId, (proof.messageAvailable || proof.readByMembershipIds.isEmpty), Set(proof.readByMembershipIds).count == proof.readByMembershipIds.count,
+              proof.readByMembershipIds.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw Failure(kind: .validation, message: "Message read state was not confirmed.")
+        }
+        try Task.checkCancellation()
+        return (proof.messageAvailable, proof.readByMembershipIds)
+    }
+
+    public func notificationMessageUnread(conversationId: String, messageId: String) async throws -> Bool {
+        struct Proof: Decodable {
+            let notificationStateVersion: Int; let conversationId: String; let userId: String
+            let messageId: String; let messageUnread: Bool
+        }
+        let proof = try await get("/api/conversations/\(q(conversationId))/read-state?userId=\(q(userId))&messageId=\(q(messageId))", as: Proof.self)
+        guard proof.notificationStateVersion == 1, proof.userId == userId, proof.conversationId == conversationId,
+              proof.messageId == messageId else { throw Failure(kind: .validation, message: "Notification state was not confirmed.") }
+        return proof.messageUnread
+    }
+
+    public func captureReadIntent(conversationId: String) async throws -> String {
+        struct Receipt: Decodable { let readIntentVersion: Int; let conversationId: String; let userId: String; let readIntent: String }
+        let receipt = try await get("/api/conversations/\(q(conversationId))/read-intent?userId=\(q(userId))", as: Receipt.self)
+        guard receipt.readIntentVersion == 2, receipt.conversationId == conversationId, receipt.userId == userId,
+              !receipt.readIntent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, receipt.readIntent.utf16.count <= 128 else {
+            throw Failure(kind: .validation, message: "Read intent was not confirmed.")
+        }
+        try Task.checkCancellation()
+        return receipt.readIntent
+    }
+
+    public func markRead(conversationId: String, messageId: String? = nil, minimumReadAt: String? = nil, readIntent: String? = nil) async throws {
+        struct Receipt: Decodable {
+            let ok: Bool; let readReceiptVersion: Int; let conversationId: String; let userId: String
+            let readIntent: String
+            let mode: String; let messageId: String?; let lastReadAt: String
+        }
+        let intent: String
+        if let readIntent { intent = readIntent } else { intent = try await captureReadIntent(conversationId: conversationId) }
+        let mode = messageId == nil ? "all" : "visible"
+        var body = ["userId": userId, "mode": mode, "readIntent": intent]
         if let messageId { body["messageId"] = messageId }
-        try await postEmpty("/api/conversations/\(conversationId)/read", body: body)
+        let data = try await postRaw("/api/conversations/\(conversationId)/read-state", body: body)
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.readReceiptVersion == 3, receipt.readIntent == intent, receipt.conversationId == conversationId,
+              receipt.userId == userId, receipt.mode == mode, receipt.messageId == messageId,
+              let acknowledged = PulseFormat.date(receipt.lastReadAt) else {
+            throw Failure(kind: .validation, message: "Read state was not confirmed.")
+        }
+        if let minimumReadAt {
+            guard let minimum = PulseFormat.date(minimumReadAt), acknowledged >= minimum else {
+                throw Failure(kind: .validation, message: "The displayed read boundary was not confirmed.")
+            }
+        }
     }
 
-    /// N10-b transport fix - PATCH /pin { userId }; the server TOGGLES the pin
-    /// (the old POST { pinned } body was never part of the route contract).
-    public func togglePin(conversationId: String) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/pin", body: ["userId": userId])
+    public struct ConversationPreferenceReceipt: Sendable {
+        public let timestamp: String?
+        public var date: Date? { timestamp.flatMap { PulseFormat.date($0) } }
+    }
+    private struct ConversationPreferenceWire: Decodable {
+        let ok: Bool
+        let conversationPreferenceVersion: Int
+        let conversationId: String
+        let userId: String
+        let pinned: Bool?
+        let pinnedAt: String?
+        let archived: Bool?
+        let archivedAt: String?
+        let mutePreset: String?
+        let mutedUntil: String?
+    }
+    private func preferenceReceipt(_ data: Data, room: String, action: String, enabled: Bool, preset: String? = nil) throws -> ConversationPreferenceReceipt {
+        let receipt = try decoder.decode(ConversationPreferenceWire.self, from: data)
+        let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard receipt.ok, receipt.conversationPreferenceVersion == 1, receipt.conversationId == room, receipt.userId == userId else {
+            throw Failure(kind: .server, message: "The conversation setting was not confirmed for this account.")
+        }
+        let stamp: String?
+        let timestampKey: String
+        switch action {
+        case "pin":
+            guard receipt.pinned == enabled else { throw Failure(kind: .server, message: "The pin was not confirmed.") }
+            stamp = receipt.pinnedAt; timestampKey = "pinnedAt"
+        case "archive":
+            guard receipt.archived == enabled else { throw Failure(kind: .server, message: "The archive was not confirmed.") }
+            stamp = receipt.archivedAt; timestampKey = "archivedAt"
+        default:
+            guard fields?.keys.contains("mutePreset") == true, receipt.mutePreset == preset else {
+                throw Failure(kind: .server, message: "The mute duration was not confirmed.")
+            }
+            stamp = receipt.mutedUntil; timestampKey = "mutedUntil"
+        }
+        guard fields?.keys.contains(timestampKey) == true,
+              enabled ? stamp.flatMap { PulseFormat.date($0) } != nil : stamp == nil else {
+            throw Failure(kind: .server, message: "The conversation setting timestamp was not confirmed.")
+        }
+        return ConversationPreferenceReceipt(timestamp: stamp)
     }
 
-    /// N10-b - per-viewer notification mute with the wire preset until:
-    /// "8h" | "1w" | "always" | null (unmute).
-    public func setMuted(conversationId: String, until preset: String?) async throws {
+    @discardableResult
+    public func setPinned(conversationId: String, pinned: Bool) async throws -> ConversationPreferenceReceipt {
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))/pin", body: ["userId": userId, "pinned": pinned])
+        return try preferenceReceipt(data, room: conversationId, action: "pin", enabled: pinned)
+    }
+
+    /// Server-confirmed absolute timestamp; do not restart the mute on a slow reply.
+    @discardableResult
+    public func setMuted(conversationId: String, until preset: String?) async throws -> ConversationPreferenceReceipt {
+        guard preset.map({ ["8h", "1w", "always"].contains($0) }) ?? true else {
+            throw Failure(kind: .validation, message: "Unknown mute duration.")
+        }
         let body: [String: Any] = ["userId": userId, "until": preset ?? NSNull()]
-        try await patchEmpty("/api/conversations/\(conversationId)/mute", body: body)
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))/mute", body: body)
+        return try preferenceReceipt(data, room: conversationId, action: "mute", enabled: preset != nil, preset: preset)
     }
 
-    /// Boolean overload kept for older callers - true → 8h, false → unmute.
     public func setMuted(conversationId: String, muted: Bool) async throws {
-        try await setMuted(conversationId: conversationId, until: muted ? "8h" : nil)
+        _ = try await setMuted(conversationId: conversationId, until: muted ? "8h" : nil)
     }
 
-    /// N10-b transport fix - PATCH /archive { userId, archived }.
-    public func archive(conversationId: String, archived: Bool) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/archive", body: ["userId": userId, "archived": archived])
+    @discardableResult
+    public func archive(conversationId: String, archived: Bool) async throws -> ConversationPreferenceReceipt {
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))/archive", body: ["userId": userId, "archived": archived])
+        return try preferenceReceipt(data, room: conversationId, action: "archive", enabled: archived)
     }
 
     /// N3-b - per-viewer unread dot (PATCH, body { userId, on }).
     public func markUnread(conversationId: String, on: Bool) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on])
+        struct Receipt: Decodable {
+            let ok: Bool; let unreadReceiptVersion: Int; let conversationId: String; let userId: String
+            let manualUnread: Bool; let readIntent: String
+        }
+        let intent = try await captureReadIntent(conversationId: conversationId)
+        let data = try await patchRaw("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on, "readIntent": intent])
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.unreadReceiptVersion == 2, receipt.readIntent == intent, receipt.conversationId == conversationId,
+              receipt.userId == userId, receipt.manualUnread == on else {
+            throw Failure(kind: .validation, message: "Unread state was not confirmed. Refresh before retrying.")
+        }
     }
 
-    /// N3-b - toggle an emoji reaction. Server replies with the FRESH message.
-    public func react(messageId: String, emoji: String) async throws -> WireChatMessage {
-        let data = try await postRaw("/api/messages/\(messageId)/react", body: ["userId": userId, "emoji": emoji])
-        return try WireMessageEnvelope.extract(from: data)
+    /// Explicit desired state. An older gateway must refuse, never fall back to a toggle.
+    public func react(messageId: String, emoji: String, present: Bool) async throws -> WireChatMessage {
+        struct Receipt: Decodable { let messageId: String; let emoji: String; let present: Bool }
+        struct Envelope: Decodable { let message: WireChatMessage; let reaction: Receipt }
+        let data = try await postRaw("/api/messages/\(messageId)/react-state",
+            body: ["userId": userId, "emoji": emoji, "present": present])
+        let response = try JSONDecoder().decode(Envelope.self, from: data)
+        let confirmed = (response.message.reactions ?? []).contains { $0.emoji == emoji && $0.userIds.contains(userId) }
+        guard response.message.id == messageId, response.reaction.messageId == messageId,
+              response.reaction.emoji == emoji, response.reaction.present == present, confirmed == present else {
+            throw Failure(kind: .validation, message: "Reaction state was not confirmed.")
+        }
+        return response.message
     }
 
     // W1-DATA-B - Wave 1 message actions (spec §1.1)
@@ -349,14 +510,25 @@ public struct PulseAPIClient: Sendable {
     /// server stamps editedAt and replies with the fresh row.
     public func editMessage(id: String, userId: String, content: String) async throws -> WireChatMessage {
         let data = try await patchRaw("/api/messages/\(id)", body: ["userId": userId, "content": content])
-        return try WireMessageEnvelope.extract(from: data)
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.id == id, message.senderId == userId, message.deletedAt == nil, message.editedAt != nil,
+              message.content == content.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw Failure(kind: .validation, message: "The message edit was not confirmed.")
+        }
+        return message
     }
 
-    /// POST /api/messages/{id}/pin {userId} - toggle; the {message} back
-    /// carries pinnedAt/pinnedBy when pinned, nil when unpinned.
-    public func toggleMessagePin(id: String, userId: String) async throws -> WireChatMessage {
-        let data = try await postRaw("/api/messages/\(id)/pin", body: ["userId": userId])
-        return try WireMessageEnvelope.extract(from: data)
+    /// Explicit addition; an old gateway must refuse rather than toggle on retry.
+    public func pinMessage(id: String, userId: String) async throws -> WireChatMessage {
+        struct Receipt: Decodable { let messageId: String; let pinned: Bool }
+        struct Envelope: Decodable { let message: WireChatMessage; let pin: Receipt }
+        let data = try await postRaw("/api/messages/\(id)/pin-state", body: ["userId": userId, "pinned": true])
+        let response = try decoder.decode(Envelope.self, from: data)
+        guard response.pin.messageId == id, response.pin.pinned, response.message.id == id,
+              response.message.deletedAt == nil, response.message.viewOnce != true, response.message.pinnedAt != nil else {
+            throw Failure(kind: .validation, message: "The pin update was not confirmed.")
+        }
+        return response.message
     }
 
     private struct UnpinAck: Decodable { let unpinned: Bool }
@@ -367,18 +539,15 @@ public struct PulseAPIClient: Sendable {
         }
     }
 
-    /// POST /api/messages/{id}/save {userId} - save/star toggle → {saved}.
-    public func toggleMessageSave(id: String, userId: String) async throws -> Bool {
-        let data = try await postRaw("/api/messages/\(id)/save", body: ["userId": userId])
-        return try decoder.decode(WireSavedToggle.self, from: data).saved
-    }
-
-    /// Explicit removal; a retry must never invoke the save toggle.
-    public func unsaveMessage(id: String, userId: String) async throws {
-        let data = try await deleteRaw("/api/messages/\(id)/save", body: ["userId": userId])
-        guard try decoder.decode(WireSavedToggle.self, from: data).saved == false else {
-            throw Failure(kind: .server, message: "The saved message was not removed. Try again.")
+    /// Explicit save/remove only; no fallback to a legacy toggle.
+    public func setMessageSaved(id: String, userId: String, saved: Bool) async throws -> WireSavedStateReceipt {
+        let data = try await postRaw("/api/messages/\(id)/save-state", body: ["userId": userId, "saved": saved])
+        let receipt = try decoder.decode(WireSavedStateReceipt.self, from: data)
+        guard receipt.savedReceiptVersion == 1, receipt.messageId == id, receipt.userId == userId, receipt.saved == saved,
+              saved ? receipt.savedAt.flatMap(PulseFormat.date) != nil : receipt.savedAt == nil else {
+            throw Failure(kind: .validation, message: "Saved state was not confirmed.")
         }
+        return receipt
     }
 
     /// GET /api/conversations/{id}/pinned?userId= - pins list, pinnedAt asc.
@@ -387,9 +556,22 @@ public struct PulseAPIClient: Sendable {
         return page.messages
     }
 
-    /// GET /api/messages/{id}/thread?userId= - thread root + replies (asc).
+    /// Complete native history; never accept a truncated legacy thread response.
     public func thread(rootId: String, userId: String) async throws -> WireThreadPage {
-        try await get("/api/messages/\(rootId)/thread?userId=\(userId)")
+        try await PulseCompleteThread.load(rootId: rootId) { cursor in
+            var query = URLComponents()
+            query.queryItems = [URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "userId", value: userId)] +
+                (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+            do { return try await self.get("/api/messages/\(rootId)/thread-page?\(query.percentEncodedQuery ?? "")") }
+            catch let failure as Failure {
+                let expected: String?
+                switch failure.status { case 403: expected = "thread_access"; case 404: expected = "thread_missing"; case 410: expected = "thread_gone"; default: expected = nil }
+                if let expected, failure.code != expected {
+                    throw Failure(kind: .validation, message: "The gateway could not verify this thread. Update it and try again.", status: 409)
+                }
+                throw failure
+            }
+        }
     }
 
     /// POST /api/uploads {dataUrl} - JSON body (NOT multipart); returns the
@@ -399,7 +581,7 @@ public struct PulseAPIClient: Sendable {
     public func uploadMedia(dataUrl: String) async throws -> String {
         let data = try await postRaw("/api/uploads", body: ["dataUrl": dataUrl])
         let result = try decoder.decode(WireUploadResult.self, from: data)
-        guard let filePath = result.filePath, !filePath.isEmpty else {
+        guard let filePath = result.filePath, !filePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Failure(kind: .validation, message: "Upload response missing filePath")
         }
         return filePath
@@ -409,25 +591,79 @@ public struct PulseAPIClient: Sendable {
     /// mirror ("" clears). The local draft stays authoritative; the mirror
     /// only seeds cross-device. Call sites are allowed to silent-fail this.
     public func setDraft(conversationId: String, userId: String, draft: String) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/draft", body: ["userId": userId, "draft": draft])
+        guard !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !userId.isEmpty, userId == self.userId, draft.utf16.count <= 2000 else {
+            throw Failure(kind: .validation, message: "Draft cannot be mirrored; complete local text is kept.")
+        }
+        struct Receipt: Decodable {
+            let ok: Bool
+            let draftReceiptVersion: Int
+            let conversationId: String
+            let userId: String
+            let draft: String
+        }
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))/draft", body: ["userId": userId, "draft": draft])
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.draftReceiptVersion == 1, receipt.conversationId == conversationId,
+              receipt.userId == userId, receipt.draft.utf16.elementsEqual(draft.utf16) else {
+            throw Failure(kind: .server, message: "Draft mirror was not confirmed.")
+        }
     }
 
     /// GET /api/conversations/{id}?userId= - one conversation. The detail is
     /// a superset of the summary shape; the tolerant envelope handles both
     /// the {conversation: …} wrapper and the bare object.
     public func conversationDetail(id: String, userId: String) async throws -> WireConversationSummary {
-        var request = URLRequest(url: url("/api/conversations/\(id)?userId=\(userId)"))
+        guard !id.isEmpty, !userId.isEmpty, userId == self.userId else {
+            throw Failure(kind: .validation, message: "The room session changed. Reopen the chat before refreshing it.")
+        }
+        var request = URLRequest(url: url("/api/conversations/\(q(id))?userId=\(q(userId))"))
         request.httpMethod = "GET"
         let data = try await send(request)
-        return try WireConversationEnvelope.extract(from: data)
+        let detail = try WireConversationEnvelope.extract(from: data)
+        guard detail.id == id, !userId.isEmpty, detail.members.contains(where: { $0.id == userId }) else {
+            throw Failure(kind: .server, message: "The room response did not confirm your membership in this chat.")
+        }
+        return detail
     }
 
     /// N3-b - create (or dedupe into) a DM/group. Tolerant { conversation } envelope.
+    private struct ConversationCreationAck: Decodable {
+        let clientId: String
+        let replayed: Bool
+    }
+
+    private func groupCreationIntent(memberIds: [String], name: String?) -> [String] {
+        let members = Set(memberIds + [userId]).sorted()
+        let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return [PulseWalletOperations.gatewayKey(baseURL), userId, "conversation-group",
+                trimmed.isEmpty ? "Group of \(members.count)" : trimmed] + members
+    }
+
     public func createConversation(memberIds: [String], isGroup: Bool, name: String? = nil) async throws -> WireConversationSummary {
         var body: [String: Any] = ["creatorId": userId, "memberIds": memberIds, "isGroup": isGroup]
         if let name { body["name"] = name }
-        let data = try await postRaw("/api/conversations", body: body)
-        return try WireConversationEnvelope.extract(from: data)
+        if !isGroup { return try WireConversationEnvelope.extract(from: try await postRaw("/api/conversations", body: body)) }
+        let intent = groupCreationIntent(memberIds: memberIds, name: name)
+        let id = try await creationOperations.begin(intent)
+        body["clientId"] = id
+        let data = try await postRoomCreation("/api/conversations/create-v2", body: body, intent: intent, id: id)
+        let ack = try decoder.decode(ConversationCreationAck.self, from: data)
+        var room = try WireConversationEnvelope.extract(from: data)
+        let expected = Set(memberIds + [userId])
+        guard ack.clientId == id, !room.id.isEmpty, room.isGroup, room.isSelf != true, room.broadcastMode != true,
+              room.members.contains(where: { $0.id == userId }),
+              ack.replayed || (room.members.count == expected.count && Set(room.members.map(\.id)) == expected) else {
+            throw Failure(kind: .server, message: "Group creation receipt wasn't confirmed. Retry the same details.")
+        }
+        room.creationClientId = id; room.creationReplayed = ack.replayed
+        try Task.checkCancellation()
+        return room // caller must accept local history before retiring this intent
+    }
+
+    public func acknowledgeGroupCreation(memberIds: [String], name: String?, receipt: WireConversationSummary) async throws {
+        guard receipt.isGroup, let id = receipt.creationClientId else { return }
+        try await creationOperations.finish(groupCreationIntent(memberIds: memberIds, name: name), id: id)
     }
 
     /// N3-b / Wave 8 - create a new identity. 409 username_taken surfaces
@@ -469,24 +705,46 @@ public struct PulseAPIClient: Sendable {
         return envelope.preferences ?? WirePulsePrefs()
     }
 
-    public func block(userId target: String) async throws {
-        try await postEmpty("/api/users/\(target)/block", body: ["userId": userId])
+    private struct BlockReceipt: Decodable {
+        let ok: Bool
+        let blockReceiptVersion: Int
+        let actorId: String
+        let targetId: String
+        let blocked: Bool
     }
-    /// WAVE-6 DEFECT FIX - the old body POSTed /api/users/{target}/unblock,
-    /// a route that does NOT exist server-side (every unblock failed). The
-    /// R47 contract is DELETE /api/users/{id}/block?userId={actor} (query
-    /// param, not body - mirrors the safety route's pair convention).
+    private func confirmedBlock(_ data: Data, target: String, desired: Bool? = nil) throws -> Bool {
+        let receipt = try decoder.decode(BlockReceipt.self, from: data)
+        guard receipt.ok, receipt.blockReceiptVersion == 1, receipt.actorId == userId, receipt.targetId == target,
+              desired == nil || receipt.blocked == desired else {
+            throw Failure(kind: .server, message: "The block state was not confirmed for this account.")
+        }
+        return receipt.blocked
+    }
+    public func block(userId target: String) async throws {
+        let data = try await postRaw("/api/users/\(q(target))/block", body: ["userId": userId])
+        _ = try confirmedBlock(data, target: target, desired: true)
+    }
     public func unblock(userId target: String) async throws {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        try await deleteEmpty("/api/users/\(target)/block?userId=\(query)", body: ["userId": userId])
+        let data = try await deleteRaw("/api/users/\(q(target))/block?userId=\(q(userId))", body: ["userId": userId])
+        _ = try confirmedBlock(data, target: target, desired: false)
     }
     /// POST /api/users/{id}/report { userId, reason, details? } - repeat with
     /// the same reason refreshes the row → { reported, updated: true }.
     public func report(userId target: String, reason: String, details: String?) async throws -> WireReportVerdict {
         var body: [String: Any] = ["userId": userId, "reason": reason]
         if let details { body["details"] = details }
-        let data = try await postRaw("/api/users/\(target)/report", body: body)
-        return try decoder.decode(WireReportVerdict.self, from: data)
+        struct Receipt: Decodable {
+            let ok: Bool; let reportReceiptVersion: Int; let reporterId: String; let reportedId: String
+            let reported: Bool; let updated: Bool; let reason: String; let details: String; let reportedAt: String
+        }
+        let data = try await postRaw("/api/users/\(q(target))/report", body: body)
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.reported, receipt.reportReceiptVersion == 1, receipt.reporterId == userId,
+              receipt.reportedId == target, receipt.reason == reason, receipt.details == (details ?? ""),
+              PulseFormat.date(receipt.reportedAt) != nil else {
+            throw Failure(kind: .server, message: "The report was not confirmed for this account and content.")
+        }
+        return WireReportVerdict(reported: true, updated: receipt.updated)
     }
 
     // Wave 6 - social graph & discovery (F-CP/F-SM/F-FD/F-CH)
@@ -504,50 +762,68 @@ public struct PulseAPIClient: Sendable {
         return page.stats
     }
 
-    /// GET /api/users/{id}/safety?userId={viewer} → { peerId, safetyNumber,
-    /// verified, verifiedAt } - the server-computed 12×5 number + MY state.
+    private func confirmedSafety(_ data: Data, peer: String, desired: Bool? = nil) throws -> WireSafetyState {
+        struct Receipt: Decodable {
+            let ok: Bool; let safetyReceiptVersion: Int; let ownerId: String; let peerId: String
+            let safetyNumber: String; let verified: Bool; let verifiedAt: String?
+        }
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard receipt.ok, receipt.safetyReceiptVersion == 1, receipt.ownerId == userId, receipt.peerId == peer,
+              desired == nil || desired == receipt.verified,
+              receipt.safetyNumber.range(of: "^[0-9]{5}( [0-9]{5}){11}$", options: .regularExpression) != nil,
+              receipt.verified ? PulseFormat.date(receipt.verifiedAt) != nil : raw?["verifiedAt"] is NSNull else {
+            throw Failure(kind: .server, message: "Account comparison state was not confirmed.")
+        }
+        return WireSafetyState(peerId: receipt.peerId, safetyNumber: receipt.safetyNumber,
+            verified: receipt.verified, verifiedAt: receipt.verifiedAt)
+    }
+
     public func safetyState(peerId: String) async throws -> WireSafetyState {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        return try await get("/api/users/\(peerId)/safety?userId=\(query)")
+        let request = URLRequest(url: url("/api/users/\(q(peerId))/safety?userId=\(q(userId))"))
+        return try confirmedSafety(try await send(request), peer: peerId)
     }
 
-    /// POST /api/users/{id}/safety { userId } - upsert the verification
-    /// (re-verifying refreshes verifiedAt). No optimistic lies: callers
-    /// refetch the state on settle.
     public func verifySafety(peerId: String) async throws -> WireSafetyVerdict {
-        let data = try await postRaw("/api/users/\(peerId)/safety", body: ["userId": userId])
-        return try decoder.decode(WireSafetyVerdict.self, from: data)
+        let data = try await postRaw("/api/users/\(q(peerId))/safety", body: ["userId": userId])
+        let state = try confirmedSafety(data, peer: peerId, desired: true)
+        return WireSafetyVerdict(verified: state.verified, verifiedAt: state.verifiedAt)
     }
 
-    /// DELETE /api/users/{id}/safety?userId={viewer} - unverify (deleteMany).
     public func resetSafety(peerId: String) async throws {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        try await deleteEmpty("/api/users/\(peerId)/safety?userId=\(query)", body: ["userId": userId])
+        let data = try await deleteRaw("/api/users/\(q(peerId))/safety?userId=\(q(userId))", body: ["userId": userId])
+        _ = try confirmedSafety(data, peer: peerId, desired: false)
     }
 
     /// GET /api/users/{id}/block?userId={actor} - pair block state.
     public func blockState(target: String) async throws -> Bool {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        let state: WireBlockState = try await get("/api/users/\(target)/block?userId=\(query)")
-        return state.blocked
+        var request = URLRequest(url: url("/api/users/\(q(target))/block?userId=\(q(userId))"))
+        request.httpMethod = "GET"
+        return try confirmedBlock(try await send(request), target: target)
     }
 
-    /// GET /api/users/{id}/blocks?userId={self} - MY block list, newest first
-    /// (self-service only; the server 403s any other viewer).
     public func blockedAccounts() async throws -> [WireBlockedAccount] {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        let page: WireBlocksPage = try await get("/api/users/\(userId)/blocks?userId=\(query)")
+        struct Page: Decodable { let blockListVersion: Int; let userId: String; let blocks: [WireBlockedAccount] }
+        let page: Page = try await get("/api/users/\(q(userId))/blocks?userId=\(q(userId))")
+        guard page.blockListVersion == 1, page.userId == userId,
+              Set(page.blocks.map(\.id)).count == page.blocks.count,
+              page.blocks.allSatisfy({ !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.id != userId && PulseFormat.date($0.blockedAt) != nil }) else {
+            throw Failure(kind: .server, message: "Blocked accounts were not confirmed for this owner.")
+        }
         return page.blocks
     }
 
     /// GET /api/users/{id}/report?userId={viewer} - MY prior submissions
     /// about this account (private "already reported" hint).
-    public func reportHistory(reportedId: String) async -> [WireReportReasonRow] {
-        let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
-        guard let page: WireReportHistory = try? await get(
-            "/api/users/\(reportedId)/report?userId=\(query)",
-            as: WireReportHistory.self,
-        ) else { return [] }
+    public func reportHistory(reportedId: String) async throws -> [WireReportReasonRow] {
+        struct Page: Decodable { let reportHistoryVersion: Int; let reporterId: String; let reportedId: String; let reasons: [WireReportReasonRow] }
+        let page: Page = try await get("/api/users/\(q(reportedId))/report?userId=\(q(userId))")
+        let allowed: Set<String> = ["spam", "harassment", "impersonation", "inappropriate", "scam", "other"]
+        guard page.reportHistoryVersion == 1, page.reporterId == userId, page.reportedId == reportedId,
+              Set(page.reasons.compactMap(\.reason)).count == page.reasons.count,
+              page.reasons.allSatisfy({ allowed.contains($0.reason ?? "") && PulseFormat.date($0.at) != nil }) else {
+            throw Failure(kind: .server, message: "Report history was not confirmed for this account.")
+        }
         return page.reasons
     }
 
@@ -560,14 +836,12 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireUserEnvelope.self, from: data).user
     }
 
-    /// GET /api/mentions?userId=&limit= - the FULL 14-day mention feed
-    /// (entries, not just the pill count; tolerant → [] when unreachable).
-    public func mentions(limit: Int = 50) async -> [WireMentionEntry] {
-        guard let page: WireMentionEntriesPage = try? await get(
-            "/api/mentions?userId=\(userId)&limit=\(limit)",
-            as: WireMentionEntriesPage.self,
-        ) else { return [] }
-        return page.items ?? []
+    /// Full feed: transport failures are not an authoritative empty result.
+    public func mentions(limit: Int = 50) async throws -> [WireMentionEntry] {
+        let page: WireMentionEntriesPage = try await get("/api/mentions?userId=\(q(userId))&limit=\(limit)")
+        guard let items = page.items else { throw Failure(kind: .server, message: "Mention feed is missing.") }
+        try Task.checkCancellation()
+        return items.filter { $0.isVisible() }
     }
 
     /// GET /api/channels?userId=[&mine=1] - the broadcast directory
@@ -581,28 +855,56 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/channels { userId, name(2-40), description?(≤200), photo? }
     /// → 201 { channel } - creator lands as admin + the first post is real.
+    private func channelCreationIntent(name: String, description: String, photoPath: String?) -> [String] {
+        [PulseWalletOperations.gatewayKey(baseURL), userId, "conversation-channel",
+         name.trimmingCharacters(in: .whitespacesAndNewlines), description.trimmingCharacters(in: .whitespacesAndNewlines),
+         (photoPath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)]
+    }
+
     public func createChannel(name: String, description: String, photoPath: String?) async throws -> WireChannelSummary {
-        var body: [String: Any] = ["userId": userId, "name": name, "description": description]
+        let intent = channelCreationIntent(name: name, description: description, photoPath: photoPath)
+        let id = try await creationOperations.begin(intent)
+        var body: [String: Any] = ["userId": userId, "name": name, "description": description, "clientId": id]
         if let photoPath, !photoPath.isEmpty { body["photo"] = photoPath }
-        let data = try await postRaw("/api/channels", body: body)
+        let data = try await postRoomCreation("/api/channels/create-v2", body: body, intent: intent, id: id)
+        let ack = try decoder.decode(ConversationCreationAck.self, from: data)
         let created = try decoder.decode(WireChannelCreated.self, from: data)
-        guard let channel = created.channel else {
-            throw Failure(kind: .validation, message: "Channel response missing the created channel")
+        guard ack.clientId == id, var channel = created.channel, let room = created.conversation,
+              !room.id.isEmpty, channel.id == room.id, channel.conversationId == room.id,
+              room.isGroup, room.isSelf != true, room.broadcastMode == true,
+              room.members.contains(where: { $0.id == userId }), channel.isSubscribed == true,
+              (channel.memberCount ?? 0) > 0 else {
+            throw Failure(kind: .validation, message: "Channel creation receipt wasn't confirmed. Retry the same details.")
         }
+        channel.creationClientId = id; channel.creationConversation = room
+        try Task.checkCancellation()
         return channel
+    }
+
+    public func acknowledgeChannelCreation(name: String, description: String, photoPath: String?, receipt: WireChannelSummary) async throws {
+        guard let id = receipt.creationClientId else { return }
+        try await creationOperations.finish(channelCreationIntent(name: name, description: description, photoPath: photoPath), id: id)
     }
 
     /// POST /api/channels/{id}/subscribe { userId } → { already, memberCount }.
     public func subscribeChannel(_ id: String) async throws -> WireSubscribeResult {
-        let data = try await postRaw("/api/channels/\(id)/subscribe", body: ["userId": userId])
-        return try decoder.decode(WireSubscribeResult.self, from: data)
+        let data = try await postRaw("/api/channels/\(q(id))/subscribe", body: ["userId": userId])
+        let result = try decoder.decode(WireSubscribeResult.self, from: data)
+        guard result.already != nil, let count = result.memberCount, count > 0 else {
+            throw Failure(kind: .server, message: "Channel membership couldn't be confirmed. Refresh before retrying.")
+        }
+        return result
     }
 
     /// DELETE /api/channels/{id}/subscribe { userId } → { ok, memberCount }.
     /// Last-admin leave is blocked server-side with the honest 403 copy.
     public func unsubscribeChannel(_ id: String) async throws -> WireUnsubscribeResult {
-        let data = try await deleteRaw("/api/channels/\(id)/subscribe", body: ["userId": userId])
-        return try decoder.decode(WireUnsubscribeResult.self, from: data)
+        let data = try await deleteRaw("/api/channels/\(q(id))/subscribe", body: ["userId": userId])
+        let result = try decoder.decode(WireUnsubscribeResult.self, from: data)
+        guard result.ok == true, let count = result.memberCount, count >= 0 else {
+            throw Failure(kind: .server, message: "Leaving the channel couldn't be confirmed. Refresh before retrying.")
+        }
+        return result
     }
 
     /// GET /api/invite/{code}?userId= → { invite } (404 = no longer valid).
@@ -620,52 +922,109 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireInviteJoinResult.self, from: data)
     }
 
-    /// POST /api/folders { userId, name(1-24), emoji?(icon id, default 'folder') }
-    /// → 201 { folder } (position = max+1). R18-b - emoji carries the
-    /// PulseFolderIconId registry value, validated server-side.
+    private struct FolderReceipt: Decodable {
+        let folderVersion: Int
+        let userId: String
+        let folder: WireFolder?
+        let folders: [WireFolder]?
+        let folderId: String?
+        let deleted: Bool?
+        let ok: Bool?
+    }
+    private func folderReceipt(_ data: Data) throws -> FolderReceipt {
+        let value = try decoder.decode(FolderReceipt.self, from: data)
+        guard value.folderVersion == 1, value.userId == userId, !userId.isEmpty else {
+            throw Failure(kind: .server, message: "Folder ownership was not confirmed.")
+        }
+        return value
+    }
+    private func validateFolder(_ folder: WireFolder) throws {
+        guard !folder.id.isEmpty, !folder.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let icon = folder.emoji, !icon.isEmpty, let position = folder.position, position >= 0,
+              let ids = folder.conversationIds, ids.allSatisfy({ !$0.isEmpty }), Set(ids).count == ids.count else {
+            throw Failure(kind: .server, message: "Invalid folder snapshot.")
+        }
+    }
+    private func confirmedFolder(_ data: Data, id: String? = nil) throws -> WireFolder {
+        guard let folder = try folderReceipt(data).folder, id == nil || folder.id == id else {
+            throw Failure(kind: .server, message: "Folder was not confirmed.")
+        }
+        try validateFolder(folder)
+        return folder
+    }
     public func createFolder(name: String, emoji: String?) async throws -> WireFolder {
         var body: [String: Any] = ["userId": userId, "name": name]
         if let emoji, !emoji.isEmpty { body["emoji"] = emoji }
-        let data = try await postRaw("/api/folders", body: body)
-        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
+        let folder = try confirmedFolder(try await postRaw("/api/folders", body: body))
+        guard folder.name == name.trimmingCharacters(in: .whitespacesAndNewlines),
+              folder.emoji == PulseFolderIconId.normalize(emoji).rawValue else {
+            throw Failure(kind: .server, message: "Folder creation was not confirmed.")
+        }
+        return folder
     }
-
-    /// PATCH /api/folders/{id} { name?, emoji?, position? } → { folder }.
     public func updateFolder(id: String, name: String?, emoji: String?, position: Int?) async throws -> WireFolder {
         var body: [String: Any] = [:]
         if let name { body["name"] = name }
         if let emoji { body["emoji"] = emoji }
         if let position { body["position"] = position }
-        let data = try await patchRaw("/api/folders/\(id)", body: body)
-        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
+        let folder = try confirmedFolder(try await patchRaw("/api/folders/\(id)", body: body), id: id)
+        guard (name == nil || folder.name == name?.trimmingCharacters(in: .whitespacesAndNewlines)),
+              (emoji == nil || folder.emoji == PulseFolderIconId.normalize(emoji).rawValue),
+              (position == nil || folder.position == position) else {
+            throw Failure(kind: .server, message: "Folder changes were not confirmed.")
+        }
+        return folder
     }
-
-    /// DELETE /api/folders/{id} - cascades membership rows only; the chats
-    /// stay in the list. → { ok: true } (status is the contract).
     public func deleteFolder(id: String) async throws {
-        try await deleteEmpty("/api/folders/\(id)", body: ["userId": userId])
+        let receipt = try folderReceipt(try await deleteRaw("/api/folders/\(id)", body: ["userId": userId]))
+        guard receipt.folderId == id, receipt.deleted == true, receipt.ok == true else {
+            throw Failure(kind: .server, message: "Folder deletion was not confirmed.")
+        }
     }
-
-    /// PUT /api/folders/{id}/conversations { conversationIds[] } - FULL
-    /// ordered replace in one transaction (dups collapsed server-side,
-    /// empty clears). → { folder } with the fresh membership.
     public func saveFolderMembership(folderId: String, conversationIds: [String]) async throws -> WireFolder {
-        let data = try await putRaw("/api/folders/\(folderId)/conversations", body: ["conversationIds": conversationIds])
-        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
+        let folder = try confirmedFolder(try await putRaw("/api/folders/\(folderId)/conversations", body: ["conversationIds": conversationIds]), id: folderId)
+        var seen = Set<String>()
+        let ids = conversationIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { seen.insert($0).inserted }
+        guard !ids.contains(""), folder.conversationIds == ids else {
+            throw Failure(kind: .server, message: "Folder chats were not confirmed.")
+        }
+        return folder
     }
 
     // N10-b home-page endpoints (all degrade to nil on failure)
 
     /// POST /api/conversations/self { userId } - Note to Self create/dedupe.
     public func createSelfChat() async throws -> WireConversationSummary {
+        struct Receipt: Decodable { let notebookReceiptVersion: Int; let userId: String; let conversation: WireConversationSummary }
         let data = try await postRaw("/api/conversations/self", body: ["userId": userId])
-        return try WireConversationEnvelope.extract(from: data)
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.notebookReceiptVersion == 1, receipt.userId == userId,
+              PulseConversationNavigation.selfConversation(in: [receipt.conversation], viewerId: userId) != nil else {
+            throw Failure(kind: .server, message: "The returned notebook is not private to this account.")
+        }
+        return receipt.conversation
     }
 
     /// GET /api/stories?requesterId= - 24h status groups (nil = unreachable,
     /// the UI renders only the My-status cell - honest empty, no fakes).
     public func stories() async -> WireStoriesPage? {
-        try? await get("/api/stories?requesterId=\(userId)", as: WireStoriesPage.self)
+        try? await storySnapshot()
+    }
+
+    /// Preserve access failures for callers deciding whether a private cache may remain visible.
+    public func storySnapshot() async throws -> WireStoriesPage {
+        let page: WireStoriesPage = try await get("/api/stories?requesterId=\(Self.queryEncoded(userId))", as: WireStoriesPage.self)
+        guard let groups = page.groups,
+              groups.allSatisfy({ !($0.user?.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.stories != nil }),
+              Set(groups.compactMap { $0.user?.id }).count == groups.count else {
+            throw Failure(kind: .server, message: "The gateway did not return a valid story feed.")
+        }
+        let rows = groups.flatMap { $0.stories ?? [] }
+        guard rows.allSatisfy({ !($0.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(rows.compactMap(\.id)).count == rows.count else {
+            throw Failure(kind: .server, message: "The gateway returned invalid story identities.")
+        }
+        return page
     }
 
     // Wave 4 - stories write/owner paths (REST only; zero socket)
@@ -693,40 +1052,61 @@ public struct PulseAPIClient: Sendable {
     public func markStoryViewed(id: String) async throws -> Int {
         let data = try await postRaw("/api/stories/\(id)/view", body: ["requesterId": userId])
         let result = try decoder.decode(WireStoryViewCount.self, from: data)
-        return result.viewCount ?? 0
+        guard let count = result.viewCount, count >= 0 else {
+            throw Failure(kind: .server, message: "The gateway did not confirm the story view.")
+        }
+        return count
     }
 
     /// GET /api/stories/{id}/view?requesterId= - owner-only viewers list
-    /// (403 otherwise; oldest viewer first). Empty list on a missing key.
+    /// (403 otherwise; oldest viewer first). Missing lists are protocol failures.
     public func storyViewers(id: String) async throws -> [WireStoryViewer] {
         let page: WireStoryViewersPage = try await get(
-            "/api/stories/\(id)/view?requesterId=\(userId)",
+            "/api/stories/\(id)/view?requesterId=\(Self.queryEncoded(userId))",
             as: WireStoryViewersPage.self,
         )
-        return page.viewers ?? []
+        guard let viewers = page.viewers,
+              viewers.allSatisfy({ !($0.userId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(viewers.compactMap(\.userId)).count == viewers.count else {
+            throw Failure(kind: .server, message: "The gateway did not return a valid viewers list.")
+        }
+        return viewers
     }
 
-    /// DELETE /api/stories/{id} { requesterId } - owner-only (403 / 404 wire).
+    /// DELETE /api/stories/{id}?requesterId= - the owner is a query parameter, not a body field.
     public func deleteStory(id: String) async throws {
-        try await deleteEmpty("/api/stories/\(id)", body: ["requesterId": userId])
+        struct Receipt: Decodable { let ok: Bool }
+        let data = try await deleteRaw("/api/stories/\(id)?requesterId=\(Self.queryEncoded(userId))", body: [:])
+        guard (try? decoder.decode(Receipt.self, from: data).ok) == true else {
+            throw Failure(kind: .server, message: "Story deletion was not confirmed. Refresh before retrying.")
+        }
     }
 
-    /// GET /api/folders?userId= - chat folders (nil = unreachable → All only).
-    public func folders() async -> [WireFolder]? {
-        guard let page: WireFoldersPage = try? await get("/api/folders?userId=\(userId)", as: WireFoldersPage.self) else { return nil }
-        return page.folders
+    public func folderSnapshot() async throws -> [WireFolder] {
+        let receipt: FolderReceipt = try await get("/api/folders?userId=\(Self.queryEncoded(userId))")
+        guard receipt.folderVersion == 1, receipt.userId == userId, !userId.isEmpty,
+              let folders = receipt.folders, Set(folders.map(\.id)).count == folders.count else {
+            throw Failure(kind: .server, message: "Folder list was not confirmed.")
+        }
+        try folders.forEach { try validateFolder($0) }
+        return folders
     }
+    public func folders() async -> [WireFolder]? { try? await folderSnapshot() }
 
     /// GET /api/mentions?userId= - mention count for the entry pill (nil → 0).
     public func mentionsCount() async -> Int? {
-        guard let page: WireMentionsPage = try? await get("/api/mentions?userId=\(userId)&limit=50", as: WireMentionsPage.self) else { return nil }
-        return page.items?.count
+        (try? await mentions(limit: 50))?.count
     }
 
-    /// GET /api/search?userId=&q= - server message search (nil = unreachable;
-    /// the Messages section is omitted silently - local results still work).
-    public func searchMessages(_ query: String) async -> WireSearchPage? {
-        return try? await get(Self.searchPath(userId: userId, query: query), as: WireSearchPage.self)
+    /// Failed search is distinct from a successful empty result.
+    public func searchMessages(_ query: String) async throws -> WireSearchPage {
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count <= 64 else {
+            throw Failure(kind: .validation, message: "Search text must be 64 UTF-16 units or fewer.")
+        }
+        let page = try await get(Self.searchPath(userId: userId, query: query), as: WireSearchPage.self)
+        guard page.messages != nil else { throw Failure(kind: .server, message: "Search results are missing.") }
+        try Task.checkCancellation()
+        return page
     }
 
     static func searchPath(userId: String, query: String) -> String {
@@ -737,30 +1117,23 @@ public struct PulseAPIClient: Sendable {
 
     /// DELETE /api/messages/{id} { requesterId } - soft-delete MY OWN message
     /// (clear-chat; the route is sender-gated server-side).
-    public func deleteOwnMessage(id: String) async throws {
-        try await deleteEmpty("/api/messages/\(id)", body: ["requesterId": userId])
+    @discardableResult
+    public func deleteOwnMessage(id: String) async throws -> WireChatMessage {
+        let data = try await deleteRaw("/api/messages/\(id)", body: ["requesterId": userId])
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.id == id, message.senderId == userId, message.deletedAt != nil else {
+            throw Failure(kind: .validation, message: "Message deletion was not confirmed.")
+        }
+        return message
     }
 
-    /// Every message in a room, oldest → newest (paginated via the `before`
-    /// cursor) - feeds the .txt export and the clear-chat sweep.
-    public func fullHistory(conversationId: String) async -> [WireChatMessage]? {
-        var pages: [[WireChatMessage]] = []
-        var before: String?
-        var beforeId: String?
-        for _ in 0..<24 {
-            var path = "/api/conversations/\(conversationId)/messages?limit=500"
-            if let before { path += "&before=\(before)" }
-            if let beforeId { path += "&beforeId=\(Self.queryEncoded(beforeId))" }
-            guard let page: WireMessagesPage = try? await get(path, as: WireMessagesPage.self),
-                  !page.messages.isEmpty else { break }
-            pages.append(page.messages)
-            if !page.hasMore { break }
-            guard let cursor = page.messages.first?.createdAt else { break }
-            before = Self.queryEncoded(cursor)
-            beforeId = page.messages.first?.id
+    /// Complete, server-bounded history including replies. Empty is success;
+    /// interrupted, unsupported, stalled or oversized scans throw, never return a prefix.
+    public func fullHistory(conversationId: String) async throws -> [WireChatMessage] {
+        try await PulseCompleteHistory.load(room: conversationId) { cursor in
+            try await messages(conversationId: conversationId, limit: 200,
+                syncFrom: cursor == nil ? PulseCompleteHistory.start : nil, syncCursor: cursor)
         }
-        guard !pages.isEmpty else { return nil }
-        return pages.reversed().flatMap { $0 }
     }
 
     // W2-DATA-B - Wave 2 message depth (spec §0 contract)
@@ -820,15 +1193,24 @@ public struct PulseAPIClient: Sendable {
     /// (server moves the vote on revote; closed polls answer 400).
     /// → { message } with the fresh tally.
     public func votePoll(pollId: String, userId: String, optionId: String) async throws -> WireChatMessage {
+        guard userId == self.userId else { throw Failure(kind: .forbidden, message: "The poll account changed.") }
         let data = try await postRaw("/api/polls/\(pollId)/vote", body: ["userId": userId, "optionId": optionId])
-        return try WireMessageEnvelope.extract(from: data)
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.deletedAt == nil, message.poll?.id == pollId, message.poll?.pickFor(userId) == optionId else {
+            throw Failure(kind: .validation, message: "Your vote was not confirmed.")
+        }
+        return message
     }
 
-    /// POST /api/polls/{id}/close {userId} - end voting (creator only).
-    /// → { message } with the frozen tally.
+    /// Close acknowledgement must actually freeze this poll, not merely return HTTP 200.
     public func closePoll(pollId: String, userId: String) async throws -> WireChatMessage {
+        guard userId == self.userId else { throw Failure(kind: .forbidden, message: "The poll account changed.") }
         let data = try await postRaw("/api/polls/\(pollId)/close", body: ["userId": userId])
-        return try WireMessageEnvelope.extract(from: data)
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.deletedAt == nil, message.senderId == userId, message.poll?.id == pollId, message.poll?.closed == true else {
+            throw Failure(kind: .validation, message: "Poll closure was not confirmed.")
+        }
+        return message
     }
 
     /// POST /api/messages/{id}/unfurl {userId} - attach an Open-Graph
@@ -909,6 +1291,7 @@ public struct PulseAPIClient: Sendable {
         _ = try await postRaw("/api/push/register", body: [
             "userId": userId,
             "platform": platform,
+            "readStateHints": 1,
             "token": token,
         ])
     }
@@ -922,23 +1305,39 @@ public struct PulseAPIClient: Sendable {
     /// socket gcall:join: rings ONLINE members through the relay (gcall:ring)
     /// and pushes OFFLINE ones (APNs/FCM fanout). Fire-and-forget upstream;
     /// failures surface the honest ring toast.
-    public func ringGroupCall(conversationId: String, userId: String, kind: CallKind) async throws {
+    public func ringGroupCall(conversationId: String, userId: String, kind: CallKind, callId: String) async throws {
         _ = try await postRaw("/api/conversations/\(q(conversationId))/calls/ring", body: [
             "userId": userId,
             "kind": kind.rawValue,
+            "callId": callId,
         ])
     }
 
-    /// GET /api/group-call-state?conversationId= → { callId, kind, startedAt,
-    /// members } or { members: [] } (honest empty - socket down / no call).
+    /// Viewer-bound ongoing-call receipt. Transport failure is not an empty roster.
     public func groupCallState(conversationId: String) async throws -> PulseGroupCallStateSnapshot {
-        try await get("/api/group-call-state?conversationId=\(q(conversationId))")
+        struct Receipt: Decodable {
+            let callStateVersion: Int; let conversationId: String; let userId: String
+            let callId: String; let kind: String; let startedAt: Int64?
+            let members: [PulseGroupCallMember]
+        }
+        let receipt: Receipt = try await get("/api/group-call-state?conversationId=\(q(conversationId))&userId=\(q(userId))")
+        guard receipt.callStateVersion == 1, receipt.conversationId == conversationId, receipt.userId == userId,
+              ["voice", "video"].contains(receipt.kind), receipt.members.count <= 8,
+              receipt.members.allSatisfy({ !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(receipt.members.map(\.id)).count == receipt.members.count,
+              receipt.members.isEmpty == receipt.callId.isEmpty,
+              receipt.members.isEmpty || (!receipt.callId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (receipt.startedAt ?? -1) >= 0) else {
+            throw Failure(kind: .validation, message: "Call state did not match this viewer and conversation.")
+        }
+        return PulseGroupCallStateSnapshot(callId: receipt.callId.isEmpty ? nil : receipt.callId, kind: receipt.kind,
+            startedAtMs: receipt.startedAt, members: receipt.members)
     }
 
     // Wave 7 - collaboration & hub (F-RO / F-HB)
 
     private func q(_ id: String) -> String {
-        id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
+        id.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")) ?? id
     }
 
     private func envelope<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
@@ -1010,7 +1409,13 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/conversations/{id}/kanban?userId= → { cards }.
     public func kanbanBoard(conversationId: String) async throws -> WireKanbanPage {
-        try await get("/api/conversations/\(q(conversationId))/kanban?userId=\(q(userId))")
+        let page: WireKanbanPage = try await get("/api/conversations/\(q(conversationId))/kanban?userId=\(q(userId))")
+        guard page.boardReceiptVersion == 1, page.userId == userId, page.conversationId == conversationId,
+              page.cards.count <= 500, Set(page.cards.map(\.id)).count == page.cards.count else {
+            throw Failure(kind: .validation, message: "Complete board was not confirmed.")
+        }
+        for card in page.cards { try requireBoardCard(card, room: conversationId) }
+        return page
     }
 
     /// POST /api/conversations/{id}/kanban { userId, title?, column?, assigneeId?, messageId? } → { card }.
@@ -1021,7 +1426,12 @@ public struct PulseAPIClient: Sendable {
         if let assigneeId { body["assigneeId"] = assigneeId }
         if let messageId { body["messageId"] = messageId }
         let data = try await postRaw("/api/conversations/\(q(conversationId))/kanban", body: body)
-        return try envelope(WireKanbanCardEnvelope.self, from: data).card ?? WireKanbanCard(id: "", conversationId: conversationId, title: title, column: column, position: 0, assigneeId: assigneeId, assigneeName: nil, createdById: nil, createdByName: nil, createdAt: nil, updatedAt: nil, sourceMessageId: messageId)
+        let card = try acceptedBoardCard(data, room: conversationId)
+        guard card.createdById == userId, card.column == (column ?? "todo"), card.assigneeId == assigneeId,
+              card.sourceMessageId == messageId, (title == nil && messageId != nil) || card.title == title?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw Failure(kind: .validation, message: "Task creation was not confirmed.")
+        }
+        return card
     }
 
     /// PATCH /api/kanban/{cardId} { userId, title?, column?, assigneeId?, position? } → { card }.
@@ -1033,14 +1443,43 @@ public struct PulseAPIClient: Sendable {
         else if let assigneeId { body["assigneeId"] = assigneeId }
         if let position { body["position"] = position }
         let data = try await patchRaw("/api/kanban/\(q(cardId))", body: body)
-        return try envelope(WireKanbanCardEnvelope.self, from: data).card ?? WireKanbanCard(id: cardId, conversationId: nil, title: title, column: column, position: position, assigneeId: assigneeId, assigneeName: nil, createdById: nil, createdByName: nil, createdAt: nil, updatedAt: nil, sourceMessageId: nil)
+        let card = try acceptedBoardCard(data)
+        guard card.id == cardId, title == nil || card.title == title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              column == nil || card.column == column, position == nil || card.position == position,
+              clearAssignee ? card.assigneeId == nil : (assigneeId == nil || card.assigneeId == assigneeId) else {
+            throw Failure(kind: .validation, message: "Task update was not confirmed.")
+        }
+        return card
     }
 
     /// DELETE /api/kanban/{cardId}?userId= - creator OR group admin.
     public func deleteKanbanCard(_ cardId: String) async throws {
         var request = URLRequest(url: url("/api/kanban/\(q(cardId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
-        _ = try await send(request)
+        let data = try await send(request)
+        struct Receipt: Decodable { let boardReceiptVersion: Int; let userId: String; let conversationId: String; let cardId: String; let ok: Bool }
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.boardReceiptVersion == 1, receipt.userId == userId, !receipt.conversationId.isEmpty, receipt.cardId == cardId, receipt.ok else {
+            throw Failure(kind: .validation, message: "Task deletion was not confirmed.")
+        }
+    }
+
+    private func requireBoardCard(_ card: WireKanbanCard, room: String) throws {
+        guard !card.id.isEmpty, card.conversationId == room, let title = card.title, !title.isEmpty, title.utf16.count <= 120,
+              ["todo", "doing", "done"].contains(card.column ?? ""), let position = card.position, (0...2_147_483_647).contains(position),
+              card.createdAt.flatMap(PulseFormat.date) != nil, card.updatedAt.flatMap(PulseFormat.date) != nil else {
+            throw Failure(kind: .validation, message: "Board card was not confirmed.")
+        }
+    }
+
+    private func acceptedBoardCard(_ data: Data, room: String? = nil) throws -> WireKanbanCard {
+        let receipt = try envelope(WireKanbanCardEnvelope.self, from: data)
+        guard receipt.boardReceiptVersion == 1, receipt.userId == userId, !receipt.conversationId.isEmpty,
+              room == nil || receipt.conversationId == room, let card = receipt.card else {
+            throw Failure(kind: .validation, message: "Board action owner was not confirmed.")
+        }
+        try requireBoardCard(card, room: receipt.conversationId)
+        return card
     }
 
     // MARK: events
@@ -1056,26 +1495,51 @@ public struct PulseAPIClient: Sendable {
         if let description { body["description"] = description }
         if let location { body["location"] = location }
         let data = try await postRaw("/api/conversations/\(q(conversationId))/events", body: body)
-        return try envelope(WireEventEnvelope.self, from: data).event ?? WireGroupEvent(id: "", title: title, description: description, location: location, startsAt: startsAtIso, createdById: userId, createdByName: nil, rsvps: nil, counts: nil, myStatus: nil)
+        guard let event = try envelope(WireEventEnvelope.self, from: data).event,
+              !event.id.isEmpty, event.title == title.trimmingCharacters(in: .whitespacesAndNewlines), event.createdById == userId,
+              let expected = PulseFormat.date(startsAtIso), event.startsAt.flatMap(PulseFormat.date) == expected else {
+            throw Failure(kind: .validation, message: "Event creation was not confirmed.")
+        }
+        return event
     }
 
     /// DELETE /api/events/{id}?userId= - creator OR group admin.
     public func deleteEvent(_ eventId: String) async throws {
         var request = URLRequest(url: url("/api/events/\(q(eventId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
-        _ = try await send(request)
+        let data = try await send(request)
+        struct Receipt: Decodable { let eventReceiptVersion: Int; let eventId: String; let userId: String; let ok: Bool }
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.eventReceiptVersion == 1, receipt.eventId == eventId, receipt.userId == userId, receipt.ok else {
+            throw Failure(kind: .validation, message: "Event deletion was not confirmed.")
+        }
     }
 
-    /// POST /api/events/{id}/rsvp { userId, status: going|maybe|no } → { rsvp, counts }.
     public func rsvpEvent(_ eventId: String, status: String) async throws -> WireRsvpResult {
         let data = try await postRaw("/api/events/\(q(eventId))/rsvp", body: ["userId": userId, "status": status])
-        return try envelope(WireRsvpResult.self, from: data)
+        let receipt = try envelope(WireRsvpResult.self, from: data)
+        guard receipt.eventReceiptVersion == 1, receipt.eventId == eventId, receipt.userId == userId,
+              receipt.rsvp?.id?.isEmpty == false, receipt.rsvp?.eventId == eventId,
+              receipt.rsvp?.userId == userId, receipt.rsvp?.status == status,
+              ["going", "maybe", "no"].contains(status), let counts = receipt.counts,
+              let going = counts.going, let maybe = counts.maybe, let no = counts.no,
+              going >= 0, maybe >= 0, no >= 0, (status == "going" ? going : status == "maybe" ? maybe : no) > 0 else {
+            throw Failure(kind: .validation, message: "Your RSVP was not confirmed.")
+        }
+        return receipt
     }
 
-    /// POST /api/events/{id}/checkin { userId } - window +15 XP; 409 outside window is a real failure.
     public func checkinEvent(_ eventId: String) async throws -> WireCheckinResult {
         let data = try await postRaw("/api/events/\(q(eventId))/checkin", body: ["userId": userId])
-        return try envelope(WireCheckinResult.self, from: data)
+        let receipt = try envelope(WireCheckinResult.self, from: data)
+        guard receipt.eventReceiptVersion == 1, receipt.eventId == eventId, receipt.userId == userId,
+              let stamp = receipt.checkIn, stamp.id?.isEmpty == false, stamp.eventId == eventId, stamp.userId == userId,
+              ["going", "maybe", "no"].contains(stamp.status ?? ""), stamp.checkedInAt.flatMap(PulseFormat.date) != nil,
+              let count = receipt.checkedInCount, count > 0, let awarded = receipt.xpAwarded,
+              let already = receipt.alreadyCheckedIn, awarded != already else {
+            throw Failure(kind: .validation, message: "Your attendance was not confirmed.")
+        }
+        return receipt
     }
 
     // MARK: reminders
@@ -1167,10 +1631,28 @@ public struct PulseAPIClient: Sendable {
         try await creationOperations.finish(intent, id: id)
     }
 
+    private struct GameReadScope: Decodable {
+        let gameReadVersion: Int
+        let userId: String
+        let conversationId: String
+    }
+    private func gameReadData(_ path: String) async throws -> (Data, String) {
+        var request = URLRequest(url: url(path + "?userId=\(q(userId))"))
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        guard let scope = try? envelope(GameReadScope.self, from: data), scope.gameReadVersion == 1,
+              scope.userId == userId, !scope.conversationId.isEmpty else {
+            throw Failure(kind: .server, message: "Private game state could not be verified. Update the gateway before retrying.")
+        }
+        return (data, scope.conversationId)
+    }
+
     /// GET /api/games/{id} → { match, playerX, playerO }.
     public func gameDetail(_ matchId: String) async throws -> WireGameDetail {
-        let result: WireGameDetail = try await get("/api/games/\(q(matchId))")
-        return try confirmedGame(result, id: matchId)
+        let (data, room) = try await gameReadData("/api/games/\(q(matchId))")
+        let result = try confirmedGame(envelope(WireGameDetail.self, from: data), id: matchId)
+        guard result.match?.conversationId == room else { throw Failure(kind: .validation, message: "Game room was not confirmed.") }
+        return result
     }
 
     /// POST /api/games/{id}/move { userId, cell 0..8 } → { match, playerX, playerO }.
@@ -1228,15 +1710,13 @@ public struct PulseAPIClient: Sendable {
         try await creationOperations.finish(intent, id: id)
     }
 
-    /// GET /api/tournaments/{id} → { tournament } standings (tolerant envelope OR bare).
+    /// GET private standings; only a scoped envelope may be accepted.
     public func tournamentDetail(_ tournamentId: String) async throws -> WireTournamentSummary {
-        var request = URLRequest(url: url("/api/tournaments/\(q(tournamentId))"))
-        request.httpMethod = "GET"
-        let data = try await send(request)
-        let nested = (try? envelope(WireTournamentEnvelope.self, from: data))?.tournament
-        let season = try nested ?? envelope(WireTournamentSummary.self, from: data)
-        guard season.id == tournamentId, let status = season.status, ["running", "finished"].contains(status) else {
-            throw Failure(kind: .server, message: "Invalid tournament state.")
+        let (data, room) = try await gameReadData("/api/tournaments/\(q(tournamentId))")
+        guard let season = try envelope(WireTournamentEnvelope.self, from: data).tournament,
+              season.id == tournamentId, season.conversationId == room,
+              let status = season.status, ["running", "finished"].contains(status), season.entries != nil else {
+            throw Failure(kind: .validation, message: "Invalid private tournament state.")
         }
         return season
     }
@@ -1276,7 +1756,10 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/hub/wallet?userId=[&ledger=30] - upserts a zero wallet; ledger desc.
     public func walletPage(ledger: Int = 30) async throws -> WireWalletPage {
-        try await get("/api/hub/wallet?userId=\(q(userId))&ledger=\(ledger)")
+        let page: WireWalletPage = try await get("/api/hub/wallet?userId=\(q(userId))&ledger=\(ledger)")
+        try requireWalletAck(page.wallet)
+        guard page.ledger != nil else { throw Failure(kind: .validation, message: "Wallet history was not confirmed.") }
+        return page
     }
 
     /// POST /api/hub/wallet/checkin { userId } - 409 body carries { error, wallet }.
@@ -1338,14 +1821,20 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done.
     public func hubTasks() async throws -> WireHubTasksPage {
-        try await get("/api/hub/tasks?userId=\(q(userId))")
+        let page: WireHubTasksPage = try await get("/api/hub/tasks?userId=\(q(userId))")
+        guard page.userId == userId, Set(page.tasks.map(\.id)).count == page.tasks.count else { throw Failure(kind: .validation, message: "Task history owner was not confirmed.") }
+        for task in page.tasks { try requireHubTask(task) }
+        return page
     }
 
     /// POST /api/hub/tasks { userId, title, status? } → { task }.
     public func createHubTask(title: String, status: String?) async throws -> WireHubTask {
         let data = try await postRaw("/api/hub/tasks", body: ["userId": userId, "title": title, "status": status ?? "todo"])
-        if let page = try? envelope(WireHubTaskEnvelope.self, from: data), let t = page.task { return t }
-        return try envelope(WireHubTask.self, from: data)
+        let task = try acceptedHubTask(data)
+        guard task.title == title.trimmingCharacters(in: .whitespacesAndNewlines), task.status == (status ?? "todo") else {
+            throw Failure(kind: .validation, message: "Task creation was not confirmed.")
+        }
+        return task
     }
 
     /// PATCH /api/hub/tasks/{id} { userId, title?, status? } - owner-only.
@@ -1354,20 +1843,55 @@ public struct PulseAPIClient: Sendable {
         if let title { body["title"] = title }
         if let status { body["status"] = status }
         let data = try await patchRaw("/api/hub/tasks/\(q(taskId))", body: body)
-        if let page = try? envelope(WireHubTaskEnvelope.self, from: data), let t = page.task { return t }
-        return try envelope(WireHubTask.self, from: data)
+        let task = try acceptedHubTask(data)
+        guard task.id == taskId, title == nil || task.title == title?.trimmingCharacters(in: .whitespacesAndNewlines), status == nil || task.status == status else {
+            throw Failure(kind: .validation, message: "Task update was not confirmed.")
+        }
+        return task
     }
 
     /// DELETE /api/hub/tasks/{id}?userId= - owner-only.
     public func deleteHubTask(_ taskId: String) async throws {
         var request = URLRequest(url: url("/api/hub/tasks/\(q(taskId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
-        _ = try await send(request)
+        let data = try await send(request)
+        struct Receipt: Decodable { let ok: Bool; let userId: String; let taskId: String }
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.userId == userId, receipt.taskId == taskId else { throw Failure(kind: .validation, message: "Task deletion was not confirmed.") }
+    }
+
+    private func requireHubTask(_ task: WireHubTask) throws {
+        guard task.ownerId == userId, !task.id.isEmpty, let title = task.title, !title.isEmpty, title.utf16.count <= 120,
+              ["todo", "doing", "done"].contains(task.status ?? ""), task.createdAt.flatMap(PulseFormat.date) != nil,
+              task.updatedAt.flatMap(PulseFormat.date) != nil else { throw Failure(kind: .validation, message: "Personal task was not confirmed.") }
+    }
+    private func acceptedHubTask(_ data: Data) throws -> WireHubTask {
+        guard let task = try envelope(WireHubTaskEnvelope.self, from: data).task else { throw Failure(kind: .validation, message: "Personal task was not confirmed.") }
+        try requireHubTask(task)
+        return task
+    }
+
+    private func requireMarketListing(_ row: WireMarketListing) throws {
+        guard !row.id.isEmpty, let title = row.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              title.utf16.count <= 80, let price = row.price, (1...100_000).contains(price), row.asset == "PC",
+              let seller = row.seller?.id, !seller.isEmpty, row.mine == (seller == userId),
+              row.createdAt.flatMap(PulseFormat.date) != nil else {
+            throw Failure(kind: .validation, message: "Market listing could not be verified.")
+        }
+        guard (row.status == "open" && row.buyer == nil) || (row.status == "sold" && row.mine == true &&
+            (row.buyer == nil || (row.buyer?.id?.isEmpty == false && row.buyer?.id != seller))) else {
+            throw Failure(kind: .validation, message: "Market listing state could not be verified.")
+        }
     }
 
     /// GET /api/hub/market?userId= → { listings }.
     public func market() async throws -> WireMarketPage {
-        try await get("/api/hub/market?userId=\(q(userId))")
+        let page: WireMarketPage = try await get("/api/hub/market?userId=\(q(userId))")
+        guard page.marketVersion == 1, page.userId == userId, Set(page.listings.map(\.id)).count == page.listings.count else {
+            throw Failure(kind: .validation, message: "Market ownership could not be verified. Update the gateway before retrying.")
+        }
+        for row in page.listings { try requireMarketListing(row) }
+        return page
     }
 
     /// POST /api/hub/market { userId, title, description?, price } → { listing }.
@@ -1375,52 +1899,104 @@ public struct PulseAPIClient: Sendable {
         var body: [String: Any] = ["userId": userId, "title": title, "price": price]
         if let description { body["description"] = description }
         let data = try await postRaw("/api/hub/market", body: body)
-        if let page = try? envelope(WireMarketListingEnvelope.self, from: data), let l = page.listing { return l }
-        return try envelope(WireMarketListing.self, from: data)
+        let receipt = try envelope(WireMarketListingEnvelope.self, from: data)
+        guard receipt.marketVersion == 1, receipt.userId == userId, let row = receipt.listing else {
+            throw Failure(kind: .validation, message: "Listing ownership was not confirmed.")
+        }
+        try requireMarketListing(row)
+        guard row.mine == true, row.status == "open", row.title == title.trimmingCharacters(in: .whitespacesAndNewlines), row.price == price else {
+            throw Failure(kind: .validation, message: "Listing details were not confirmed.")
+        }
+        return row
     }
 
     /// POST /api/hub/market/{id}/buy { userId } → { ok, wallet }.
     public func buyListing(_ listingId: String) async throws -> WireMarketBuyResult {
         let data = try await postRaw("/api/hub/market/\(q(listingId))/buy", body: ["userId": userId])
-        let result = try envelope(WireMarketBuyResult.self, from: data)
-        guard result.ok == true else { throw Failure(kind: .server, message: "Purchase was not confirmed; refresh the market before retrying.") }
+        guard let result = try? envelope(WireMarketBuyResult.self, from: data), result.marketVersion == 1, result.userId == userId, result.listingId == listingId, result.ok == true else { throw Failure(kind: .server, message: "Purchase was not confirmed; refresh the market before retrying.") }
         try requireWalletAck(result.wallet)
         return result
     }
 
     /// GET /api/hub/logs?limit=&kind= → { logs } desc.
     public func hubLogs(limit: Int, kind: String?) async throws -> WireHubLogsPage {
-        var path = "/api/hub/logs?limit=\(limit)"
+        var path = "/api/hub/logs?userId=\(q(userId))&limit=\(limit)"
         if let kind, !kind.isEmpty { path += "&kind=\(q(kind))" }
-        return try await get(path)
+        let page: WireHubLogsPage = try await get(path)
+        guard page.activityVersion == 1, page.userId == userId, page.logs.allSatisfy({ $0.user?.id == userId }) else {
+            throw Failure(kind: .validation, message: "Private activity could not be verified. Update the gateway before retrying.")
+        }
+        return page
+    }
+
+    private func requireAppIdentity(_ version: Int, _ app: String, _ owner: String, _ expectedApp: String) throws {
+        guard version == 1, app == expectedApp, owner == userId else { throw Failure(kind: .validation, message: "App response was not confirmed for this account. Update the gateway before retrying.") }
+    }
+    private func requireInstallState(_ installed: Bool?, _ status: String?, _ count: Int?) throws {
+        guard let installed, let count, count >= 0, installed ? status == "connected" && count > 0 : status == nil else {
+            throw Failure(kind: .validation, message: "Connection state was not confirmed.")
+        }
+    }
+    private func requireAppCommunity(_ row: WireAppCommunity, _ appId: String) throws {
+        try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
+        guard let joined = row.joined, let count = row.memberCount, count >= 0 else { throw Failure(kind: .validation, message: "Community state was not confirmed.") }
+        guard let room = row.conversation else {
+            guard !joined, count == 0 else { throw Failure(kind: .validation, message: "Community is missing.") }; return
+        }
+        guard !room.id.isEmpty, room.isGroup, room.myDraft == nil, room.inviteCode == nil,
+              room.members.allSatisfy({ !$0.id.isEmpty }), Set(room.members.map(\.id)).count == room.members.count,
+              joined ? room.members.count == count && room.members.contains(where: { $0.id == userId }) : room.members.isEmpty else {
+            throw Failure(kind: .validation, message: "Community membership was not confirmed.")
+        }
     }
 
     /// GET /api/hub/apps/{appId}/install?userId= - appId is the numeric matrix id as a string.
     public func appInstallState(appId: String) async throws -> WireAppInstallState {
-        try await get("/api/hub/apps/\(q(appId))/install?userId=\(q(userId))")
+        let row: WireAppInstallState = try await get("/api/hub/apps/\(q(appId))/install?userId=\(q(userId))")
+        try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
+        try requireInstallState(row.installed, row.status, row.installs)
+        guard let people = row.installers, people.count <= 6, people.count <= (row.installs ?? -1),
+              people.allSatisfy({ $0.id?.isEmpty == false }), Set(people.compactMap(\.id)).count == people.count,
+              row.installed != true || row.installedAt.flatMap(PulseFormat.date) != nil else {
+            throw Failure(kind: .validation, message: "Connection snapshot was not confirmed.")
+        }
+        return row
     }
 
     /// POST /api/hub/apps/{appId}/install { userId } - idempotent connect.
     public func installApp(appId: String) async throws -> WireAppInstallResult {
         let data = try await postRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
-        return try envelope(WireAppInstallResult.self, from: data)
+        let row = try envelope(WireAppInstallResult.self, from: data)
+        try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
+        try requireInstallState(row.installed, row.status, row.installs)
+        guard row.installed == true else { throw Failure(kind: .validation, message: "Connection change was not confirmed.") }
+        return row
     }
 
     /// DELETE /api/hub/apps/{appId}/install { userId } - hard remove.
     public func uninstallApp(appId: String) async throws -> WireAppInstallResult {
         let data = try await deleteRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
-        return try envelope(WireAppInstallResult.self, from: data)
+        let row = try envelope(WireAppInstallResult.self, from: data)
+        try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
+        try requireInstallState(row.installed, row.status, row.installs)
+        guard row.installed == false else { throw Failure(kind: .validation, message: "Connection change was not confirmed.") }
+        return row
     }
 
     /// GET /api/hub/apps/{appId}/community?userId= → { conversation|null, memberCount, joined }.
     public func appCommunity(appId: String) async throws -> WireAppCommunity {
-        try await get("/api/hub/apps/\(q(appId))/community?userId=\(q(userId))")
+        let row: WireAppCommunity = try await get("/api/hub/apps/\(q(appId))/community?userId=\(q(userId))")
+        try requireAppCommunity(row, appId)
+        return row
     }
 
     /// POST /api/hub/apps/{appId}/community { userId } - auto-provisions the group; founder = admin.
     public func joinAppCommunity(appId: String) async throws -> WireAppCommunity {
         let data = try await postRaw("/api/hub/apps/\(q(appId))/community", body: ["userId": userId])
-        return try envelope(WireAppCommunity.self, from: data)
+        let row = try envelope(WireAppCommunity.self, from: data)
+        try requireAppCommunity(row, appId)
+        guard row.joined == true, row.conversation != nil else { throw Failure(kind: .validation, message: "Community membership was not confirmed.") }
+        return row
     }
 
     // REM-B - group admin (web group-info-sheet.tsx parity)
@@ -1438,13 +2014,27 @@ public struct PulseAPIClient: Sendable {
         broadcast: Bool? = nil,
         screenPrivacy: Bool? = nil,
     ) async throws -> WireConversationSummary {
+        guard !requesterId.isEmpty, requesterId == userId else {
+            throw Failure(kind: .validation, message: "The room settings owner changed. Reopen group info.")
+        }
         var body: [String: Any] = ["requesterId": requesterId]
         if let name { body["name"] = name }
         if let photo { body["photo"] = photo ?? "" } // nil-in-optional = clear ('')
         if let broadcast { body["broadcast"] = broadcast }
         if let screenPrivacy { body["screenPrivacy"] = screenPrivacy }
         let data = try await patchRaw("/api/conversations/\(q(conversationId))", body: body)
-        return try WireConversationEnvelope.extract(from: data)
+        let result = try WireConversationEnvelope.extract(from: data)
+        let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let fields = (root?["conversation"] as? [String: Any]) ?? root
+        guard result.id == conversationId, result.members.contains(where: { $0.id == requesterId }),
+              (name == nil && photo == nil && broadcast == nil) || result.isGroup,
+              name == nil || !(result.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              photo == nil || fields?.keys.contains("photo") == true,
+              broadcast == nil || result.broadcastMode != nil,
+              screenPrivacy == nil || result.screenPrivacy != nil else {
+            throw Failure(kind: .server, message: "Room settings couldn't be confirmed. Refresh group info.")
+        }
+        return result
     }
 
     /// POST /api/conversations/{id}/members { requesterId, userIds } -
@@ -1454,7 +2044,11 @@ public struct PulseAPIClient: Sendable {
             "/api/conversations/\(q(conversationId))/members",
             body: ["requesterId": requesterId, "userIds": userIds],
         )
-        return try envelope(WireMembersAdded.self, from: data).added ?? []
+        guard let added = try envelope(WireMembersAdded.self, from: data).added,
+              Set(added).count == added.count, Set(added).isSubset(of: Set(userIds)) else {
+            throw Failure(kind: .server, message: "Member additions couldn't be confirmed. Refresh group info before retrying.")
+        }
+        return added
     }
 
     /// PATCH /api/conversations/{id}/members { requesterId, userId, role } -
@@ -1507,47 +2101,134 @@ public struct PulseAPIClient: Sendable {
     /// PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } -
     /// participant-level TTL (presets 0 · 1d · 1w · 30d server-gated).
     public func setDisappearingTtl(_ conversationId: String, userId: String, ttlSeconds: Int) async throws -> WireConversationSummary {
+        guard !userId.isEmpty, userId == self.userId else {
+            throw Failure(kind: .validation, message: "The room settings owner changed. Reopen chat info.")
+        }
         let data = try await patchRaw(
             "/api/conversations/\(q(conversationId))/disappearing",
             body: ["userId": userId, "ttlSeconds": ttlSeconds],
         )
-        return try WireConversationEnvelope.extract(from: data)
+        let result = try WireConversationEnvelope.extract(from: data)
+        guard result.id == conversationId, result.members.contains(where: { $0.id == userId }), let applied = result.ttlSeconds,
+              [0, 86_400, 604_800, 2_592_000].contains(applied) else {
+            throw Failure(kind: .server, message: "Disappearing-message setting couldn't be confirmed. Refresh group info.")
+        }
+        return result
     }
 
     /// PATCH /api/conversations/{id}/slow-mode { userId, seconds } -
     /// admin-only member throttle (presets 0/5/10/30/60/300).
     public func setSlowMode(_ conversationId: String, userId: String, seconds: Int) async throws -> Int {
+        guard !userId.isEmpty, userId == self.userId else {
+            throw Failure(kind: .validation, message: "The room settings owner changed. Reopen chat info.")
+        }
         let data = try await patchRaw(
             "/api/conversations/\(q(conversationId))/slow-mode",
             body: ["userId": userId, "seconds": seconds],
         )
-        return try envelope(WireSlowModeResult.self, from: data).slowModeSeconds ?? seconds
+        let result = try envelope(WireSlowModeResult.self, from: data)
+        guard result.ok == true, result.slowModeSeconds == seconds else {
+            throw Failure(kind: .server, message: "Slow-mode change couldn't be confirmed. Refresh group info.")
+        }
+        return seconds
     }
 
     // REM-B F-MS-18 - scheduled sends
 
-    /// GET /api/conversations/{id}/scheduled?userId= - the caller's OWN
-    /// pending rows, soonest first (plus dispatch-refused ones).
+    private struct ScheduledReceipt: Decodable {
+        let scheduleVersion: Int
+        let clientId: String?
+        let replayed: Bool?
+        let userId: String
+        let conversationId: String
+        let items: [WireScheduledItem]?
+        let hasMore: Bool?
+        let nextCursor: String?
+        let item: WireScheduledItem?
+        let scheduledId: String?
+        let cancelled: Bool?
+        let ok: Bool?
+    }
+    private func validateScheduledScope(_ value: ScheduledReceipt, room: String? = nil) throws {
+        guard value.scheduleVersion == 1, value.userId == userId, !userId.isEmpty, !value.conversationId.isEmpty,
+              room == nil || value.conversationId == room else {
+            throw Failure(kind: .server, message: "Scheduled-message ownership was not confirmed.")
+        }
+    }
+    private func validateScheduled(_ row: WireScheduledItem, room: String) throws {
+        guard !row.id.isEmpty, row.conversationId == room, !row.content.isEmpty, row.sentAt == nil,
+              PulseFormat.date(row.scheduledAt) != nil,
+              row.cancelledAt == nil || PulseFormat.date(row.cancelledAt) != nil else {
+            throw Failure(kind: .server, message: "Invalid scheduled message.")
+        }
+    }
     public func scheduledMessages(conversationId: String) async throws -> [WireScheduledItem] {
-        let page: WireScheduledPage = try await get(
-            "/api/conversations/\(q(conversationId))/scheduled?userId=\(q(userId))",
-        )
-        return page.items ?? []
+        var rows: [WireScheduledItem] = [], ids = Set<String>(), cursors = Set<String>()
+        var cursor: String?, bytes = 0
+        for _ in 0..<100 {
+            try Task.checkCancellation()
+            let page: ScheduledReceipt = try await get("/api/conversations/\(q(conversationId))/scheduled?userId=\(q(userId))" + (cursor.map { "&cursor=\(q($0))" } ?? ""))
+            try validateScheduledScope(page, room: conversationId)
+            guard let items = page.items, items.count <= 50, let more = page.hasMore,
+                  more ? (page.nextCursor?.isEmpty == false && !items.isEmpty) : page.nextCursor == nil else {
+                throw Failure(kind: .server, message: "Scheduled list was not completely confirmed.")
+            }
+            for row in items {
+                try validateScheduled(row, room: conversationId)
+                guard ids.insert(row.id).inserted else { throw Failure(kind: .server, message: "Scheduled list changed while loading. Retry.") }
+                bytes += row.content.utf8.count
+            }
+            guard bytes <= 8 * 1024 * 1024 else { throw Failure(kind: .server, message: "Scheduled list is too large to confirm safely.") }
+            rows.append(contentsOf: items)
+            if !more { return rows }
+            guard let next = page.nextCursor, cursors.insert(next).inserted else { throw Failure(kind: .server, message: "Scheduled list cursor repeated. Retry.") }
+            cursor = next
+        }
+        throw Failure(kind: .server, message: "Scheduled list exceeded the safe page limit. No partial list was applied.")
+    }
+    private func scheduledCreationIntent(conversationId: String, content: String, when: String) throws -> [String] {
+        guard let date = PulseFormat.date(when) else { throw Failure(kind: .validation, message: "Invalid schedule time.") }
+        let millis = date.timeIntervalSince1970 * 1000
+        guard millis.isFinite, millis >= Double(Int64.min), millis < Double(Int64.max) else {
+            throw Failure(kind: .validation, message: "Schedule time is out of range.")
+        }
+        return [PulseWalletOperations.gatewayKey(baseURL), userId, "scheduled-send", conversationId,
+            content.trimmingCharacters(in: .whitespacesAndNewlines), String(Int64(millis.rounded(.towardZero)))]
     }
 
-    /// POST /api/conversations/{id}/scheduled { senderId, content,
-    /// scheduledAt } → 201 { item }. Window guard server-side: 30 s – 30 d.
     public func scheduleMessage(conversationId: String, content: String, scheduledAtIso: String) async throws -> WireScheduledItem {
-        let data = try await postRaw(
-            "/api/conversations/\(q(conversationId))/scheduled",
-            body: ["senderId": userId, "content": content, "scheduledAt": scheduledAtIso],
-        )
-        return try envelope(WireScheduledItem.self, from: data)
+        let intent = try scheduledCreationIntent(conversationId: conversationId, content: content, when: scheduledAtIso)
+        let id = try await creationOperations.begin(intent)
+        // Do not retire on terminal refusal: retry must never resurrect a cancelled/delivered schedule.
+        let data = try await postRaw("/api/conversations/\(q(conversationId))/scheduled/create-v2",
+            body: ["senderId": userId, "content": content, "scheduledAt": scheduledAtIso, "clientId": id])
+        let receipt = try decoder.decode(ScheduledReceipt.self, from: data)
+        try validateScheduledScope(receipt, room: conversationId)
+        guard receipt.clientId == id, receipt.replayed != nil,
+              var row = receipt.item, row.content == content.trimmingCharacters(in: .whitespacesAndNewlines),
+              row.cancelledAt == nil, row.cancelledReason == nil,
+              let actual = PulseFormat.date(row.scheduledAt), let expected = PulseFormat.date(scheduledAtIso),
+              abs(actual.timeIntervalSince(expected)) < 0.001 else {
+            throw Failure(kind: .server, message: "The requested scheduled message was not confirmed. Retry the same details.")
+        }
+        try validateScheduled(row, room: conversationId)
+        row.creationClientId = id
+        try Task.checkCancellation()
+        return row
     }
 
-    /// DELETE /api/scheduled/{id} { requesterId } - sender-only cancel.
+    public func acknowledgeScheduledCreation(_ item: WireScheduledItem) async throws {
+        guard let id = item.creationClientId else { return }
+        try await creationOperations.finish(try scheduledCreationIntent(conversationId: item.conversationId,
+            content: item.content, when: item.scheduledAt), id: id)
+    }
     public func cancelScheduled(_ id: String) async throws {
-        try await deleteEmpty("/api/scheduled/\(q(id))", body: ["requesterId": userId])
+        let data = try await deleteRaw("/api/scheduled/\(q(id))", body: ["requesterId": userId])
+        let receipt = try decoder.decode(ScheduledReceipt.self, from: data)
+        try validateScheduledScope(receipt)
+        guard receipt.scheduledId == id, receipt.ok == true, receipt.cancelled == true else {
+            throw Failure(kind: .server, message: "Scheduled cancellation was not confirmed.")
+        }
     }
 
     // R1-W2B - translation + quick phrases (F-MD-06 / F-MS-29)
@@ -1569,20 +2250,33 @@ public struct PulseAPIClient: Sendable {
     /// (phrases/route.ts:19-33, position asc, ≤12 rows).
     public func quickPhrases() async throws -> [WireQuickPhrase] {
         let page: WirePhrasesPage = try await get("/api/users/\(q(userId))/phrases")
-        return page.phrases ?? []
+        guard let phrases = page.phrases, Set(phrases.map(\.id)).count == phrases.count,
+              phrases.allSatisfy({ !$0.id.isEmpty && !$0.text.isEmpty && ($0.position ?? -1) >= 0 }) else {
+            throw Failure(kind: .server, message: "Quick phrases were not confirmed.")
+        }
+        return phrases
     }
 
     /// POST /api/users/{id}/phrases { text } → 201 { phrase } (append at
     /// end; 400 on >120 chars or >12 rows - server copy surfaces verbatim).
     public func createQuickPhrase(text: String) async throws -> WireQuickPhrase {
         let data = try await postRaw("/api/users/\(q(userId))/phrases", body: ["text": text])
-        return try envelope(WirePhraseEnvelope.self, from: data).phrase
-            ?? envelope(WireQuickPhrase.self, from: data)
+        guard let phrase = try decoder.decode(WirePhraseEnvelope.self, from: data).phrase,
+              !phrase.id.isEmpty, !phrase.text.isEmpty, phrase.text == text.trimmingCharacters(in: .whitespacesAndNewlines),
+              (phrase.position ?? -1) >= 0 else {
+            throw Failure(kind: .server, message: "Phrase creation was not confirmed.")
+        }
+        return phrase
     }
 
     /// DELETE /api/users/{id}/phrases?phraseId= → { ok } (owner-guarded).
     public func deleteQuickPhrase(_ phraseId: String) async throws {
-        try await deleteEmpty("/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))", body: ["userId": userId])
+        struct Receipt: Decodable { let ok: Bool; let deleted: Bool; let userId: String; let phraseId: String }
+        let data = try await deleteRaw("/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))", body: ["userId": userId])
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.deleted, receipt.userId == userId, receipt.phraseId == phraseId else {
+            throw Failure(kind: .server, message: "Phrase deletion was not confirmed.")
+        }
     }
 
     // R2-B - AI recap · automations · webhooks · per-viewer veil
@@ -1607,7 +2301,9 @@ public struct PulseAPIClient: Sendable {
         let page: WireAutomationsPage = try await get(
             "/api/conversations/\(q(conversationId))/automations?userId=\(q(userId))",
         )
-        return page.automations ?? []
+        guard let rows = page.automations, Set(rows.map(\.id)).count == rows.count else { throw Failure(kind: .server, message: "Automation list was not confirmed.") }
+        for row in rows { try validateAutomation(row); guard row.conversationId == conversationId else { throw Failure(kind: .server, message: "Wrong automation room.") } }
+        return rows
     }
 
     /// POST /api/conversations/{id}/automations { userId, trigger, reply }
@@ -1617,8 +2313,12 @@ public struct PulseAPIClient: Sendable {
             "/api/conversations/\(q(conversationId))/automations",
             body: ["userId": userId, "trigger": trigger, "reply": reply],
         )
-        return try envelope(WireAutomationEnvelope.self, from: data).automation
-            ?? envelope(WireAutomation.self, from: data)
+        let row = try confirmedAutomation(data)
+        guard row.conversationId == conversationId, row.trigger == trigger.trimmingCharacters(in: .whitespacesAndNewlines),
+              row.reply == reply.trimmingCharacters(in: .whitespacesAndNewlines), row.enabled == true else {
+            throw Failure(kind: .server, message: "Automation creation was not confirmed.")
+        }
+        return row
     }
 
     /// PATCH /api/automations/{id} { userId, enabled?/trigger?/reply? }
@@ -1634,40 +2334,76 @@ public struct PulseAPIClient: Sendable {
         if let trigger { body["trigger"] = trigger }
         if let reply { body["reply"] = reply }
         let data = try await patchRaw("/api/automations/\(q(id))", body: body)
-        return try envelope(WireAutomationEnvelope.self, from: data).automation
-            ?? envelope(WireAutomation.self, from: data)
+        let row = try confirmedAutomation(data)
+        guard row.id == id, enabled == nil || row.enabled == enabled,
+              trigger == nil || row.trigger == trigger?.trimmingCharacters(in: .whitespacesAndNewlines),
+              reply == nil || row.reply == reply?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw Failure(kind: .server, message: "Automation changes were not confirmed.")
+        }
+        return row
     }
 
     /// DELETE /api/automations/{id} { userId } → { ok } (admin-only).
     public func deleteAutomation(_ id: String) async throws {
-        try await deleteEmpty("/api/automations/\(q(id))", body: ["userId": userId])
+        let data = try await deleteRaw("/api/automations/\(q(id))", body: ["userId": userId])
+        try confirmedControlDeletion(data, target: id, automation: true)
     }
 
     /// GET /api/webhooks?conversationId=&requesterId= → { webhooks }
-    /// (participant-only; rows createdAt asc).
+    /// (admin-only; rows include posting credentials).
     public func webhooks(conversationId: String) async throws -> [WireWebhook] {
         let page: WireWebhooksPage = try await get(
             "/api/webhooks?conversationId=\(q(conversationId))&requesterId=\(q(userId))",
         )
-        return page.webhooks ?? []
+        guard let rows = page.webhooks, Set(rows.map(\.id)).count == rows.count else { throw Failure(kind: .server, message: "Webhook list was not confirmed.") }
+        try rows.forEach { try validateWebhook($0) }
+        return rows
     }
 
     /// POST /api/webhooks { conversationId, name, requesterId } → 201
-    /// bare WebhookDTO (participant-only create; token is server-generated).
+    /// bare WebhookDTO (admin-only create; token is server-generated).
     public func createWebhook(conversationId: String, name: String) async throws -> WireWebhook {
         let data = try await postRaw(
             "/api/webhooks",
             body: ["conversationId": conversationId, "name": name, "requesterId": userId],
         )
-        return try envelope(WireWebhook.self, from: data)
+        let row = try decoder.decode(WireWebhook.self, from: data)
+        try validateWebhook(row)
+        guard row.name == name.trimmingCharacters(in: .whitespacesAndNewlines), row.createdBy == userId else {
+            throw Failure(kind: .server, message: "Webhook creation was not confirmed.")
+        }
+        return row
     }
 
     /// DELETE /api/webhooks/{token}?requesterId= → { ok } (admin-only).
     public func deleteWebhook(token: String) async throws {
-        try await deleteEmpty(
-            "/api/webhooks/\(q(token))?requesterId=\(q(userId))",
-            body: ["requesterId": userId],
-        )
+        let data = try await deleteRaw("/api/webhooks/\(q(token))?requesterId=\(q(userId))", body: ["requesterId": userId])
+        try confirmedControlDeletion(data, target: token, automation: false)
+    }
+
+    private func validateAutomation(_ row: WireAutomation) throws {
+        guard !row.id.isEmpty, row.conversationId?.isEmpty == false, (2...40).contains(row.trigger.utf16.count),
+              let reply = row.reply, (1...500).contains(reply.utf16.count), row.enabled != nil, (row.hits ?? -1) >= 0 else {
+            throw Failure(kind: .server, message: "Invalid automation response.")
+        }
+    }
+    private func confirmedAutomation(_ data: Data) throws -> WireAutomation {
+        guard let row = try decoder.decode(WireAutomationEnvelope.self, from: data).automation else {
+            throw Failure(kind: .server, message: "Automation was not confirmed.")
+        }
+        try validateAutomation(row)
+        return row
+    }
+    private func validateWebhook(_ row: WireWebhook) throws {
+        guard !row.id.isEmpty, !row.name.isEmpty, !row.token.isEmpty, row.createdBy?.isEmpty == false,
+              row.url == "/api/webhooks/\(row.token)" else { throw Failure(kind: .server, message: "Invalid webhook response.") }
+    }
+    private func confirmedControlDeletion(_ data: Data, target: String, automation: Bool) throws {
+        struct Receipt: Decodable { let ok: Bool; let deleted: Bool; let userId: String; let automationId: String?; let token: String? }
+        let value = try decoder.decode(Receipt.self, from: data)
+        guard value.ok, value.deleted, value.userId == userId, (automation ? value.automationId : value.token) == target else {
+            throw Failure(kind: .server, message: "Deletion was not confirmed.")
+        }
     }
 
     /// PATCH /api/conversations/{id}/screen-privacy { userId, on }
@@ -1678,22 +2414,48 @@ public struct PulseAPIClient: Sendable {
             body: ["userId": userId, "on": on],
         )
         let result = try envelope(WireScreenPrivacyResult.self, from: data)
-        return result.screenPrivacy ?? on
+        guard result.ok == true, result.screenPrivacy == on else {
+            throw Failure(kind: .server, message: "Screen privacy couldn't be confirmed on the server. Your local preference is kept.")
+        }
+        return on
     }
 
     // plumbing
-    /// URL builder that keeps query strings intact (appendingPathComponent
-    /// would percent-encode "?", breaking every ?userId= route).
-    private func url(_ path: String) -> URL {
-        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-            ?? URLComponents(string: PulseEndpoints.gatewayURL.absoluteString)!
-        if let queryStart = path.firstIndex(of: "?") {
-            components.path += String(path[..<queryStart])
-            components.query = String(path[path.index(after: queryStart)...])
-        } else {
-            components.path += path
-        }
+    /// Most callers already escape individual IDs/query values. Using `.path`
+    /// or `.query` here escapes their percent signs again (%26 becomes %2526).
+    private func url(_ path: String) -> URL { Self.requestURL(baseURL: baseURL, path: path) }
+
+    static func requestURL(baseURL: URL, path: String) -> URL {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return baseURL }
+        let pieces = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let route = String(pieces[0])
+        let prefix = components.percentEncodedPath.hasSuffix("/") ? String(components.percentEncodedPath.dropLast()) : components.percentEncodedPath
+        components.percentEncodedPath = prefix + (route.hasPrefix("/") ? "" : "/") + escapedRouteComponent(route, allowed: .urlPathAllowed)
+        components.percentEncodedQuery = pieces.count == 2 ? escapedRouteComponent(String(pieces[1]), allowed: .urlQueryAllowed) : nil
+        components.fragment = nil
         return components.url ?? baseURL
+    }
+
+    /// Preserve valid existing escapes while escaping raw Unicode, spaces and
+    /// malformed '%' sequences. Assigning unchecked text to percentEncodedQuery
+    /// can raise an Objective-C exception; mixed legacy/new callers must be safe.
+    private static func escapedRouteComponent(_ value: String, allowed: CharacterSet) -> String {
+        let allowed = allowed.subtracting(CharacterSet(charactersIn: "%"))
+        let hex = "0123456789abcdefABCDEF"
+        var result = "", index = value.startIndex
+        while index < value.endIndex {
+            let first = value.index(after: index)
+            if value[index] == "%", first < value.endIndex {
+                let second = value.index(after: first)
+                if second < value.endIndex, hex.contains(value[first]), hex.contains(value[second]) {
+                    let end = value.index(after: second)
+                    result.append(contentsOf: value[index..<end]); index = end; continue
+                }
+            }
+            result += String(value[index..<first]).addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+            index = first
+        }
+        return result
     }
 
     private func get<T: Decodable>(_ path: String, as type: T.Type = T.self) async throws -> T {
@@ -1796,7 +2558,8 @@ public struct PulseAPIClient: Sendable {
             retryAfter = [retryAfter.flatMap { $0 > 0 ? min($0, 86_400) : nil },
                 Self.retryAfterSeconds(http.value(forHTTPHeaderField: "Retry-After"), serverDate: http.value(forHTTPHeaderField: "Date"))]
                 .compactMap { $0 }.max()
-            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter, receiptClientId: receiptClientId)
+            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter, receiptClientId: receiptClientId,
+                readRetirement: (try? decoder.decode(ReadRetirementEnvelope.self, from: data))?.readRetirement)
         }
         return data
     }

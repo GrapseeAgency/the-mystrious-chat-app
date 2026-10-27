@@ -1,5 +1,11 @@
 package app.pulse.android.mirror
 
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -80,6 +87,10 @@ import kotlinx.coroutines.launch
  */
 internal enum class MirrorTab { Chats, Hub, Contacts, Profile }
 
+private data class MirrorRoomOpenRequest(val id: String, val ticket: Long, val jumpId: String?,
+    val tab: MirrorTab, val previousRoomId: String?, val ownerId: String?, val api: PulseRepository,
+    val personal: Boolean = false, val ownerEpoch: String? = api.attachmentSessionKey())
+
 /** One typer in flight - the relay's typing event with a 4s expiry stamp. */
 private data class MirrorTyper(val conversationId: String, val userId: String, val userName: String, val expiresAt: Long)
 
@@ -98,6 +109,7 @@ internal fun MirrorRoot(
     repository: PulseRepository,
     readingEnabled: Boolean = true,
     onStartCall: ((Conversation, video: Boolean) -> Unit)? = null,
+    onActiveCallRoomChanged: (Conversation?) -> Unit = {},
     onOpenLiveRoom: (String, app.pulse.feature.voice.VoiceRoomsEngine.RoomKind) -> Unit,
     // R76 - external entry points (the retired shells owned them): launcher
     // tab shortcuts land here as tab requests; pulse://room deep links as
@@ -123,36 +135,37 @@ internal fun MirrorRoot(
     val lifecycleOwner = LocalLifecycleOwner.current
     var tab by rememberSaveable { mutableStateOf(MirrorTab.Chats) }
     var openRoom by remember { mutableStateOf<Conversation?>(null) }
+    var closingRoomId by remember(viewerId) { mutableStateOf<String?>(null) }
+    var roomOpenRequest by remember(viewerId) { mutableStateOf<MirrorRoomOpenRequest?>(null) }
+    var roomOpenSequence by remember(viewerId) { mutableStateOf(0L) }
+    // Exit animations may keep the old room composed during a rapid reopen.
+    // A real new visit must not inherit that departed reader's fence/ACK set.
+    var roomVisitSequence by remember(viewerId) { mutableStateOf(0L) }
+    val navigationContext = androidx.compose.ui.platform.LocalContext.current
+    val currentCallRoomCallback by androidx.compose.runtime.rememberUpdatedState(onActiveCallRoomChanged)
+    androidx.compose.runtime.DisposableEffect(openRoom?.id, closingRoomId) {
+        currentCallRoomCallback(openRoom?.takeUnless { it.id == closingRoomId })
+        onDispose { currentCallRoomCallback(null) }
+    }
     // R73 - keeps the room composed while the close slide-out plays
     // (openRoom flips null immediately; the exit animation needs the convo).
     var roomShown by remember { mutableStateOf<Conversation?>(null) }
     // R76 - jump-to-message anchor: Spotlight message hits, home search hits
     // and pulse://room/<id>?jump=<mid> deep links all open the room ANCHORED
     // at one message (web jumpToMessage parity).
-    var pendingJumpId by remember { mutableStateOf<String?>(null) }
+    var pendingJump by remember(viewerId) { mutableStateOf<MirrorRoomJump?>(null) }
 
     // R76 - launcher tab shortcuts switch tabs cold or warm, then self-consume.
     LaunchedEffect(tabRequest) {
         val request = tabRequest ?: return@LaunchedEffect
+        roomOpenRequest = null
         tab = request
         onConsumeTabRequest()
     }
-    // R76 - pulse://room deep links open the conversation once the live cache
-    // knows it (a cold link races the first REST load - the effect re-runs on
-    // every cache emission until the id resolves), then self-consume. A jump
-    // payload rides along and anchors the room at the message.
-    LaunchedEffect(pendingRoomId, conversations) {
-        val id = pendingRoomId ?: return@LaunchedEffect
-        val convo = conversations.firstOrNull { it.id == id } ?: return@LaunchedEffect
-        openRoom = convo
-        if (pendingJumpMessageId != null) {
-            pendingJumpId = pendingJumpMessageId
-            onConsumePendingJumpMessage()
-        }
-        onConsumePendingRoom()
-    }
-    var stories by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
-    var folders by remember { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
+    var stories by remember(viewerId) { mutableStateOf<List<StoryGroup>>(emptyList()) }
+    var folders by remember(viewerId) { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
+    val storyScope = androidx.compose.runtime.rememberCoroutineScope()
+    val storyReads = remember(viewerId) { app.pulse.domain.sync.RoomControlGate { repository.attachmentSessionKey() } }
 
     // R72 - the settings "Default list filter" row now DRIVES this filter
     // (web chats-tab.tsx:795 applies the persisted listFilter on load).
@@ -193,7 +206,7 @@ internal fun MirrorRoot(
     var channelsOpen by remember { mutableStateOf(false) }
     var newChatOpen by remember { mutableStateOf(false) }
     var composerOpen by remember { mutableStateOf(false) }
-    var viewingStory by remember { mutableStateOf<StoryGroup?>(null) }
+    var viewingStory by remember(viewerId) { mutableStateOf<StoryGroup?>(null) }
 
     // R64 - kebab destinations + row options (all REAL repository-backed)
     var groupOpen by remember { mutableStateOf(false) }
@@ -230,6 +243,7 @@ internal fun MirrorRoot(
     // R71 - the web SettingsScreen + profile sub-surfaces (profile-tab.tsx)
     var settingsOpen by remember { mutableStateOf(false) }
     var profileEditOpen by remember { mutableStateOf(false) }
+    var profileRefresh by remember { mutableStateOf(0) }
     var profileSavedOpen by remember { mutableStateOf(false) }
 
     // R89 - the system back contract. The phone back button must listen like
@@ -242,15 +256,16 @@ internal fun MirrorRoot(
     var backExitArmed by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler {
         when {
+            roomOpenRequest != null -> roomOpenRequest = null
             viewingStory != null -> viewingStory = null
             spotlightOpen -> spotlightOpen = false
             profileSavedOpen -> profileSavedOpen = false
-            profileEditOpen -> profileEditOpen = false
+            profileEditOpen -> { profileRefresh++; profileEditOpen = false }
             settingsOpen -> settingsOpen = false
             userPageFor != null -> userPageFor = null
             managerFor != null -> managerFor = null
             roomInfoFor != null -> roomInfoFor = null
-            openRoom != null -> openRoom = null
+            openRoom != null -> { pendingJump = null; openRoom = null }
             rowOptions != null -> rowOptions = null
             kebabOpen -> kebabOpen = false
             archivedOpen -> archivedOpen = false
@@ -305,7 +320,7 @@ internal fun MirrorRoot(
                         } else {
                             typers.filter { !(it.userId == event.userId && it.conversationId == event.conversationId) }
                         }
-                    } else if (event is PulseEvent.MessageReceived) {
+                    } else if (event is PulseEvent.MessageReceived || event is PulseEvent.MessageUpdated) {
                         // Realtime snappiness: refetch the list when a message lands.
                         runCatching { repository.refreshConversations() }
                     }
@@ -323,21 +338,37 @@ internal fun MirrorRoot(
 
     // Refresh rhythm: conversations + stories + folders + mentions on mount and every 5s.
     LaunchedEffect(viewerId, lifecycleOwner) {
+        val account = repository.boundToCurrentAccount()
+        val owner = repository.attachmentSessionKey()
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                if (viewerId != null) {
-                    runCatching { repository.refreshConversations() }
-                    stories = repository.stories().getOrDefault(emptyList())
-                    folders = repository.folders().getOrDefault(emptyList()).map { f ->
-                        MirrorFolderChip(
-                            id = f.id,
-                            name = f.name,
-                            emoji = f.emoji,
-                            count = f.conversationIds.count { cid -> conversations.any { it.id == cid } },
-                            conversationIds = f.conversationIds,
-                        )
+                if (viewerId != null && owner != null) {
+                    val storyTicket = storyReads.beginRead()
+                    account.refreshConversations()
+                    currentCoroutineContext().ensureActive()
+                    if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                    val feed = account.stories()
+                    currentCoroutineContext().ensureActive()
+                    if (storyTicket != null && storyReads.isCurrent(storyTicket)) {
+                        feed.getOrNull()?.let { stories = it }
+                        if ((feed.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.kind in setOf("AUTH", "FORBIDDEN", "NOT_FOUND")) stories = emptyList()
                     }
-                    mentionCount = repository.mentions().getOrDefault(emptyList()).size
+                    val loadedFolders = account.folders()
+                    currentCoroutineContext().ensureActive()
+                    if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                    loadedFolders.getOrNull()?.let { loaded ->
+                        folders = loaded.map { f ->
+                            MirrorFolderChip(
+                                id = f.id, name = f.name, emoji = f.emoji,
+                                count = f.conversationIds.count { cid -> conversations.any { it.id == cid } },
+                                conversationIds = f.conversationIds,
+                            )
+                        }
+                    }
+                    val mentions = account.mentions()
+                    currentCoroutineContext().ensureActive()
+                    if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                    mentions.getOrNull()?.let { mentionCount = it.size }
                 }
                 delay(5_000)
             }
@@ -349,8 +380,77 @@ internal fun MirrorRoot(
     val activeConversations = conversations.filter { !it.isArchived && !it.isSelf }
     val archivedConversations = conversations.filter { it.isArchived }
 
-    fun openById(conversationId: String) {
-        conversations.firstOrNull { it.id == conversationId }?.let { openRoom = it }
+    fun openById(conversationId: String, jumpId: String? = null) {
+        if (conversationId.isBlank()) return
+        roomOpenRequest = null
+        pendingJump = null
+        // Use the captured account's canonical cache, not an earlier Compose
+        // list emission that may belong to the preceding account activation.
+        roomOpenSequence++
+        roomOpenRequest = MirrorRoomOpenRequest(conversationId, roomOpenSequence, jumpId, tab, openRoom?.id,
+            viewerId, repository.boundToCurrentAccount())
+    }
+
+    fun openPersonalChat(peerId: String) {
+        if (peerId.isBlank()) return
+        pendingJump = null
+        roomOpenSequence++
+        roomOpenRequest = MirrorRoomOpenRequest(peerId, roomOpenSequence, null, tab, openRoom?.id,
+            viewerId, repository.boundToCurrentAccount(), personal = true)
+    }
+    // Cold links may target a conversation outside the inbox's current page.
+    // Enqueue the same exact-ID resolver used by in-app navigation; consuming
+    // the launcher payload must not cancel the separately owned open request.
+    LaunchedEffect(pendingRoomId, pendingJumpMessageId, viewerId) {
+        val id = pendingRoomId ?: return@LaunchedEffect
+        if (viewerId.isNullOrBlank()) return@LaunchedEffect
+        openById(id, pendingJumpMessageId)
+        onConsumePendingRoom()
+        onConsumePendingJumpMessage()
+    }
+    LaunchedEffect(roomOpenRequest, closingRoomId) {
+        val closing = closingRoomId ?: return@LaunchedEffect
+        if (roomOpenRequest == null) {
+            if (openRoom?.id == closing) openRoom = null
+            closingRoomId = null
+        }
+    }
+
+    val openingRequest = roomOpenRequest
+    LaunchedEffect(openingRequest, repository, viewerId, tab, openRoom?.id) {
+        val request = openingRequest ?: return@LaunchedEffect
+        if (request.tab != tab || request.previousRoomId != openRoom?.id) {
+            roomOpenRequest = null
+            return@LaunchedEffect
+        }
+        val api = request.api
+        val owner = request.ownerId
+        fun ownsOwner() = owner != null && request.ownerEpoch != null && viewerId == owner && api.viewerId == owner &&
+            api.attachmentSessionKey() == request.ownerEpoch && repository.attachmentSessionKey() == request.ownerEpoch
+        if (!ownsOwner()) { roomOpenRequest = null; return@LaunchedEffect }
+        try {
+            // Read the repository snapshot, not the possibly older Compose list.
+            val cached = api.observeConversations().first()
+            currentCoroutineContext().ensureActive()
+            if (!ownsOwner()) return@LaunchedEffect
+            val conversation = if (request.personal) {
+                app.pulse.domain.sync.resolvePersonalConversation(requireNotNull(owner), request.id, cached, api::createSelfChat, api::createDm)
+            } else app.pulse.domain.sync.resolveConversationForOpen(request.id, cached, api::conversationDetail)
+            currentCoroutineContext().ensureActive()
+            if (roomOpenRequest == request && ownsOwner() && tab == request.tab &&
+                openRoom?.id == request.previousRoomId) {
+                pendingJump = request.jumpId?.let { MirrorRoomJump(conversation.id, it) }
+                if (request.previousRoomId != conversation.id) roomVisitSequence = request.ticket
+                openRoom = conversation
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (roomOpenRequest == request && ownsOwner()) {
+                android.widget.Toast.makeText(navigationContext,
+                    "Couldn't open this chat. Reconnect and try again.", android.widget.Toast.LENGTH_LONG).show()
+            }
+        } finally { if (roomOpenRequest == request) roomOpenRequest = null }
     }
 
     // art-scene ::before breathe: opacity 1 -> 0.86 -> 1 over 7s (globals.css)
@@ -372,8 +472,17 @@ internal fun MirrorRoot(
     ) {
         when {
             viewingStory != null -> {
-                viewingStory?.let { group ->
-                    MirrorStoryViewer(group = group, repository = repository, playbackEnabled = readingEnabled, onDismiss = { viewingStory = null })
+                viewingStory?.let { selected ->
+                    val current = stories.firstOrNull { it.user?.id == selected.user?.id }
+                    if (current != null) {
+                        MirrorStoryViewer(group = current, repository = repository, playbackEnabled = readingEnabled,
+                            onDismiss = { viewingStory = null }, onDeleted = { id ->
+                                storyReads.invalidate()
+                                stories = stories.map { it.copy(stories = it.stories.filterNot { row -> row.id == id }) }.filter { it.stories.isNotEmpty() }
+                            })
+                    } else {
+                        LaunchedEffect(selected.user?.id) { viewingStory = null }
+                    }
                 }
             }
             else -> {
@@ -444,8 +553,7 @@ internal fun MirrorRoot(
                             repository = repository,
                             // R76 - hits anchor the room at the message (web jumpToMessage)
                             onOpenConversationId = { conversationId, jumpId ->
-                                if (jumpId != null) pendingJumpId = jumpId
-                                openById(conversationId)
+                                openById(conversationId, jumpId)
                             },
                             filter = filter,
                             onFilter = {
@@ -493,16 +601,19 @@ internal fun MirrorRoot(
                         )
                     }
                     MirrorTab.Profile -> {
-                        MirrorProfile(
-                            viewerId = viewerId.orEmpty(),
-                            repository = repository,
-                            iAmOnline = viewerId != null && presence.contains(viewerId),
-                            onSignOut = { session.forgetViewer() },
-                            onOpenHub = { tab = MirrorTab.Hub },
-                            onOpenSettings = { settingsOpen = true },
-                            onOpenSaved = { profileSavedOpen = true },
-                            onEditProfile = { profileEditOpen = true },
-                        )
+                        androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey(), profileRefresh) {
+                            val profileRepository = remember(repository, viewerId, repository.attachmentSessionKey()) { repository.boundToCurrentAccount() }
+                            MirrorProfile(
+                                viewerId = viewerId.orEmpty(),
+                                repository = profileRepository,
+                                iAmOnline = viewerId != null && presence.contains(viewerId),
+                                onSignOut = { session.forgetViewer() },
+                                onOpenHub = { tab = MirrorTab.Hub },
+                                onOpenSettings = { settingsOpen = true },
+                                onOpenSaved = { profileSavedOpen = true },
+                                onEditProfile = { profileEditOpen = true },
+                            )
+                        }
                     }
                 }
                 }
@@ -531,7 +642,7 @@ internal fun MirrorRoot(
 
                 MirrorDock(
                     activeTab = tab,
-                    unread = activeConversations.sumOf { it.unreadCount },
+                    unread = activeConversations.sumOf { it.badgeUnreadCount },
                     // R90 - a dock tab press dismisses the calls/channels
                     // sub-pages: on web the dock floats above the sub-page and
                     // every slot navigates; before this round the sub-page
@@ -540,6 +651,7 @@ internal fun MirrorRoot(
                     // and mentions sub-pages ride the same contract (web dock slots
                     // navigate away from every hash sub-page).
                     onTab = {
+                        roomOpenRequest = null
                         tab = it
                         callsOpen = false
                         channelsOpen = false
@@ -576,7 +688,7 @@ internal fun MirrorRoot(
                         selfOpen = conversations.any { it.isSelf },
                         mentionCount = mentionCount,
                         channelCount = activeConversations.count { it.isChannel },
-                        archivedUnread = archivedConversations.sumOf { it.unreadCount },
+                        archivedUnread = archivedConversations.sumOf { it.badgeUnreadCount },
                         onSearch = {
                             // R75 - kebab Search opens the SPOTLIGHT palette (the web
                             // shell overflow "Search" action opens Spotlight too); the
@@ -590,23 +702,7 @@ internal fun MirrorRoot(
                         onContacts = { tab = MirrorTab.Contacts },
                         onCalls = { callsOpen = true },
                         onArchived = { archivedOpen = true },
-                        onNoteToSelf = {
-                            // web handleSelfPress: open the existing self chat or create it
-                            val self = conversations.firstOrNull { it.isSelf }
-                            if (self != null) {
-                                openRoom = self
-                            } else {
-                                val id = viewerId.orEmpty()
-                                if (id.isNotBlank()) {
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        repository.createDm(id).onSuccess { created ->
-                                            runCatching { repository.refreshConversations() }
-                                            kotlinx.coroutines.withContext(Dispatchers.Main) { openRoom = created }
-                                        }
-                                    }
-                                }
-                            }
-                        },
+                        onNoteToSelf = { viewerId?.let { openPersonalChat(it) } },
                         onMentions = { mentionsOpen = true },
                         onChannels = { channelsOpen = true },
                         onFolders = { foldersOpen = true },
@@ -640,8 +736,12 @@ internal fun MirrorRoot(
                         onDismiss = { composerOpen = false },
                         onPosted = {
                             composerOpen = false
-                            CoroutineScope(Dispatchers.IO).launch {
-                                stories = repository.stories().getOrDefault(emptyList())
+                            val ticket = storyReads.beginRead()
+                            val account = repository.boundToCurrentAccount()
+                            storyScope.launch {
+                                val feed = account.stories()
+                                currentCoroutineContext().ensureActive()
+                                if (ticket != null && storyReads.isCurrent(ticket)) feed.getOrNull()?.let { stories = it }
                             }
                         },
                     )
@@ -677,7 +777,7 @@ internal fun MirrorRoot(
                         presence = presence,
                         onOpen = {
                             archivedOpen = false
-                            openRoom = it
+                            openById(it.id)
                         },
                         onUnarchive = { convo ->
                             CoroutineScope(Dispatchers.IO).launch {
@@ -743,82 +843,121 @@ internal fun MirrorRoot(
         // the exit so the slide-down is visible.
         LaunchedEffect(openRoom) { if (openRoom != null) roomShown = openRoom }
         AnimatedVisibility(
-            visible = viewingStory == null && openRoom != null,
+            visible = viewingStory == null && openRoom != null && openRoom?.id != closingRoomId,
             enter = slideInVertically(MirrorMotion.soft()) { it } + fadeIn(tween(90)),
             exit = slideOutVertically(tween(210, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(150)),
         ) {
-            roomShown?.let { convo ->
+            roomShown?.let { shown ->
+                val convo = conversations.firstOrNull { it.id == shown.id } ?: shown
                 val roomTypers = typers
                     .filter { it.conversationId == convo.id }
                     .map { it.userName }
-                MirrorRoomScaffold(
-                    convo = convo,
-                    readingEnabled = readingEnabled && openRoom != null && viewingStory == null &&
-                        roomInfoFor == null && managerFor == null && userPageFor == null &&
-                        !settingsOpen && !callsOpen && !spotlightOpen,
-                    accountRouter = repository,
-                    viewerId = viewerId.orEmpty(),
-                    presence = presence,
-                    typers = roomTypers,
-                    pipActive = pipFor?.id == convo.id,
-                    onTogglePip = {
-                        pipFor = if (pipFor?.id == convo.id) null else convo
-                    },
-                    onClose = { openRoom = null },
-                    onRoomInfo = { roomInfoFor = convo },
-                    onManageGroup = { managerFor = convo },
-                    onStartCall = onStartCall,
-                    onOpenLiveRoom = onOpenLiveRoom,
-                    reducedMotion = reducedMotion,
-                    jumpMessageId = pendingJumpId,
-                    onJumpConsumed = { pendingJumpId = null },
-                )
+                val roomJump = pendingJump?.forRoom(convo.id, openRoom?.id)
+                androidx.compose.runtime.key(viewerId, convo.id, repository.attachmentSessionKey(), roomVisitSequence) {
+                    MirrorRoomScaffold(
+                        convo = convo,
+                        readingEnabled = readingEnabled && openRoom?.id == convo.id && closingRoomId != convo.id &&
+                            roomOpenRequest == null && viewingStory == null &&
+                            roomInfoFor == null && managerFor == null && userPageFor == null &&
+                            !settingsOpen && !profileEditOpen && !profileSavedOpen && !callsOpen && !spotlightOpen,
+                        accountRouter = repository,
+                        viewerId = viewerId.orEmpty(),
+                        presence = presence,
+                        typers = roomTypers,
+                        pipActive = pipFor?.id == convo.id,
+                        onTogglePip = { pipFor = if (pipFor?.id == convo.id) null else convo },
+                        onClose = { pendingJump = null; openRoom = null },
+                        onRoomInfo = { roomInfoFor = convo },
+                        onManageGroup = { managerFor = convo },
+                        onStartCall = onStartCall,
+                        onOpenLiveRoom = onOpenLiveRoom,
+                        reducedMotion = reducedMotion,
+                        jumpMessageId = roomJump?.messageId,
+                        jumpRequestId = roomJump?.deliveryId,
+                        onJumpConsumed = {
+                            if (pendingJump == roomJump && openRoom?.id == convo.id) pendingJump = null
+                        },
+                        onOpenReminder = { target ->
+                            if (repository.viewerId == viewerId && openRoom?.id == convo.id) {
+                                openById(target.conversationId, target.messageId)
+                            }
+                        },
+                    )
+                }
+            }
+        }
+
+        // A confirmed departure closes only the matching room and pending open, not a newer destination.
+        fun closeDepartedRoom(id: String) {
+            if (roomInfoFor?.id == id) roomInfoFor = null
+            if (managerFor?.id == id) managerFor = null
+            if (pipFor?.id == id) pipFor = null
+            if (roomOpenRequest?.let { !it.personal && it.id == id } == true) roomOpenRequest = null
+            if (openRoom?.id == id) {
+                // Do not cancel/re-dispatch a newer DM/open request just because
+                // this older departure finished. Hide the departed room while
+                // preserving that request's original navigation context.
+                if (roomOpenRequest != null) closingRoomId = id else openRoom = null
+                pendingJump = null
             }
         }
 
         if (roomInfoFor != null) {
             val convo = roomInfoFor!!
-            // R70 - the web RoomInfoPage parity (hero, stats, actions,
-            // automations, encryption, members) over the real repository.
-            MirrorRoomInfoPage(
-                conversationId = convo.id,
-                viewerId = viewerId.orEmpty(),
-                viewerName = viewerName.orEmpty(),
-                repository = repository,
-                presence = presence,
-                onChanged = {
-                    CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
-                },
-                onDismiss = { roomInfoFor = null },
-                onOpenManager = {
-                    managerFor = roomInfoFor
-                    roomInfoFor = null
-                },
-                onOpenUser = {
-                    roomInfoFor = null
-                    userPageFor = it
-                },
-            )
+            androidx.compose.runtime.key(viewerId, convo.id, repository.attachmentSessionKey()) {
+                val infoRepository = remember(repository, viewerId, convo.id, repository.attachmentSessionKey()) { repository.boundToCurrentAccount() }
+                val infoScope = androidx.compose.runtime.rememberCoroutineScope()
+                MirrorRoomInfoPage(
+                    conversationId = convo.id,
+                    viewerId = viewerId.orEmpty(),
+                    viewerName = viewerName.orEmpty(),
+                    repository = infoRepository,
+                    presence = presence,
+                    onChanged = {
+                        infoScope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { infoRepository.refreshConversations() }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                // The confirmed mutation is independent of this refresh.
+                            }
+                        }
+                    },
+                    onDismiss = { roomInfoFor = null },
+                    onLeft = { closeDepartedRoom(convo.id) },
+                    onOpenManager = { managerFor = roomInfoFor; roomInfoFor = null },
+                    onOpenUser = { roomInfoFor = null; userPageFor = it },
+                )
+            }
         }
         if (managerFor != null) {
             val convo = managerFor!!
-            // R70 - the web GroupInfoSheet parity (webhooks, leaderboard,
-            // tournaments, role actions, rename/leave).
-            MirrorGroupManagerSheet(
-                conversationId = convo.id,
-                viewerId = viewerId.orEmpty(),
-                viewerName = viewerName.orEmpty(),
-                repository = repository,
-                presence = presence,
-                onChanged = {
-                    CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
-                },
-                onDismiss = { managerFor = null },
-                onOpenUser = {
-                    managerFor = null
-                    userPageFor = it
-                },
-            )
+            androidx.compose.runtime.key(viewerId, convo.id) {
+                val managerRepository = remember(repository, viewerId, convo.id) { repository.boundToCurrentAccount() }
+                val managerScope = androidx.compose.runtime.rememberCoroutineScope()
+                MirrorGroupManagerSheet(
+                    conversationId = convo.id,
+                    viewerId = viewerId.orEmpty(),
+                    viewerName = viewerName.orEmpty(),
+                    repository = managerRepository,
+                    presence = presence,
+                    onChanged = {
+                        managerScope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { managerRepository.refreshConversations() }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                // Repository reconciliation remains independent.
+                            }
+                        }
+                    },
+                    onDismiss = { managerFor = null },
+                    onLeft = { closeDepartedRoom(convo.id) },
+                    onOpenUser = { managerFor = null; userPageFor = it },
+                )
+            }
         }
         // R72 - the web #/user/:id full-screen profile page (topmost overlay)
         if (userPageFor != null) {
@@ -854,12 +993,20 @@ internal fun MirrorRoot(
         }
         // R71 - the web Edit profile sub-page (real PATCH /api/users/:id)
         if (profileEditOpen) {
-            MirrorEditProfilePage(
-                repository = repository,
-                viewerId = viewerId.orEmpty(),
-                onSaved = { profileEditOpen = false },
-                onDismiss = { profileEditOpen = false },
-            )
+            androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey()) {
+                val profileRepository = remember(repository, viewerId, repository.attachmentSessionKey()) { repository.boundToCurrentAccount() }
+                val profileSession = remember(profileRepository) { profileRepository.attachmentSessionKey() }
+                MirrorEditProfilePage(
+                    repository = profileRepository,
+                    viewerId = viewerId.orEmpty(),
+                    onProfileConfirmed = { confirmed, patch ->
+                        session.adoptProfileMetadata(confirmed.id, profileSession,
+                            confirmed.name.takeIf { patch.name != null }, confirmed.color.takeIf { patch.color != null })
+                    },
+                    onSaved = { profileRefresh++; profileEditOpen = false },
+                    onDismiss = { profileRefresh++; profileEditOpen = false },
+                )
+            }
         }
         // R71 - the saved-messages library drawer (profile kebab + kebab row)
         if (profileSavedOpen) {
@@ -889,21 +1036,11 @@ internal fun MirrorRoot(
                 // (spotlight.tsx:396 onOpenConversation(convId, null, hit.id))
                 onOpenMessage = { conversationId, messageId ->
                     spotlightOpen = false
-                    pendingJumpId = messageId
-                    openById(conversationId)
+                    openById(conversationId, messageId)
                 },
                 onOpenDm = { userId ->
-                    // web onOpenDm (main-shell.tsx:377): open or lazily create the 1:1
                     spotlightOpen = false
-                    val id = viewerId.orEmpty()
-                    if (id.isNotBlank()) {
-                        CoroutineScope(Dispatchers.IO).launch {
-                            repository.createDm(userId).onSuccess { created ->
-                                runCatching { repository.refreshConversations() }
-                                kotlinx.coroutines.withContext(Dispatchers.Main) { openRoom = created }
-                            }
-                        }
-                    }
+                    openPersonalChat(userId)
                 },
                 onNewChat = {
                     spotlightOpen = false
@@ -916,6 +1053,11 @@ internal fun MirrorRoot(
                 },
                 onDismiss = { spotlightOpen = false },
             )
+        }
+        if (roomOpenRequest != null) {
+            Text("Opening chat…", color = MirrorArt.TextSoft, fontSize = 13.sp,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(12.dp)
+                    .background(MirrorArt.BubbleIn, RoundedCornerShape(12.dp)).padding(12.dp))
         }
     }
 }
@@ -1023,18 +1165,122 @@ private fun MirrorRoomScaffold(
     reducedMotion: Boolean = false,
     /** R76 - web jumpToMessage: open anchored at one message. */
     jumpMessageId: String? = null,
+    jumpRequestId: String? = null,
+    onOpenReminder: (MirrorReminderTarget) -> Unit,
     onJumpConsumed: () -> Unit = {},
 ) {
-    val repository = remember(viewerId, convo.id) { accountRouter.boundToCurrentAccount() }
+    val repository = remember(accountRouter, viewerId, convo.id, accountRouter.attachmentSessionKey()) { accountRouter.boundToCurrentAccount() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val visible by androidx.compose.runtime.rememberUpdatedState(readingEnabled)
     val messages by repository.observeMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
     var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
     var muted by remember { mutableStateOf(convo.isMuted) }
-    var ttlSeconds by remember { mutableStateOf(0) }
+    var ttlSeconds by remember { mutableStateOf<Int?>(null) }
+    var settingsBusy by remember { mutableStateOf(false) }
+    var settingsRevision by remember { mutableStateOf(0L) }
+    var settingsReadTicket by remember { mutableStateOf(0L) }
+    // Covering/reopening the room can include a privacy mutation in room info.
+    // Do not drop protection until a fresh owned detail confirms both flags off.
+    var screenPrivacy by remember(repository, convo.id, readingEnabled) { mutableStateOf<Boolean?>(null) }
+    val personalPrivacy by androidx.compose.runtime.key(repository, convo.id, repository.attachmentSessionKey()) {
+        remember { repository.observePersonalScreenPrivacy(convo.id) }.collectAsStateWithLifecycle(
+            initialValue = app.pulse.domain.model.PersonalScreenPrivacy())
+    }
+    val windowFocused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    var phraseBusy by remember { mutableStateOf(false) }
+    var phraseRevision by remember { mutableStateOf(0L) }
+    var typingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
-    LaunchedEffect(convo.id) {
-        phrases = repository.phrases().getOrDefault(emptyList())
-        // live room truth for the kebab controls (mute + disappearing TTL)
-        runCatching { repository.conversationDetail(convo.id) }
+    fun notice(message: String) {
+        if (visible) android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    suspend fun refreshSettings() {
+        val revision = settingsRevision
+        val readTicket = ++settingsReadTicket
+        val epoch = repository.attachmentSessionKey() ?: return
+        if (repository.viewerId != viewerId) return
+        try {
+            val meta = withContext(Dispatchers.IO) { repository.groupMeta(convo.id).getOrThrow() }
+            currentCoroutineContext().ensureActive()
+            if (visible && settingsRevision == revision && settingsReadTicket == readTicket && !settingsBusy &&
+                repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch) {
+                ttlSeconds = meta.ttlSeconds
+                screenPrivacy = meta.screenPrivacy
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Retain last known truth; unknown is not Off.
+        }
+    }
+
+    fun <T> updateSetting(request: suspend () -> Result<T>, apply: (T) -> Unit) {
+        if (!visible || settingsBusy) return
+        settingsBusy = true
+        settingsRevision++ // invalidate detail fetched before this write
+        scope.launch {
+            try {
+                val applied = withContext(Dispatchers.IO) { request().getOrThrow() }
+                currentCoroutineContext().ensureActive()
+                settingsRevision++
+                if (visible) apply(applied)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                settingsRevision++
+                notice(error.message ?: "Couldn't confirm the change. Check room info before retrying.")
+            } finally { settingsBusy = false }
+            if (visible) refreshSettings()
+        }
+    }
+
+    fun updatePhrase(text: String? = null, removeId: String? = null) {
+        if (!visible || phraseBusy) return
+        phraseBusy = true; phraseRevision++
+        scope.launch {
+            try {
+                if (text != null) {
+                    val added = withContext(Dispatchers.IO) { repository.addPhrase(text).getOrThrow() }
+                    currentCoroutineContext().ensureActive()
+                    phraseRevision++
+                    if (visible) phrases = phrases.filterNot { it.id == added.id } + added
+                } else if (removeId != null) {
+                    withContext(Dispatchers.IO) { repository.deletePhrase(removeId).getOrThrow() }
+                    currentCoroutineContext().ensureActive()
+                    phraseRevision++
+                    if (visible) phrases = phrases.filterNot { it.id == removeId }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                notice(error.message ?: "Couldn't confirm the quick-phrase change")
+            } finally { phraseBusy = false }
+        }
+    }
+
+    LaunchedEffect(convo.isMuted) { muted = convo.isMuted }
+    LaunchedEffect(repository, convo.id, readingEnabled) {
+        if (!readingEnabled) return@LaunchedEffect
+        val revision = phraseRevision
+        try {
+            val loaded = withContext(Dispatchers.IO) { repository.phrases().getOrThrow() }
+            currentCoroutineContext().ensureActive()
+            if (visible && phraseRevision == revision && !phraseBusy) phrases = loaded
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // A failed refresh must not erase known phrases.
+        }
+    }
+
+    LaunchedEffect(repository, convo.id, readingEnabled, windowFocused) {
+        if (!readingEnabled || !windowFocused) return@LaunchedEffect
+        while (true) {
+            refreshSettings()
+            kotlinx.coroutines.delay(20_000)
+        }
     }
 
     val other = convo.members.firstOrNull { it.id != viewerId }
@@ -1046,81 +1292,69 @@ private fun MirrorRoomScaffold(
         else -> ""
     }
 
-    MirrorRoom(
-        onOpenLiveRoom = { kind -> onOpenLiveRoom(convo.id, kind) },
-        readingEnabled = readingEnabled,
-        title = convo.title,
-        color = convo.accentColor ?: other?.color,
-        isGroup = convo.isGroupish,
-        groupId = convo.id,
-        subtitle = subtitle,
-        typers = typers,
-        messages = messages,
-        viewerId = viewerId,
-        viewerName = convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(),
-        repository = repository,
-        viewerColor = convo.members.firstOrNull { it.id == viewerId }?.color,
-        memberNames = convo.members.map { it.name },
-        members = convo.members,
-        phrases = phrases,
-        muted = muted,
-        ttlSeconds = ttlSeconds,
-        // R76 - the jump anchor flows through the scaffold into the room
-        jumpMessageId = jumpMessageId,
-        onJumpConsumed = onJumpConsumed,
-        // R72 - channel truth: broadcast rooms carry the Channel pill and the
-        // locked composer for non-admin viewers (web broadcastLocked parity)
-        isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
-        avatarPath = convo.avatar,
-        onBack = onClose,
-        onAddPhrase = { text ->
-            CoroutineScope(Dispatchers.IO).launch {
-                repository.addPhrase(text).onSuccess { phrases = repository.phrases().getOrDefault(emptyList()) }
-            }
-        },
-        onDeletePhrase = { phraseId ->
-            CoroutineScope(Dispatchers.IO).launch {
-                repository.deletePhrase(phraseId).onSuccess { phrases = repository.phrases().getOrDefault(emptyList()) }
-            }
-        },
-        onTyping = { typing ->
-            // web signalTyping/cancelTyping - the relay fans out to members
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching { repository.setTyping(convo.id, convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(), typing) }
-            }
-        },
-        onCall = { video ->
-            // R64 - native calls wired through the same engines the shell uses
-            onStartCall?.invoke(convo, video)
-        },
-        onRoomInfo = onRoomInfo,
-        onManageGroup = onManageGroup,
-        onMuteChoice = { until ->
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    // R70 fix: the wire /mute route ONLY accepts the preset
-                    // strings ("8h" | "1w" | "always" | null) - the old ISO
-                    // stamp body was rejected 400 and mute silently failed.
-                    repository.setMutedUntil(convo.id, until)
-                    kotlinx.coroutines.withContext(Dispatchers.Main) {
-                        muted = until != null
+    // A different account/gateway session must not inherit a remembered
+    // caption, picker callback, reply target or room-owned coroutine.
+    androidx.compose.runtime.key(repository, convo.id, viewerId, repository.attachmentSessionKey()) {
+        MirrorRoomSecurity(enabled = screenPrivacy != false || personalPrivacy.on != false) {
+            MirrorRoom(
+                onOpenLiveRoom = { kind -> onOpenLiveRoom(convo.id, kind) },
+                readingEnabled = readingEnabled,
+                title = convo.title,
+                color = convo.accentColor ?: other?.color,
+                isGroup = convo.isGroupish,
+                groupId = convo.id,
+                subtitle = subtitle,
+                typers = typers,
+                messages = messages,
+                viewerId = viewerId,
+                viewerName = convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(),
+                repository = repository,
+                viewerColor = convo.members.firstOrNull { it.id == viewerId }?.color,
+                memberNames = convo.members.map { it.name },
+                members = convo.members,
+                phrases = phrases,
+                muted = muted,
+                ttlSeconds = ttlSeconds,
+                // R76 - the jump anchor flows through the scaffold into the room
+                jumpMessageId = jumpMessageId,
+                jumpRequestId = jumpRequestId,
+                onOpenReminder = onOpenReminder,
+                onJumpConsumed = onJumpConsumed,
+                // R72 - channel truth: broadcast rooms carry the Channel pill and the
+                // locked composer for non-admin viewers (web broadcastLocked parity)
+                isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
+                avatarPath = convo.avatar,
+                onBack = onClose,
+                onAddPhrase = { text -> updatePhrase(text = text) },
+                onDeletePhrase = { phraseId -> updatePhrase(removeId = phraseId) },
+                onTyping = { typing ->
+                    typingJob?.cancel()
+                    typingJob = scope.launch {
+                        try {
+                            repository.setTyping(convo.id, convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(), typing)
+                        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* ephemeral typing expires on the relay */ }
                     }
-                }
-            }
-        },
-        onTtlChoice = { ttl ->
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    val applied = repository.setDisappearingTtl(convo.id, ttl).getOrDefault(ttl)
-                    kotlinx.coroutines.withContext(Dispatchers.Main) { ttlSeconds = applied }
-                }
-            }
-        },
-        onUnpinMessage = { messageId -> repository.unpinMessage(messageId) },
-        fetchPinned = { repository.pinnedMessages(convo.id) },
-        pipActive = pipActive,
-        onTogglePip = onTogglePip,
-    )
+                },
+                onCall = { video ->
+                    // R64 - native calls wired through the same engines the shell uses
+                    onStartCall?.invoke(convo, video)
+                },
+                onRoomInfo = onRoomInfo,
+                onManageGroup = onManageGroup,
+                roomSettingsBusy = settingsBusy,
+                onMuteChoice = { until ->
+                    updateSetting(request = { repository.setMutedUntil(convo.id, until) }, apply = { muted = until != null })
+                },
+                onTtlChoice = { ttl ->
+                    updateSetting(request = { repository.setDisappearingTtl(convo.id, ttl) }, apply = { ttlSeconds = it })
+                },
+                onUnpinMessage = { messageId -> repository.unpinMessage(messageId) },
+                fetchPinned = { repository.pinnedMessages(convo.id) },
+                pipActive = pipActive,
+                onTogglePip = onTogglePip,
+            )
+        }
+    }
 }
 
 /**

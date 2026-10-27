@@ -1,35 +1,16 @@
-// /api/scheduled/[id] - cancel a pending delayed-send (owner only)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
-
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { cancelScheduled, scheduledErrorResponse, scheduledHeaders } from '@/lib/scheduled-operation'
 export const dynamic = 'force-dynamic'
-
-interface RouteCtx {
-  params: Promise<{ id: string }>
-}
-
-/** DELETE /api/scheduled/[id]  body { requesterId } → { ok: true } */
+interface RouteCtx { params: Promise<{ id: string }> }
 export async function DELETE(req: Request, { params }: RouteCtx) {
-  const { id } = await params
-
-  const body = await safeJson(req)
-  const requesterId = strField(body.requesterId)
-  if (!requesterId) {
-    return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
-  }
-
-  const row = await db.scheduledMessage.findUnique({ where: { id } })
-  if (!row) {
-    return NextResponse.json({ error: 'Scheduled message not found.' }, { status: 404 })
-  }
-  if (row.senderId !== requesterId) {
-    return NextResponse.json({ error: 'Only the sender can cancel this message.' }, { status: 403 })
-  }
-  if (row.sentAt !== null) {
-    return NextResponse.json({ error: 'This message was already sent.' }, { status: 400 })
-  }
-
-  await db.scheduledMessage.delete({ where: { id } })
-  return NextResponse.json({ ok: true })
+  const { id } = await params, body = await safeJson(req)
+  const owner = strField(body.requesterId)
+  const refusal = await requireActionOwner(req, owner, 'scheduled-message')
+  if (refusal) return refusal
+  try {
+    return NextResponse.json(await cancelScheduled(db, owner, id), { headers: scheduledHeaders })
+  } catch (error) { return scheduledErrorResponse(error) }
 }

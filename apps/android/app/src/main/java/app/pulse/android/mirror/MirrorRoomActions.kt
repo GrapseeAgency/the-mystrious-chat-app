@@ -1,5 +1,7 @@
 package app.pulse.android.mirror
 
+import androidx.lifecycle.repeatOnLifecycle
+
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -134,15 +136,29 @@ internal fun MirrorMessageActionPanel(
     var note by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
 
+    val actionScope = rememberCoroutineScope()
+    val panelSession = remember(repository, viewerId) { repository.attachmentSessionKey() }
+    val panelLive = remember(message.id, viewerId) { java.util.concurrent.atomic.AtomicBoolean(true) }
+    androidx.compose.runtime.DisposableEffect(panelLive) { onDispose { panelLive.set(false) } }
+    fun requireActionOwner() {
+        if (!panelLive.get() || repository.viewerId != viewerId || panelSession == null ||
+            repository.attachmentSessionKey() != panelSession) throw CancellationException("Message action owner changed")
+    }
     fun op(name: String, block: suspend () -> String?) {
         if (pendingOp != null) return
         pendingOp = name
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching { block() }.getOrNull()
-            CoroutineScope(Dispatchers.Main).launch {
-                pendingOp = null
-                if (result != null) note = result
-            }
+        note = null
+        actionScope.launch {
+            try {
+                requireActionOwner()
+                val result = block()
+                currentCoroutineContext().ensureActive()
+                requireActionOwner()
+                note = result
+            } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
+                requireActionOwner()
+                note = error.message ?: "This action could not be confirmed."
+            } finally { pendingOp = null }
         }
     }
 
@@ -173,7 +189,7 @@ internal fun MirrorMessageActionPanel(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 for (def in MirrorReactions.ALL) {
-                    val active = message.reactions.any { it.emoji == def.id && it.userId == viewerId }
+                    val active = message.reactions.any { app.pulse.protocol.reactionId(it.emoji) == def.id && it.userId == viewerId }
                     Box(
                         Modifier
                             .size(36.dp)
@@ -226,8 +242,9 @@ internal fun MirrorMessageActionPanel(
                     enabled = pendingOp == null,
                 ) {
                     op("save") {
-                        val next = runCatching { repository.toggleMessageSave(message.id).getOrThrow() }.getOrDefault(savedLocal)
-                        CoroutineScope(Dispatchers.Main).launch { savedLocal = next }
+                        val next = repository.setMessageSaved(message.id, !savedLocal).getOrThrow()
+                        requireActionOwner()
+                        savedLocal = next
                         null
                     }
                 }
@@ -239,17 +256,15 @@ internal fun MirrorMessageActionPanel(
                     enabled = pendingOp == null,
                 ) {
                     op("task") {
-                        runCatching {
-                            repository.createKanbanCard(
-                                conversationId = conversationId,
-                                title = message.body.take(80),
-                                column = null,
-                                assigneeId = null,
-                                messageId = message.id,
-                            ).getOrThrow()
-                        }.onSuccess {
-                            CoroutineScope(Dispatchers.Main).launch { onTaskCreated("Task added to the board") }
-                        }
+                        repository.createKanbanCard(
+                            conversationId = conversationId,
+                            title = message.body.take(80),
+                            column = null,
+                            assigneeId = null,
+                            messageId = message.id,
+                        ).getOrThrow()
+                        requireActionOwner()
+                        onTaskCreated("Task added to the board")
                         null
                     }
                 }
@@ -264,10 +279,12 @@ internal fun MirrorMessageActionPanel(
                     enabled = pendingOp == null,
                 ) {
                     op("pin") {
-                        runCatching {
-                            val updated = repository.toggleMessagePin(message.id).getOrThrow()
-                            CoroutineScope(Dispatchers.Main).launch { pinnedLocal = updated.pinnedAt != null }
-                        }
+                        val next = if (pinnedLocal) {
+                            repository.unpinMessage(message.id).getOrThrow()
+                            false
+                        } else repository.pinMessage(message.id).getOrThrow().pinnedAt != null
+                        requireActionOwner()
+                        pinnedLocal = next
                         null
                     }
                 }
@@ -287,8 +304,9 @@ internal fun MirrorMessageActionPanel(
                 enabled = mine && !deleted && pendingOp == null,
             ) {
                 op("delete") {
-                    runCatching { repository.deleteMessage(message.id).getOrThrow() }
-                    CoroutineScope(Dispatchers.Main).launch { onDeleted() }
+                    repository.deleteMessage(message.id).getOrThrow()
+                    requireActionOwner()
+                    onDeleted()
                     null
                 }
             }
@@ -355,7 +373,11 @@ internal fun MirrorForwardSheet(
     onDismiss: () -> Unit,
     onForwarded: (String) -> Unit,
 ) {
-    val conversations by repository.observeConversations().collectAsState(initial = emptyList())
+    val bound = remember(repository) { repository.boundToCurrentAccount() }
+    val owner = remember(bound) { bound.viewerId }
+    val epoch = remember(bound) { bound.attachmentSessionKey() }
+    val actionScope = rememberCoroutineScope()
+    val conversations by bound.observeConversations().collectAsStateWithLifecycle(initialValue = emptyList())
     var query by remember { mutableStateOf("") }
     var busyId by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -371,16 +393,17 @@ internal fun MirrorForwardSheet(
                         .clickable(enabled = busyId == null) {
                             busyId = convo.id
                             error = null
-                            CoroutineScope(Dispatchers.IO).launch {
-                                val result = runCatching { repository.forwardMessage(convo.id, source) }
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    result.onSuccess {
-                                        onForwarded(convo.title)
-                                    }.onFailure {
-                                        busyId = null
-                                        error = "Forward failed - try again"
-                                    }
-                                }
+                            actionScope.launch {
+                                try {
+                                    currentCoroutineContext().ensureActive()
+                                    if (owner == null || bound.viewerId != owner || bound.attachmentSessionKey() != epoch) throw CancellationException("Forward account changed")
+                                    bound.forwardMessage(convo.id, source).getOrThrow()
+                                    if (bound.viewerId != owner || bound.attachmentSessionKey() != epoch) throw CancellationException("Forward account changed")
+                                    onForwarded(convo.title)
+                                    onDismiss()
+                                } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) {
+                                    error = failure.message ?: "Forward wasn't queued. Try again."
+                                } finally { busyId = null }
                             }
                         }
                         .padding(horizontal = 4.dp, vertical = 6.dp),
@@ -427,7 +450,9 @@ internal fun MirrorThreadSheet(
     viewerId: String,
     viewerName: String,
     memberNames: List<String>,
+    members: List<app.pulse.domain.model.ConversationMember>,
     jumpMessageId: String? = null,
+    readingEnabled: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     val threadRepository = remember(repository, viewerId) { repository.boundToCurrentAccount() }
@@ -445,8 +470,53 @@ internal fun MirrorThreadSheet(
     }
     val cachedReplies by replyFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val currentRoot by rootFlow.collectAsStateWithLifecycle(initialValue = null)
+    var scopeUnread by remember(threadRepository, root.id) { mutableStateOf<Int?>(null) }
+    var scopeSnapshot by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.model.ReadScopeState?>(null) }
+    LaunchedEffect(scopeSnapshot) {
+        val snapshot = scopeSnapshot ?: return@LaunchedEffect
+        while (true) {
+            val now = System.currentTimeMillis()
+            scopeUnread = snapshot.unreadAt(now)
+            val next = snapshot.unreadExpirations.map { it.expiresAtEpochMs }.filter { it > now }.minOrNull() ?: break
+            kotlinx.coroutines.delay((next - now).coerceIn(1L, 30_000L))
+        }
+    }
+    var scopeReadRevision by remember(threadRepository, root.id) { mutableStateOf(0) }
+    var firstUnreadMessageId by remember(threadRepository, root.id) { mutableStateOf<String?>(null) }
+    var scopeAnchorCaptured by remember(threadRepository, root.id) { mutableStateOf(false) }
+    LaunchedEffect(threadRepository, root.id) {
+        threadRepository.events().collect { event ->
+            if (event is app.pulse.domain.repository.PulseEvent.MessageRead && event.conversationId == root.conversationId) scopeReadRevision++
+            if (event is app.pulse.domain.repository.PulseEvent.MessageReceived && event.conversationId == root.conversationId) scopeReadRevision++
+            if (event is app.pulse.domain.repository.PulseEvent.MessageDeleted && event.conversationId == root.conversationId) scopeReadRevision++
+            if (event is app.pulse.domain.repository.PulseEvent.MessageUpdated && event.conversationId == root.conversationId) scopeReadRevision++
+        }
+    }
     val connectedFlow = remember(threadRepository) { threadRepository.observeConnected() }
     val connected by connectedFlow.collectAsStateWithLifecycle(initialValue = false)
+    val readRevisionFlow = remember(threadRepository, root.conversationId) {
+        threadRepository.observeReadStateRevision(root.conversationId)
+    }
+    val readRevision by readRevisionFlow.collectAsStateWithLifecycle(initialValue = 0L)
+    val scope = rememberCoroutineScope()
+    val unreadRefresh = remember(threadRepository, root.id) {
+        app.pulse.domain.sync.CoalescedRefresh(scope) {
+            val epoch = threadRepository.attachmentSessionKey()
+            val result = threadRepository.readScopeState(root.conversationId, threadId = root.id)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (threadRepository.attachmentSessionKey() == epoch) {
+                result.getOrNull()?.let { snapshot ->
+                    scopeSnapshot = snapshot
+                    if (!scopeAnchorCaptured) { scopeAnchorCaptured = true; firstUnreadMessageId = snapshot.firstUnreadMessageId }
+                }
+                if ((result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.status in setOf(400, 403, 404, 410)) {
+                    scopeSnapshot = null; scopeUnread = null
+                }
+            }
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(unreadRefresh) { onDispose { unreadRefresh.cancel() } }
+    LaunchedEffect(unreadRefresh, connected, scopeReadRevision, readRevision) { unreadRefresh.request() }
     var draftToken by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }
     val composer = remember(threadRepository, root.id) {
         RoomComposerDraft { draftToken = threadRepository.stageThreadDraft(root.conversationId, root.id, it) }
@@ -464,7 +534,6 @@ internal fun MirrorThreadSheet(
     var jumpResolved by remember(root.id, jumpMessageId) { mutableStateOf(false) }
     var flashId by remember(root.id) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val revealLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var viewOnceGrant by remember(root.id) { mutableStateOf<Message?>(null) }
     var openingViewOnce by remember(root.id) { mutableStateOf(false) }
@@ -502,30 +571,49 @@ internal fun MirrorThreadSheet(
     LaunchedEffect(root.id) {
         while (true) { now = System.currentTimeMillis(); delay(1_000) }
     }
-    LaunchedEffect(root.id, connected, retry) {
-        loading = true
-        error = null
-        try {
-            val (fresh, loadedReplies) = threadRepository.loadThread(root.id)
-            currentCoroutineContext().ensureActive()
-            fetchedReplies = loadedReplies
-            if (!threadRootAvailable(fresh, root.conversationId, root.id)) {
-                denied = true
-                error = "This thread is no longer available."
-            } else {
-                denied = false
-                validated = true
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
-            error = "Couldn't load this thread. Tap to retry."
-        } finally { loading = false }
+    LaunchedEffect(threadRepository, root.id, connected, retry, revealLifecycle) {
+        revealLifecycle.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            unreadRefresh.request()
+            loading = true
+            error = null
+            try {
+                val (fresh, loadedReplies) = threadRepository.loadThread(root.id)
+                currentCoroutineContext().ensureActive()
+                fetchedReplies = loadedReplies
+                if (!threadRootAvailable(fresh, root.conversationId, root.id)) {
+                    denied = true
+                    error = "This thread is no longer available."
+                } else {
+                    denied = false
+                    validated = true
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
+                error = failure.message ?: "Couldn't load this thread. Tap to retry."
+            } finally { loading = false }
+        }
     }
     val available = !denied && threadRootAvailable(currentRoot, root.conversationId, root.id, now)
     val replies = if (available) cachedReplies.filter { it.conversationId == root.conversationId &&
         it.threadRootId == root.id && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) } else emptyList()
+    val latestReadMembers = androidx.compose.runtime.rememberUpdatedState(members)
+    val readScope = remember(threadRepository, root.conversationId, root.id) {
+        app.pulse.domain.sync.VisibleReadScope(threadRepository, root.conversationId) {
+            latestReadMembers.value.firstOrNull { it.id == viewerId }
+        }
+    }
+    app.pulse.feature.chat.ThreadReadReceipts(
+        ownerKey = threadRepository,
+        enabled = readingEnabled && available && viewOnceGrant == null && discardConfirm == null,
+        connected = connected,
+        root = currentRoot,
+        replies = replies,
+        listState = listState,
+        onRead = { readScope.message(it) },
+        onActive = { app.pulse.android.notify.IncomingAttention.beginReading(root.conversationId) },
+    )
     LaunchedEffect(jumpMessageId, replies, available, loading, fetchedReplies) {
         if (jumpResolved || jumpMessageId == null || !available) return@LaunchedEffect
         val index = threadJumpIndex(replies, root, jumpMessageId, System.currentTimeMillis())
@@ -568,7 +656,7 @@ internal fun MirrorThreadSheet(
             }) { Text("Discard", color = MirrorArt.Accent) } },
         )
     }
-    MirrorSheet(title = "Thread", onDismiss = onDismiss) {
+    MirrorSheet(title = scopeUnread?.takeIf { it > 0 }?.let { "Thread · $it unread" } ?: "Thread", onDismiss = onDismiss) {
         Column(Modifier.heightIn(max = 430.dp)) {
             draftError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp) }
             error?.let { text ->
@@ -583,11 +671,17 @@ internal fun MirrorThreadSheet(
                     item(key = "thread-parent") {
                         currentRoot?.let { parent -> MirrorThreadTextBubble(parent, parent.authorId == viewerId, onViewOnce = { openViewOnce(parent) }) }
                     }
-                    items(replies, key = { it.id }) { reply ->
+                    replies.forEach { reply ->
+                        if (reply.id == firstUnreadMessageId) item(key = "thread-unread-divider") {
+                            Text("Unread replies", color = MirrorArt.Accent, fontSize = 11.sp,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+                        }
+                        item(key = reply.id) {
                         Box(Modifier.fillMaxWidth().then(if (flashId == reply.id)
                             Modifier.border(1.dp, MirrorArt.Accent, androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) else Modifier)) {
                             MirrorThreadTextBubble(reply, reply.authorId == viewerId, onViewOnce = { openViewOnce(reply) })
                         }
+                    }
                     }
                     if (replies.isEmpty()) item {
                         Text(if (loading) "Loading replies…" else "No replies yet - start the thread", color = MirrorArt.Faint,
@@ -898,62 +992,71 @@ internal fun MirrorLocationSheet(
 }
 
 /**
- * web who-reacted drawer (chat-room.tsx:5982) + the message-info content:
- * every reaction group with the reacting member names from the live roster.
+ * Message info: exact current readers plus reaction groups from the live roster.
+ * The bounded lazy list preserves the existing sheet size for large groups.
  */
 @Composable
 internal fun MirrorMessageInfoPanel(
     message: Message,
     members: List<ConversationMember>,
+    viewerId: String?,
     onDismiss: () -> Unit,
 ) {
+    val readers = app.pulse.domain.sync.messageInfoReaders(members, viewerId, message.authorId,
+        app.pulse.core.time.PulseTime.epochMs(message.createdAt), message.readByMembershipIds)
     MirrorSheet(title = "Message info", onDismiss = onDismiss) {
-        MirrorSheetScroll {
-            Text(
-                "Sent ${MirrorRoomStamp(message.createdAt)}",
-                color = MirrorArt.TextSoft,
-                fontSize = 12.sp,
-            )
-            if (message.editedAt != null) {
-                Text("Edited", color = MirrorArt.Dim, fontSize = 11.sp)
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+            item {
+                Text(
+                    "${if (message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) "Queued" else "Sent"} ${MirrorRoomStamp(message.createdAt)}",
+                    color = MirrorArt.TextSoft, fontSize = 12.sp,
+                )
+                if (message.editedAt != null) Text("Edited", color = MirrorArt.Dim, fontSize = 11.sp)
+                Spacer(Modifier.height(10.dp))
+                Text("Seen by · ${readers.seenBy.size}", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                if (readers.seenBy.isEmpty()) Text("No read receipts yet", color = MirrorArt.Faint, fontSize = 12.sp)
             }
-            Spacer(Modifier.height(10.dp))
-            if (message.reactions.isEmpty()) {
-                Text("No reactions yet", color = MirrorArt.Faint, fontSize = 12.sp)
+            items(readers.seenBy, key = { "seen-${it.id}" }) { MirrorInfoReceiptRow(it, confirmed = true) }
+            item {
+                Spacer(Modifier.height(10.dp))
+                Text("No read confirmation · ${readers.unconfirmed.size}", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                if (readers.unconfirmed.isEmpty()) Text(
+                    if (readers.seenBy.isEmpty()) "No recipient information" else "Everyone has seen this message",
+                    color = MirrorArt.Faint, fontSize = 12.sp,
+                )
             }
-            val groups = message.reactions.groupBy { it.emoji }
-            for ((emoji, hits) in groups) {
-                val names = hits.mapNotNull { hit -> members.firstOrNull { it.id == hit.userId }?.name }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    MirrorPhosphorIcon(
-                        MirrorReactions.glyphOf(emoji),
-                        tint = MirrorArt.Accent2,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Column {
-                        Text(
-                            "${names.size} reacted",
-                            color = MirrorArt.Text,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            names.joinToString(", ").ifBlank { "Unknown" },
-                            color = MirrorArt.Dim,
-                            fontSize = 11.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+            items(readers.unconfirmed, key = { "unknown-${it.id}" }) { MirrorInfoReceiptRow(it, confirmed = false) }
+            item {
+                Spacer(Modifier.height(10.dp))
+                Text("Reactions", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                if (message.reactions.isEmpty()) Text("No reactions yet", color = MirrorArt.Faint, fontSize = 12.sp)
+            }
+            for ((emoji, hits) in message.reactions.groupBy { it.emoji }) {
+                item(key = "reaction-$emoji") {
+                    val names = hits.mapNotNull { hit -> members.firstOrNull { it.id == hit.userId }?.name }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MirrorPhosphorIcon(MirrorReactions.glyphOf(emoji), tint = MirrorArt.Accent2, modifier = Modifier.size(18.dp))
+                        Column {
+                            Text("${names.size} reacted", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(names.joinToString(", ").ifBlank { "Unknown" }, color = MirrorArt.Dim,
+                                fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MirrorInfoReceiptRow(member: ConversationMember, confirmed: Boolean) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(member.name, color = MirrorArt.Text, fontSize = 13.sp,
+            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(if (confirmed) "Read confirmed" else "No read confirmation",
+            color = if (confirmed) MirrorArt.Accent2 else MirrorArt.Dim, fontSize = 11.sp)
     }
 }
 

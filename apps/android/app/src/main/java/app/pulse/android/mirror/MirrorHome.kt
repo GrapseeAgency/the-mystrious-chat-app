@@ -232,8 +232,26 @@ internal fun MirrorHome(
     /** R76 - (conversationId, jumpMessageId?) - web jumpToMessage anchor. */
     onOpenConversationId: (String, String?) -> Unit = { _, _ -> },
 ) {
+    val actionRepository = repository?.boundToCurrentAccount()
+    val actionScope = rememberCoroutineScope()
+    val actionContext = androidx.compose.ui.platform.LocalContext.current
+    var pendingRows by remember { mutableStateOf(emptySet<String>()) }
+    fun changeRow(id: String, work: suspend (PulseRepository) -> Result<Unit>) {
+        val api = actionRepository ?: return
+        if (id in pendingRows) return
+        pendingRows = pendingRows + id
+        actionScope.launch {
+            try {
+                work(api).getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                android.widget.Toast.makeText(actionContext, failure.message ?: "Couldn't update this chat", android.widget.Toast.LENGTH_LONG).show()
+            } finally { pendingRows = pendingRows - id }
+        }
+    }
     val maxW = 560.dp
-    val unreadTotal = conversations.sumOf { it.unread }
+    val unreadTotal = conversations.sumOf { maxOf(it.unread, if (it.manualUnread) 1 else 0) }
 
     // Real filtering, exactly the web rails: All / Unread / Groups + folder.
     val activeFolder = folders.firstOrNull { f -> f.id == activeFolderId }
@@ -419,18 +437,10 @@ internal fun MirrorHome(
                     onOptions = { onRowOptions(row) },
                     // R74 - swipe chips run the SAME handlers the option sheet uses
                     onPin = {
-                        repository?.let { repo ->
-                            CoroutineScope(Dispatchers.IO).launch {
-                                runCatching { repo.togglePin(row.id, !row.pinned) }
-                            }
-                        }
+                        changeRow(row.id) { it.togglePin(row.id, !row.pinned) }
                     },
                     onArchive = {
-                        repository?.let { repo ->
-                            CoroutineScope(Dispatchers.IO).launch {
-                                runCatching { repo.archive(row.id, true) }
-                            }
-                        }
+                        changeRow(row.id) { it.archive(row.id, true) }
                     },
                 )
             }
@@ -444,7 +454,7 @@ internal fun MirrorHome(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        if (searchQuery.isBlank()) "No chats here yet" else "No matches",
+                        if (searchQuery.isBlank()) "No chats here yet" else "No matching chats",
                         color = MirrorArt.Dim,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
@@ -466,10 +476,15 @@ internal fun MirrorHome(
         if (searchQuery.length >= 2 && repository != null) {
             item {
                 var hits by remember(searchQuery) { mutableStateOf<List<MessageHit>?>(null) }
-                LaunchedEffect(searchQuery) {
+                var searchError by remember(searchQuery) { mutableStateOf<String?>(null) }
+                LaunchedEffect(searchQuery, repository) {
+                    val account = repository.boundToCurrentAccount()
                     kotlinx.coroutines.delay(250)
-                    repository.observeMessageSearch(searchQuery).collect { hits = it.getOrNull() }
+                    account.observeMessageSearch(searchQuery).collect {
+                        hits = it.getOrNull(); searchError = it.exceptionOrNull()?.message
+                    }
                 }
+                if (searchError != null) Text(searchError.orEmpty(), color = MirrorArt.Dim, modifier = Modifier.padding(16.dp))
                 val loaded = hits
                 if (loaded != null && loaded.isNotEmpty()) {
                     Column {

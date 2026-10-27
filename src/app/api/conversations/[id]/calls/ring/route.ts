@@ -6,12 +6,15 @@
 //   • offline members → remote push (`fanoutPush`, high priority) so the
 //                       notification reaches a closed app.
 // Muted members are skipped entirely (mute means no rings, same rule the
-// message relay honours). Ring is fire-and-forget for the caller UX: the
-// response only confirms validation, never blocks on delivery.
+// message relay honours). The relay confirms the exact live admission before
+// push fanout; clients remain asynchronous and show a failure toast on refusal.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { fanoutPush } from '@/lib/push/transport'
-import { notifySocket, safeJson, strField } from '@/lib/serializers'
+import { safeJson, strField } from '@/lib/serializers'
+import { dispatchGroupCallRing, relayGroupCallRing, GroupCallRingError } from '@/lib/group-call-ringing'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { bearerToken } from '@/lib/session-token'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,10 +26,19 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const { id } = await params
   const body = (await safeJson(req)) as Record<string, unknown>
   const callerId = strField(body.userId)
-  const kind = body.kind === 'video' ? 'video' : 'voice'
+  const kind = body.kind
+  const callId = strField(body.callId)
 
   if (!callerId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  }
+
+  if (!callId || (kind !== 'voice' && kind !== 'video')) {
+    return NextResponse.json({ error: 'An admitted callId and valid kind are required.' }, { status: 400 })
+  }
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, callerId, 'ring call')
+    if (denied) return denied
   }
 
   const conversation = await db.conversation.findUnique({
@@ -48,44 +60,34 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Only members can ring this conversation.' }, { status: 403 })
   }
 
-  const memberIds = conversation.participants.map((p) => p.userId)
-  const recipients = memberIds.filter((memberId) => memberId !== callerId)
-  if (recipients.length === 0) {
-    return NextResponse.json({ ok: true, rang: 0, pushed: 0 })
-  }
-
   const title =
     conversation.isGroup && conversation.name
       ? conversation.name
       : caller.name
 
-  // 1. Realtime ring to everyone still connected.
-  await notifySocket('gcall:ring', recipients, {
-    type: 'gcall:ring',
-    conversationId: id,
-    kind,
-    caller: { id: caller.id, name: caller.name, color: caller.color, avatar: caller.avatar },
-    title,
-  })
-
-  // 2. High-priority push for members whose apps are closed (transport
-  //    skips currently-online users itself; muted members opted out here -
-  //    same watermark semantics as message notifications: mutedUntil > now).
-  const now = new Date()
-  const muted = await db.conversationParticipant.findMany({
-    where: { conversationId: id, mutedUntil: { gt: now } },
-    select: { userId: true },
-  })
-  const mutedIds = new Set(muted.map((row) => row.userId))
-  const pushTargets = recipients.filter((memberId) => !mutedIds.has(memberId))
-  const report = await fanoutPush(pushTargets, {
-    kind: 'gcall',
-    title,
-    body: `${caller.name} started a ${kind === 'video' ? 'video' : 'voice'} call`,
-    conversationId: id,
-    callKind: kind,
-    callerName: caller.name,
-  })
-
-  return NextResponse.json({ ok: true, rang: recipients.length, pushed: report.sent })
+  // Apply the same mute snapshot BEFORE either delivery channel. Previously online
+  // muted members still received a ringing banner even though their push was skipped.
+  try {
+    let expiresAt: string | undefined
+    const report = await dispatchGroupCallRing(conversation.participants, callerId,
+      async recipients => {
+        const receipt = await relayGroupCallRing(recipients, {
+          conversationId: id, callId, kind,
+          caller: { id: caller.id, name: caller.name, color: caller.color, avatar: caller.avatar },
+          title,
+        })
+        expiresAt = receipt.expiresAt
+        return receipt.accepted
+      },
+      recipients => fanoutPush(recipients, {
+        kind: 'gcall', title,
+        body: `${caller.name} started a ${kind === 'video' ? 'video' : 'voice'} call`,
+        conversationId: id, callId, callKind: kind, callerName: caller.name, expiresAt,
+      }),
+    )
+    return NextResponse.json({ ok: true, ...report })
+  } catch (error) {
+    if (error instanceof GroupCallRingError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
+  }
 }

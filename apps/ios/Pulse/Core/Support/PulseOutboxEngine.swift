@@ -166,21 +166,57 @@ public final class PulseOutboxEngine: ObservableObject {
     public static var active: PulseOutboxEngine?
 
     @Published public private(set) var pendingCount = 0
+    @Published public private(set) var storageUnavailable = false
     @Published public private(set) var flushing = false
 
     /// Engine → session pipe (delivered/dropped events feed the UI).
     public var onEvent: ((Event) -> Void)?
     public var onAcknowledgement: ((PulseSendResult) -> Void)?
+    /// The background task awaits this pass, rather than returning success with
+    /// an unowned fire-and-forget read delivery still in flight.
+    public var onReadJournalFlush: (() async -> Bool)?
+    public var onBadgeRefresh: (() async -> Bool)?
+    var onReadStateInvalidation: ((String) -> Void)?
+    func invalidateReadProjections(_ room: String) {
+        guard canWork, !room.isEmpty, room.count <= 128 else { return }
+        onReadStateInvalidation?(room)
+    }
+
+
+    public func flushBackgroundQueues() async -> Bool {
+        guard !Task.isCancelled, canWork else { return false }
+        // A cold-process wake has a short budget. Neither a large upload nor a
+        // read-state outage may hold the other lane hostage. Structured children
+        // are still cancelled/awaited with the owning background task.
+        async let messages = flush()
+        async let attention = flushBackgroundReadState()
+        let (sent, reconciled) = await (messages, attention)
+        return sent && reconciled && !Task.isCancelled && canWork
+    }
+
+    private func flushBackgroundReadState() async -> Bool {
+        guard !Task.isCancelled, canWork else { return false }
+        let reads = await onReadJournalFlush?() ?? false
+        guard !Task.isCancelled, canWork else { return false }
+        // The adapter treats optional OS badge permission as best effort, but
+        // failed server snapshots / exact-alert proofs must remain incomplete.
+        let projections = await onBadgeRefresh?() ?? true
+        return reads && projections && !Task.isCancelled && canWork
+    }
     /// Session fallback still blocks dispatch if recording a denial on disk failed.
     public var additionalThreadAccessDenied: ((String) -> Bool)?
 
     private let store: PulseStore
     private let senderProvider: () -> (any PulseOutboxSending)?
     private var healTask: Task<Void, Never>?
+    /// Diagnostics: unknown queue state must retain a recovery trigger.
+    var recoveryScheduled: Bool { healTask != nil }
     private var healGeneration = UUID()
     private var healSleeping = false
     private var working = false
     private var stopped = false
+    private let isCurrent: () -> Bool
+    private var canWork: Bool { !stopped && isCurrent() }
     private var retryNotBefore: TimeInterval = 0
     private var roomRetryNotBefore: [String: TimeInterval] = [:]
     private let monotonicNow: () -> TimeInterval
@@ -193,14 +229,13 @@ public final class PulseOutboxEngine: ObservableObject {
     private var lastPathSatisfied = false
 
     public init(store: PulseStore, monitorNetwork: Bool = true,
-                monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
+                monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+                isCurrent: @escaping () -> Bool = { true }, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
         self.store = store
         self.monotonicNow = monotonicNow
+        self.isCurrent = isCurrent
         self.senderProvider = senderProvider
-        pendingCount = store.countPendingOutbox()
-        if pendingCount > 0 {
-            startHealTimer()
-        }
+        reloadPending()
         if monitorNetwork { startPathMonitor() }
     }
 
@@ -257,7 +292,7 @@ public final class PulseOutboxEngine: ObservableObject {
         } else { retryNotBefore = max(retryNotBefore, deadline) }
         // A short server cooldown must not wait behind the old 60s sweep.
         if healSleeping { stopHealTimer() }
-        if !stopped { startHealTimer() }
+        if canWork { startHealTimer() }
     }
 
     private func blockedConversations() -> Set<String> {
@@ -272,9 +307,23 @@ public final class PulseOutboxEngine: ObservableObject {
         return min(60, roomRetryNotBefore.values.filter { $0 > now }.map { $0 - now }.min() ?? 60)
     }
 
+    private func refreshPendingCount() -> Bool {
+        do {
+            pendingCount = try store.countPendingOutbox()
+            storageUnavailable = false
+            return true
+        } catch {
+            // Keep the last known count, not a made-up empty or nonempty queue.
+            storageUnavailable = true
+            return false
+        }
+    }
+
     public func reloadPending() {
-        pendingCount = store.countPendingOutbox()
-        if pendingCount > 0 && !stopped { startHealTimer() }
+        let known = refreshPendingCount()
+        if !known || pendingCount > 0 {
+            if canWork { startHealTimer() }
+        } else { stopHealTimer() }
     }
 
     public func count() -> Int {
@@ -293,9 +342,10 @@ public final class PulseOutboxEngine: ObservableObject {
     /// re-entrant calls are ignored while a flush is running.
     @discardableResult
     public func flush() async -> Bool {
-        guard !stopped, !working, !Task.isCancelled, monotonicNow() >= retryNotBefore else { return false }
+        guard canWork, !working, !Task.isCancelled, monotonicNow() >= retryNotBefore else { return false }
         guard let sender = senderProvider() else { return false }
-        guard store.countPendingOutbox() > 0 else {
+        guard refreshPendingCount() else { startHealTimer(); return false }
+        guard pendingCount > 0 else {
             pendingCount = 0
             stopHealTimer()
             return true
@@ -306,12 +356,11 @@ public final class PulseOutboxEngine: ObservableObject {
         defer {
             working = false
             flushing = false
-            pendingCount = store.countPendingOutbox()
-            if pendingCount == 0 { stopHealTimer() } else if !stopped { startHealTimer() }
+            reloadPending()
         }
 
         for _ in 0..<Self.maxEntries {
-            if Task.isCancelled || stopped { break }
+            if Task.isCancelled || !canWork { break }
             let entry: OutboxRow
             do {
                 guard let next = try store.nextPendingOutbox(excludingConversations: blockedConversations()) else { break }
@@ -331,7 +380,7 @@ public final class PulseOutboxEngine: ObservableObject {
                         throw CocoaError(.coderReadCorrupt)
                     }
                     let path = try await sender.uploadMedia(dataUrl: dataUrl)
-                    guard !stopped, !Task.isCancelled else { return false }
+                    guard canWork, !Task.isCancelled else { return false }
                     guard !path.isEmpty else { throw CocoaError(.coderReadCorrupt) }
                     switch uploaded.kind {
                     case "image": uploaded.imagePath = path
@@ -371,14 +420,13 @@ public final class PulseOutboxEngine: ObservableObject {
                     },
                     anon: forward?.anon
                 )
-                guard !stopped, !Task.isCancelled else { return false }
-                let real = receipt.message
-                try store.resolveDelivery(clientId: entry.clientId, message: real)
-                pendingCount = store.countPendingOutbox()
+                guard canWork, !Task.isCancelled else { return false }
+                let real = try store.resolveDelivery(clientId: entry.clientId, message: receipt.message)
+                _ = refreshPendingCount()
                 onEvent?(.delivered(message: real, conversationId: entry.conversationId, clientId: entry.clientId))
                 onAcknowledgement?(receipt)
             } catch {
-                if Task.isCancelled || stopped { return false }
+                if Task.isCancelled || !canWork { return false }
                 if let failure = error as? PulseAPIClient.Failure,
                    failure.status == 429 || failure.kind == .rateLimited {
                     let roomOnly = postingMessage && failure.status == 429 && failure.code == "slow_mode"
@@ -399,7 +447,7 @@ public final class PulseOutboxEngine: ObservableObject {
                                 reason: "Saved in Drafts & outbox: " + reason))
                         }
                     } catch { return false } // keep intent if the local state transition failed
-                    pendingCount = store.countPendingOutbox()
+                    _ = refreshPendingCount()
                     continue
                 }
                 // Network-class failure - keep the entry, stop the drain so
@@ -408,7 +456,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 break
             }
         }
-        return !Task.isCancelled && !stopped && store.countPendingOutbox() == 0
+        return !Task.isCancelled && canWork && refreshPendingCount() && pendingCount == 0
     }
 
     // self-heal timer
@@ -416,7 +464,7 @@ public final class PulseOutboxEngine: ObservableObject {
     /// 60s sweep while entries exist - recovers from triggers the app missed
     /// (killed mid-flush, missed reconnect, …).
     private func startHealTimer() {
-        guard !stopped else { return }
+        guard canWork else { return }
         guard healTask == nil else { return }
         let generation = UUID()
         healGeneration = generation
@@ -430,7 +478,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 guard !Task.isCancelled, let self else { return }
                 self.healSleeping = false
                 await self.flush()
-                if self.pendingCount == 0 { break }
+                if self.pendingCount == 0 && !self.storageUnavailable { break }
             }
         }
     }
@@ -465,7 +513,7 @@ public final class PulseOutboxEngine: ObservableObject {
     private func handlePathUpdate(satisfied: Bool) {
         let wasSatisfied = lastPathSatisfied
         lastPathSatisfied = satisfied
-        guard satisfied, !wasSatisfied, pendingCount > 0 else { return }
+        guard satisfied, !wasSatisfied, pendingCount > 0 || storageUnavailable else { return }
         Task { [weak self] in
             await self?.flush()
         }

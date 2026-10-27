@@ -102,16 +102,23 @@ struct StoryComposerState: Equatable {
 
     /// The exact client-side mirror of the server validation.
     var canPost: Bool {
-        guard !uploading, !posting else { return false }
+        guard !uploading, !posting, caption.utf16.count <= Self.captionMax else { return false }
         switch mode {
         case .text: return !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .photo: return !(imagePath ?? "").isEmpty
+        case .photo: return !(imagePath ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
     func withCaption(_ raw: String) -> StoryComposerState {
         var next = self
-        next.caption = String(raw.prefix(Self.captionMax))
+        var units = 0
+        var scalars = String.UnicodeScalarView()
+        for scalar in raw.unicodeScalars {
+            let width = scalar.value > 0xFFFF ? 2 : 1
+            guard units + width <= Self.captionMax else { break }
+            scalars.append(scalar); units += width
+        }
+        next.caption = String(scalars)
         next.error = nil
         return next
     }
@@ -312,6 +319,7 @@ final class StoryViewerMachine: ObservableObject {
             // D3: nearest survivor (position clamped), or close when empty.
             if flat.isEmpty {
                 next.flat = flat
+                next.pendingMark = nil
                 next.dismissed = true
             } else {
                 lastTickAt = nil

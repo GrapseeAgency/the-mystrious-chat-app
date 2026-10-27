@@ -76,10 +76,10 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(card.title, "Ship it")
         XCTAssertEqual(card.column, "doing")
 
-        let fromEnvelope = try decode(WireKanbanCardEnvelope.self, #"{"card":{"id":"k2","title":"T2","column":"todo","position":0}}"#)
+        let fromEnvelope = try decode(WireKanbanCardEnvelope.self, #"{"boardReceiptVersion":1,"userId":"me","conversationId":"room","card":{"id":"k2","title":"T2","column":"todo","position":0}}"#)
         XCTAssertEqual(fromEnvelope.card?.id, "k2")
 
-        let page = try decode(WireKanbanPage.self, #"{"cards":[{"id":"k1","title":"a","column":"todo","position":0},{"id":"k2","title":"b","column":"done","position":1}]}"#)
+        let page = try decode(WireKanbanPage.self, #"{"boardReceiptVersion":1,"userId":"me","conversationId":"room","cards":[{"id":"k1","title":"a","column":"todo","position":0},{"id":"k2","title":"b","column":"done","position":1}]}"#)
         XCTAssertEqual(page.cards.count, 2)
     }
 
@@ -193,29 +193,29 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(swapResult.wallet?.gems, 2)
         let market = try decode(
             WireMarketPage.self,
-            #"{"listings":[{"id":"l1","title":"Ship","price":25,"asset":"PC","status":"open","seller":{"id":"u1","name":"A"},"mine":false}]}"#,
+            #"{"marketVersion":1,"userId":"u2","listings":[{"id":"l1","title":"Ship","price":25,"asset":"PC","status":"open","seller":{"id":"u1","name":"A"},"mine":false}]}"#,
         )
         XCTAssertEqual(market.listings.first?.price, 25)
-        let buy = try decode(WireMarketBuyResult.self, #"{"ok":true,"wallet":{"userId":"u2","coins":40}}"#)
+        let buy = try decode(WireMarketBuyResult.self, #"{"marketVersion":1,"userId":"u2","listingId":"l1","ok":true,"wallet":{"userId":"u2","coins":40}}"#)
         XCTAssertEqual(buy.ok, true)
     }
 
     func testHubLogsAndInstallStateAndCommunity() throws {
         let logs = try decode(
             WireHubLogsPage.self,
-            #"{"logs":[{"id":"g1","kind":"transfer","message":"sent 25 PC to @bob","meta":"{\"to\":\"u2\"}","user":{"id":"u1","name":"A"}}]}"#,
+            #"{"activityVersion":1,"userId":"u1","logs":[{"id":"g1","kind":"transfer","message":"sent 25 PC to @bob","meta":"{\"to\":\"u2\"}","user":{"id":"u1","name":"A"}}]}"#,
         )
         XCTAssertEqual(logs.logs.first?.meta, #"{"to":"u2"}"#)
         let install = try decode(
             WireAppInstallState.self,
-            #"{"installed":true,"status":"connected","installedAt":"2026-01-15T00:00:00.000Z","installs":3,"installers":[{"id":"u1","name":"A"}]}"#,
+            #"{"appVersion":1,"appId":"11","userId":"u1","installed":true,"status":"connected","installedAt":"2026-01-15T00:00:00.000Z","installs":3,"installers":[{"id":"u1","name":"A"}]}"#,
         )
         XCTAssertEqual(install.installs, 3)
-        let installResult = try decode(WireAppInstallResult.self, #"{"installed":true,"status":"connected","installs":4}"#)
+        let installResult = try decode(WireAppInstallResult.self, #"{"appVersion":1,"appId":"11","userId":"u1","installed":true,"status":"connected","installs":4}"#)
         XCTAssertEqual(installResult.status, "connected")
         let community = try decode(
             WireAppCommunity.self,
-            ##"{"conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community","members":[]},"memberCount":2,"joined":true}"##,
+            ##"{"appVersion":1,"appId":"11","userId":"u1","conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community","members":[]},"memberCount":2,"joined":true}"##,
         )
         XCTAssertEqual(community.conversation?.id, "cnv1")
         XCTAssertEqual(community.joined, true)

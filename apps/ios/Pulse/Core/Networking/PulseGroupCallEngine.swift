@@ -45,12 +45,16 @@ public final class PulseGroupCallEngine: ObservableObject {
         public let kind: CallKind
         public let caller: PulseGroupCallMember
         public let title: String
+        public let callId: String
+        public let expiresAt: Date
 
         /// Tolerant decode of the relayed gcall:ring payload
         /// { conversationId, kind, caller: {id,name,color,avatar}, title }.
-        static func decode(_ raw: [String: Any]) -> Ring? {
+        static func decode(_ raw: [String: Any], now: Date = Date()) -> Ring? {
             guard let conversationId = raw["conversationId"] as? String,
-                  !conversationId.isEmpty else { return nil }
+                  !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let callId = raw["callId"] as? String, !callId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let expiry = raw["expiresAt"] as? String, let deadline = PulseFormat.date(expiry), deadline > now else { return nil }
             let callerRaw = raw["caller"] as? [String: Any] ?? [:]
             guard let caller = PulseGroupCallMember.decode(callerRaw) else { return nil }
             let title = (raw["title"] as? String) ?? ""
@@ -58,7 +62,8 @@ public final class PulseGroupCallEngine: ObservableObject {
                 conversationId: conversationId,
                 kind: CallKind(wireValue: raw["kind"] as? String),
                 caller: caller,
-                title: title,
+                title: title, callId: callId,
+                expiresAt: min(deadline, now.addingTimeInterval(PulseGroupCallPolicy.ringTimeoutSec)),
             )
         }
     }
@@ -101,19 +106,31 @@ public final class PulseGroupCallEngine: ObservableObject {
     private let connectedProvider: () -> Bool
     private let voiceCallBusy: () -> Bool
     private let toasts: ToastCenter
+    private let activateAudioSession: @MainActor () -> Bool
+    private let restoreAudioSession: @MainActor () -> Void
+    private var probeGeneration = UUID()
 
     // live mesh state (cleared on every teardown)
     private var peers: [String: any PulseGroupCallPeerConnecting] = [:]
     private var peerBridges: [String: MeshPeerBridge] = [:]
     private var pendingIce: [String: [CallIceEnvelope]] = [:]
     private var peerRemoteDescriptionSet: Set<String> = []
+    private var localDescriptionSent: Set<String> = []
+    private var pendingLocalIce: [String: [[String: Any]]] = [:]
+    private var negotiatingPeers: Set<String> = []
+    private var expectedJoin: (roomId: String, callId: String)?
+    private var joinAttemptId: String?
+    private var joinedCallId: String?
+    private var joinSentAt: Date?
+    private var pendingRing = false
+    private var ringTask: Task<Void, Never>?
+    private var ownsAudioSession = false
     private var sharedAudio: RTCAudioTrack?
     private var cameraLive = false
     private var joinedConv: String?
     private var joinedAt: Date?
     private var joinIntent = false
     private var mediaReady = false
-    private var ringArrivedAt: Date?
     /// The conversation currently open on screen (drives the probe +
     /// the ONGOING banner, web hook options.conversationId parity).
     /// Public read-only since 3-d - ChatRoomView's onDisappear compares it
@@ -122,6 +139,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     /// The conversation whose live call the ONGOING banner describes
     /// (set from gcall:state / the probe, cleared with the banner).
     private var ongoingConversationId: String?
+    private var ongoingCallId: String?
 
     private var cancellables: Set<AnyCancellable> = []
     private var joinGeneration = UUID()
@@ -140,7 +158,9 @@ public final class PulseGroupCallEngine: ObservableObject {
         apiProvider: @escaping () -> PulseAPIClient?,
         connectedProvider: @escaping () -> Bool,
         voiceCallBusy: @escaping () -> Bool,
-        toasts: ToastCenter
+        toasts: ToastCenter,
+        activateAudioSession: @escaping @MainActor () -> Bool = { PulseCallAudioSession.shared.activateForCall() },
+        restoreAudioSession: @escaping @MainActor () -> Void = { PulseCallAudioSession.shared.restore() }
     ) {
         self.viewer = viewer
         self.signaling = signaling
@@ -149,6 +169,8 @@ public final class PulseGroupCallEngine: ObservableObject {
         self.connectedProvider = connectedProvider
         self.voiceCallBusy = voiceCallBusy
         self.toasts = toasts
+        self.activateAudioSession = activateAudioSession
+        self.restoreAudioSession = restoreAudioSession
         Self.active = self
 
         // 1s heartbeat: duration ticker + ring timeout guard.
@@ -183,6 +205,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     public func setActiveConversation(_ conversationId: String?) {
         guard activeConversationId != conversationId else { return }
         activeConversationId = conversationId
+        probeGeneration = UUID()
         if ongoingConversationId != conversationId {
             ongoingElsewhere = false
         }
@@ -200,22 +223,22 @@ public final class PulseGroupCallEngine: ObservableObject {
     /// Accept an incoming ring (the ring already went out - NEVER re-rings).
     public func joinCall() {
         guard let target = ring, uiState == .idle else { return }
+        guard target.expiresAt > Date() else { dismissRing(); return }
         PulseHaptics.tap()
-        startJoin(target.conversationId, wanted: target.kind, ringOthers: false, title: target.title.isEmpty ? displayTitle : target.title)
+        startJoin(target.conversationId, wanted: target.kind, ringOthers: false, title: target.title.isEmpty ? displayTitle : target.title, expectedCallId: target.callId)
     }
 
     /// Silently join the ONGOING call in the open room - never re-rings.
     public func joinOngoing() {
-        guard uiState == .idle, let conv = ongoingConversationId else { return }
+        guard uiState == .idle, ongoingElsewhere, let conv = ongoingConversationId, let callId = ongoingCallId else { return }
         PulseHaptics.tap()
         let wanted = ongoingKind
         ongoingElsewhere = false
-        startJoin(conv, wanted: wanted, ringOthers: false, title: displayTitle)
+        startJoin(conv, wanted: wanted, ringOthers: false, title: displayTitle, expectedCallId: callId)
     }
 
     public func dismissRing() {
         ring = nil
-        ringArrivedAt = nil
     }
 
     public func ignoreOngoing() {
@@ -231,6 +254,8 @@ public final class PulseGroupCallEngine: ObservableObject {
             signaling.send(event: "gcall:leave", payload: GroupCallWire.leavePayload(
                 conversationId: conv,
                 from: viewer.id,
+                callId: joinedCallId,
+                joinAttemptId: joinAttemptId,
             ))
         }
         let elapsed = joinedAt.map { Int(Date().timeIntervalSince($0).rounded()) } ?? 0
@@ -240,6 +265,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     }
 
     public func dismissError() {
+        guard !isInCall else { return }
         joinGeneration = UUID()
         preparationTask?.cancel()
         errorText = nil
@@ -247,6 +273,7 @@ public final class PulseGroupCallEngine: ObservableObject {
     }
 
     public func dismissSummary() {
+        guard !isInCall else { return }
         summary = nil
         uiState = .idle
     }
@@ -290,38 +317,41 @@ public final class PulseGroupCallEngine: ObservableObject {
 
     // the join pipeline (web startJoin parity)
 
-    private func startJoin(_ targetConvId: String, wanted: CallKind, ringOthers: Bool, title: String) {
+    private func startJoin(_ targetConvId: String, wanted: CallKind, ringOthers: Bool, title: String, expectedCallId: String? = nil) {
         guard uiState == .idle else { return }
         guard !targetConvId.isEmpty, !viewer.id.isEmpty else { return }
         guard !voiceCallBusy() else {
             toasts.show("Finish your current call first")
             return
         }
-        guard connectedProvider() else {
+        guard connectedProvider(), signaling.isReady else {
             toasts.show("You are offline - calls need a connection")
             return
         }
         joinIntent = true
+        expectedJoin = expectedCallId.map { (targetConvId, $0) }
         kind = wanted
         displayTitle = title
         errorText = nil
         summary = nil
-        ring = nil
-        ringArrivedAt = nil
+        // CallKit observes ring removal synchronously. Publish joining first
+        // so answering does not report the incoming system call as unanswered.
         uiState = .joining
+        ring = nil
         let ticket = UUID()
         joinGeneration = ticket
-        preparationTask = Task { await beginJoin(targetConvId, wanted: wanted, ringOthers: ringOthers, title: title, ticket: ticket) }
+        joinAttemptId = ticket.uuidString
+        preparationTask = Task { await beginJoin(targetConvId, wanted: wanted, ringOthers: ringOthers, title: title, ticket: ticket, expectedCallId: expectedCallId) }
     }
 
-    private func beginJoin(_ convId: String, wanted: CallKind, ringOthers: Bool, title: String, ticket: UUID) async {
-        guard !Task.isCancelled, joinGeneration == ticket else { return }
+    private func beginJoin(_ convId: String, wanted: CallKind, ringOthers: Bool, title: String, ticket: UUID, expectedCallId: String?) async {
+        guard preparationIsCurrent(ticket) else { return }
         var resolved = wanted
         // Camera capability resolves FIRST (web acquireMedia degrade: no
         // usable camera → the call degrades to voice with an honest toast).
         if wanted == .video {
             let cameraOk = await media.requestCameraPermission() && media.canCaptureVideo()
-            guard !Task.isCancelled, joinGeneration == ticket, uiState == .joining, joinedConv == nil else { return }
+            guard preparationIsCurrent(ticket) else { return }
             if !cameraOk {
                 toasts.show("Camera unavailable - joining as a voice call")
                 resolved = .voice
@@ -329,21 +359,23 @@ public final class PulseGroupCallEngine: ObservableObject {
             }
         }
         let micGranted = await media.requestMicPermission()
-        guard !Task.isCancelled, joinGeneration == ticket, uiState == .joining, joinedConv == nil else { return }
+        guard preparationIsCurrent(ticket) else { return }
         guard micGranted else {
             uiState = .idle
             joinIntent = false
             errorText = Self.micDeniedMessage
             return
         }
-        guard PulseCallAudioSession.shared.activateForCall() else {
+        guard activateAudioSession() else {
             uiState = .idle
             joinIntent = false
             errorText = "Audio is unavailable or in use. Leave your room or stop recording first."
             return
         }
+        ownsAudioSession = true
         guard let audio = media.makeSharedAudioTrack() else {
-            PulseCallAudioSession.shared.restore()
+            ownsAudioSession = false
+            restoreAudioSession()
             uiState = .idle
             joinIntent = false
             errorText = "Could not start the call. Try again."
@@ -373,27 +405,47 @@ public final class PulseGroupCallEngine: ObservableObject {
         mediaReady = true
         // The roster can only arrive AFTER the relay processed our join, so
         // every peer from here on attaches ready shared tracks.
-        signaling.send(event: "gcall:join", payload: GroupCallWire.joinPayload(
+        pendingRing = ringOthers
+        joinSentAt = Date()
+        guard signaling.send(event: "gcall:join", payload: GroupCallWire.joinPayload(
             conversationId: convId,
             kind: resolved,
             userId: viewer.id,
             userName: viewer.name,
             userColor: viewer.color,
             userAvatar: viewer.avatar,
-        ))
-        if ringOthers {
-            // Ring the other members (online → socket banner, offline → push).
-            // Fire-and-forget - the response only confirms validation.
-            Task { await ringOthersViaApi(conversationId: convId, kind: resolved) }
+            expectedCallId: expectedCallId,
+            joinAttemptId: ticket.uuidString,
+        )) else {
+            handleSocketDisconnected()
+            return
         }
     }
 
-    private func ringOthersViaApi(conversationId: String, kind: CallKind) async {
-        guard let api = apiProvider() else { return }
-        do {
-            try await api.ringGroupCall(conversationId: conversationId, userId: viewer.id, kind: kind)
-        } catch {
-            toasts.show("Could not ring other members")
+    private func preparationIsCurrent(_ ticket: UUID) -> Bool {
+        guard !Task.isCancelled, joinGeneration == ticket, uiState == .joining, joinedConv == nil else { return false }
+        guard connectedProvider(), signaling.isReady else {
+            handleSocketDisconnected()
+            return false
+        }
+        return true
+    }
+
+    // Ring only after our own roster admission; a full/rejected join must not send pushes.
+    private func ringAdmittedCall(conversationId: String) {
+        guard pendingRing else { return }
+        pendingRing = false
+        guard let api = apiProvider(), let callId = joinedCallId else { return }
+        let ticket = joinGeneration, resolved = kind
+        ringTask = Task { [weak self] in
+            guard let self, !Task.isCancelled, self.joinGeneration == ticket,
+                  self.joinedConv == conversationId else { return }
+            do {
+                try await api.ringGroupCall(conversationId: conversationId, userId: self.viewer.id, kind: resolved, callId: callId)
+            } catch {
+                guard !Task.isCancelled, self.joinGeneration == ticket, self.joinedConv == conversationId else { return }
+                self.toasts.show("Could not ring other members")
+            }
         }
     }
 
@@ -402,8 +454,8 @@ public final class PulseGroupCallEngine: ObservableObject {
     /// One peer connection per remote member, fed from the ONE shared local
     /// acquisition (web ensurePeerConnection :212-245 parity).
     private func ensurePeerConnection(_ peerId: String) -> (any PulseGroupCallPeerConnecting)? {
+        guard mediaReady, joinedConv != nil, members.contains(where: { $0.id == peerId }) else { return nil }
         if let existing = peers[peerId] { return existing }
-        guard mediaReady, joinedConv != nil else { return nil }
         let bridge = MeshPeerBridge(peerId: peerId, engine: self)
         guard let pc = media.makeMeshPeerConnection(delegate: bridge) else { return nil }
         peers[peerId] = pc
@@ -422,11 +474,14 @@ public final class PulseGroupCallEngine: ObservableObject {
     static let sharedStreamId = "pulse-gstream0"
 
     private func closePeer(_ peerId: String) {
-        peers[peerId]?.close()
-        peers[peerId] = nil
-        peerBridges[peerId] = nil
+        let old = peers.removeValue(forKey: peerId)
+        peerBridges[peerId] = nil // invalidate queued callbacks before native close
+        old?.close()
         pendingIce[peerId] = nil
         peerRemoteDescriptionSet.remove(peerId)
+        localDescriptionSent.remove(peerId)
+        pendingLocalIce[peerId] = nil
+        negotiatingPeers.remove(peerId)
         remoteTracks[peerId] = nil
         peerStates[peerId] = nil
     }
@@ -435,9 +490,9 @@ public final class PulseGroupCallEngine: ObservableObject {
     /// closed; arrivals whose id sorts below mine get my offer (web
     /// applyRoster parity - the deterministic mesh rule lives in the policy).
     private func applyRoster(_ roster: [PulseGroupCallMember], rosterConvId: String) {
+        guard joinedConv == rosterConvId, mediaReady else { return }
         members = roster
         ongoingMembers = roster
-        guard mediaReady else { return }
         let plan = PulseGroupCallPolicy.rosterPlan(
             myId: viewer.id,
             rosterIds: roster.map(\.id),
@@ -453,70 +508,101 @@ public final class PulseGroupCallEngine: ObservableObject {
         if uiState == .joining {
             uiState = .active
         }
+        joinSentAt = nil
+        ringAdmittedCall(conversationId: rosterConvId)
+        let ticket = joinGeneration
         for memberId in plan.toOffer {
-            Task { await createAndSendOffer(to: memberId, conversationId: rosterConvId) }
+            Task { await createAndSendOffer(to: memberId, conversationId: rosterConvId, ticket: ticket) }
         }
     }
 
-    private func createAndSendOffer(to peerId: String, conversationId: String) async {
-        guard joinedConv == conversationId, let pc = ensurePeerConnection(peerId) else { return }
+    private func ownsPeer(_ peerId: String, _ pc: any PulseGroupCallPeerConnecting, _ ticket: UUID) -> Bool {
+        !Task.isCancelled && joinGeneration == ticket && isInCall && peers[peerId] === pc
+    }
+
+    private func createAndSendOffer(to peerId: String, conversationId: String, ticket: UUID) async {
+        guard joinGeneration == ticket, joinedConv == conversationId, !negotiatingPeers.contains(peerId),
+              let pc = ensurePeerConnection(peerId), !localDescriptionSent.contains(peerId) else { return }
+        negotiatingPeers.insert(peerId)
+        defer { if ownsPeer(peerId, pc, ticket) { negotiatingPeers.remove(peerId) } }
         do {
             let sdp = try await pc.createOffer()
+            guard ownsPeer(peerId, pc, ticket) else { return }
             try await pc.setLocalDescription(sdp: sdp)
-            guard joinedConv == conversationId, peers[peerId] === pc else { return }
-            signaling.send(event: "gcall:offer", payload: GroupCallWire.offerPayload(
-                conversationId: conversationId,
-                from: viewer.id,
-                to: peerId,
-                kind: kind,
-                sdp: sdp,
-            ))
+            guard ownsPeer(peerId, pc, ticket) else { return }
+            guard signaling.send(event: "gcall:offer", payload: GroupCallWire.offerPayload(
+                conversationId: conversationId, from: viewer.id, to: peerId, kind: kind, sdp: sdp, callId: joinedCallId
+            )) else { handleSocketDisconnected(); return }
+            flushLocalIce(for: peerId)
         } catch {
-            NSLog("[gcall] offer create failed: %@", error.localizedDescription)
+            guard ownsPeer(peerId, pc, ticket) else { return }
+            closePeer(peerId)
+            toasts.show("Could not connect to a call member. Leave and rejoin to retry.")
         }
     }
 
-    private func answerOffer(from peerId: String, conversationId: String, sdp: String) async {
-        guard joinedConv == conversationId, let pc = ensurePeerConnection(peerId) else { return }
+    private func answerOffer(from peerId: String, conversationId: String, sdp: String, ticket: UUID) async {
+        guard joinGeneration == ticket, joinedConv == conversationId, !negotiatingPeers.contains(peerId),
+              let pc = ensurePeerConnection(peerId), !peerRemoteDescriptionSet.contains(peerId) else { return }
+        negotiatingPeers.insert(peerId)
+        defer { if ownsPeer(peerId, pc, ticket) { negotiatingPeers.remove(peerId) } }
         do {
             try await pc.setRemoteDescription(sdp: sdp, type: "offer")
+            guard ownsPeer(peerId, pc, ticket) else { return }
             peerRemoteDescriptionSet.insert(peerId)
             let answerSdp = try await pc.createAnswer()
+            guard ownsPeer(peerId, pc, ticket) else { return }
             try await pc.setLocalDescription(sdp: answerSdp)
-            guard joinedConv == conversationId else { return }
-            signaling.send(event: "gcall:answer", payload: GroupCallWire.answerPayload(
-                conversationId: conversationId,
-                from: viewer.id,
-                to: peerId,
-                sdp: answerSdp,
-            ))
-            await drainPendingIce(for: peerId, pc: pc)
+            guard ownsPeer(peerId, pc, ticket) else { return }
+            guard signaling.send(event: "gcall:answer", payload: GroupCallWire.answerPayload(
+                conversationId: conversationId, from: viewer.id, to: peerId, sdp: answerSdp, callId: joinedCallId
+            )) else { handleSocketDisconnected(); return }
+            flushLocalIce(for: peerId)
+            await drainPendingIce(for: peerId, pc: pc, ticket: ticket)
         } catch {
-            NSLog("[gcall] offer apply failed: %@", error.localizedDescription)
+            guard ownsPeer(peerId, pc, ticket) else { return }
+            closePeer(peerId)
+            toasts.show("Could not connect to a call member. Leave and rejoin to retry.")
         }
     }
 
-    private func applyAnswer(from peerId: String, sdp: String) async {
-        guard joinedConv != nil, let pc = peers[peerId] else { return }
+    private func applyAnswer(from peerId: String, sdp: String, ticket: UUID) async {
+        guard joinGeneration == ticket, joinedConv != nil, let pc = peers[peerId],
+              localDescriptionSent.contains(peerId), !peerRemoteDescriptionSet.contains(peerId),
+              !negotiatingPeers.contains(peerId) else { return }
+        negotiatingPeers.insert(peerId)
+        defer { if ownsPeer(peerId, pc, ticket) { negotiatingPeers.remove(peerId) } }
         do {
             try await pc.setRemoteDescription(sdp: sdp, type: "answer")
+            guard ownsPeer(peerId, pc, ticket) else { return }
             peerRemoteDescriptionSet.insert(peerId)
-            await drainPendingIce(for: peerId, pc: pc)
+            await drainPendingIce(for: peerId, pc: pc, ticket: ticket)
         } catch {
-            NSLog("[gcall] answer apply failed: %@", error.localizedDescription)
+            guard ownsPeer(peerId, pc, ticket) else { return }
+            closePeer(peerId)
+            toasts.show("Could not connect to a call member. Leave and rejoin to retry.")
         }
     }
 
-    private func drainPendingIce(for peerId: String, pc: any PulseGroupCallPeerConnecting) async {
-        guard let queued = pendingIce[peerId], !queued.isEmpty else { return }
-        pendingIce[peerId] = nil
+    private func drainPendingIce(for peerId: String, pc: any PulseGroupCallPeerConnecting, ticket: UUID) async {
+        guard ownsPeer(peerId, pc, ticket), let queued = pendingIce.removeValue(forKey: peerId) else { return }
         for ice in queued {
-            try? await pc.addRemoteCandidate(
-                candidate: ice.candidate,
-                sdpMid: ice.sdpMid,
-                sdpMLineIndex: ice.sdpMLineIndex,
-            )
+            guard ownsPeer(peerId, pc, ticket) else { return }
+            try? await pc.addRemoteCandidate(candidate: ice.candidate, sdpMid: ice.sdpMid, sdpMLineIndex: ice.sdpMLineIndex)
         }
+    }
+
+    private func flushLocalIce(for peerId: String) {
+        localDescriptionSent.insert(peerId)
+        let queued = pendingLocalIce.removeValue(forKey: peerId) ?? []
+        for payload in queued {
+            guard signaling.send(event: "gcall:ice", payload: payload) else { handleSocketDisconnected(); return }
+        }
+    }
+
+    private func matchesJoinedCall(_ raw: [String: Any]) -> Bool {
+        guard let conv = joinedConv, let callId = joinedCallId else { return false }
+        return raw["conversationId"] as? String == conv && raw["callId"] as? String == callId
     }
 
     // signaling inbound (session routes .groupCallSignal here)
@@ -525,12 +611,12 @@ public final class PulseGroupCallEngine: ObservableObject {
         switch event {
         case "gcall:ring":
             guard let decoded = Ring.decode(raw) else { return }
-            guard decoded.caller.id != viewer.id else { return }
+            // CallKit and the banner must keep the same caller until answered or dismissed.
+            guard decoded.caller.id != viewer.id, ring == nil else { return }
             // Only ring when idle - a participant never sees their own ring
             // (web :459-464). The ended-card state stays untouched too.
-            guard uiState == .idle else { return }
+            guard uiState == .idle, !voiceCallBusy() else { return }
             ring = decoded
-            ringArrivedAt = Date()
             PulseHaptics.incoming()
 
         case "gcall:state":
@@ -545,7 +631,18 @@ public final class PulseGroupCallEngine: ObservableObject {
             guard conv == activeConversationId || conv == joinedConv else { return }
             let roster = PulseGroupCallMember.decodeList(raw["members"])
             let iAmMember = roster.contains { $0.id == viewer.id }
-            if iAmMember {
+            if conv == joinedConv {
+                if let expectedJoin, raw["callId"] as? String != expectedJoin.callId { return }
+                guard let callId = raw["callId"] as? String, !callId.isEmpty,
+                      joinedCallId == nil || joinedCallId == callId else { return }
+                joinedCallId = callId
+                expectedJoin = nil
+                guard iAmMember else {
+                    teardownMedia()
+                    uiState = .ended
+                    summary = "You are no longer in this call"
+                    return
+                }
                 // Membership per the relay (this device joined, or the same
                 // account joined from ANOTHER device - iOS never silently
                 // attaches media for the cross-device case; joinedConv is
@@ -553,10 +650,12 @@ public final class PulseGroupCallEngine: ObservableObject {
                 ongoingElsewhere = false
                 applyRoster(roster, rosterConvId: conv)
             } else if uiState == .idle, joinedConv == nil {
-                if !roster.isEmpty {
+                probeGeneration = UUID() // a slower HTTP probe cannot undo this relay state
+                if !roster.isEmpty && !iAmMember, let callId = raw["callId"] as? String, !callId.isEmpty {
                     ongoingKind = CallKind(wireValue: raw["kind"] as? String)
                     ongoingMembers = roster
                     ongoingConversationId = conv
+                    ongoingCallId = callId
                     ongoingElsewhere = true
                 } else {
                     ongoingMembers = []
@@ -566,48 +665,73 @@ public final class PulseGroupCallEngine: ObservableObject {
             }
 
         case "gcall:offer":
-            guard let conv = raw["conversationId"] as? String, conv == joinedConv,
-                  let from = raw["from"] as? String, !from.isEmpty, from != viewer.id,
+            guard matchesJoinedCall(raw), raw["to"] as? String == viewer.id,
+                  let conv = joinedConv, let from = raw["from"] as? String,
+                  from < viewer.id, members.contains(where: { $0.id == from }),
                   let sdp = raw["sdp"] as? String, !sdp.isEmpty else { return }
-            Task { await answerOffer(from: from, conversationId: conv, sdp: sdp) }
+            let ticket = joinGeneration
+            Task { await answerOffer(from: from, conversationId: conv, sdp: sdp, ticket: ticket) }
 
         case "gcall:answer":
-            guard let from = raw["from"] as? String, !from.isEmpty, from != viewer.id,
+            guard matchesJoinedCall(raw), raw["to"] as? String == viewer.id,
+                  let from = raw["from"] as? String, viewer.id < from, peers[from] != nil,
                   let sdp = raw["sdp"] as? String, !sdp.isEmpty else { return }
-            guard joinedConv != nil, peers[from] != nil else { return }
-            Task { await applyAnswer(from: from, sdp: sdp) }
+            let ticket = joinGeneration
+            Task { await applyAnswer(from: from, sdp: sdp, ticket: ticket) }
 
         case "gcall:ice":
-            guard let ice = CallIceEnvelope.decode(raw) else { return }
-            guard ice.base.from != viewer.id, joinedConv != nil else { return }
-            let peerId = ice.base.from
+            guard matchesJoinedCall(raw), raw["to"] as? String == viewer.id,
+                  let ice = CallIceEnvelope.decode(raw), ice.base.from != viewer.id,
+                  members.contains(where: { $0.id == ice.base.from }) else { return }
+            let peerId = ice.base.from, ticket = joinGeneration
             if peerRemoteDescriptionSet.contains(peerId), let pc = peers[peerId] {
-                Task { try? await pc.addRemoteCandidate(
-                    candidate: ice.candidate,
-                    sdpMid: ice.sdpMid,
-                    sdpMLineIndex: ice.sdpMLineIndex,
-                ) }
-            } else {
-                // Early candidate (the peer's SDP hasn't landed yet) - queue
-                // until the remote description arrives, then drain.
+                Task {
+                    guard ownsPeer(peerId, pc, ticket) else { return }
+                    try? await pc.addRemoteCandidate(candidate: ice.candidate, sdpMid: ice.sdpMid, sdpMLineIndex: ice.sdpMLineIndex)
+                }
+            } else if pendingIce[peerId, default: []].count < 256 {
                 pendingIce[peerId, default: []].append(ice)
             }
 
         case "gcall:ended":
-            // The relay only fans this to the call's own room, but the conv
-            // guard keeps a stray event from killing an unrelated call.
-            let conv = raw["conversationId"] as? String
-            if let joinedConv, conv == nil || conv == joinedConv {
+            // An admission reply is not a call-wide termination, even if an
+            // old and current attempt reference the same observed call ID.
+            if raw["joinAttemptId"] != nil {
+                if uiState == .joining, let joinAttemptId, raw["conversationId"] as? String == joinedConv,
+                   raw["joinAttemptId"] as? String == joinAttemptId {
+                    teardownMedia()
+                    uiState = .ended
+                    summary = "This call is not available to join"
+                }
+                return
+            }
+            if uiState == .joining, let expectedJoin, raw["conversationId"] as? String == expectedJoin.roomId,
+               raw["callId"] as? String == expectedJoin.callId {
                 teardownMedia()
                 uiState = .ended
-                summary = "Call ended"
+                summary = "This call is no longer available"
             }
-            ongoingElsewhere = false
-            ongoingMembers = []
-            ongoingConversationId = nil
+            if let ring, raw["conversationId"] as? String == ring.conversationId, raw["callId"] as? String == ring.callId {
+                dismissRing()
+            }
+            if matchesJoinedCall(raw) {
+                teardownMedia()
+                uiState = .ended
+                switch raw["reason"] as? String {
+                case "membership-revoked": summary = "You no longer have access to this call"
+                case "access-unavailable": summary = "Call access could not be verified"
+                default: summary = "Call ended"
+                }
+            }
+            if raw["conversationId"] as? String == ongoingConversationId, raw["callId"] as? String == ongoingCallId {
+                ongoingElsewhere = false
+                ongoingMembers = []
+                ongoingConversationId = nil
+            }
 
         case "gcall:full":
-            if joinIntent {
+            if joinIntent, uiState == .joining, let joinedConv, raw["conversationId"] as? String == joinedConv,
+               let joinAttemptId, raw["joinAttemptId"] as? String == joinAttemptId {
                 teardownMedia()
                 uiState = .idle
                 toasts.show("That call is full (8 max)")
@@ -623,53 +747,67 @@ public final class PulseGroupCallEngine: ObservableObject {
     private func probeNow() {
         guard uiState == .idle, joinedConv == nil,
               let conv = activeConversationId, !conv.isEmpty else { return }
-        Task { await probeOngoing(conversationId: conv) }
+        let ticket = UUID(), joinTicket = joinGeneration
+        probeGeneration = ticket
+        Task { await probeOngoing(conversationId: conv, ticket: ticket, joinTicket: joinTicket) }
     }
 
-    private func probeOngoing(conversationId: String) async {
-        guard let api = apiProvider() else { return }
+    private func probeOngoing(conversationId: String, ticket: UUID, joinTicket: UUID) async {
+        guard probeGeneration == ticket, joinGeneration == joinTicket, let api = apiProvider() else { return }
         // Socket down / no call → { members: [] } (honest empty).
         guard let snapshot = try? await api.groupCallState(conversationId: conversationId) else { return }
         // Late answers re-verify against the CURRENT context.
-        guard activeConversationId == conversationId, uiState == .idle, joinedConv == nil else { return }
+        guard probeGeneration == ticket, joinGeneration == joinTicket,
+              activeConversationId == conversationId, uiState == .idle, joinedConv == nil else { return }
         let roster = snapshot.members
-        if !roster.isEmpty, !roster.contains(where: { $0.id == viewer.id }) {
+        if !roster.isEmpty, !roster.contains(where: { $0.id == viewer.id }), let callId = snapshot.callId, !callId.isEmpty {
             ongoingKind = snapshot.resolvedKind
             ongoingMembers = roster
             ongoingConversationId = conversationId
+            ongoingCallId = callId
             ongoingElsewhere = true
         } else {
             ongoingElsewhere = false
-            if roster.contains(where: { $0.id == viewer.id }) {
-                ongoingMembers = []
-                ongoingConversationId = nil
-            }
+            ongoingMembers = []
+            ongoingConversationId = nil
         }
     }
 
     // heartbeat
 
-    func tick() {
+    func tick(now: Date = Date()) {
+        if uiState == .joining, let sentAt = joinSentAt, now.timeIntervalSince(sentAt) >= 30 {
+            leaveCall()
+            summary = "Call could not connect. Try again."
+        }
         if uiState == .active, let joinedAt {
             durationSec = max(0, Int(Date().timeIntervalSince(joinedAt).rounded()))
         }
-        // The local ring guard - group rings have no server-side timeout;
-        // a stuck incoming surface is worse than a missed ring.
-        if ring != nil, let arrivedAt = ringArrivedAt,
-           Date().timeIntervalSince(arrivedAt) >= PulseGroupCallPolicy.ringTimeoutSec {
+        // Preserve the relay deadline; delayed arrivals cannot restart it.
+        if ring.map({ now >= $0.expiresAt }) == true {
             ring = nil
-            ringArrivedAt = nil
         }
     }
 
     // teardown
 
     private func teardownMedia() {
-        for (_, pc) in peers {
-            pc.close()
-        }
+        joinAttemptId = nil
+        expectedJoin = nil
+        joinGeneration = UUID()
+        preparationTask?.cancel()
+        ringTask?.cancel()
+        ringTask = nil
+        let oldPeers = peers
         peers.removeAll()
         peerBridges.removeAll()
+        for (_, pc) in oldPeers { pc.close() }
+        localDescriptionSent.removeAll()
+        pendingLocalIce.removeAll()
+        negotiatingPeers.removeAll()
+        joinedCallId = nil
+        joinSentAt = nil
+        pendingRing = false
         pendingIce.removeAll()
         peerRemoteDescriptionSet.removeAll()
         remoteTracks.removeAll()
@@ -678,6 +816,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             media.stopSharedVideoCapture()
         }
         cameraLive = false
+        if sharedAudio != nil { media.setSharedAudioEnabled(false) }
         sharedAudio = nil
         localVideoTrack = nil
         joinedConv = nil
@@ -688,14 +827,17 @@ public final class PulseGroupCallEngine: ObservableObject {
         durationSec = 0
         micEnabled = true
         cameraEnabled = true
-        PulseCallAudioSession.shared.restore()
+        if ownsAudioSession {
+            ownsAudioSession = false
+            restoreAudioSession()
+        }
     }
 
     // peer bridge callbacks (main actor via MeshPeerBridge)
 
-    func handleLocalCandidate(peerId: String, candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) {
-        guard let conv = joinedConv else { return }
-        signaling.send(event: "gcall:ice", payload: GroupCallWire.icePayload(
+    private func handleLocalCandidate(peerId: String, candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) {
+        guard let conv = joinedConv, peers[peerId] != nil else { return }
+        let payload = GroupCallWire.icePayload(
             conversationId: conv,
             from: viewer.id,
             to: peerId,
@@ -703,16 +845,23 @@ public final class PulseGroupCallEngine: ObservableObject {
             candidate: candidate,
             sdpMid: sdpMid,
             sdpMLineIndex: sdpMLineIndex,
-        ))
+            callId: joinedCallId,
+        )
+        if localDescriptionSent.contains(peerId) {
+            if !signaling.send(event: "gcall:ice", payload: payload) { handleSocketDisconnected() }
+        } else if pendingLocalIce[peerId, default: []].count < 256 {
+            pendingLocalIce[peerId, default: []].append(payload)
+        }
     }
 
-    func handlePeerState(peerId: String, state: PulseCallConnectionState) {
+    private func handlePeerState(peerId: String, state: PulseCallConnectionState) {
+        if state == .failed || state == .closed { closePeer(peerId) }
         peerStates[peerId] = state
     }
 
     /// A remote member's video track arrived over their m=video line -
     /// publish it so the grid tile renders the live surface.
-    func handleRemoteVideoTrack(peerId: String, track: RTCVideoTrack) {
+    private func handleRemoteVideoTrack(peerId: String, track: RTCVideoTrack) {
         guard remoteTracks[peerId] !== track else { return }
         remoteTracks[peerId] = track
     }
@@ -734,7 +883,8 @@ public final class PulseGroupCallEngine: ObservableObject {
         func peerDidProduceLocalCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) {
             let peerId = self.peerId
             Task { @MainActor in
-                self.engine?.handleLocalCandidate(
+                guard let engine = self.engine, engine.peerBridges[peerId] === self else { return }
+                engine.handleLocalCandidate(
                     peerId: peerId,
                     candidate: candidate,
                     sdpMid: sdpMid,
@@ -746,14 +896,16 @@ public final class PulseGroupCallEngine: ObservableObject {
         func peerConnectionStateDidChange(_ state: PulseCallConnectionState) {
             let peerId = self.peerId
             Task { @MainActor in
-                self.engine?.handlePeerState(peerId: peerId, state: state)
+                guard let engine = self.engine, engine.peerBridges[peerId] === self else { return }
+                engine.handlePeerState(peerId: peerId, state: state)
             }
         }
 
         func peerDidReceiveRemoteVideoTrack(_ track: RTCVideoTrack) {
             let peerId = self.peerId
             Task { @MainActor in
-                self.engine?.handleRemoteVideoTrack(peerId: peerId, track: track)
+                guard let engine = self.engine, engine.peerBridges[peerId] === self else { return }
+                engine.handleRemoteVideoTrack(peerId: peerId, track: track)
             }
         }
     }

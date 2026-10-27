@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.sync.visibleQuote
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -77,7 +78,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -145,6 +145,7 @@ import app.pulse.ui.emberBackdrop
 import app.pulse.ui.pulseReactionGlyph
 import app.pulse.ui.pulseTopicGlyph
 import coil.compose.AsyncImage
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -226,6 +227,8 @@ fun ChatRoomScreen(
     val convThemes by viewModel.convThemes.collectAsStateWithLifecycle()
     // R1-W2I - PiP pane focus (F-PI-03): drives the pop-out toggle in the room menu.
     val pipFocusedId by viewModel.pipFocusedConversationId.collectAsStateWithLifecycle()
+    val pipOverlayOpen by viewModel.pipOverlayOpen.collectAsStateWithLifecycle()
+    val readWindow = androidx.compose.ui.platform.LocalWindowInfo.current
     // R2-A item 5 - AI recap card state; item 8 - live group meta drives the veil.
     val recap by viewModel.recap.collectAsStateWithLifecycle()
     val recapLoading by viewModel.recapLoading.collectAsStateWithLifecycle()
@@ -235,6 +238,8 @@ fun ChatRoomScreen(
     // + composer chip); item 4 - the incognito arming; item 6 - task busy.
     val scheduledItems by viewModel.scheduled.collectAsStateWithLifecycle()
     val scheduledLoading by viewModel.scheduledLoading.collectAsStateWithLifecycle()
+    val scheduledBusy by viewModel.scheduledBusy.collectAsStateWithLifecycle()
+    val scheduledError by viewModel.scheduledError.collectAsStateWithLifecycle()
     // R6 - BE7 - upcoming-reminder count for the room-header badge.
     val remindersUpcoming by viewModel.remindersUpcoming.collectAsStateWithLifecycle()
     val anonNext by viewModel.anonNext.collectAsStateWithLifecycle()
@@ -243,7 +248,8 @@ fun ChatRoomScreen(
     // the composer chip counts it down live and send/mic stay locked).
     val slowModeRemainingSec by viewModel.slowModeRemainingSec.collectAsStateWithLifecycle()
     val slowBlocked = slowModeRemainingSec > 0
-    val screenPrivacyOn = groupMeta?.screenPrivacyEffective == true
+    val personalPrivacy by viewModel.personalScreenPrivacy.collectAsStateWithLifecycle()
+    val screenPrivacyOn = groupMeta?.screenPrivacy != false || personalPrivacy.on != false
     val roomTheme = convThemes[conversationId]
     val effectiveWallpaper = roomTheme?.wallpaper ?: prefs.wallpaper ?: "none"
 
@@ -256,7 +262,8 @@ fun ChatRoomScreen(
     // R5-B ITEM 1 - emoji appends re-focus the composer through this handle.
     val composerFocus = remember { FocusRequester() }
 
-    var draft by remember { mutableStateOf("") }
+    val draftState = remember(conversationId, viewerId) { ReceiptOwnedDraft() }
+    var draft by draftState
     val caption = state.staged?.caption.orEmpty()
     var actionTarget by remember { mutableStateOf<Message?>(null) }
     var forwardTarget by remember { mutableStateOf<Message?>(null) }
@@ -277,13 +284,15 @@ fun ChatRoomScreen(
     var pollBuilderOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var wasEditing by remember { mutableStateOf(false) }
+    var draftBeforeEdit by remember { mutableStateOf<String?>(null) }
     var scrolledFlash by remember(state.flashRevision) { mutableStateOf<String?>(null) }
     // R1-W2A - reaction picker / who-reacted / stickers / slash help /
     // schedule / quick-phrases hosts (D27, F-MS-24, F-MS-22, F-MS-29).
     var reactionPickerTarget by remember { mutableStateOf<Message?>(null) }
     var whoReactedFor by remember { mutableStateOf<Pair<Message, String>?>(null) }
     var stickerOpen by remember { mutableStateOf(false) }
-    var scheduleOpen by remember { mutableStateOf(false) }
+    var scheduleOpen by remember(conversationId, viewerId) { mutableStateOf(false) }
+    var schedulePresentation by remember(conversationId, viewerId) { mutableStateOf<java.util.UUID?>(null) }
     // R3-B item 3 - scheduled sends manager sheet.
     var scheduledOpen by remember { mutableStateOf(false) }
     var helpOpen by remember { mutableStateOf(false) }
@@ -295,9 +304,10 @@ fun ChatRoomScreen(
     var locationDenied by remember { mutableStateOf(false) }
     var themeOpen by remember { mutableStateOf(false) }
     // R2-A item 5 - the composer draft staged for the /schedule armer.
-    var scheduleDraft by remember { mutableStateOf<String?>(null) }
+    var scheduleDraft by remember(conversationId, viewerId) { mutableStateOf<String?>(null) }
     // R2-A item 4 - the frozen pre-open read watermark (unread divider).
-    var unreadAnchorMs by remember(conversationId) { mutableStateOf<Long?>(null) }
+    var firstUnreadMessageId by remember(conversationId, activeTopicId) { mutableStateOf<String?>(null) }
+    var unreadAnchorCaptured by remember(conversationId, activeTopicId) { mutableStateOf(false) }
 
     // Wave 6 - broadcast channel lock (role from the server detail).
     val isChannel = conversation?.kind == Conversation.Kind.CHANNEL
@@ -318,8 +328,8 @@ fun ChatRoomScreen(
     // reverseLayout list - index 0 is the newest row, the anchor for tails.
     // R2-A item 4 - an "unread" divider row is inserted at the first OTHER
     // person's message after the frozen watermark (web chat-room.tsx:1398-1424).
-    val rows = remember(messages, unreadAnchorMs, viewerId) {
-        buildTimelineRows(messages, unreadAnchorMs, viewerId)
+    val rows = remember(messages, firstUnreadMessageId, viewerId) {
+        buildTimelineRows(messages, viewerId = viewerId, firstUnreadMessageId = firstUnreadMessageId)
     }
     val rowsReversed = remember(rows) { rows.asReversed() }
     // R7 item 1 - cluster rhythm (web chat-room.tsx:7275-7278: cozy head
@@ -340,15 +350,17 @@ fun ChatRoomScreen(
         if (!seed.isNullOrBlank() && draft.isBlank() && state.editing == null) draft = seed
     }
 
-    // Edit mode drives the composer: prefill on begin, clear on success
-    // (VM keeps the editing row on failure so the text survives retries).
+    // Keep the unsent composer separate from the edit buffer; errors retain
+    // edited text, while success/cancel restores the draft that was there before.
     LaunchedEffect(state.editing) {
         val editing = state.editing
         if (editing != null) {
+            if (!wasEditing) draftBeforeEdit = draft
             draft = editing.body
             wasEditing = true
         } else if (wasEditing) {
-            draft = ""
+            draft = draftBeforeEdit.orEmpty()
+            draftBeforeEdit = null
             wasEditing = false
         }
     }
@@ -364,35 +376,23 @@ fun ChatRoomScreen(
     // Room summary that lands (web chats-tab handlePress freezes it at tap
     // time): only when unreadCount > 0, else no divider. markRead on entry
     // zeroes the summary shortly after, so this runs exactly once.
-    LaunchedEffect(conversation) {
-        if (unreadAnchorMs != null) return@LaunchedEffect
-        val conv = conversation ?: return@LaunchedEffect
-        unreadAnchorMs = if (conv.unreadCount > 0) {
-            conv.members.firstOrNull { it.id == viewerId }?.lastReadAt
+    LaunchedEffect(conversation, activeTopicId, topics) {
+        if (unreadAnchorCaptured) return@LaunchedEffect
+        if (activeTopicId == null) {
+            val conv = conversation ?: return@LaunchedEffect
+            firstUnreadMessageId = conv.firstUnreadMessageId.takeIf { conv.unreadCount > 0 }
         } else {
-            null
+            val topic = topics.firstOrNull { it.id == activeTopicId && it.unreadCount != null } ?: return@LaunchedEffect
+            firstUnreadMessageId = topic.firstUnreadMessageId.takeIf { (topic.unreadCount ?: 0) > 0 }
         }
+        unreadAnchorCaptured = true
     }
 
-    // R2-A item 4 - jump-to-latest tracking (web chat-room.tsx:1575-1612):
-    // near-tail detection clears the missed counter; off-screen arrivals
-    // accumulate into the pill badge.
+    // The pill counts real incoming IDs, not day separators/history rows.
     val nearTail by remember { derivedStateOf { listState.firstVisibleItemIndex <= 1 } }
-    val missedCount = remember { mutableIntStateOf(0) }
-    var lastSeenLen by remember { mutableStateOf(0) }
-    LaunchedEffect(rows.size, nearTail) {
-        val len = rows.size
-        if (nearTail) {
-            lastSeenLen = len
-            missedCount.intValue = 0
-        } else if (len > lastSeenLen) {
-            missedCount.intValue += len - lastSeenLen
-            lastSeenLen = len
-        } else if (len < lastSeenLen) {
-            // room switch / cache reset
-            lastSeenLen = len
-            missedCount.intValue = 0
-        }
+    val missedCount by viewModel.missedCount.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel, nearTail, activeTopicId) {
+        viewModel.setReadingTail(nearTail)
     }
 
     // R2-A item 8 - screen security: while EITHER flag is on, FLAG_SECURE
@@ -400,22 +400,13 @@ fun ChatRoomScreen(
     // Android analogue of the web blur engagement), and the message area
     // covers while the app is backgrounded (web privacyHidden parity).
     var privacyHidden by remember { mutableStateOf(false) }
-    val activity = context as? android.app.Activity
-    DisposableEffect(screenPrivacyOn) {
-        val window = activity?.window
-        if (screenPrivacyOn && window != null) {
-            window.setFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                android.view.WindowManager.LayoutParams.FLAG_SECURE,
-            )
-        }
-        onDispose {
-            if (screenPrivacyOn && window != null) {
-                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-            }
+    app.pulse.ui.security.SecureWindowProtection(screenPrivacyOn)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, viewModel) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.reconcileResumedRoom()
         }
     }
-    val lifecycleOwner = LocalLifecycleOwner.current
     fun openViewOnce(target: Message) {
         if (openingViewOnce || lightboxTarget != null) return
         openingViewOnce = true
@@ -428,6 +419,7 @@ fun ChatRoomScreen(
         }
     }
     DisposableEffect(lifecycleOwner, screenPrivacyOn) {
+        privacyHidden = !lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
         val obs = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> privacyHidden = true
@@ -444,12 +436,17 @@ fun ChatRoomScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
-    val readObscured = actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
+    val nativeReadMenus = app.pulse.ui.rememberNativeReadMenus()
+    val nativeMenuRevision = nativeReadMenus.value.revision
+    val readObscured = nativeReadMenus.value.obscured || actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
         lightboxTarget != null || pinsOpen || attachOpen || pollBuilderOpen || reactionPickerTarget != null ||
-        whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen
+        whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen ||
+        safety != null || viewModel.phrasesOpen || viewModel.redPacketOpen || viewModel.redPacketDetailId != null ||
+        viewModel.gameOpen || viewModel.tournamentOpen || viewModel.kanbanOpen || viewModel.whiteboardOpen ||
+        viewModel.eventsOpen || viewModel.remindersOpen || viewModel.leaderboardOpen
     val readRows = rememberUpdatedState(rowsReversed)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
-    LaunchedEffect(lifecycleOwner, viewModel, conversation?.id, pipFocusedId, privacyHidden, readObscured, minimumReadPixels) {
+    LaunchedEffect(lifecycleOwner, viewModel, conversation?.id, pipOverlayOpen, privacyHidden, readObscured, minimumReadPixels, nativeMenuRevision) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
                 snapshotFlow {
@@ -457,12 +454,12 @@ fun ChatRoomScreen(
                     val visible = layout.visibleItemsInfo.filter {
                         app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
                     }.map { it.key }.toSet()
-                    if (privacyHidden || readObscured || (pipFocusedId != null && pipFocusedId != conversation?.id)) null
-                    else readRows.value.filterIsInstance<TimelineRow.Msg>().firstOrNull {
+                    if (privacyHidden || readObscured || pipOverlayOpen || !readWindow.isWindowFocused) emptySet<String>()
+                    else readRows.value.filterIsInstance<TimelineRow.Msg>().filter {
                         it.key in visible && !it.message.isDeleted && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
-                    }?.message?.id
-                }.collect { viewModel.setReadingAnchor(it) }
-            } finally { viewModel.setReadingAnchor(null) }
+                    }.map { it.message.id }.toSet()
+                }.collect { viewModel.setReadingAnchors(it) { !nativeReadMenus.value.obscured && nativeReadMenus.value.revision == nativeMenuRevision && readWindow.isWindowFocused } }
+            } finally { viewModel.setReadingAnchors(emptySet()) }
         }
     }
 
@@ -644,6 +641,12 @@ fun ChatRoomScreen(
      * the AI recap request.
      */
     fun runPaletteCommand(command: PulseSlash.SlashCommand) {
+        if (command.cmd == "/schedule") {
+            val text = draft.trim().removePrefix("/schedule").trim()
+            if (text.isEmpty()) viewModel.notify("Type the message first, then schedule it")
+            else { scheduleDraft = text; schedulePresentation = java.util.UUID.randomUUID(); scheduleOpen = true }
+            return
+        }
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         draft = ""
         viewModel.onDraftChanged("")
@@ -659,7 +662,7 @@ fun ChatRoomScreen(
                 "poll" -> pollBuilderOpen = true
                 "schedule" -> {
                     scheduleDraft = ""
-                    scheduleOpen = true
+                    schedulePresentation = java.util.UUID.randomUUID(); scheduleOpen = true
                 }
                 "sticker" -> stickerOpen = true
                 "location" -> {
@@ -683,6 +686,11 @@ fun ChatRoomScreen(
     fun sendCurrentDraft() {
         if (draft.isBlank()) return
         val submitted = draft
+        if (viewModel.state.value.editing != null) {
+            // Editing a slash-prefixed message must not execute a new command.
+            viewModel.send(submitted)
+            return
+        }
         val restoreRejected = {
             if (draft.isBlank()) { draft = submitted; viewModel.onDraftChanged(submitted) }
         }
@@ -944,7 +952,7 @@ fun ChatRoomScreen(
                                                 count = 28,
                                             )
                                         }
-                                        viewModel.react(message.id, REACTION_DEFAULT)
+                                        viewModel.react(message, REACTION_DEFAULT)
                                     }
                                 } else {
                                     null
@@ -1033,8 +1041,8 @@ fun ChatRoomScreen(
                     color = Color.Transparent,
                     shadowElevation = 6.dp,
                     modifier = Modifier.semantics {
-                        contentDescription = if (missedCount.intValue > 0) {
-                            "Jump to newest messages - ${missedCount.intValue} new"
+                        contentDescription = if (missedCount > 0) {
+                            "Jump to newest messages - ${missedCount} new"
                         } else {
                             "Jump to newest messages"
                         }
@@ -1046,7 +1054,6 @@ fun ChatRoomScreen(
                             .clip(RoundedCornerShape(999.dp))
                             .background(Brush.linearGradient(EmberPalette.Gradient))
                             .clickable {
-                                missedCount.intValue = 0
                                 listScope.launch { listState.animateScrollToItem(0) }
                             }
                             .padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
@@ -1060,7 +1067,7 @@ fun ChatRoomScreen(
                             tint = Color(0xFF1C1410),
                             modifier = Modifier.size(14.dp),
                         )
-                        if (missedCount.intValue > 0) {
+                        if (missedCount > 0) {
                             Spacer(Modifier.width(4.dp))
                             Box(
                                 Modifier
@@ -1070,7 +1077,7 @@ fun ChatRoomScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    if (missedCount.intValue > 99) "99+" else "${missedCount.intValue}",
+                                    if (missedCount > 99) "99+" else "${missedCount}",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF7A4E33),
@@ -1212,7 +1219,7 @@ fun ChatRoomScreen(
                         Icon(PulseIcons.Reply, contentDescription = null, tint = EmberPalette.SenderName, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(reply.authorName, style = MaterialTheme.typography.labelMedium, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
+                            Text(reply.displayAuthorName, style = MaterialTheme.typography.labelMedium, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
                             Text(reply.body, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.55f))
                         }
                         IconButton(onClick = { viewModel.setReplyTo(null) }) {
@@ -1903,7 +1910,7 @@ fun ChatRoomScreen(
                     viewModel.notify("Type the message first, then schedule it")
                 } else {
                     scheduleDraft = text
-                    scheduleOpen = true
+                    schedulePresentation = java.util.UUID.randomUUID(); scheduleOpen = true
                 }
             },
             onScheduledSends = {
@@ -1942,12 +1949,20 @@ fun ChatRoomScreen(
     if (scheduleOpen) {
         ScheduleSheet(
             draft = scheduleDraft.orEmpty(),
-            busy = false,
-            onDismiss = { scheduleOpen = false },
+            busy = scheduledBusy,
+            onDismiss = { scheduleOpen = false; schedulePresentation = null },
             onSchedule = { iso ->
-                scheduleOpen = false
-                viewModel.scheduleSend(scheduleDraft.orEmpty(), iso)
-                scheduleDraft = null
+                val submitted = scheduleDraft.orEmpty()
+                val receipt = draftState.capture()
+                val presentation = schedulePresentation
+                viewModel.scheduleSend(submitted, iso) {
+                    if (scheduleOpen && presentation != null && schedulePresentation == presentation) {
+                        if (draftState.matches(receipt) && draft.trim().removePrefix("/schedule").trim() == submitted.trim()) {
+                            draft = ""; viewModel.onDraftChanged("")
+                        }
+                        scheduleOpen = false; scheduleDraft = null; schedulePresentation = null
+                    }
+                }
             },
         )
     }
@@ -1957,6 +1972,9 @@ fun ChatRoomScreen(
         ScheduledSendsSheet(
             items = scheduledItems,
             loading = scheduledLoading,
+            error = scheduledError,
+            busy = scheduledBusy,
+            onRetry = viewModel::loadScheduled,
             onCancel = { scheduledId -> viewModel.cancelScheduled(scheduledId) },
             onDismiss = { scheduledOpen = false },
         )
@@ -2040,17 +2058,19 @@ fun ChatRoomScreen(
         )
     }
     if (viewModel.kanbanOpen) {
-        KanbanSheet(
-            conversationId = viewModel.conversationId,
-            viewerId = viewerId ?: "",
-            isAdmin = viewModel.isAdmin(),
-            prefillTitle = viewModel.kanbanSourceTitle?.take(80), // audit D2 fix: was dead `let { null }`
-            loadBoard = { viewModel.kanbanBoard(viewModel.conversationId) },
-            onAddCard = { title, column, assigneeId -> viewModel.createKanbanCard(title, column, assigneeId) },
-            onMoveCard = { cardId, column, position -> viewModel.moveKanbanCard(cardId, column, position) },
-            onDeleteCard = { cardId -> viewModel.deleteKanbanCard(cardId) },
-            onDismiss = { viewModel.kanbanOpen = false },
-        )
+        androidx.compose.runtime.key(viewerId, viewModel.conversationId) {
+            KanbanSheet(
+                conversationId = viewModel.conversationId,
+                viewerId = viewerId ?: "",
+                isAdmin = viewModel.isAdmin(),
+                prefillTitle = viewModel.kanbanSourceTitle?.take(80), // audit D2 fix: was dead `let { null }`
+                loadBoard = { viewModel.kanbanBoard(viewModel.conversationId) },
+                onAddCard = { title, column, assigneeId -> viewModel.createKanbanCard(title, column, assigneeId) },
+                onMoveCard = { cardId, column, position -> viewModel.moveKanbanCard(cardId, column, position) },
+                onDeleteCard = { cardId -> viewModel.deleteKanbanCard(cardId) },
+                onDismiss = { viewModel.kanbanOpen = false },
+            )
+        }
     }
     if (viewModel.whiteboardOpen) {
         WhiteboardSheet(
@@ -2073,17 +2093,19 @@ fun ChatRoomScreen(
         )
     }
     if (viewModel.eventsOpen) {
-        EventsSheet(
-            conversationId = viewModel.conversationId,
-            viewerId = viewerId ?: "",
-            isAdmin = viewModel.isAdmin(),
-            load = { viewModel.events(viewModel.conversationId) },
-            onCreate = { title, iso, desc, loc -> viewModel.createEvent(title, iso, desc, loc) },
-            onRsvp = { eventId, status -> viewModel.rsvp(eventId, status) },
-            onCheckin = { eventId -> viewModel.checkin(eventId) },
-            onDelete = { eventId -> viewModel.deleteEvent(eventId) },
-            onDismiss = { viewModel.eventsOpen = false },
-        )
+        androidx.compose.runtime.key(viewerId, viewModel.conversationId) {
+            EventsSheet(
+                conversationId = viewModel.conversationId,
+                viewerId = viewerId ?: "",
+                isAdmin = viewModel.isAdmin(),
+                load = { viewModel.events(viewModel.conversationId) },
+                onCreate = { title, iso, desc, loc -> viewModel.createEvent(title, iso, desc, loc) },
+                onRsvp = { eventId, status -> viewModel.rsvp(eventId, status) },
+                onCheckin = { eventId -> viewModel.checkin(eventId) },
+                onDelete = { eventId -> viewModel.deleteEvent(eventId) },
+                onDismiss = { viewModel.eventsOpen = false },
+            )
+        }
     }
     if (viewModel.remindersOpen) {
         RemindersSheet(
@@ -2149,7 +2171,7 @@ fun ChatRoomScreen(
             pinned = target.pinnedAt != null,
             onDismiss = { actionTarget = null },
             onReact = { emoji ->
-                viewModel.react(target.id, emoji)
+                viewModel.react(target, emoji)
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 actionTarget = null
             },
@@ -2177,7 +2199,7 @@ fun ChatRoomScreen(
                 actionTarget = null
             },
             onToggleSave = {
-                viewModel.toggleMessageSave(target.id)
+                viewModel.saveMessage(target.id)
                 actionTarget = null
             },
             onForward = {
@@ -2235,15 +2257,24 @@ fun ChatRoomScreen(
             conversations = conversations,
             onDismiss = { forwardTarget = null },
             onSend = { targets ->
-                viewModel.forwardTo(source, targets)
-                forwardTarget = null
+                viewModel.forwardTo(source, targets, viewerId)
             },
         )
     }
 
     infoTarget?.let { target ->
-        MessageInfoSheet(
-            message = target,
+        LaunchedEffect(target.id, lifecycleOwner, viewModel) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                viewModel.messageInfoReadState(target.id).collect { available ->
+                    if (!available && infoTarget?.id == target.id) infoTarget = null
+                }
+            }
+        }
+        val current = messages.firstOrNull { it.id == target.id }
+        if (current == null) {
+            LaunchedEffect(target.id) { infoTarget = null }
+        } else MessageInfoSheet(
+            message = current,
             conversation = conversation,
             viewerId = viewerId,
             onDismiss = { infoTarget = null },
@@ -2262,7 +2293,7 @@ fun ChatRoomScreen(
             viewerId = viewerId,
             onDismiss = { whoReactedFor = null },
             onToggle = { emoji ->
-                viewModel.react(reactedMessage.id, emoji)
+                viewModel.react(reactedMessage, emoji)
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 whoReactedFor = null
             },
@@ -2341,10 +2372,11 @@ internal fun buildTimelineRows(
     messages: List<Message>,
     unreadAnchorMs: Long? = null,
     viewerId: String? = null,
+    firstUnreadMessageId: String? = null,
 ): List<TimelineRow> {
     val rows = mutableListOf<TimelineRow>()
     var lastIso: String? = null
-    var dividerPlaced = unreadAnchorMs == null
+    var dividerPlaced = unreadAnchorMs == null && firstUnreadMessageId == null
     // R7 item 1 - the pure clustering kernel (web chat-room.tsx:1376-1393):
     // head = sender-label row, tail = closes the run. Thread replies are
     // already excluded upstream (ChatRoomViewModel filters threadRootId !=
@@ -2368,10 +2400,10 @@ internal fun buildTimelineRows(
             lastIso = iso
         }
         if (!dividerPlaced &&
-            message.authorId != viewerId &&
+            !message.isOutgoingFor(viewerId) &&
             !message.isDeleted &&
-            unreadAnchorMs != null &&
-            (PulseTime.parse(message.createdAt)?.toInstant()?.toEpochMilli() ?: 0L) > unreadAnchorMs
+            (if (firstUnreadMessageId != null) message.id == firstUnreadMessageId else
+                unreadAnchorMs != null && (PulseTime.parse(message.createdAt)?.toInstant()?.toEpochMilli() ?: 0L) > unreadAnchorMs)
         ) {
             rows += TimelineRow.Unread
             dividerPlaced = true
@@ -2397,7 +2429,7 @@ private fun DaySeparator(label: String, modifier: Modifier = Modifier) {
 
 /** R2-A item 4 - the unread divider (web chat-room.tsx UnreadDivider). */
 @Composable
-private fun UnreadDivider(modifier: Modifier = Modifier) {
+internal fun UnreadDivider(modifier: Modifier = Modifier) {
     Row(
         modifier
             .fillMaxWidth()
@@ -2450,7 +2482,7 @@ private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    pin.authorName,
+                    pin.displayAuthorName,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = EmberPalette.Amber,
@@ -2546,11 +2578,11 @@ private fun RoomSearchBar(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            PulseAvatar(name = hit.authorName, colorHex = hit.senderColor, size = 32.dp)
+                            PulseAvatar(name = hit.displayAuthorName, colorHex = hit.senderColor, size = 32.dp)
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        hit.authorName,
+                                        hit.displayAuthorName,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color.White,
@@ -3485,11 +3517,16 @@ private fun MessageRow(
             return@Column
         }
 
+        val integrationLabel = message.integrationLabel
+        if (integrationLabel != null) {
+            Text(integrationLabel, fontSize = 10.sp, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
+        }
+
         // R53 reference rebuild - the group sender label moved INSIDE the
         // bubble (the artboard shows the name as the bubble's first line);
         // incognito rows (R3-B item 4) keep the server alias mask.
         val anonMasked = message.anon && message.anonAlias != null
-        val inBubbleSender = if (!mine && head && conversation?.isGroupish == true && !message.isDeleted) {
+        val inBubbleSender = if (integrationLabel == null && !mine && head && conversation?.isGroupish == true && !message.isDeleted) {
             if (anonMasked) message.anonAlias.orEmpty() else message.authorName
         } else {
             null
@@ -3578,7 +3615,7 @@ private fun MessageRow(
             if (!mine) {
                 if (head && !message.isDeleted) {
                     PulseAvatar(
-                        name = if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
+                        name = integrationLabel ?: if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
                         colorHex = message.senderColor,
                         size = 24.dp,
                         modifier = Modifier.align(Alignment.Bottom),
@@ -3598,8 +3635,8 @@ private fun MessageRow(
                 // Wave 7 - red packet carrier (payload {packetId,total,count,note}).
                 message.kind == Message.Kind.RED_PACKET -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3620,8 +3657,8 @@ private fun MessageRow(
                 // Wave 7 - tic-tac-toe carrier (payload {matchId, game}).
                 message.kind == Message.Kind.GAME -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3641,8 +3678,8 @@ private fun MessageRow(
                 // Wave 7 - tournament carrier (payload {tournamentId, name, game}).
                 message.kind == Message.Kind.TOURNAMENT -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3661,8 +3698,8 @@ private fun MessageRow(
                 // Live poll - PollCard replaces the body text entirely.
                 message.poll != null || message.kind == Message.Kind.POLL -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3678,8 +3715,8 @@ private fun MessageRow(
                 // Burned (viewed) - NO image render path at all (anti-replay).
                 burned -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = { BurnedPhotoBubble() },
@@ -3687,8 +3724,8 @@ private fun MessageRow(
                 // Gated (unopened) - blurred + overlay; tap consumes + reveals.
                 gated -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3709,8 +3746,8 @@ private fun MessageRow(
                 }
                 message.imagePath != null -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = { ImageBubble(message = message, mine = mine, onOpen = onOpenImage) },
@@ -3720,16 +3757,16 @@ private fun MessageRow(
                 // gates so a pin never falls into their paths.
                 message.kind == Message.Kind.LOCATION -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = { LocationPinBubble(message = message, mine = mine) },
                 )
                 message.filePath != null || message.kind == Message.Kind.FILE -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3769,6 +3806,7 @@ private fun MessageRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 message.reactions
+                    .distinctBy { reactionId(it.emoji) to it.userId }
                     .groupBy { reactionId(it.emoji) }
                     .forEach { (id, list) ->
                         val popped by animateFloatAsState(1f, animationSpec = PulseMotion.bouncy(), label = "react")
@@ -3855,11 +3893,11 @@ private fun MessageRow(
             } else {
                 val createdAtMs = PulseTime.epochMs(message.createdAt)
                 val others = conversation?.members?.filter { it.id != viewerId }.orEmpty()
-                val seen = createdAtMs > 0L && (
-                    others.any { (it.lastReadAt ?: 0L) >= createdAtMs } ||
-                        (partnerLastReadAt ?: 0L) >= createdAtMs
-                    )
-                val readCount = others.count { createdAtMs > 0L && (it.lastReadAt ?: 0L) >= createdAtMs }
+                // Live signals trigger an owned repository refresh. Never let an
+                // unscoped old timestamp bypass a newly hidden/removed member.
+                val confirmed = app.pulse.domain.sync.confirmedReaders(others, viewerId, createdAtMs, message.readByMembershipIds)
+                val seen = confirmed.isNotEmpty()
+                val readCount = confirmed.size
                 val readLabel = if (conversation?.kind == Conversation.Kind.GROUP || conversation?.kind == Conversation.Kind.CHANNEL) {
                     if (readCount > 0) "Read by $readCount" else "Read"
                 } else "Seen"
@@ -4037,7 +4075,7 @@ internal fun Bubble(
             }
             // reply quote - tap jumps to the quoted message (when a jump
             // surface exists; thread bubbles render it read-only).
-            val replyBody = message.replyToBody
+            val replyBody = message.visibleQuote()?.content
             val quoteId = message.replyToId
             if (quoteId != null && replyBody != null) {
                 Row(
@@ -4049,7 +4087,7 @@ internal fun Bubble(
                 ) {
                     Column {
                         Text(
-                            message.replyToAuthor ?: "Reply",
+                            message.visibleQuote()?.senderName ?: "Reply",
                             style = MaterialTheme.typography.labelSmall,
                             color = EmberPalette.SenderName,
                             fontWeight = FontWeight.SemiBold,
@@ -4175,15 +4213,6 @@ internal fun Bubble(
                         "edited",
                         fontSize = 10.sp,
                         color = Color.White.copy(alpha = 0.40f),
-                    )
-                }
-                if (message.viaAutomation) {
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        "Automation",
-                        fontSize = 10.sp,
-                        color = EmberPalette.SenderName,
-                        fontWeight = FontWeight.SemiBold,
                     )
                 }
                 if (message.pinnedAt != null) {
@@ -4932,7 +4961,7 @@ private fun TopicBar(
                 topics.forEach { topic ->
                     TopicChip(
                         emoji = topicIconId(topic.emoji),
-                        label = topic.name,
+                        label = topic.unreadCount?.takeIf { it > 0 }?.let { "${topic.name} · $it unread" } ?: topic.name,
                         count = topic.messageCount,
                         active = activeTopicId == topic.id,
                         onClick = {

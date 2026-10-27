@@ -1,3 +1,5 @@
+import { readRoomGame, gameReadErrorResponse, gameReadHeaders } from '@/lib/game-read'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/tournaments - Twitch-style seasonal ladders per room
 // (Task R24-d)
 //
@@ -58,6 +60,8 @@ export async function POST(req: Request) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'game')
+  if (denied) return denied
   if (!conversationId) {
     return NextResponse.json({ error: 'conversationId is required.' }, { status: 400 })
   }
@@ -114,37 +118,42 @@ export async function GET(req: Request) {
   if (!conversationId) {
     return NextResponse.json({ error: 'conversationId is required.' }, { status: 400 })
   }
-  const conv = await db.conversation.findUnique({
-    where: { id: conversationId },
-    select: { id: true },
-  })
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
+  const userId = url.searchParams.get('userId')?.trim() ?? ''
+  if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, userId, 'game read')
+  if (denied) return denied
+  try { return await readRoomGame(db, userId, { conversationId }, async (tx, conversationId) => {
+    const conv = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    })
+    if (!conv) {
+      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    }
 
-  const rows = await db.tournament.findMany({
-    where: { conversationId },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: LIST_LIMIT,
-    include: { _count: { select: { entries: true } } },
-  })
+    const rows = await tx.tournament.findMany({
+      where: { conversationId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: LIST_LIMIT,
+      include: { _count: { select: { entries: true } } },
+    })
 
-  const userId = strField(url.searchParams.get('userId'))
-  const joined = new Set(userId ? (await db.tournamentPlayer.findMany({
-    where: { userId, tournamentId: { in: rows.map(row => row.id) } }, select: { tournamentId: true },
-  })).map(entry => entry.tournamentId) : [])
-  const tournaments: TournamentListItem[] = rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    game: row.game,
-    status: row.status,
-    playerCount: row._count.entries,
-    joined: userId ? joined.has(row.id) : null,
-    createdAt: row.createdAt.toISOString(),
-  }))
+    const joined = new Set(userId ? (await tx.tournamentPlayer.findMany({
+      where: { userId, tournamentId: { in: rows.map(row => row.id) } }, select: { tournamentId: true },
+    })).map(entry => entry.tournamentId) : [])
+    const tournaments = rows.map((row) => ({
+      id: row.id, conversationId,
+      name: row.name,
+      game: row.game,
+      status: row.status,
+      playerCount: row._count.entries,
+      joined: userId ? joined.has(row.id) : null,
+      createdAt: row.createdAt.toISOString(),
+    }))
 
-  return NextResponse.json(
-    { tournaments },
-    { headers: { 'Cache-Control': 'no-store' } },
-  )
+    return NextResponse.json(
+      { gameReadVersion: 1, userId, conversationId, tournaments },
+      { headers: gameReadHeaders },
+    )
+  }) } catch (error) { return gameReadErrorResponse(error) }
 }

@@ -5,9 +5,11 @@ import SwiftUI
 /// safety actions (block / report) via confirmationDialog.
 struct ContactsView: View {
     @ObservedObject var session: PulseSession
+    var onOpenRoom: (WireConversationSummary) -> Void
 
-    @State private var viewModel = ContactsViewModel()
+    @StateObject private var viewModel = ContactsViewModel()
     @State private var reportTarget: WireUser?
+    @State private var directoryRetry = 0
     // Wave 3 - call history surface.
     @State private var callsHistoryOpen = false
     // Wave 6 - user-page push (F-CP-03) + the explicit add-contact page
@@ -21,16 +23,22 @@ struct ContactsView: View {
     @State private var railDragging = false
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack(path: Binding(get: { path }, set: { next in
+            if next.count != path.count { session.noteRoomNavigationIntent() }
+            path = next
+        })) {
             Group {
                 if viewModel.loading && viewModel.users.isEmpty {
                     ProgressView("Loading contacts…")
                 } else if let error = viewModel.errorText, viewModel.users.isEmpty {
-                    ContentUnavailableCompat(
-                        title: "Contacts unavailable",
-                        systemImage: "person.2.slash",
-                        note: error,
-                    )
+                    VStack {
+                        ContentUnavailableCompat(
+                            title: "Contacts unavailable",
+                            systemImage: "person.2.slash",
+                            note: error,
+                        )
+                        Button("Retry") { directoryRetry += 1 }
+                    }
                 } else {
                     list
                 }
@@ -47,12 +55,16 @@ struct ContactsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 2) {
                         Button {
+                            session.noteRoomNavigationIntent()
+                            viewModel.cancelOpening()
                             addContactOpen = true
                         } label: {
                             Image(systemName: "person.badge.plus")
                         }
                         .accessibilityLabel("Add contact")
                         Button {
+                            session.noteRoomNavigationIntent()
+                            viewModel.cancelOpening()
                             callsHistoryOpen = true
                         } label: {
                             Image(systemName: "phone.badge.clock")
@@ -62,13 +74,14 @@ struct ContactsView: View {
                 }
             }
             .searchable(text: $viewModel.query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Find people")
-            .refreshable { await viewModel.load(api: session.api) }
-            .task { await viewModel.load(api: session.api) }
+            .refreshable { await viewModel.load(session: session) }
+            .task(id: "\(session.sessionGeneration)-\(directoryRetry)") { await viewModel.load(session: session) }
             .navigationDestination(for: UserRoute.self) { route in
                 UserPageView(
                     initial: viewModel.users.first(where: { $0.id == route.userId }),
                     userId: route.userId,
                     session: session,
+                    onOpenRoom: onOpenRoom,
                 )
             }
             // Wave 6 deep links - the session hands a user id over (same
@@ -76,10 +89,19 @@ struct ContactsView: View {
             .onReceive(session.$pendingUserRoute) { route in
                 guard let route else { return }
                 session.consumePendingUserRoute()
+                session.noteRoomNavigationIntent()
+                viewModel.cancelOpening()
                 path.append(route)
             }
         }
-        .onAppear { viewModel.observe(session: session) }
+        .onDisappear { viewModel.cancelOpening() }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            viewModel.cancelOpening()
+            path = NavigationPath()
+        }
+        .onChange(of: callsHistoryOpen) { _, open in if open { viewModel.cancelOpening() } }
+        .onChange(of: addContactOpen) { _, open in if open { viewModel.cancelOpening() } }
+        .onChange(of: reportTarget?.id) { _, id in if id != nil { viewModel.cancelOpening() } }
         .sheet(isPresented: $callsHistoryOpen) {
             // R2-D - web calls-page parity: tapping a row closes the history
             // and reopens the chat through the RootView linked-room bridge
@@ -92,11 +114,12 @@ struct ContactsView: View {
         .sheet(isPresented: $addContactOpen) {
             NavigationStack {
                 AddContactView(session: session) { user in
+                    session.noteRoomNavigationIntent()
                     addContactOpen = false
                     path.append(UserRoute(userId: user.id, name: user.name))
                 } onOpenRoom: { conversation in
                     addContactOpen = false
-                    session.requestOpenRoom(conversation)
+                    onOpenRoom(conversation)
                 }
             }
             .presentationDetents([.large])
@@ -273,14 +296,18 @@ struct ContactsView: View {
             user: user,
             online: session.isOnline(user.id),
             isViewer: user.id == session.viewer?.id,
-            safetyVerified: safetyBadges.isVerified(user.id),
+            safetyVerified: safetyBadges.isVerified(user.id, epoch: session.sessionGeneration),
+            opening: viewModel.openingPeerId == user.id,
+            actionPending: viewModel.openingPeerId != nil,
             onOpenProfile: {
                 // Wave 6 - rows push the FULL user page (stats,
                 // block/unblock, report, safety). Chat stays a button.
+                session.noteRoomNavigationIntent()
+                viewModel.cancelOpening()
                 path.append(UserRoute(userId: user.id, name: user.name))
             },
             onMessage: {
-                viewModel.openDM(user, session: session)
+                viewModel.openDM(user, session: session, onOpenRoom: onOpenRoom)
             },
         )
         // The rail strip stays usable - rows keep clear of the right edge
@@ -303,11 +330,15 @@ struct ContactsView: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
+                session.noteRoomNavigationIntent()
+                viewModel.cancelOpening()
                 Task { await viewModel.block(user, session: session) }
             } label: {
                 Label("Block", systemImage: "hand.raised.fill")
             }
             Button {
+                session.noteRoomNavigationIntent()
+                viewModel.cancelOpening()
                 reportTarget = user
             } label: {
                 Label("Report", systemImage: "flag.fill")
@@ -323,10 +354,10 @@ private struct ContactRow: View {
     let isViewer: Bool
     /// Wave 6 - the pair's safety number is verified (F-CP-08 badge).
     var safetyVerified: Bool = false
+    var opening = false
+    var actionPending = false
     var onOpenProfile: () -> Void = {}
     let onMessage: () -> Void
-
-    @State private var opening = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -369,7 +400,6 @@ private struct ContactRow: View {
                 onOpenProfile()
             }
             Button {
-                opening = true
                 onMessage()
             } label: {
                 if opening {
@@ -381,7 +411,7 @@ private struct ContactRow: View {
             }
             .tint(.white)
             .buttonStyle(.bordered)
-            .disabled(isViewer)
+            .disabled(isViewer || actionPending)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .contain)
@@ -411,94 +441,107 @@ final class ContactsViewModel: ObservableObject {
     @Published private(set) var errorText: String?
     @Published var query = ""
 
-    private var observing = false
+    @Published private(set) var openingPeerId: String?
+    private var directoryRevision: UInt = 0
+    private var directoryOwner: UUID?
+    private var openingRevision: UInt = 0
+    private var openingTask: Task<Void, Never>?
 
-    func observe(session: PulseSession) {
-        guard !observing else { return }
-        observing = true
-    }
-
-    func load(api: PulseAPIClient) async {
+    func load(session: PulseSession) async {
+        let api = session.api, epoch = session.sessionGeneration
+        if directoryOwner != epoch {
+            directoryOwner = epoch
+            users = []
+            errorText = nil
+            query = ""
+        }
+        directoryRevision &+= 1
+        let revision = directoryRevision
         loading = users.isEmpty
-        defer { loading = false }
+        defer { if directoryRevision == revision { loading = false } }
         do {
-            users = try await api.users()
+            let fresh = try await api.users()
+            guard !Task.isCancelled, directoryRevision == revision, session.sessionGeneration == epoch else { return }
+            users = fresh
             errorText = nil
         } catch {
+            guard !Task.isCancelled, directoryRevision == revision, session.sessionGeneration == epoch else { return }
             if users.isEmpty { errorText = ChatsViewModel.describe(error) }
+            else { session.toasts.show(ChatsViewModel.describe(error)) }
         }
     }
 
-    func openDM(_ user: WireUser, session: PulseSession) {
-        guard user.id != session.viewer?.id else { return }
-        PulseHaptics.tap()
-        Task { [weak self] in
-            do {
-                let conversation = try await session.api.createConversation(memberIds: [user.id], isGroup: false)
-                _ = conversation
-                session.noteInboxChanged() // Chats tab re-fetches and shows the row
-                PulseHaptics.success()
-            } catch {
-                PulseHaptics.warning()
-                errorText = ChatsViewModel.describe(error)
-            }
-            self?.loading = false
-        }
+    func cancelOpening() {
+        openingRevision &+= 1
+        openingTask?.cancel()
+        openingTask = nil
+        openingPeerId = nil
     }
 
-    /// Wave 3 - one-tap voice call. The DM is resolved first (server dedupes
-    /// pairs), then the engine opens the ring; the engine owns the mic
-    /// permission prompt + the honest denied state itself.
+    func openDM(_ user: WireUser, session: PulseSession, onOpenRoom: @escaping (WireConversationSummary) -> Void) {
+        open(user, session: session, kind: nil, onOpenRoom: onOpenRoom)
+    }
+
     func call(_ user: WireUser, session: PulseSession) {
-        guard user.id != session.viewer?.id else { return }
-        guard let engine = session.callEngine else {
-            errorText = "Calls aren't ready yet - try again in a moment."
-            return
-        }
-        PulseHaptics.tap()
-        Task { [weak self] in
-            do {
-                let conversation = try await session.api.createConversation(memberIds: [user.id], isGroup: false)
-                let peer = CallPeer(id: user.id, name: user.name, color: user.color, avatar: user.avatar)
-                engine.startOutgoing(to: peer, conversationId: conversation.id)
-            } catch {
-                PulseHaptics.warning()
-                errorText = ChatsViewModel.describe(error)
-            }
-            self?.loading = false
-        }
+        open(user, session: session, kind: .voice, onOpenRoom: { _ in })
     }
 
-    /// Wave R1-W2D - one-tap VIDEO call (wire kind 'video'). The engine
-    /// resolves the camera capability first: no usable camera degrades to a
-    /// voice call with an honest toast (web acquireMedia parity).
     func callVideo(_ user: WireUser, session: PulseSession) {
-        guard user.id != session.viewer?.id else { return }
-        guard let engine = session.callEngine else {
-            errorText = "Calls aren't ready yet - try again in a moment."
+        open(user, session: session, kind: .video, onOpenRoom: { _ in })
+    }
+
+    private func open(_ user: WireUser, session: PulseSession, kind: CallKind?,
+                      onOpenRoom: @escaping (WireConversationSummary) -> Void) {
+        guard openingPeerId == nil, let viewer = session.viewer, user.id != viewer.id else { return }
+        let api = session.api, epoch = session.sessionGeneration, engine = session.callEngine
+        if kind != nil && engine == nil {
+            session.toasts.show("Calls aren't ready yet - try again in a moment.")
             return
         }
+        openingRevision &+= 1
+        session.noteRoomNavigationIntent()
+        let revision = openingRevision, navigation = session.roomNavigationGeneration
+        openingPeerId = user.id
         PulseHaptics.tap()
-        Task { [weak self] in
-            do {
-                let conversation = try await session.api.createConversation(memberIds: [user.id], isGroup: false)
-                let peer = CallPeer(id: user.id, name: user.name, color: user.color, avatar: user.avatar)
-                engine.startOutgoing(to: peer, conversationId: conversation.id, kind: .video)
-            } catch {
-                PulseHaptics.warning()
-                errorText = ChatsViewModel.describe(error)
+        openingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if openingRevision == revision { openingPeerId = nil; openingTask = nil }
             }
-            self?.loading = false
+            do {
+                let conversation = try await PulseConversationNavigation.create(viewerId: viewer.id,
+                    memberIds: [user.id], isGroup: false) {
+                    try await api.createConversation(memberIds: [user.id], isGroup: false)
+                }
+                guard !Task.isCancelled, openingRevision == revision, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
+                session.noteInboxChanged()
+                if let kind {
+                    let peer = CallPeer(id: user.id, name: user.name, color: user.color, avatar: user.avatar)
+                    engine?.startOutgoing(to: peer, conversationId: conversation.id, kind: kind)
+                } else {
+                    PulseHaptics.success()
+                    onOpenRoom(conversation)
+                }
+            } catch {
+                guard !Task.isCancelled, openingRevision == revision, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
+                PulseHaptics.warning()
+                session.toasts.show(ChatsViewModel.describe(error))
+            }
         }
     }
 
     func block(_ user: WireUser, session: PulseSession) async {
+        let api = session.api, epoch = session.sessionGeneration
         do {
-            try await session.api.block(userId: user.id)
+            try await api.block(userId: user.id)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             PulseHaptics.success()
             // Wave 6 - verbatim pair-toast (UserPage parity).
             session.toasts.show("Blocked \(user.name)")
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show(ChatsViewModel.describe(error))
         }
     }

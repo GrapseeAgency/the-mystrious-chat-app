@@ -69,6 +69,8 @@ import app.pulse.android.SessionViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 
 /**
  * R71 - the web SettingsScreen (settings-screen.tsx, R26-c) as a native
@@ -121,12 +123,12 @@ private fun WirePulsePrefs.resolvedOrDefaults(): ResolvedPrefs = ResolvedPrefs(
     bubbleRadius = bubbleRadius ?: "lg",
     density = density ?: "cozy",
     wallpaper = wallpaper ?: "none",
-    notifPreviews = notifPreviews ?: true,
+    notifPreviews = notifPreviews == true,
     notifSound = notifSound ?: true,
     notifVibrate = notifVibrate ?: false,
-    lastSeenVisible = lastSeenVisible ?: true,
-    readReceipts = readReceipts ?: true,
-    typingVisible = typingVisible ?: true,
+    lastSeenVisible = lastSeenVisible == true,
+    readReceipts = readReceipts == true,
+    typingVisible = typingVisible == true,
     reducedMotion = reducedMotion ?: false,
     fxWebglMode = fxWebglMode ?: "off",
 )
@@ -222,6 +224,45 @@ internal fun MirrorSettingsScreen(
     onClose: () -> Unit,
 ) {
     val recoveryScope = androidx.compose.runtime.rememberCoroutineScope()
+    val recoveryRepository = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val recoveryBusy = remember(recoveryRepository, viewerId) { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
+    var recoveryNotice by remember(recoveryRepository, viewerId) { mutableStateOf<String?>(null) }
+    fun recover(row: app.pulse.domain.model.OutboxEntry, retry: Boolean) {
+        if (recoveryBusy[row.clientId] == true) return
+        val target = recoveryRepository
+        val owner = viewerId
+        if (target.viewerId != owner) return
+        recoveryBusy[row.clientId] = true
+        recoveryNotice = null
+        recoveryScope.launch {
+            try {
+                if (target.viewerId != owner) return@launch
+                val notice = if (retry) {
+                    target.retryOutboxEntry(row.clientId).getOrThrow()
+                    "Original message queued for retry."
+                } else if (target.discardOutboxEntryIfUnchanged(row)) {
+                    "Recovery copy discarded. An in-flight send may still arrive."
+                } else "This saved message changed. Review its current state before discarding."
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (target.viewerId == owner) recoveryNotice = notice
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                recoveryNotice = if (retry) error.message ?: "Couldn't retry this saved message." else "Couldn't discard this saved message. It has not been reported as removed."
+            } finally { recoveryBusy.remove(row.clientId) }
+        }
+    }
+    val pendingSettings by repository.observePendingSettings().collectAsState(initial = false)
+    val pendingSettingsNotice: @Composable () -> Unit = {
+        if (pendingSettings) {
+            androidx.compose.material3.TextButton(onClick = {
+                val target = repository.boundToCurrentAccount()
+                if (target.viewerId == viewerId) session.retryServerPreferences(viewerId, target.attachmentSessionKey())
+            }) {
+                Text("Settings awaiting server confirmation · Retry", color = SubPageInk.Amber400, fontSize = 12.sp)
+            }
+        }
+    }
     val prefsWire by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
     val prefs = prefsWire.resolvedOrDefaults()
     val soundOn by session.soundOn.collectAsState()
@@ -253,9 +294,9 @@ internal fun MirrorSettingsScreen(
     }
 
     fun savePrefs(patch: WirePulsePrefs) {
-        CoroutineScope(Dispatchers.IO).launch {
-            runCatching { repository.updatePulsePrefs(patch) }
-        }
+        val target = repository.boundToCurrentAccount()
+        if (target.viewerId != viewerId) return
+        session.updateServerPreferences(viewerId, target.attachmentSessionKey(), patch)
     }
 
     val wallpaperLabel = when (prefs.wallpaper) {
@@ -336,6 +377,7 @@ internal fun MirrorSettingsScreen(
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 48.dp),
                 ) {
+                    pendingSettingsNotice()
                     SettingsGroup("Personal") {
                         settingsRootRow(SettingsSection.Account, hints) { section = SettingsSection.Account }
                         settingsRootRow(SettingsSection.Appearance, hints) { section = SettingsSection.Appearance }
@@ -411,6 +453,7 @@ internal fun MirrorSettingsScreen(
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 48.dp),
                 ) {
+                    pendingSettingsNotice()
                     when (def) {
                         SettingsSection.Account -> AccountSection(repository, viewerId, onEditProfile)
                         SettingsSection.Appearance -> AppearanceSection(
@@ -427,7 +470,10 @@ internal fun MirrorSettingsScreen(
                             listFilter = listFilter,
                             drafts = drafts.size,
                             outbox = outbox,
-                            onDiscard = { clientId -> recoveryScope.launch { repository.discardOutboxEntry(clientId) } },
+                            onDiscard = { row -> recover(row, retry = false) },
+                            onRetry = { row -> recover(row, retry = true) },
+                            busy = recoveryBusy.keys.toSet(),
+                            recoveryNotice = recoveryNotice,
                             onPrefs = { savePrefs(it) },
                             onListFilter = { value -> session.setChatsListFilter(value) },
                         )
@@ -1265,10 +1311,17 @@ private fun ChatSection(
     listFilter: String,
     drafts: Int,
     outbox: List<app.pulse.domain.model.OutboxEntry>,
-    onDiscard: (String) -> Unit,
+    onDiscard: (app.pulse.domain.model.OutboxEntry) -> Unit,
+    onRetry: (app.pulse.domain.model.OutboxEntry) -> Unit,
+    busy: Set<String>,
+    recoveryNotice: String?,
     onPrefs: (WirePulsePrefs) -> Unit,
     onListFilter: (String) -> Unit,
 ) {
+    var discardArmed by remember { mutableStateOf<app.pulse.domain.model.OutboxEntry?>(null) }
+    LaunchedEffect(discardArmed) {
+        if (discardArmed != null) { delay(5_000); discardArmed = null }
+    }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     SettingsGroup("Message look") {
         SettingsPickerBlock(
@@ -1345,6 +1398,9 @@ private fun ChatSection(
     }
 
     SettingsGroup("Drafts & outbox") {
+        recoveryNotice?.let { Text(it, fontSize = 12.sp, color = SubPageInk.Zinc500) }
+        if (discardArmed != null) Text("Confirm to discard this recovery copy. An in-flight send may still arrive.",
+            fontSize = 12.sp, color = SubPageInk.Zinc500)
         SettingsStaticRow(
             glyph = "LFileText",
             title = "Saved drafts",
@@ -1357,11 +1413,19 @@ private fun ChatSection(
                     fontSize = 13.sp, color = if (row.failureReason == null) SubPageInk.Amber400 else Color(0xFFEF4444))
                 Text(row.content, fontSize = 13.sp, maxLines = 4)
                 row.failureReason?.let { Text(it, fontSize = 11.sp) }
+                androidx.compose.material3.TextButton(onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(row.content))
+                }) { Text("Copy text") }
                 Row {
-                    androidx.compose.material3.TextButton(onClick = {
-                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(row.content))
-                    }) { Text("Copy text") }
-                    androidx.compose.material3.TextButton(onClick = { onDiscard(row.clientId) }) { Text("Discard") }
+                    if (row.failureReason != null) {
+                        androidx.compose.material3.TextButton(enabled = row.clientId !in busy, onClick = {
+                            discardArmed = null
+                            onRetry(row)
+                        }) { Text(if (row.clientId in busy) "Working…" else "Retry original") }
+                    }
+                    androidx.compose.material3.TextButton(enabled = row.clientId !in busy, onClick = {
+                        if (discardArmed == row) { discardArmed = null; onDiscard(row) } else discardArmed = row
+                    }) { Text(if (discardArmed == row) "Confirm discard" else "Discard") }
                 }
             }
         }
@@ -1559,19 +1623,37 @@ private fun PrivacySection(
     prefs: ResolvedPrefs,
     onPrefs: (WirePulsePrefs) -> Unit,
 ) {
-    var blocks by remember { mutableStateOf<List<BlockedAccount>>(emptyList()) }
-    var loadingBlocks by remember { mutableStateOf(false) }
-    var showBlocked by remember { mutableStateOf(false) }
-    var busyId by remember { mutableStateOf<String?>(null) }
+    val ownerEpoch = repository.attachmentSessionKey()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var blocks by remember(repository, ownerEpoch) { mutableStateOf<List<BlockedAccount>>(emptyList()) }
+    var loadingBlocks by remember(repository, ownerEpoch) { mutableStateOf(false) }
+    var blocksLoaded by remember(repository, ownerEpoch) { mutableStateOf(false) }
+    var blockError by remember(repository, ownerEpoch) { mutableStateOf<String?>(null) }
+    var showBlocked by remember(repository, ownerEpoch) { mutableStateOf(false) }
+    var busyId by remember(repository, ownerEpoch) { mutableStateOf<String?>(null) }
+    var readTicket by remember(repository, ownerEpoch) { mutableStateOf(java.util.UUID.randomUUID()) }
 
-    LaunchedEffect(showBlocked) {
-        if (showBlocked) {
-            loadingBlocks = true
-            blocks = runCatching { repository.blockedAccounts() }
-                .getOrNull()?.getOrNull() ?: emptyList()
-            loadingBlocks = false
+    suspend fun reloadBlocks() {
+        val epoch = ownerEpoch ?: return
+        if (repository.attachmentSessionKey() != epoch || busyId != null) return
+        val owned = repository.boundToCurrentAccount()
+        val ticket = java.util.UUID.randomUUID()
+        readTicket = ticket; loadingBlocks = true
+        try {
+            val fresh = owned.blockedAccounts().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != epoch || readTicket != ticket) return
+            blocks = fresh; blocksLoaded = true; blockError = null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (repository.attachmentSessionKey() == epoch && readTicket == ticket)
+                blockError = "Could not refresh blocked accounts. Please retry."
+        } finally {
+            if (repository.attachmentSessionKey() == epoch && readTicket == ticket) loadingBlocks = false
         }
     }
+    LaunchedEffect(repository, ownerEpoch, showBlocked) { if (showBlocked) reloadBlocks() }
 
     SettingsGroup("Visibility") {
         SettingsToggleRow(
@@ -1611,7 +1693,9 @@ private fun PrivacySection(
                 Text("Blocked accounts", color = SubPageInk.Zinc50, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Text(
                     when {
-                        !showBlocked && blocks.isEmpty() -> "No blocked accounts"
+                        !showBlocked && blockError != null -> "Could not confirm blocked accounts"
+                        !blocksLoaded -> "Open to review blocked accounts"
+                        blocks.isEmpty() -> "No blocked accounts"
                         loadingBlocks -> "Loading..."
                         blocks.isEmpty() -> "No blocked accounts"
                         blocks.size == 1 -> "1 account blocked"
@@ -1628,7 +1712,12 @@ private fun PrivacySection(
             )
         }
         if (showBlocked) {
-            if (blocks.isEmpty()) {
+            if (blockError != null) {
+                Text(blockError!!, color = SubPageInk.Zinc500, fontSize = 12.sp)
+                androidx.compose.material3.TextButton(enabled = busyId == null && !loadingBlocks,
+                    onClick = { actionScope.launch { reloadBlocks() } }) { Text("Retry list") }
+            }
+            if (blocks.isEmpty() && blockError == null) {
                 Text(
                     if (loadingBlocks) "Loading..." else "Nobody is blocked. Blocked accounts cannot message you in direct chats.",
                     color = SubPageInk.Zinc500,
@@ -1683,12 +1772,26 @@ private fun PrivacySection(
                                 .clip(CircleShape)
                                 .border(1.dp, SubPageInk.PanelBorder, CircleShape)
                                 .clickable(enabled = busyId == null) {
+                                    val epoch = ownerEpoch ?: return@clickable
+                                    if (repository.attachmentSessionKey() != epoch) return@clickable
+                                    val owned = repository.boundToCurrentAccount()
                                     busyId = account.id
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        runCatching { repository.unblock(account.id) }
-                                        blocks = runCatching { repository.blockedAccounts() }
-                                            .getOrNull()?.getOrNull() ?: blocks
-                                        busyId = null
+                                    readTicket = java.util.UUID.randomUUID(); loadingBlocks = false
+                                    actionScope.launch {
+                                        try {
+                                            owned.unblock(account.id).getOrThrow()
+                                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                            if (repository.attachmentSessionKey() != epoch) return@launch
+                                            blocks = blocks.filterNot { it.id == account.id }
+                                            blockError = null
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                            throw cancelled
+                                        } catch (error: Exception) {
+                                            if (repository.attachmentSessionKey() == epoch)
+                                                blockError = "Unblock was not confirmed. Refresh or try again."
+                                        } finally {
+                                            if (repository.attachmentSessionKey() == epoch) busyId = null
+                                        }
                                     }
                                 }
                                 .padding(horizontal = 14.dp, vertical = 6.dp),
@@ -1816,6 +1919,31 @@ private fun DataSection(
     var failed by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    val actionRepository = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var armed by remember(actionRepository, viewerId) { mutableStateOf<String?>(null) }
+    var busy by remember(actionRepository, viewerId) { mutableStateOf(false) }
+    var actionError by remember(actionRepository, viewerId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(armed, actionRepository) {
+        if (armed != null) { delay(5_000); armed = null }
+    }
+    fun confirmLocal(action: String) {
+        if (busy || actionRepository.viewerId != viewerId) return
+        if (armed != action) { armed = action; actionError = null; return }
+        armed = null
+        busy = true
+        actionScope.launch {
+            try {
+                if (action == "drafts") actionRepository.clearAllDrafts() else actionRepository.clearOutbox()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                actionError = "Couldn't complete the cleanup. Review your saved messages and try again."
+            } finally { busy = false }
+        }
+    }
+
     suspend fun loadStats() {
         loading = true
         failed = false
@@ -1926,17 +2054,16 @@ private fun DataSection(
     }
 
     SettingsGroup("Local data") {
+        if (armed != null) Text("Tap Confirm to permanently remove the selected local data. An in-flight send may still arrive.",
+            color = SubPageInk.Zinc500, fontSize = 12.sp)
+        actionError?.let { Text(it, color = SubPageInk.Zinc500, fontSize = 12.sp) }
         SettingsActionRow(
             glyph = "LFileText",
             title = "Composer drafts",
             caption = "$drafts saved on this device - clearing frees their storage.",
-            actionLabel = "Clear",
-            enabled = drafts > 0,
-            onAction = {
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching { repository.clearAllDrafts() }
-                }
-            },
+            actionLabel = if (busy) "…" else if (armed == "drafts") "Confirm" else "Clear",
+            enabled = drafts > 0 && !busy,
+            onAction = { confirmLocal("drafts") },
         )
         SettingsActionRow(
             glyph = "LCloudOff",
@@ -1946,13 +2073,9 @@ private fun DataSection(
             } else {
                 "Empty - nothing queued right now."
             },
-            actionLabel = "Discard",
-            enabled = outbox > 0,
-            onAction = {
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching { repository.clearOutbox() }
-                }
-            },
+            actionLabel = if (busy) "…" else if (armed == "queue") "Confirm" else "Discard",
+            enabled = outbox > 0 && !busy,
+            onAction = { confirmLocal("queue") },
         )
     }
 

@@ -1,5 +1,6 @@
 import XCTest
 import Combine
+import GRDB
 @testable import Pulse
 
 /// Wave 0 - outbox engine semantics, mirroring src/lib/pulse-outbox.ts:
@@ -19,8 +20,10 @@ final class PulseOutboxTests: XCTestCase {
 
         var uploadCount = 0
         var beforeUploadReturn: (() throws -> Void)?
+        var beforeUploadAsync: (() async -> Void)?
         func uploadMedia(dataUrl: String) async throws -> String {
             uploadCount += 1
+            await beforeUploadAsync?()
             try beforeUploadReturn?()
             return "uploaded-file.pdf"
         }
@@ -108,10 +111,301 @@ final class PulseOutboxTests: XCTestCase {
         }
     }
 
+    func testQuickReplyCommitsBeforeDispatchAndReplaysTheSameOperationWithoutTouchingDraft() async throws {
+        let store = try PulseStore()
+        try store.saveDraft(conversationId:"c1",text:"composer work")
+        XCTAssertEqual(try PulseQuickReply.persist(text:" notification reply ",conversationId:"c1",clientId:"reply-op",locked:false,store:store), .queued)
+        let sender = StubSender(behaviors:["notification reply":.networkError])
+        sender.beforeSend = { _ in
+            XCTAssertTrue(try store.isPendingOutbox(clientId:"reply-op"))
+            XCTAssertEqual(store.draft(conversationId:"c1"),"composer work")
+        }
+        let engine = makeEngine(store,sender)
+        defer { engine.stop() }
+        _ = await engine.flush()
+        XCTAssertEqual(try store.outboxPending().map(\.clientId),["reply-op"])
+        sender.setBehavior(.success,for:"notification reply")
+        _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds,["reply-op","reply-op"])
+        XCTAssertTrue(try store.outboxPending().isEmpty)
+        XCTAssertEqual(store.draft(conversationId:"c1"),"composer work")
+    }
+
+    func testLockedAndOversizedNotificationRepliesAreRetainedButNeverAutomaticallySent() async throws {
+        let store = try PulseStore()
+        let otherAccount = try PulseStore()
+        try store.saveDraft(conversationId:"c1",text:"do not replace")
+        let long = String(repeating:"x",count:1999) + "😀"
+        for (id,text,locked) in [("locked","private reply",true),("oversize",long,false)] {
+            guard case .held = try PulseQuickReply.persist(text:text,conversationId:"c1",clientId:id,locked:locked,store:store) else {
+                XCTFail("Must retain for review, not queue");return
+            }
+        }
+        let sender = StubSender(behaviors:[:])
+        let engine = makeEngine(store,sender)
+        defer { engine.stop() }
+        _ = await engine.flush()
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        XCTAssertTrue(try store.outboxPending().isEmpty)
+        XCTAssertEqual(try store.outboxAll().map(\.content),["private reply",long])
+        XCTAssertTrue(try otherAccount.outboxAll().isEmpty)
+        XCTAssertEqual(store.draft(conversationId:"c1"),"do not replace")
+    }
+
+    func testNotificationReplySurvivesReopenAndWriteFailureDoesNotClaimAcceptance() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let path = directory.appendingPathComponent("quick-reply.sqlite").path
+        do {
+            let store = try PulseStore(path:path)
+            XCTAssertEqual(try PulseQuickReply.persist(text:"durable",conversationId:"c1",clientId:"operation",locked:false,store:store),.queued)
+        }
+        let store = try PulseStore(path:path)
+        XCTAssertEqual(try store.outboxPending().map(\.content),["durable"])
+        let database = try DatabaseQueue(path:path)
+        try await database.write { db in
+            try db.execute(sql:"CREATE TRIGGER refuse_reply BEFORE INSERT ON outbox BEGIN SELECT RAISE(ABORT, 'synthetic write failure'); END")
+        }
+        XCTAssertThrowsError(try PulseQuickReply.persist(text:"not saved",conversationId:"c1",clientId:"failed",locked:false,store:store))
+        XCTAssertThrowsError(try PulseQuickReply.persist(text:"not held",conversationId:"c1",clientId:"held-failed",locked:true,store:store))
+        XCTAssertEqual(try store.outboxAll().map(\.clientId),["operation"])
+    }
+
+    private actor BackgroundBarrier {
+        private var open = false
+        private var waiter: CheckedContinuation<Void, Never>?
+        func wait() async {
+            if open { return }
+            await withCheckedContinuation { waiter = $0 }
+        }
+        func release() {
+            open = true
+            waiter?.resume()
+            waiter = nil
+        }
+    }
+
+    func testBackgroundReadsAndBadgesFinishWhileMediaUploadIsSuspended() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let sender = StubSender(behaviors: [:]), barrier = BackgroundBarrier()
+        let upload = expectation(description: "upload suspended")
+        let projected = expectation(description: "read replay and badge reconciliation completed")
+        sender.beforeUploadAsync = { upload.fulfill(); await barrier.wait() }
+        let engine = makeEngine(store, sender)
+        XCTAssertTrue(engine.appendForward(conversationId: "c1", clientId: "large-file", content: "attachment",
+            forward: PulseOutboxForward(kind: "file", fileName: "large.pdf", uploadDataUrl: "data:application/pdf;base64,cGRm")))
+        var replayed = false, finished = false
+        engine.onReadJournalFlush = { replayed = true; return true }
+        engine.onBadgeRefresh = { XCTAssertTrue(replayed); projected.fulfill(); return true }
+        let work = Task { let result = await engine.flushBackgroundQueues(); finished = true; return result }
+        defer { work.cancel(); engine.stop(); Task { await barrier.release() } }
+        await fulfillment(of: [upload, projected], timeout: 5)
+        XCTAssertFalse(finished, "The background task must still own the upload")
+        XCTAssertEqual(try store.countPendingOutbox(), 1)
+        await barrier.release()
+        let complete = await work.value
+        XCTAssertTrue(complete)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
+    }
+
+    func testSlowBackgroundReadReplayDoesNotBlockOutgoingMessagesOrRunBadgesBeforeReplay() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let engine = makeEngine(store, StubSender(behaviors: [:])), barrier = BackgroundBarrier()
+        XCTAssertTrue(engine.append(conversationId: "c1", clientId: "send", content: "hello"))
+        let read = expectation(description: "read replay suspended")
+        let sent = expectation(description: "outgoing message committed")
+        var projected = false, finished = false
+        engine.onReadJournalFlush = { read.fulfill(); await barrier.wait(); return false }
+        engine.onAcknowledgement = { _ in sent.fulfill() }
+        engine.onBadgeRefresh = { projected = true; return true }
+        let work = Task { let result = await engine.flushBackgroundQueues(); finished = true; return result }
+        defer { work.cancel(); engine.stop(); Task { await barrier.release() } }
+        await fulfillment(of: [read, sent], timeout: 5)
+        XCTAssertFalse(projected)
+        XCTAssertFalse(finished)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
+        await barrier.release()
+        let complete = await work.value
+        XCTAssertFalse(complete, "An incomplete read journal keeps the wake retryable")
+        XCTAssertTrue(projected, "Current canonical state still reconciles after a failed replay")
+    }
+
+    func testBackgroundExpirationCancelsUploadAndReadReplayWithoutPublishingBadges() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let sender = StubSender(behaviors: [:])
+        let upload = expectation(description: "upload started"), read = expectation(description: "read replay started")
+        let uploadCancelled = expectation(description: "upload cancelled"), readCancelled = expectation(description: "read cancelled")
+        sender.beforeUploadAsync = {
+            upload.fulfill()
+            do { try await Task.sleep(nanoseconds: 60_000_000_000) }
+            catch { uploadCancelled.fulfill() }
+        }
+        let engine = makeEngine(store, sender)
+        XCTAssertTrue(engine.appendForward(conversationId: "c1", clientId: "original", content: "attachment",
+            forward: PulseOutboxForward(kind: "file", fileName: "large.pdf", uploadDataUrl: "data:application/pdf;base64,cGRm")))
+        var projected = false
+        engine.onReadJournalFlush = {
+            read.fulfill()
+            do { try await Task.sleep(nanoseconds: 60_000_000_000) }
+            catch { readCancelled.fulfill() }
+            return false
+        }
+        engine.onBadgeRefresh = { projected = true; return true }
+        let work = Task { await engine.flushBackgroundQueues() }
+        defer { work.cancel(); engine.stop() }
+        await fulfillment(of: [upload, read], timeout: 5)
+        work.cancel()
+        await fulfillment(of: [uploadCancelled, readCancelled], timeout: 5)
+        let complete = await work.value
+        XCTAssertFalse(complete)
+        XCTAssertFalse(projected)
+        XCTAssertEqual(try store.countPendingOutbox(), 1)
+        XCTAssertEqual(sender.attempts(of: "attachment"), 0)
+    }
+
+    func testColdWakeLosingOwnershipDuringUploadCannotPersistOrPostThroughTheLiveAccount() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let sender = StubSender(behaviors: [:]), barrier = BackgroundBarrier()
+        let started = expectation(description: "cold upload suspended")
+        var current = true
+        sender.beforeUploadAsync = { started.fulfill(); await barrier.wait() }
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false, isCurrent: { current }) { sender }
+        XCTAssertTrue(engine.appendForward(conversationId: "c1", clientId: "original", content: "attachment",
+            forward: PulseOutboxForward(kind: "file", fileName: "large.pdf", uploadDataUrl: "data:application/pdf;base64,cGRm")))
+        let work = Task { await engine.flush() }
+        defer { work.cancel(); engine.stop(); Task { await barrier.release() } }
+        await fulfillment(of: [started], timeout: 5)
+        current = false // foreground takeover, credential change, or gateway switch
+        await barrier.release()
+        let complete = await work.value
+        XCTAssertFalse(complete)
+        XCTAssertEqual(sender.attempts(of: "attachment"), 0)
+        let entry = try XCTUnwrap(store.outboxPending().first)
+        XCTAssertEqual(entry.clientId, "original")
+        XCTAssertNil(PulseOutboxForward.decode(entry.payloadJson)?.filePath)
+        XCTAssertNotNil(PulseOutboxForward.decode(entry.payloadJson)?.uploadDataUrl)
+    }
+
+    func testExpiredBackgroundOwnerCannotStartAProjectionAfterSuspendedReadReplay() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let sender = StubSender(behaviors: [:]), barrier = BackgroundBarrier()
+        var current = true, projected = false
+        let started = expectation(description: "read replay suspended")
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false, isCurrent: { current }) { sender }
+        engine.onReadJournalFlush = { started.fulfill(); await barrier.wait(); return true }
+        engine.onBadgeRefresh = { projected = true; return true }
+        let work = Task { await engine.flushBackgroundQueues() }
+        defer { work.cancel(); engine.stop(); Task { await barrier.release() } }
+        await fulfillment(of: [started], timeout: 5)
+        current = false
+        await barrier.release()
+        let complete = await work.value
+        XCTAssertFalse(complete)
+        XCTAssertFalse(projected)
+    }
+
+    func testDeliveredEventPublishesTheCommittedReadProofNotTheOldSendResponse() async throws {
+        let store = try PulseStore(), sender = StubSender(behaviors: [:])
+        sender.beforeSend = { content in
+            var alreadySeen = OutboxFixtures.makeMessage(id: "srv-\(content)", conversationId: "c1", content: content)
+            alreadySeen.readByMembershipIds = ["peer-membership"]
+            try store.upsert(messages: [alreadySeen]) // socket read before the HTTP send ACK returns
+        }
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        XCTAssertTrue(engine.append(conversationId: "c1", clientId: "operation", content: "hello"))
+        var delivered: WireChatMessage?
+        engine.onEvent = { event in
+            if case .delivered(let message, _, _) = event { delivered = message }
+        }
+        let complete = await engine.flush()
+        XCTAssertTrue(complete)
+        XCTAssertEqual(delivered?.readByMembershipIds, ["peer-membership"])
+        XCTAssertEqual(try store.message(id: "srv-hello")?.readByMembershipIds, ["peer-membership"])
+        XCTAssertTrue(try store.outboxAll().isEmpty)
+    }
+
+    func testBackgroundCompletionRequiresUnreadProjectionAsWellAsDurableQueues() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let engine = makeEngine(store, StubSender(behaviors: [:]))
+        defer { engine.stop() }
+        engine.onReadJournalFlush = { true }
+        engine.onBadgeRefresh = { false }
+        let incomplete = await engine.flushBackgroundQueues()
+        XCTAssertFalse(incomplete)
+        engine.onBadgeRefresh = { true }
+        let complete = await engine.flushBackgroundQueues()
+        XCTAssertTrue(complete)
+    }
+
     // engine helper
 
     private func makeEngine(_ store: PulseStore, _ sender: StubSender?) -> PulseOutboxEngine {
         PulseOutboxEngine(store: store, monitorNetwork: false) { sender }
+    }
+
+    func testUnreadableQueueIsNotReportedEmptyAndRecoversWithoutLosingIntent() async throws {
+        for failBeforeEngineCreation in [false, true] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let path = directory.appendingPathComponent("outbox.sqlite").path
+            let store = try PulseStore(path: path)
+            let database = try DatabaseQueue(path: path)
+            try store.appendOutbox(conversationId: "c1", clientId: "durable", content: "keep")
+            if failBeforeEngineCreation {
+                try await database.write { try $0.execute(sql: "ALTER TABLE outbox RENAME TO unavailable_outbox") }
+            }
+            let sender = StubSender(behaviors: [:])
+            let engine = makeEngine(store, sender)
+            defer { engine.stop() }
+            if !failBeforeEngineCreation {
+                XCTAssertEqual(engine.pendingCount, 1)
+                try await database.write { try $0.execute(sql: "ALTER TABLE outbox RENAME TO unavailable_outbox") }
+            }
+            XCTAssertThrowsError(try store.countPendingOutbox())
+            XCTAssertThrowsError(try store.countOutbox())
+            let unknown = await engine.flush()
+            XCTAssertFalse(unknown)
+            XCTAssertTrue(engine.storageUnavailable)
+            XCTAssertTrue(engine.recoveryScheduled)
+            XCTAssertEqual(engine.pendingCount, failBeforeEngineCreation ? 0 : 1)
+            XCTAssertEqual(sender.attempts(of: "keep"), 0)
+            try await database.write { try $0.execute(sql: "ALTER TABLE unavailable_outbox RENAME TO outbox") }
+            let recovered = await engine.flush()
+            XCTAssertTrue(recovered)
+            XCTAssertFalse(engine.storageUnavailable)
+            XCTAssertFalse(engine.recoveryScheduled)
+            XCTAssertEqual(sender.operationIds, ["durable"])
+            XCTAssertEqual(try store.countPendingOutbox(), 0)
+        }
+    }
+
+    func testFailedLocalAcknowledgementRetainsIdentityAndRecoveryTrigger() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("ack.sqlite").path
+        let store = try PulseStore(path: path)
+        let database = try DatabaseQueue(path: path)
+        try store.appendOutbox(conversationId: "c1", clientId: "same-operation", content: "ack")
+        let sender = StubSender(behaviors: [:])
+        sender.beforeSend = { _ in
+            try database.write { try $0.execute(sql: "ALTER TABLE message RENAME TO unavailable_message") }
+        }
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        let incomplete = await engine.flush()
+        XCTAssertFalse(incomplete)
+        XCTAssertEqual(try store.outboxAll().map(\.clientId), ["same-operation"])
+        XCTAssertTrue(engine.recoveryScheduled)
+        sender.beforeSend = nil
+        try await database.write { try $0.execute(sql: "ALTER TABLE unavailable_message RENAME TO message") }
+        let recovered = await engine.flush()
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(sender.operationIds, ["same-operation", "same-operation"])
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
     }
 
     // queue shape
@@ -161,7 +455,7 @@ final class PulseOutboxTests: XCTestCase {
         let messages = try store.messages(conversationId: "c1")
         XCTAssertTrue(messages.contains { $0.id == "srv-queued one" })
         XCTAssertFalse(messages.contains { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) })
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(events.count, 1)
         guard let recorded = events.first,
               case .delivered(let message, let conversationId, let deliveredClientId) = recorded else {
@@ -223,8 +517,8 @@ final class PulseOutboxTests: XCTestCase {
         // CONTINUED - the next entry was still delivered.
         XCTAssertEqual(sender.attempts(of: "bad"), 1)
         XCTAssertEqual(sender.attempts(of: "good"), 1)
-        XCTAssertEqual(store.countOutbox(), 1)
-        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 1)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
         XCTAssertEqual(try store.outboxAll().first?.content, "bad")
         XCTAssertNotNil(try store.outboxAll().first?.failureReason)
         await engine.flush()
@@ -272,7 +566,7 @@ final class PulseOutboxTests: XCTestCase {
         let complete = await engine.flush()
         XCTAssertFalse(complete)
         XCTAssertEqual(sender.attempts(of: "keep"), 0)
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
     }
 
     // R1-W2B D28 - queued forwards flush with their stored body
@@ -300,7 +594,7 @@ final class PulseOutboxTests: XCTestCase {
         let engine = makeEngine(store, sender)
         await engine.flush()
 
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(sender.attempts(of: "look at this"), 1)
         XCTAssertEqual(
             sender.recordedBody(at: 0),
@@ -316,7 +610,7 @@ final class PulseOutboxTests: XCTestCase {
         let engine = makeEngine(store, sender)
         await engine.flush()
 
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(
             sender.recordedBody(at: 0),
             "text|nil|nil|nil|nil|nil|nil",
@@ -333,7 +627,7 @@ final class PulseOutboxTests: XCTestCase {
         await engine.flush()
         XCTAssertEqual(sender.operationIds, ["operation-stable-id", "operation-stable-id"])
         XCTAssertEqual(sender.metadata, ["quote|topic|true", "quote|topic|true"])
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
         engine.stop()
     }
 
@@ -347,7 +641,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(try store.outboxAll().map(\.clientId), ["operation-b"])
         // Replay the same acknowledgement: still no effect on operation B.
         try store.resolveDelivery(clientId: "operation-a", message: OutboxFixtures.makeMessage(id: "real-a", conversationId: "c1", content: "same"))
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
     }
 
     func testConflictingLocalKeyIsReportedNotPretendedQueued() throws {
@@ -367,8 +661,8 @@ final class PulseOutboxTests: XCTestCase {
         let engine = makeEngine(store, sender)
         await engine.flush()
         XCTAssertEqual(sender.attempts(of: "private"), 0)
-        XCTAssertEqual(store.countOutbox(), 1)
-        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 1)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
         XCTAssertNotNil(try store.outboxAll().first?.failureReason)
         engine.stop()
     }
@@ -415,8 +709,8 @@ final class PulseOutboxTests: XCTestCase {
         await engine.flush()
         XCTAssertEqual(sender.attempts(of: "bad"), 0)
         XCTAssertEqual(sender.attempts(of: "good"), 1)
-        XCTAssertEqual(store.countOutbox(), 55)
-        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 55)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
     }
 
     func testDiscardRemovesPendingEchoAndIntentTogether() throws {
@@ -460,7 +754,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(row.content, "keep me")
         XCTAssertEqual(row.payloadJson, "{\"anon\":true}")
         XCTAssertEqual(row.failureReason, "forbidden")
-        XCTAssertEqual(reopened.countPendingOutbox(), 0)
+        XCTAssertEqual(try reopened.countPendingOutbox(), 0)
     }
 
 
@@ -488,7 +782,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(retry.metadata, ["nil|topic|true"])
         XCTAssertEqual(retry.recordedBody(at: 0), "file|nil|nil|nil|uploaded-file.pdf|notes.pdf|4")
         XCTAssertNil(try store.message(id: message.id))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testKnownThreadRefusalStopsUploadAndPostWithoutBlockingOtherMessages() async throws {
@@ -508,7 +802,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(retained.clientId, "held")
         XCTAssertNotNil(retained.failureReason)
         XCTAssertEqual(PulseOutboxForward.decode(retained.payloadJson), envelope)
-        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
     }
 
     func testSessionOnlyRefusalAlsoBlocksBackgroundDrain() async throws {
@@ -550,7 +844,7 @@ final class PulseOutboxTests: XCTestCase {
         await engine.flush()
         XCTAssertEqual(sender.uploadCount, 1)
         XCTAssertEqual(sender.operationIds, ["held"])
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testUnknownUploadKeepsBytesAndDiscardDuringUploadDoesNotSend() async throws {
@@ -571,7 +865,7 @@ final class PulseOutboxTests: XCTestCase {
         defer { second.stop() }
         await second.flush()
         XCTAssertTrue(discarded.operationIds.isEmpty)
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testRejectedAttachmentIsManuallyRetryableWithOriginalBytesAndIdentity() throws {
@@ -605,7 +899,7 @@ final class PulseOutboxTests: XCTestCase {
         now = 160
         _ = await engine.flush()
         XCTAssertEqual(sender.attempts(of: "held"), 1)
-        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
     }
 
     func testRoomCooldownBypassesLongPrefixButPreservesThatRoomsFIFOAndIdentity() async throws {
@@ -618,14 +912,14 @@ final class PulseOutboxTests: XCTestCase {
         defer { engine.stop() }
         _ = await engine.flush()
         XCTAssertEqual(sender.operationIds, ["slow-0", "direct"])
-        XCTAssertEqual(store.countPendingOutbox(), 75)
+        XCTAssertEqual(try store.countPendingOutbox(), 75)
         _ = await engine.flush()
         XCTAssertEqual(sender.operationIds, ["slow-0", "direct"])
         sender.setBehavior(.success, for: "slow-0")
         now += 60
         _ = await engine.flush()
         XCTAssertEqual(Array(sender.operationIds.dropFirst(2)), (0..<50).map { "slow-\($0)" })
-        XCTAssertEqual(store.countPendingOutbox(), 25)
+        XCTAssertEqual(try store.countPendingOutbox(), 25)
     }
 
     func testUnknown429StillHoldsEveryRoom() async throws {
@@ -638,7 +932,7 @@ final class PulseOutboxTests: XCTestCase {
         _ = await engine.flush()
         _ = await engine.flush()
         XCTAssertEqual(sender.operationIds, ["a"])
-        XCTAssertEqual(store.countPendingOutbox(), 2)
+        XCTAssertEqual(try store.countPendingOutbox(), 2)
     }
 
     func testUpload429CannotPretendToBeRoomSlowMode() async throws {
@@ -654,7 +948,7 @@ final class PulseOutboxTests: XCTestCase {
         _ = await engine.flush()
         XCTAssertEqual(sender.uploadCount, 1)
         XCTAssertTrue(sender.operationIds.isEmpty)
-        XCTAssertEqual(store.countPendingOutbox(), 2)
+        XCTAssertEqual(try store.countPendingOutbox(), 2)
     }
 
     func testRetryAfterHTTPDateUsesGatewayClockAndMalformedHeaderIsNotAZeroDelay() {
@@ -708,7 +1002,7 @@ final class PulseOutboxTests: XCTestCase {
         let otherAccount = try PulseStore()
         XCTAssertFalse(try otherAccount.discardFailedThreadReply(clientId: "recover", conversationId: "room", rootId: "root"))
         XCTAssertTrue(try store.discardFailedThreadReply(clientId: "recover", conversationId: "room", rootId: "root"))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testFailedThreadObservationFiltersRoomRootPendingAndMalformedEnvelope() async throws {

@@ -121,21 +121,21 @@ export default function GameTicTacToeCard({ matchId, meId }: { matchId: string; 
   const [rematching, setRematching] = useState(false)
   const celebratedRef = useRef(false)
 
-  const queryKey = useMemo(() => ['game-match', matchId], [matchId])
+  const queryKey = useMemo(() => ['game-match', matchId, meId], [matchId, meId])
 
   // Self-fetch + live sync: 1.5s poll only while the match is active;
   // TanStack Query clears the interval on unmount and pauses it while
   // the document is hidden (refetchIntervalInBackground: false).
   const gameQuery = useQuery({
     queryKey,
-    enabled: matchId.length > 0,
+    enabled: matchId.length > 0 && meId.length > 0,
     refetchInterval: (query) =>
       (query.state.data as GameDetail | undefined)?.match.status === 'active' ? POLL_MS : false,
     refetchIntervalInBackground: false,
     staleTime: 0,
     retry: 1,
     queryFn: async (): Promise<GameDetail> =>
-      apiJson<GameDetail>(`/api/games/${encodeURIComponent(matchId)}`),
+      apiJson<GameDetail>(`/api/games/${encodeURIComponent(matchId)}?userId=${encodeURIComponent(meId)}`),
   })
 
   const data = gameQuery.data

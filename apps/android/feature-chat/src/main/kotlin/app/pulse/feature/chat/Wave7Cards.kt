@@ -260,9 +260,13 @@ private fun TicTacToeContent(
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
     suspend fun refresh() {
         val ticket = gate.beginRead() ?: return
-        val result = gameRequest { load() }.getOrNull()
+        val outcome = gameRequest { load() }
         if (!gate.accepts(ticket)) return
-        if (result != null) { detail = result; failed = false } else { failed = true }
+        val result = outcome.getOrNull()
+        if (result != null) { detail = result; failed = false } else {
+            failed = true
+            if (outcome.exceptionOrNull() is app.pulse.domain.sync.PrivateGameUnavailableException) detail = null
+        }
     }
     fun mutate(operation: suspend () -> GameDetailDto?) {
         if (pending) return
@@ -480,9 +484,13 @@ private fun TournamentContent(
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
     suspend fun refresh() {
         val ticket = gate.beginRead() ?: return
-        val result = gameRequest { load() }.getOrNull()
+        val outcome = gameRequest { load() }
         if (!gate.accepts(ticket)) return
-        if (result != null) { t = result; failed = false } else { failed = true }
+        val result = outcome.getOrNull()
+        if (result != null) { t = result; failed = false } else {
+            failed = true
+            if (outcome.exceptionOrNull() is app.pulse.domain.sync.PrivateGameUnavailableException) t = null
+        }
     }
     fun mutate(operation: suspend () -> Boolean) {
         if (pending) return

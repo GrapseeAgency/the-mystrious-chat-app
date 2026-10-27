@@ -12,7 +12,10 @@ import SwiftUI
 /// checkbox list is the conversation list, so the folder order follows it).
 enum FolderMembership {
     static func orderedSelection(checked: Set<String>, listOrder: [String]) -> [String] {
-        listOrder.filter { checked.contains($0) }
+        var seen = Set<String>()
+        let visible = listOrder.filter { checked.contains($0) && seen.insert($0).inserted }
+        // Archived/filtered chats are not an instruction to remove existing membership.
+        return visible + checked.subtracting(seen).sorted()
     }
 }
 
@@ -28,6 +31,8 @@ struct FoldersManageSheet: View {
 
     @State private var folders: [WireFolder] = []
     @State private var loading = true
+    @State private var loadError: String?
+    @State private var readTicket = UUID()
     @State private var mode: Mode = .list
     @State private var busyFolderId: String?
 
@@ -71,6 +76,7 @@ struct FoldersManageSheet: View {
                     .padding(.top, 10)
                 }
             }
+            .disabled(busyFolderId != nil)
             .navigationTitle(mode == .create ? "New folder" : "Chat folders")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -92,18 +98,25 @@ struct FoldersManageSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await reload() }
+        .task(id: session.sessionGeneration) {
+            folders = []; membershipFolder = nil; editingId = nil; busyFolderId = nil
+            newName = ""; newIcon = PulseFolderIconId.fallback.rawValue; checked = []
+            await reload()
+        }
     }
 
     // list mode
 
     @ViewBuilder
     private var listContent: some View {
+        if let loadError {
+            Button { Task { await reload() } } label: { Text("\(loadError) Tap to retry.").font(.footnote) }
+        }
         if loading && folders.isEmpty {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(PulseTheme.glassFill)
                 .frame(height: 120)
-        } else if folders.isEmpty {
+        } else if folders.isEmpty && loadError == nil {
             VStack(spacing: 8) {
                 Image(systemName: "folder.badge.plus")
                     .font(.system(size: 26, weight: .light))
@@ -453,25 +466,39 @@ struct FoldersManageSheet: View {
     // actions
 
     private func reload() async {
-        folders = await session.api.folders() ?? folders
-        loading = false
+        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        readTicket = ticket; loading = true
+        do {
+            let page = try await api.folderSnapshot()
+            guard !Task.isCancelled, session.sessionGeneration == epoch, readTicket == ticket else { return }
+            folders = page; loadError = nil; loading = false
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, readTicket == ticket else { return }
+            if let failure = error as? PulseAPIClient.Failure, [.auth, .forbidden].contains(failure.kind) { folders = [] }
+            loading = false; loadError = "Could not refresh folders."
+        }
     }
 
     private func create() async {
         let name = newName.trimmingCharacters(in: .whitespaces)
         guard PulseFolderDraft.isValidName(name), busyFolderId == nil else { return }
-        busyFolderId = "creating"
-        defer { busyFolderId = nil }
+        let epoch = session.sessionGeneration, api = session.api
+        readTicket = UUID(); busyFolderId = "creating"
+        defer { if session.sessionGeneration == epoch { busyFolderId = nil } }
         do {
-            let folder = try await session.api.createFolder(name: name, emoji: newIcon)
+            let folder = try await api.createFolder(name: name, emoji: newIcon)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             PulseHaptics.success()
+            folders.append(folder)
             session.toasts.show("Folder \(folder.name) created")
             newName = ""
             newIcon = PulseFolderIconId.fallback.rawValue
             withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .list }
             await reload()
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             onChanged()
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show(ChatsViewModel.describe(error))
         }
     }
@@ -486,22 +513,27 @@ struct FoldersManageSheet: View {
             editIcon = nil
             return
         }
-        busyFolderId = folder.id
-        defer { busyFolderId = nil }
+        let epoch = session.sessionGeneration, api = session.api
+        readTicket = UUID(); busyFolderId = folder.id
+        defer { if session.sessionGeneration == epoch { busyFolderId = nil } }
         do {
-            let fresh = try await session.api.updateFolder(
+            let fresh = try await api.updateFolder(
                 id: folder.id,
                 name: nameChanged ? name : nil,
                 emoji: emojiChanged ? editIcon : nil,
                 position: nil,
             )
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            if let index = folders.firstIndex(where: { $0.id == fresh.id }) { folders[index] = fresh }
             if nameChanged { session.toasts.show("Renamed to “\(fresh.name)”") }
             PulseHaptics.success()
             editingId = nil
             editIcon = nil
             await reload()
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             onChanged()
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show(ChatsViewModel.describe(error))
         }
     }
@@ -525,15 +557,20 @@ struct FoldersManageSheet: View {
 
     private func delete(_ folder: WireFolder) async {
         guard busyFolderId == nil else { return }
-        busyFolderId = folder.id
-        defer { busyFolderId = nil }
+        let epoch = session.sessionGeneration, api = session.api
+        readTicket = UUID(); busyFolderId = folder.id
+        defer { if session.sessionGeneration == epoch { busyFolderId = nil } }
         do {
-            try await session.api.deleteFolder(id: folder.id)
+            try await api.deleteFolder(id: folder.id)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             PulseHaptics.success()
+            folders.removeAll { $0.id == folder.id }
             session.toasts.show("Folder deleted - chats stay in your list")
             await reload()
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             onChanged()
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show(ChatsViewModel.describe(error))
         }
     }
@@ -543,17 +580,21 @@ struct FoldersManageSheet: View {
               let index = folders.firstIndex(where: { $0.id == folder.id }) else { return }
         let target = index + delta
         guard folders.indices.contains(target) else { return }
-        folders.swapAt(index, target)
-        // PATCH the two affected positions (server sorts position asc).
-        let first = folders[index]
-        let second = folders[target]
-        busyFolderId = folder.id
+        let epoch = session.sessionGeneration, api = session.api
+        readTicket = UUID(); busyFolderId = folder.id
         Task {
-            defer { busyFolderId = nil }
-            _ = try? await session.api.updateFolder(id: first.id, name: nil, emoji: nil, position: index)
-            _ = try? await session.api.updateFolder(id: second.id, name: nil, emoji: nil, position: target)
-            await reload()
-            onChanged()
+            defer { if session.sessionGeneration == epoch { busyFolderId = nil } }
+            do {
+                _ = try await api.updateFolder(id: folder.id, name: nil, emoji: nil, position: target)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                folders.swapAt(index, target)
+                await reload()
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                onChanged()
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                session.toasts.show(ChatsViewModel.describe(error))
+            }
         }
     }
 
@@ -564,21 +605,26 @@ struct FoldersManageSheet: View {
 
     private func saveMembership(_ folder: WireFolder) async {
         guard busyFolderId == nil else { return }
-        busyFolderId = folder.id
-        defer { busyFolderId = nil }
+        let epoch = session.sessionGeneration, api = session.api
+        readTicket = UUID(); busyFolderId = folder.id
+        defer { if session.sessionGeneration == epoch { busyFolderId = nil } }
         let payload = FolderMembership.orderedSelection(
             checked: checked,
             listOrder: conversations.map(\.id),
         )
         do {
-            let fresh = try await session.api.saveFolderMembership(folderId: folder.id, conversationIds: payload)
+            let fresh = try await api.saveFolderMembership(folderId: folder.id, conversationIds: payload)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             PulseHaptics.success()
+            if let index = folders.firstIndex(where: { $0.id == fresh.id }) { folders[index] = fresh }
             let saved = fresh.conversationIds?.count ?? payload.count
             session.toasts.show(saved == 1 ? "1 chat saved to the folder" : "\(saved) chats saved to the folder")
             membershipFolder = nil
             await reload()
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             onChanged()
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show(ChatsViewModel.describe(error))
         }
     }

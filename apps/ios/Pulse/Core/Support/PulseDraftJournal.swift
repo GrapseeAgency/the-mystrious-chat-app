@@ -1,5 +1,10 @@
 import Foundation
 
+struct PulseDraftReceipt {
+    fileprivate let owner: UUID
+    fileprivate let draft: PulseDraftConsumption
+}
+
 /// The main-actor front buffer makes a rapid reopen see the last keystroke even
 /// before SQLite commits. The writer does finite storage work off the UI actor.
 @MainActor
@@ -31,6 +36,7 @@ final class PulseDraftJournal {
     private let parentId: String?
     private let key: String
     private let owner = DispatchTime.now().uptimeNanoseconds
+    private let receiptOwner = UUID()
 
     init(store: PulseStore, conversationId: String, parentId: String? = nil) {
         self.store = store
@@ -77,6 +83,21 @@ final class PulseDraftJournal {
     func prepareSend() throws -> PulseDraftConsumption {
         guard isCurrentOwner else { throw CocoaError(.userCancelled) }
         return store.captureDraftConsumption(conversationId: conversationId, parentId: parentId)
+    }
+
+    /// HTTP acknowledgements may clear only the exact draft snapshot submitted.
+    /// Checking text equality would erase an edit-away/edit-back draft or another window's write.
+    func captureReceipt() -> PulseDraftReceipt? {
+        guard isCurrentOwner else { return nil }
+        return PulseDraftReceipt(owner: receiptOwner,
+            draft: store.captureDraftConsumption(conversationId: conversationId, parentId: parentId))
+    }
+
+    func matches(_ receipt: PulseDraftReceipt) -> Bool {
+        let draft = receipt.draft
+        guard isCurrentOwner, receipt.owner == receiptOwner, draft.storageIdentity == store.storageIdentity,
+              draft.conversationId == conversationId, draft.parentId == parentId else { return false }
+        return draft.revision == store.captureDraftConsumption(conversationId: conversationId, parentId: parentId).revision
     }
 
     /// Called synchronously after the same transaction committed queue + clear.

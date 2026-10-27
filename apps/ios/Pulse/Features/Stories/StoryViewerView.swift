@@ -14,6 +14,9 @@ struct StoryViewerView: View {
     let onClose: () -> Void
 
     @StateObject private var machine: StoryViewerMachine
+    @StateObject private var operations = PulseRoomOperations()
+    @State private var ownerEpoch: UUID
+    @State private var deleteError: String?
     @Environment(\.scenePhase) private var scenePhase
     @State private var viewersStoryId: String?
     @State private var deleteStoryId: String?
@@ -25,9 +28,13 @@ struct StoryViewerView: View {
         self.startUserId = startUserId
         self.onClose = onClose
         _machine = StateObject(wrappedValue: StoryViewerMachine(startUserId: startUserId))
+        _ownerEpoch = State(initialValue: session.sessionGeneration)
     }
 
-    private var playbackBlocked: Bool { scenePhase != .active || viewersOpen || confirmDelete }
+    private var playbackBlocked: Bool { scenePhase != .active || viewersOpen || confirmDelete || !operations.pending.isEmpty || deleteError != nil }
+    private var markTaskId: String {
+        "\(ownerEpoch)|\(session.sessionGeneration)|\(playbackBlocked)|\(machine.state.pendingMark?.storyId ?? "")|\(machine.state.pendingMark?.attempt ?? 0)"
+    }
     private var playbackNow: Int64 { Int64(ProcessInfo.processInfo.systemUptime * 1000) }
     @State private var viewersOpen = false
     @State private var confirmDelete = false
@@ -66,20 +73,29 @@ struct StoryViewerView: View {
                 ProgressView().tint(.white.opacity(0.6))
             }
         }
+        .overlay(alignment: .bottom) {
+            if let deleteError {
+                Button { self.deleteError = nil } label: {
+                    Text(deleteError).font(.system(size: 13)).foregroundStyle(.white)
+                        .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.7)))
+                }.buttonStyle(.plain).padding(20)
+            }
+        }
         .gesture(viewerGesture)
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled && session.sessionGeneration == ownerEpoch {
+                if stories.flags.loadedOnce || !stories.groups.isEmpty {
+                    machine.groupsUpdated(stories.groups, nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+                }
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { break }
+            }
+        }
         .task(id: playbackBlocked) {
             machine.setPlaybackBlocked(playbackBlocked, nowMs: playbackNow)
             guard !playbackBlocked else { return }
-            var lastExpiryCheck: Int64 = 0
             while !Task.isCancelled {
-                let now = playbackNow
-                if now - lastExpiryCheck >= 1000 {
-                    if stories.flags.loadedOnce || !stories.groups.isEmpty {
-                        machine.groupsUpdated(stories.groups, nowMs: Int64(Date().timeIntervalSince1970 * 1000))
-                    }
-                    lastExpiryCheck = now
-                }
-                machine.tick(nowMs: now)
+                machine.tick(nowMs: playbackNow)
                 do { try await Task.sleep(nanoseconds: 33_000_000) } catch { break }
             }
         }
@@ -97,10 +113,11 @@ struct StoryViewerView: View {
             }
             machine.setPlaybackBlocked(playbackBlocked, nowMs: playbackNow)
         }
-        .onChange(of: machine.state.pendingMark) { _, mark in
-            guard let mark else { return }
-            Task { await markViewed(mark) }
+        .task(id: markTaskId) {
+            guard !playbackBlocked, let mark = machine.state.pendingMark else { return }
+            await markViewed(mark)
         }
+        .onChange(of: session.sessionGeneration) { _, _ in operations.stop(); onClose() }
         .onChange(of: machine.state.dismissed) { _, dismissed in
             if dismissed { onClose() }
         }
@@ -109,11 +126,14 @@ struct StoryViewerView: View {
         }
         .task {
             // First feed lands through the same door as refreshes.
+            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
             if stories.groups.isEmpty { await stories.refresh(quiet: false) }
+            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
             machine.groupsUpdated(stories.groups, nowMs: Int64(Date().timeIntervalSince1970 * 1000))
             stories.startPolling()
         }
         .onDisappear {
+            operations.stop()
             holdTask?.cancel()
             machine.setPlaybackBlocked(true, nowMs: playbackNow)
             stories.stopPolling()
@@ -207,10 +227,15 @@ struct StoryViewerView: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.white)
                     Button {
-                        confirmDelete = false
-                        guard let id = deleteStoryId else { return }
-                        deleteStoryId = nil
-                        Task { _ = await stories.deleteStory(id: id) }
+                        guard operations.pending.isEmpty, let id = deleteStoryId else { return }
+                        confirmDelete = false; deleteStoryId = nil; deleteError = nil
+                        operations.run(key: "delete", operation: {
+                            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
+                            let accepted = await stories.deleteStory(id: id)
+                            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
+                            if !accepted { deleteError = "Deletion wasn't confirmed. Reconnect and try again. Tap to resume." }
+                            return accepted
+                        })
                     } label: {
                         Image(systemName: "trash.fill")
                             .font(.system(size: 15, weight: .semibold))
@@ -382,14 +407,17 @@ struct StoryViewerView: View {
     // view marking (D6)
 
     private func markViewed(_ mark: StoryViewerMachine.PendingMark) async {
-        // Optimistic local flip already applied by the feed model; one retry
-        // max - the second failure gives up and the next fetch reconciles.
+        guard !Task.isCancelled, session.sessionGeneration == ownerEpoch, !playbackBlocked else { return }
+        let api = session.api
         do {
-            let count = try await session.api.markStoryViewed(id: mark.storyId)
+            let count = try await api.markStoryViewed(id: mark.storyId)
+            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
             stories.markViewedLocally(storyId: mark.storyId, viewCount: count)
             machine.viewMarkOk(storyId: mark.storyId, viewCount: count)
         } catch {
-            stories.markViewedLocally(storyId: mark.storyId, viewCount: nil)
+            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
+            // Failure is not a receipt: keep retry bookkeeping in the viewer,
+            // rather than publishing a successful view into the shared feed.
             machine.viewMarkFailed(storyId: mark.storyId)
         }
     }
@@ -406,6 +434,8 @@ struct StoryViewerView: View {
                         VStack(spacing: 8) {
                             if stories.viewersLoading {
                                 ProgressView()
+                            } else if let error = stories.viewersError {
+                                Text(error).font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding()
                             } else {
                                 Text("No views yet")
                                     .font(.system(size: 13, weight: .medium))
@@ -445,6 +475,12 @@ struct StoryViewerView: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if !stories.viewers.isEmpty, let error = stories.viewersError {
+                    Text(error).font(.system(size: 12)).foregroundStyle(.white).padding(12)
+                        .frame(maxWidth: .infinity).background(PulseTheme.emberChrome)
+                }
+            }
             // PULSE EMBER (EMB-I): the sheet subtree pins dark on the ground.
             .environment(\.colorScheme, .dark)
             .tint(.white)
@@ -453,7 +489,8 @@ struct StoryViewerView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .task(id: viewersOpen) {
+        .task(id: "\(viewersOpen)|\(scenePhase == .active)|\(viewersStoryId ?? "")|\(session.sessionGeneration)") {
+            guard scenePhase == .active, session.sessionGeneration == ownerEpoch else { return }
             // D7: poll every ≤5s while the sheet is open - the count badge
             // refreshes from each tick.
             while viewersOpen && !Task.isCancelled {

@@ -76,15 +76,27 @@ public struct MirrorProfileRow: Codable, Sendable {
     public let createdAt: String?
 }
 
+extension MirrorProfileRow {
+    static func fetch(using client: PulseAPIClient) async throws -> MirrorProfileRow {
+        let user = try await client.user(client.userId)
+        guard user.id == client.userId else {
+            throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account.")
+        }
+        return MirrorProfileRow(name: user.name, username: user.username, about: user.about,
+            color: user.color, coverImage: user.coverImage, statusText: user.statusText, createdAt: user.createdAt)
+    }
+}
+
 @MainActor
 final class MirrorViewModel: ObservableObject {
     @Published var rows: [MirrorRow] = []
     @Published var archivedRows: [MirrorRow] = []
     @Published var profile: MirrorProfileRow?
     @Published var stats: WireUserStats?
-    @Published var coins: Int = 0
+    @Published var coins: Int?
 
-    var totalUnread: Int { rows.reduce(0) { $0 + $1.unread } }
+    private weak var badgeSession: PulseSession?
+    var totalUnread: Int { rows.reduce(0) { $0 + max($1.unread, $1.manualUnread ? 1 : 0) } }
 
     struct MirrorRow: Identifiable, Hashable {
         let id: String
@@ -110,6 +122,8 @@ final class MirrorViewModel: ObservableObject {
     private var inbox: [WireConversationSummary] = []
     private weak var store: PulseStore?
     private var refreshRevision: UInt64 = 0
+    private var inboxRequestID: UUID?
+    private var inboxRefreshQueued = false
     private var client: PulseAPIClient?
 
 
@@ -122,14 +136,18 @@ final class MirrorViewModel: ObservableObject {
         let raw: String
         if deleted {
             raw = "Message deleted"
+        } else if last?.viewOnce == true {
+            raw = "View-once message"
         } else if last?.imagePath != nil {
             raw = "Photo"
         } else {
             raw = last?.content ?? "No messages yet"
         }
-        let mine = last?.senderId == viewerId
+        let mine = last?.isOutgoingFor(viewerId) == true
         let authorPrefix: String
-        if mine {
+        if let last, last.integrationLabel != nil || last.anon == true {
+            authorPrefix = last.displayAuthorName + ": "
+        } else if mine {
             authorPrefix = "You: "
         } else if summary.isGroup && last != nil {
             authorPrefix = (last?.sender?.name ?? "") + ": "
@@ -146,7 +164,7 @@ final class MirrorViewModel: ObservableObject {
             unread: summary.unreadCount ?? 0,
             online: false,
             pinned: summary.pinnedAt != nil,
-            muted: summary.mutedUntil != nil,
+            muted: summary.isMutedNow,
             subtitle: summary.isGroup
                 ? summary.members.map { $0.name }.filter { !$0.isEmpty }.joined(separator: ", ")
                 : "",
@@ -158,6 +176,9 @@ final class MirrorViewModel: ObservableObject {
     }
 
     func start(session: PulseSession) {
+        stop()
+        badgeSession = session
+        if client?.userId != session.api.userId || client?.baseURL != session.api.baseURL { profile = nil; stats = nil; coins = nil }
         client = session.api
         store = session.store
         inbox = ((try? store?.cachedConversations()) ?? []).map { WireConversationSummary(cached: $0) }
@@ -169,7 +190,10 @@ final class MirrorViewModel: ObservableObject {
         timer?.invalidate()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in
+                guard let self, self.inboxRequestID == nil else { return }
+                self.refresh()
+            }
         }
     }
 
@@ -177,53 +201,76 @@ final class MirrorViewModel: ObservableObject {
         timer?.invalidate(); timer = nil
         expiryTimer?.invalidate(); expiryTimer = nil
         refreshRevision &+= 1
+        inboxRequestID = nil; inboxRefreshQueued = false
     }
 
     private func projectInbox() {
         guard let client else { return }
         inbox = inbox.map { $0.removingExpiredSummary() }
-        let built = inbox.map { Self.buildRow(summary: $0, viewerId: client.userId) }
+        let built = inbox.filter { $0.isSelf != true }.map { Self.buildRow(summary: $0, viewerId: client.userId) }
         let active = built.filter { !$0.isArchived }, archived = built.filter { $0.isArchived }
+        let changed = rows != active || archivedRows != archived
         if rows != active { rows = active }
         if archivedRows != archived { archivedRows = archived }
+        if let session = badgeSession, session.viewer?.id == client.userId, session.api.baseURL == client.baseURL,
+           (changed || session.dockUnreadCount != totalUnread) { session.dockUnreadCount = totalUnread }
+    }
+
+    func cachedDirectConversation(viewerId: String, peerId: String) -> WireConversationSummary? {
+        guard client?.userId == viewerId else { return nil }
+        return PulseConversationNavigation.directConversation(in: inbox, viewerId: viewerId, peerId: peerId)
+    }
+
+    func acceptCreatedConversation(_ conversation: WireConversationSummary, viewerId: String) {
+        guard client?.userId == viewerId else { return }
+        refreshRevision &+= 1
+        inbox.removeAll { $0.id == conversation.id }
+        inbox.insert(conversation, at: 0)
+        projectInbox()
+        try? store?.upsert(conversations: [conversation.toDomain()])
     }
 
     func refresh() {
         guard let client else { return }
+        // Polling must not continually invalidate a request on a slow network.
+        // Explicit refreshes while one runs retain a trailing fetch instead.
+        guard inboxRequestID == nil else { inboxRefreshQueued = true; return }
+        let requestID = UUID(); inboxRequestID = requestID
         refreshRevision &+= 1
         let revision = refreshRevision, store = store
         Task { @MainActor in
             // rows - real summaries, same mapping the web home uses;
             // R64 web parity: the main list EXCLUDES archived chats
-            if let page = try? await client.conversations() {
-                guard revision == refreshRevision else { return }
+            let page = try? await client.conversations()
+            guard inboxRequestID == requestID else { return }
+            inboxRequestID = nil
+            let trailing = inboxRefreshQueued; inboxRefreshQueued = false
+            if let page, revision == refreshRevision {
                 inbox = page
                 projectInbox()
                 try? store?.upsert(conversations: page.map { $0.toDomain() }, replacingSnapshot: true)
             }
+            if trailing { refresh(); return }
+            guard !Task.isCancelled, revision == refreshRevision else { return }
             // profile row (tolerant subset), stats, coins
-            if let url = URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/users/" + client.userId) {
-                var req = URLRequest(url: url)
-                req.timeoutInterval = 8
-                if let token = client.authToken {
-                    req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-                }
-                if let (data, _) = try? await URLSession.shared.data(for: req) {
-                    let root = try? JSONDecoder().decode(MirrorEnvelope<MirrorProfileRow>.self, from: data)
-                    if let unwrapped = root?.user {
-                        profile = unwrapped
-                    }
-                }
+            // Keep the endpoint and credential in the SAME captured API client.
+            // Never attach an old client's bearer to the global, mutable gateway.
+            if let loaded = try? await MirrorProfileRow.fetch(using: client) {
+                guard !Task.isCancelled, revision == refreshRevision else { return }
+                profile = loaded
             }
-            if let s = try? await client.userStats(client.userId) { stats = s }
-            if let w = try? await client.wallet() { coins = w.coins ?? 0 }
+            guard !Task.isCancelled, revision == refreshRevision else { return }
+            if let s = try? await client.userStats(client.userId) {
+                guard !Task.isCancelled, revision == refreshRevision else { return }
+                stats = s
+            }
+            guard !Task.isCancelled, revision == refreshRevision else { return }
+            if let w = try? await client.wallet() {
+                guard !Task.isCancelled, revision == refreshRevision else { return }
+                coins = w.coins
+            }
         }
     }
-}
-
-/// {user: {...}} envelope unwrap - the users routes return both shapes.
-private struct MirrorEnvelope<T: Codable>: Codable {
-    let user: T?
 }
 
 enum MirrorRowTime {
@@ -497,6 +544,8 @@ struct MirrorHomeSheetView: View {
     @State private var groupName = ""
     @State private var picked: Set<String> = []
     @State private var busy = false
+    @State private var creationError: String?
+    @State private var creationTask: Task<Void, Never>?
 
     private var filteredUsers: [WireUser] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -515,6 +564,8 @@ struct MirrorHomeSheetView: View {
                     .clipShape(Capsule())
                     .padding(.bottom, 8)
             }
+            if let creationError { MirrorPanelHint(creationError) }
+            if busy && sheet != .newGroup { MirrorPanelHint("Opening chat…") }
             if sheet == .archived {
                 MirrorPanelScroll {
                     if model.archivedRows.isEmpty {
@@ -581,6 +632,9 @@ struct MirrorHomeSheetView: View {
                 }
             }
         }
+        .disabled(busy)
+        .onDisappear { creationTask?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in creationTask?.cancel(); dismiss() }
         .task(id: directoryRevision) {
             let epoch = session.sessionGeneration
             do {
@@ -609,36 +663,51 @@ struct MirrorHomeSheetView: View {
     }
 
     private func openOrCreateDM(with user: WireUser) {
-        guard !busy else { return }
-        busy = true
-        Task {
-            if let existing = model.rows.first(where: { !$0.isGroup && $0.title == user.name }) {
-                onOpenRow(existing)
-            } else {
-                _ = try? await session.api.createConversation(memberIds: [user.id], isGroup: false)
-                model.refresh()
-                if let created = model.rows.first(where: { !$0.isGroup && $0.title == user.name }) {
-                    onOpenRow(created)
-                } else {
-                    onDismissSheet()
-                }
-            }
+        guard !busy, let viewer = session.viewer else { return }
+        if let existing = model.cachedDirectConversation(viewerId: viewer.id, peerId: user.id) {
+            onOpenRow(MirrorViewModel.buildRow(summary: existing, viewerId: viewer.id))
+            return
         }
+        createConversation(memberIds: [user.id], isGroup: false, name: nil)
     }
 
     private func createGroup() {
-        busy = true
-        Task {
-            _ = try? await session.api.createConversation(
-                memberIds: Array(picked), isGroup: true,
-                name: groupName.trimmingCharacters(in: .whitespaces)
-            )
-            model.refresh()
-            onDismissSheet()
-        }
+        guard canCreateGroup else { return }
+        createConversation(memberIds: Array(picked), isGroup: true,
+            name: groupName.trimmingCharacters(in: .whitespaces))
     }
 
-    private func onDismissSheet() { busy = false; dismiss() }
+    private func createConversation(memberIds: [String], isGroup: Bool, name: String?) {
+        guard !busy, let viewer = session.viewer else { return }
+        let client = session.api, epoch = session.sessionGeneration
+        busy = true
+        creationError = nil
+        creationTask = Task { @MainActor in
+            defer {
+                busy = false
+                if session.sessionGeneration == epoch { session.noteInboxChanged(); model.refresh() }
+            }
+            do {
+                let created = try await PulseConversationNavigation.create(viewerId: viewer.id, memberIds: memberIds, isGroup: isGroup) {
+                    try await client.createConversation(memberIds: memberIds, isGroup: isGroup, name: name)
+                }
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                if isGroup {
+                    guard let store = session.store else { throw PulseAPIClient.Failure(kind: .server, message: "Local chat storage isn't ready.") }
+                    try store.upsert(conversations: [created.toDomain()])
+                    try await client.acknowledgeGroupCreation(memberIds: memberIds, name: name, receipt: created)
+                    guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                }
+                model.acceptCreatedConversation(created, viewerId: viewer.id)
+                // Open the returned identity directly; refresh() is asynchronous.
+                onOpenRow(MirrorViewModel.buildRow(summary: created, viewerId: viewer.id))
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                creationError = isGroup ? "Couldn't confirm group creation. Check Chats before retrying."
+                    : "Couldn't open this chat. Reconnect and try again."
+            }
+        }
+    }
 }
 
 /// Row long-press options - the web ChatOptionsSheet rows, real API calls.
@@ -649,6 +718,8 @@ struct MirrorRowOptions: View {
     @Environment(\.dismiss) private var dismiss
     @State private var muteStrip = false
     @State private var note = ""
+    @State private var busy = false
+    @State private var actionTask: Task<Void, Never>?
 
     var body: some View {
         MirrorPanel(title: row.title) {
@@ -670,29 +741,57 @@ struct MirrorRowOptions: View {
                 }
             } else {
                 MirrorPanelOption(icon: row.pinned ? "pin.slash" : "pin", label: row.pinned ? "Unpin from top" : "Pin to top") {
-                    Task { try? await session.api.togglePin(conversationId: row.id); finish() }
+                    perform { _ = try await $0.setPinned(conversationId: row.id, pinned: !row.pinned) }
                 }
                 MirrorPanelOption(icon: "archivebox", label: "Archive chat") {
-                    Task { try? await session.api.archive(conversationId: row.id, archived: true); finish() }
+                    perform { _ = try await $0.archive(conversationId: row.id, archived: true) }
                 }
-                MirrorPanelOption(icon: row.manualUnread ? "envelope.open" : "envelope", label: row.manualUnread ? "Mark as read" : "Mark as unread") {
-                    Task { try? await session.api.markUnread(conversationId: row.id, on: !row.manualUnread); finish() }
+                MirrorPanelOption(icon: row.manualUnread ? "envelope.open" : "envelope", label: row.manualUnread ? "Clear unread reminder" : "Mark as unread") {
+                    perform { try await $0.markUnread(conversationId: row.id, on: !row.manualUnread) }
+                }
+                MirrorPanelOption(icon: "checkmark.circle", label: "Mark as read") {
+                    perform(readAll: true) { try await $0.markRead(conversationId: row.id) }
                 }
                 MirrorPanelOption(icon: "bell.slash", label: "Mute notifications") { muteStrip = true }
-                if !note.isEmpty {
-                    MirrorPanelHint(note)
-                }
             }
+            if busy { MirrorPanelHint("Updating…") }
+            if !note.isEmpty { MirrorPanelHint(note) }
         }
+        .disabled(busy)
+        .onDisappear { actionTask?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in actionTask?.cancel(); dismiss() }
     }
 
     private func finish() { onDone(); dismiss() }
 
-    private func mute(until: String?) {
-        Task {
-            try? await session.api.setMuted(conversationId: row.id, until: until)
-            finish()
+    private func perform(readAll: Bool = false, _ work: @escaping (PulseAPIClient) async throws -> Void) {
+        guard !busy else { return }
+        let client = session.api, epoch = session.sessionGeneration
+        busy = true
+        note = ""
+        actionTask = Task { @MainActor in
+            defer {
+                busy = false
+                if session.sessionGeneration == epoch {
+                    // Includes an uncertain/lost response: fetch truth, never
+                    // mark local rows read or depend on a socket echo.
+                    if readAll { session.noteReadAllChanged(row.id) }
+                    else { session.noteInboxChanged() }
+                }
+            }
+            do {
+                try await work(client)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                finish()
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                note = "Couldn't confirm this change. Reconnect and try again."
+            }
         }
+    }
+
+    private func mute(until: String?) {
+        perform { _ = try await $0.setMuted(conversationId: row.id, until: until) }
     }
 }
 
@@ -1110,7 +1209,7 @@ private struct MirrorStatsCardView: View {
         HStack(spacing: 0) {
             MirrorStatCell(value: "\(model.stats?.messages ?? 0)", label: "MESSAGES", tint: MirrorArt.text)
             MirrorStatCell(value: "\(model.stats?.chats ?? 0)", label: "ROOMS", tint: MirrorArt.text)
-            MirrorStatCell(value: "\(model.coins)", label: "COINS", tint: MirrorArt.accent)
+            MirrorStatCell(value: model.coins.map { String($0) } ?? "—", label: "COINS", tint: MirrorArt.accent)
             MirrorStatCell(value: MirrorSince.short(model.stats?.joinedAt), label: "SINCE", tint: MirrorArt.text, small: true)
         }
         .padding(.vertical, 16)
@@ -1411,7 +1510,9 @@ struct MirrorRoomView: View {
     let row: MirrorViewModel.MirrorRow
     @ObservedObject var session: PulseSession
     let onBack: () -> Void
+    @State private var readVisitID = UUID()
     @State private var isReadingTail = false
+    @State private var visibleReadIDs: Set<String> = []
     @State private var didInitialScroll = false
     @State private var readRevision = 0
     @Environment(\.scenePhase) private var scenePhase
@@ -1421,6 +1522,7 @@ struct MirrorRoomView: View {
     @State private var messages: [WireChatMessage] = []
     @State private var memberNames: [String] = []
     @State private var memberRows: [WireConversationMember] = []
+    @State private var receiptMembersRefresh = PulseCoalescedRefresh()
     @State private var draftText = ""
     @State private var draftJournal: PulseDraftJournal?
     private var draft: String {
@@ -1438,7 +1540,7 @@ struct MirrorRoomView: View {
     // R64 - room kebab + sheets + the composer focus ring
     @State private var menuOpen = false
     @State private var activeSheet: MirrorRoomSheet?
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
     // R102 - the attachments tray (web chat-room.tsx 5113-5256 + trayGroups
     // 2581-2830): panel state, armed effect/incognito, the voice recorder,
     // the document picker and the photo picker - every tile wires a REAL
@@ -1449,6 +1551,7 @@ struct MirrorRoomView: View {
     @State private var anonNext = false
     @State private var docPickerOpen = false
     @State private var pendingAttachment: (dataUrl: String, envelope: PulseOutboxForward)?
+    @State private var photoPickerOpen = false
     @State private var photoItem: PhotosPickerItem?
     @State private var recording = false
     @State private var voiceRecorder: VoiceRecorder?
@@ -1502,6 +1605,7 @@ struct MirrorRoomView: View {
             if roomOperations.pending.contains("game-create") {
                 ProgressView("Confirming challenge…").font(.caption)
             }
+            GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -1530,14 +1634,27 @@ struct MirrorRoomView: View {
                                 )
                                 .padding(.top, head ? 10 : 2)
                                 .id(message.id)
+                                .background(GeometryReader { geometry in
+                                    Color.clear.preference(key: PulseRoomViewportKey.self,
+                                        value: PulseRoomViewport(messages: [message.id: geometry.frame(in: .named("mirror-read-viewport"))]))
+                                })
                             }
                         }
                         Color.clear.frame(height: 1).id("read-tail")
-                            .onAppear { isReadingTail = true; updateReadBoundary() }
-                            .onDisappear { isReadingTail = false; updateReadBoundary() }
+                            .background(GeometryReader { geometry in
+                                Color.clear.preference(key: PulseRoomViewportKey.self,
+                                    value: PulseRoomViewport(tail: geometry.frame(in: .named("mirror-read-viewport"))))
+                            })
                     }
                     .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 8)
                 }
+                .coordinateSpace(name: "mirror-read-viewport")
+                .onPreferenceChange(PulseRoomViewportKey.self) { layout in
+                    visibleReadIDs = PulseReadViewport.visibleIDs(layout.messages, height: viewport.size.height)
+                    isReadingTail = PulseReadViewport.tailVisible(layout.tail, height: viewport.size.height)
+                    updateReadBoundary()
+                }
+                .onDisappear { visibleReadIDs = []; updateReadBoundary() }
                 .onChange(of: messages.last?.id) { _ in
                     if !didInitialScroll || isReadingTail || messages.last?.senderId == session.viewer?.id {
                         if !messages.isEmpty { proxy.scrollTo("read-tail", anchor: .bottom); didInitialScroll = true }
@@ -1545,7 +1662,7 @@ struct MirrorRoomView: View {
                     updateReadBoundary()
                 }
                 .onChange(of: trayOpen) { _ in updateReadBoundary() }
-                .onChange(of: activeSheet != nil || menuOpen || trayEffectsOpen) { _ in updateReadBoundary() }
+                .onChange(of: activeSheet != nil || menuOpen || trayEffectsOpen || docPickerOpen || photoPickerOpen) { _ in updateReadBoundary() }
                 // R102 tap-away scrim (web 5113-5131): a transparent catcher
                 // over the message list closes the tray; the tray + composer
                 // themselves stay interactive.
@@ -1556,6 +1673,8 @@ struct MirrorRoomView: View {
                             .onTapGesture { withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { trayOpen = false } }
                     }
                 }
+            }
+
             }
 
             // R102 - armed pills (web 4974): the armed effect and the armed
@@ -1618,12 +1737,12 @@ struct MirrorRoomView: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
-                        TextField("Type here", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
-                            .font(.system(size: 15)).foregroundColor(MirrorArt.text)
-                            .lineLimit(1...5)
+                        PulseComposerInput(text: Binding(get: { draft }, set: { draft = $0 }),
+                            focused: Binding(get: { composerFocused }, set: { composerFocused = $0 }),
+                            placeholder: "Type here", session: session,
+                            textColor: UIColor(MirrorArt.text), placeholderColor: UIColor(MirrorArt.dim), font: .systemFont(ofSize: 15))
                             .padding(.vertical, 6)
-                            .focused($composerFocused)
-                        PhotosPicker(selection: $photoItem, matching: .images) {
+                        Button { photoPickerOpen = true } label: {
                             Image(systemName: "camera").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
                                 .frame(width: 36, height: 36)
                         }
@@ -1660,6 +1779,7 @@ struct MirrorRoomView: View {
                 .padding(.horizontal, 12).padding(.vertical, 12)
             }
         }
+        .background(PulseReadPresentationAnchor(session: session, owner: readVisitID))
         .overlay(alignment: .topTrailing) {
             if menuOpen {
                 MirrorRoomKebab(
@@ -1671,9 +1791,7 @@ struct MirrorRoomView: View {
                     onPinned: { menuOpen = false; activeSheet = .pinned },
                     onMute: { preset in
                         menuOpen = false
-                        Task {
-                            try? await session.api.setMuted(conversationId: row.id, until: preset)
-                        }
+                        setRoomMuted(until: preset)
                     }
                 )
             }
@@ -1692,6 +1810,11 @@ struct MirrorRoomView: View {
                     composerFocused = true
                 },
                 onSent: { if generation == session.sessionGeneration { refreshRevision &+= 1 } },
+                captureScheduledDraft: { draftJournal?.captureReceipt() },
+                onScheduled: { body, receipt in
+                    if generation == session.sessionGeneration, let receipt, draftJournal?.matches(receipt) == true,
+                       draft.trimmingCharacters(in: .whitespacesAndNewlines) == body { draft = "" }
+                },
                 onCreated: { message in
                     if generation == session.sessionGeneration { acceptCarrier(message) }
                 }
@@ -1700,6 +1823,7 @@ struct MirrorRoomView: View {
         }
         // R102 - real tray surfaces: documents via the system picker, photos
         // via PhotosPicker, and the 1s recording ticker.
+        .photosPicker(isPresented: $photoPickerOpen, selection: $photoItem, matching: .images)
         .fileImporter(
             isPresented: $docPickerOpen,
             allowedContentTypes: PulseMediaSupport.documentTypes,
@@ -1739,8 +1863,19 @@ struct MirrorRoomView: View {
                 if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
                 else { refreshRevision &+= 1 }
                 readRevision &+= 1
-            case .messageRead(let id, let reader, _):
-                if id == row.id && reader != session.viewer?.id { refreshRevision &+= 1 }
+            case .conversationUpdated(let id, _):
+                guard id == row.id else { return }
+                receiptMembersRefresh.cancel()
+                scheduleReadMembersRefresh()
+            case .messageRead(let id, let reader, _, let ids, _, let all):
+                if id == row.id {
+                    scheduleReadMembersRefresh()
+                    if all { roomOperations.invalidateReads() }
+                    for messageId in ids {
+                        if let message = try? session.store?.message(id: messageId) { acceptCarrier(message) }
+                    }
+                }
+                if id == row.id && (all || reader != session.viewer?.id) { refreshRevision &+= 1 }
             case .messageDeleted(let id, let raw):
                 guard id == row.id else { return }
                 if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message.deletedCopy()) }
@@ -1754,7 +1889,8 @@ struct MirrorRoomView: View {
         }
         .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
         .onAppear {
-            session.activeRoomId = row.id
+            session.showRoomReadVisit(conversationId: row.id, entryID: readVisitID)
+            scheduleReadMembersRefresh()
             if draftJournal == nil, let store = session.store {
                 let journal = PulseDraftJournal(store: store, conversationId: row.id)
                 draftJournal = journal
@@ -1765,7 +1901,12 @@ struct MirrorRoomView: View {
         .onDisappear {
             cancelVoiceRecording()
             roomOperations.stop()
-            if session.activeRoomId == row.id { session.activeRoomId = nil }
+            receiptMembersRefresh.cancel()
+            session.hideRoomReadVisit(conversationId: row.id, entryID: readVisitID)
+        }
+        .task(id: "members:\(session.readStateRevision(row.id)):\(scenePhase):\(session.isForeground):\(session.ready)") {
+            if scenePhase == .active && session.isForeground { scheduleReadMembersRefresh() }
+            else { receiptMembersRefresh.cancel() }
         }
         .task(id: readRevision) {
             if readRevision > 0 && !Task.isCancelled && scenePhase == .active {
@@ -1793,40 +1934,91 @@ struct MirrorRoomView: View {
         }
     }
 
+    private func setRoomMuted(until: String?) {
+        let client = session.api, epoch = session.sessionGeneration, room = row.id
+        let task = roomOperations.run(key: "mute", operation: {
+            defer { if session.sessionGeneration == epoch { session.noteInboxChanged() } }
+            do {
+                let receipt = try await client.setMuted(conversationId: room, until: until)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
+                if let date = receipt.date { session.toasts.show("Muted until \(PulseFormat.listStamp(date))") }
+                else { session.toasts.show("Notifications unmuted") }
+                return true
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
+                session.toasts.show("Couldn't confirm the mute. Refresh this chat before retrying.")
+                return false
+            }
+        })
+        if task == nil { session.toasts.show("This chat is still updating. Please wait.") }
+    }
+
     private func updateReadBoundary() {
-        session.setVisibleReadBoundary(conversationId: row.id,
-            messageId: isReadingTail && !trayOpen && activeSheet == nil && !menuOpen && !trayEffectsOpen ? messages.last(where: { !$0.id.hasPrefix("local_") })?.id : nil)
+        guard session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID) else { return }
+        let ids = !trayOpen && activeSheet == nil && !menuOpen && !trayEffectsOpen && !docPickerOpen && !photoPickerOpen ? messages.filter {
+            visibleReadIDs.contains($0.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
+                PulseRemediationLogic.isAlive($0.expiresAt)
+        }.map(\.id) : []
+        session.setVisibleReadBoundaries(conversationId: row.id, messageIds: ids)
     }
 
     private func acceptCarrier(_ message: WireChatMessage) {
         guard message.conversationId == row.id else { return }
         roomOperations.invalidateReads()
-        messages = PulseTextDelivery.timeline(messages, pending: [message])
+        let committed = (try? session.store?.mergeMessages([message]))?.first ?? message
+        let next = PulseTextDelivery.timeline(messages, pending: [committed])
+        let local = PulseQuotePrivacy.project(next, known: [committed])
+        messages = (try? session.store?.projectCachedQuotes(local)) ?? local
+    }
+
+    private func scheduleReadMembersRefresh() {
+        guard session.ready, session.isForeground,
+              session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID),
+              let viewer = session.viewer?.id, session.api.userId == viewer else { return }
+        let api = session.api, epoch = session.sessionGeneration
+        receiptMembersRefresh.request {
+            guard !Task.isCancelled, session.isForeground, session.sessionGeneration == epoch,
+                  session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID) else { return }
+            do {
+                let summary = try await api.conversationDetail(id: row.id, userId: viewer)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, summary.id == row.id,
+                      session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID) else { return }
+                memberNames = summary.members.map { $0.name }
+                memberRows = summary.members
+            } catch let failure as PulseAPIClient.Failure {
+                guard !Task.isCancelled, session.sessionGeneration == epoch,
+                      session.ownsRoomReadVisit(conversationId: row.id, entryID: readVisitID),
+                      [403, 404, 410].contains(failure.status ?? 0) else { return }
+                memberNames = []
+                memberRows = []
+            } catch { /* Keep last known readers through an ordinary outage. */ }
+        }
     }
 
     @discardableResult
     private func load() async -> Bool {
         guard scenePhase == .active else { return false }
+        scheduleReadMembersRefresh()
         guard let ticket = roomOperations.beginRead() else { return false }
         let api = session.api
         let generation = session.sessionGeneration
+        let watermark = session.messageRevision
+        let snapshotRequest = session.store?.beginMessageSnapshot()
         do {
             let page = try await api.messages(conversationId: row.id)
             guard roomOperations.accepts(ticket), generation == session.sessionGeneration else { return false }
             let pending = try session.store.map { try PulseTextDelivery.pendingMessages(store: $0, conversationId: row.id) } ?? []
-            try session.store?.upsert(messages: page.messages)
-            messages = PulseTextDelivery.timeline(page.messages, pending: pending)
+            let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            _ = try session.store?.mergeMessages(eligible, snapshotRequest: snapshotRequest)
+            let committed = try session.store?.currentMessageSnapshot(page.messages) ?? eligible
+            let next = PulseTextDelivery.timeline(committed, pending: pending)
+            messages = try session.store?.projectCachedQuotes(next) ?? next
             loadError = nil
         } catch {
             if roomOperations.accepts(ticket), generation == session.sessionGeneration {
                 loadError = "Could not refresh messages. Previous messages are kept."
             }
             return false
-        }
-        if let summary = try? await api.conversationDetail(id: row.id, userId: api.userId),
-           roomOperations.accepts(ticket), generation == session.sessionGeneration {
-            memberNames = summary.members.map { $0.name }
-            memberRows = summary.members
         }
         return roomOperations.accepts(ticket) && generation == session.sessionGeneration
     }
@@ -1865,13 +2057,17 @@ struct MirrorRoomView: View {
             session.toasts.show("Wait for this queued message to be sent before reacting.")
             return
         }
-        let api = session.api
+        guard let requested = messages.first(where: { $0.id == messageId }), let owner = session.viewer?.id else { return }
+        let reaction = PulseReactionId.normalize(emoji)
+        let present = !(requested.reactions ?? []).contains { PulseReactionId.normalize($0.emoji) == reaction && $0.userIds.contains(owner) }
         let generation = session.sessionGeneration
         roomOperations.run(key: "reaction-" + messageId, operation: {
             do {
-                let message = try await api.react(messageId: messageId, emoji: emoji)
+                guard generation == session.sessionGeneration else { return false }
+                try await session.setReaction(requested, emoji: reaction.rawValue, present: present)
                 try Task.checkCancellation()
-                guard generation == session.sessionGeneration, message.id == messageId, message.conversationId == row.id else { return false }
+                guard generation == session.sessionGeneration,
+                      let message = try session.store?.message(id: messageId), message.conversationId == row.id else { return false }
                 acceptCarrier(message)
                 return true
             } catch {
@@ -2180,11 +2376,10 @@ struct MirrorRoomView: View {
         let anonymous = row.isGroup && anonNext
         roomOperations.run(key: "photo-import", operation: {
             do {
-                guard let raw = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadCorruptFile) }
+                guard let photo = try await item.loadTransferable(type: PulsePickedPhoto.self) else { throw CocoaError(.fileReadCorruptFile) }
                 try Task.checkCancellation()
                 guard generation == session.sessionGeneration else { return false }
-                guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: raw) else { throw CocoaError(.fileReadCorruptFile) }
-                prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),
+                prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: photo.jpeg),
                     envelope: PulseOutboxForward(kind: "image", anon: anonymous))
                 return true
             } catch {
@@ -2276,8 +2471,8 @@ struct MirrorBubble: View {
     private var receiptStatus: String {
         if message.id.hasPrefix("local_") { return "Queued" }
         let split = PulseRoomParityLogic.receiptSplit(
-            members: receiptMembers.map { .init(id: $0.id, lastReadAtIso: $0.lastReadAt) },
-            viewerId: viewerId, createdAtIso: message.createdAt)
+            members: receiptMembers.map { .init(id: $0.id, lastReadAtIso: $0.lastReadAt, readMembershipId: $0.readMembershipId) },
+            viewerId: viewerId, createdAtIso: message.createdAt, readByMembershipIds: message.readByMembershipIds ?? [])
         guard !split.seenBy.isEmpty else { return "Sent" }
         return isGroup && !split.deliveredTo.isEmpty ? "Read by \(split.seenBy.count)" : "Seen"
     }
@@ -2289,7 +2484,7 @@ struct MirrorBubble: View {
 
 
     private var chips: [MirrorReactionChip] {
-        (message.reactions ?? []).map { g in
+        PulseReactionId.groups(message.reactions).map { g in
             MirrorReactionChip(emoji: g.emoji, count: g.count, iReacted: g.userIds.contains(viewerId))
         }
     }
@@ -2304,7 +2499,7 @@ struct MirrorBubble: View {
         HStack(alignment: .bottom, spacing: 0) {
             if !mine && isGroup {
                 if head {
-                    MirrorAvatarTile(name: message.sender?.name ?? "?", color: message.sender?.color, isGroup: false, id: message.senderId, online: false, showPresence: false, size: 24, corner: 12)
+                    MirrorAvatarTile(name: message.integrationLabel ?? message.sender?.name ?? "?", color: message.sender?.color, isGroup: false, id: message.senderId, online: false, showPresence: false, size: 24, corner: 12)
                         .padding(.trailing, 6).padding(.bottom, 20)
                 } else {
                     Color.clear.frame(width: 30, height: 1)
@@ -2319,28 +2514,33 @@ struct MirrorBubble: View {
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         // R54-c: sender name INSIDE the incoming group bubble
-                        if !mine && isGroup && head {
+                        if let origin = message.integrationLabel {
+                            Text(origin).font(.system(size: 10, weight: .semibold)).foregroundColor(MirrorArt.accent2).padding(.bottom, 2)
+                        } else if !mine && isGroup && head {
                             Text(message.sender?.name ?? "")
                                 .font(.system(size: 12, weight: .semibold)).foregroundColor(MirrorArt.textSoft)
                                 .padding(.bottom, 2)
                         }
                         if let reply = message.replyTo {
-                            HStack(alignment: .top, spacing: 0) {
-                                Rectangle().fill(mine ? Color.black.opacity(0.15) : MirrorArt.accent).frame(width: 3)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(reply.deleted == true ? "Deleted message" : reply.senderName)
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(mine ? MirrorArt.onBubbleOut : MirrorArt.accent2)
-                                    Text(reply.deleted == true ? "This message was deleted" : reply.content)
-                                        .font(.system(size: 12)).foregroundColor(mine ? MirrorArt.inkSoft : MirrorArt.dim)
-                                        .lineLimit(1)
-                                }
-                                .padding(.horizontal, 8).padding(.vertical, 4)
-                                Spacer(minLength: 0)
+                            TimelineView(.periodic(from: .now, by: 1)) { clock in
+                                let visible = reply.presentation(at: clock.date)
+                                HStack(alignment: .top, spacing: 0) {
+                                    Rectangle().fill(mine ? Color.black.opacity(0.15) : MirrorArt.accent).frame(width: 3)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(visible.senderName)
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(mine ? MirrorArt.onBubbleOut : MirrorArt.accent2)
+                                        Text(visible.content)
+                                            .font(.system(size: 12)).foregroundColor(mine ? MirrorArt.inkSoft : MirrorArt.dim)
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    Spacer(minLength: 0)
                             }
                             .background(mine ? Color.black.opacity(0.05) : Color.white.opacity(0.06))
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .padding(.bottom, 4)
+                            }
                         }
                         if message.deletedAt != nil {
                             Label("Message deleted", systemImage: "trash")
@@ -2394,7 +2594,7 @@ struct MirrorBubble: View {
                         ForEach(chips) { chip in
                             Button(action: { onToggleReaction(chip.emoji) }) {
                                 HStack(spacing: 2) {
-                                    Text(chip.emoji).font(.system(size: 12))
+                                    Image(systemName: PulseReactionId.normalize(chip.emoji).symbolName).font(.system(size: 12))
                                     if chip.count > 1 {
                                         Text("\(chip.count)")
                                             .font(.system(size: 11, weight: .semibold))
@@ -2508,6 +2708,8 @@ struct MirrorRoomSheetView: View {
     var draftText: String = ""
     var onInsertDraft: (String) -> Void = { _ in }
     var onSent: () -> Void = {}
+    var captureScheduledDraft: () -> PulseDraftReceipt? = { nil }
+    var onScheduled: (String, PulseDraftReceipt?) -> Void = { _, _ in }
     var onCreated: (WireChatMessage) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -2594,7 +2796,8 @@ struct MirrorRoomSheetView: View {
             case .poll:
                 MirrorPollBuilder(session: session, row: row, onSent: onSent)
             case .schedule:
-                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent)
+                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent,
+                    captureDraft: captureScheduledDraft, onScheduled: onScheduled)
             case .phrases:
                 MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
             case .sticker:
@@ -2627,17 +2830,16 @@ struct MirrorRoomSheetView: View {
     private func loadPins() async {
         guard !pinBusy else { return }
         let ticket = UUID(), epoch = session.sessionGeneration, watermark = session.messageRevision
+        let snapshotRequest = session.store?.beginMessageSnapshot()
         pinRequest = ticket
         pinEpoch = epoch
         pinError = nil
         do {
             let fresh = try await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)
             guard !Task.isCancelled, pinRequest == ticket, session.sessionGeneration == epoch else { return }
-            let accepted = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-            try session.store?.upsert(messages: accepted)
-            pinned = fresh.compactMap { message in
-                session.acceptsSyncMessage(message.id, startedAt: watermark) ? message : (try? session.store?.message(id: message.id))
-            }
+            let eligible = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            let accepted = try session.store?.mergeMessages(eligible, snapshotRequest: snapshotRequest) ?? eligible
+            pinned = try session.store?.currentMessageSnapshot(fresh) ?? accepted
             reconcilePins()
         } catch {
             guard !Task.isCancelled, pinRequest == ticket, session.sessionGeneration == epoch else { return }
@@ -2649,17 +2851,18 @@ struct MirrorRoomSheetView: View {
         guard !pinBusy else { return }
         pinBusy = true
         pinRequest = UUID() // A pending GET must not restore this selection.
-        let epoch = session.sessionGeneration, watermark = session.messageRevision
+        let epoch = session.sessionGeneration
         defer { pinBusy = false }
         do {
-            try await session.api.unpinMessage(id: message.id, userId: session.api.userId)
+            _ = try await session.mutateMessage(message, action: .unpin)
+            try Task.checkCancellation()
             guard session.sessionGeneration == epoch else { return }
-            try session.applyPinRemoval(message.id, startedAt: watermark)
-            pinned = pinned?.filter { $0.id != message.id }
+            reconcilePins()
             pinError = nil
+        } catch is CancellationError {
         } catch {
             guard session.sessionGeneration == epoch else { return }
-            pinError = "Couldn't remove pin. Try Unpin again."
+            pinError = error.localizedDescription
         }
     }
 
@@ -2892,10 +3095,15 @@ private struct MirrorScheduleBuilder: View {
     let row: MirrorViewModel.MirrorRow
     let draftText: String
     let onSent: () -> Void
+    let captureDraft: () -> PulseDraftReceipt?
+    let onScheduled: (String, PulseDraftReceipt?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var content = ""
     @State private var when = Date().addingTimeInterval(3600)
+    @State private var minimumDate = Date()
     @State private var busy = false
+    @State private var request = UUID()
+    @State private var attempted: PulseScheduledChip.Attempt?
 
     var body: some View {
         MirrorPanel(title: "Schedule a message") {
@@ -2903,31 +3111,42 @@ private struct MirrorScheduleBuilder: View {
                 MirrorPanelHint("MESSAGE")
                 MirrorTrayField(placeholder: "Type the message first, then schedule it", text: $content)
                 MirrorPanelHint("WHEN - 30 SECONDS TO 30 DAYS OUT")
-                DatePicker("", selection: $when, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                DatePicker("", selection: $when, in: minimumDate..., displayedComponents: [.date, .hourAndMinute])
                     .labelsHidden()
                 MirrorTrayAction(label: "Schedule send", disabled: !valid || busy) { send() }
             }
         }
+        .disabled(busy)
         .onAppear { if content.isEmpty { content = draftText } }
+        .onDisappear { request = UUID() }
     }
 
     private var valid: Bool {
-        !content.trimmingCharacters(in: .whitespaces).isEmpty
+        PulseScheduledChip.canSubmit(text: content, date: when, previous: attempted)
     }
 
     private func send() {
-        busy = true
+        guard !busy, valid else { return }
+        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        request = ticket; busy = true
         let iso = ISO8601DateFormatter().string(from: when)
-        let body = content.trimmingCharacters(in: .whitespaces)
+        let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let draftReceipt = captureDraft()
+        attempted = PulseScheduledChip.Attempt(text: body, date: when)
         Task {
-            defer { busy = false }
+            defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
-                _ = try await session.api.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
+                let item = try await api.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
+                onScheduled(body, draftReceipt)
+                try await api.acknowledgeScheduledCreation(item)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 dismiss()
                 onSent()
                 session.toasts.show("Scheduled - it sends on its own")
             } catch {
-                session.toasts.show("Schedule failed - check the connection")
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
+                session.toasts.show(RoomViewModel.describe(error))
             }
         }
     }
@@ -2941,6 +3160,11 @@ private struct MirrorPhrasesBuilder: View {
     @Environment(\.dismiss) private var dismiss
     @State private var phrases: [WireQuickPhrase] = []
     @State private var text = ""
+    @State private var busy = false
+    @State private var loadError: String?
+    @State private var ticket = UUID()
+
+    @State private var loading = true
 
     var body: some View {
         MirrorPanel(title: "Quick phrases") {
@@ -2948,17 +3172,7 @@ private struct MirrorPhrasesBuilder: View {
                 HStack(spacing: 8) {
                     MirrorTrayField(placeholder: "Add a phrase...", text: $text)
                     Button {
-                        let body = text.trimmingCharacters(in: .whitespaces)
-                        guard !body.isEmpty else { return }
-                        text = ""
-                        Task {
-                            do {
-                                _ = try await session.api.createQuickPhrase(text: body)
-                                await reload()
-                            } catch {
-                                session.toasts.show("Phrase rejected - max 120 chars, 12 rows")
-                            }
-                        }
+                        add()
                     } label: {
                         Image(systemName: "plus").font(.system(size: 15, weight: .bold))
                             .foregroundColor(MirrorArt.gapInk)
@@ -2969,7 +3183,9 @@ private struct MirrorPhrasesBuilder: View {
                     .buttonStyle(.plain)
                 }
                 MirrorPanelScroll {
-                    if phrases.isEmpty {
+                    if let loadError { Button("\(loadError) Retry") { Task { await reload() } } }
+                    if loading && phrases.isEmpty { ProgressView() }
+                    if phrases.isEmpty && !loading && loadError == nil {
                         MirrorPanelHint("No phrases yet - add your first line above")
                     }
                     ForEach(phrases, id: \.id) { phrase in
@@ -2988,14 +3204,7 @@ private struct MirrorPhrasesBuilder: View {
                             }
                             .buttonStyle(.plain)
                             Button {
-                                Task {
-                                    do {
-                                        try await session.api.deleteQuickPhrase(phrase.id)
-                                        await reload()
-                                    } catch {
-                                        session.toasts.show("Couldn't delete that phrase")
-                                    }
-                                }
+                                delete(phrase)
                             } label: {
                                 Image(systemName: "trash").font(.system(size: 12)).foregroundColor(MirrorArt.faint)
                                     .frame(width: 32, height: 32)
@@ -3007,11 +3216,67 @@ private struct MirrorPhrasesBuilder: View {
                 }
             }
         }
-        .task { await reload() }
+        .disabled(busy)
+        .task(id: session.sessionGeneration) {
+            phrases = []; text = ""; busy = false
+            await reload()
+        }
+        .onDisappear { ticket = UUID() }
     }
 
     private func reload() async {
-        phrases = (try? await session.api.quickPhrases()) ?? []
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; loading = true
+        do {
+            let rows = try await api.quickPhrases()
+            guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+            phrases = rows; loadError = nil; loading = false
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+            loadError = "Could not refresh quick phrases."; loading = false
+        }
+    }
+
+    private func add() {
+        let payload = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, !payload.isEmpty, payload.utf16.count <= 120, phrases.count < 12 else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; busy = true
+        Task {
+            defer { if session.sessionGeneration == epoch && ticket == request { busy = false } }
+            do {
+                let phrase = try await api.createQuickPhrase(text: payload)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                phrases.removeAll { $0.id == phrase.id }; phrases.append(phrase)
+                if text.trimmingCharacters(in: .whitespacesAndNewlines) == payload { text = "" }
+                loadError = nil; loading = false
+                PulseHaptics.success()
+
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
+    }
+
+    private func delete(_ phrase: WireQuickPhrase) {
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; busy = true
+        Task {
+            defer { if session.sessionGeneration == epoch && ticket == request { busy = false } }
+            do {
+                try await api.deleteQuickPhrase(phrase.id)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                phrases.removeAll { $0.id == phrase.id }
+                PulseHaptics.tap()
+
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
     }
 }
 
@@ -3081,6 +3346,7 @@ private struct MirrorEventsBuilder: View {
     @State private var description = ""
     @State private var when = Date().addingTimeInterval(86400)
     @State private var busy = false
+    @State private var submission: Task<Void, Never>?
 
     var body: some View {
         MirrorPanel(title: "New event") {
@@ -3094,29 +3360,41 @@ private struct MirrorEventsBuilder: View {
                 MirrorTrayField(placeholder: "Add context...", text: $description)
                 MirrorTrayAction(label: "Post event", disabled: title.trimmingCharacters(in: .whitespaces).isEmpty || busy) { send() }
             }
+            .disabled(busy)
         }
+        .onDisappear { submission?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in submission?.cancel(); dismiss() }
     }
 
     private func send() {
+        guard !busy, session.ready, session.viewer != nil else { return }
+        let client = session.api, epoch = session.sessionGeneration
         busy = true
         let iso = ISO8601DateFormatter().string(from: when)
         let t = title.trimmingCharacters(in: .whitespaces)
         let d = description.trimmingCharacters(in: .whitespaces)
-        Task {
-            defer { busy = false }
+        submission = Task { @MainActor in
+            defer { if session.sessionGeneration == epoch { busy = false } }
             do {
-                _ = try await session.api.createEvent(
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                _ = try await client.createEvent(
                     conversationId: row.id,
                     title: t,
                     startsAtIso: iso,
                     description: d.isEmpty ? nil : d,
                     location: nil
                 )
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
                 dismiss()
                 onSent()
                 session.toasts.show("Event posted - RSVPs are live")
-            } catch {
-                session.toasts.show("Event failed - check the connection")
+            } catch is CancellationError { }
+            catch {
+                if !Task.isCancelled, session.sessionGeneration == epoch {
+                    session.toasts.show(RoomViewModel.describe(error))
+                }
             }
         }
     }
@@ -3131,6 +3409,7 @@ private struct MirrorKanbanBuilder: View {
     @State private var title = ""
     @State private var column = "todo"
     @State private var busy = false
+    @State private var submission: Task<Void, Never>?
 
     private let columns: [(id: String, label: String)] = [
         ("todo", "Todo"), ("doing", "Doing"), ("done", "Done"),
@@ -3160,25 +3439,35 @@ private struct MirrorKanbanBuilder: View {
                 MirrorTrayAction(label: "Add card", disabled: title.trimmingCharacters(in: .whitespaces).isEmpty || busy) { send() }
             }
         }
+        .disabled(busy)
+        .onDisappear { submission?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in submission?.cancel(); dismiss() }
     }
 
     private func send() {
+        guard !busy, session.ready, session.viewer != nil else { return }
+        let client = session.api, epoch = session.sessionGeneration
         busy = true
         let t = title.trimmingCharacters(in: .whitespaces)
-        Task {
-            defer { busy = false }
+        submission = Task { @MainActor in
+            defer { if session.sessionGeneration == epoch { busy = false } }
             do {
-                _ = try await session.api.createKanbanCard(
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                _ = try await client.createKanbanCard(
                     conversationId: row.id,
                     title: t,
                     column: column,
                     assigneeId: nil,
                     messageId: nil
                 )
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
                 dismiss()
                 onSent()
-            } catch {
-                session.toasts.show("Card failed - check the connection")
+            } catch is CancellationError { }
+            catch {
+                if !Task.isCancelled, session.sessionGeneration == epoch { session.toasts.show(RoomViewModel.describe(error)) }
             }
         }
     }

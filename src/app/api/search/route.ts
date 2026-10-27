@@ -6,9 +6,10 @@
 // GET /api/search?userId=<id>&q=<text>
 //   → { messages: SearchResultMessage[], total: number }
 import { NextResponse } from 'next/server'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { db } from '@/lib/db'
 import { visibleSearchHit } from '@/lib/search-visibility'
-import { unexpiredMessages } from '@/lib/message-visibility'
+import { unexpiredMessages, visibleInboxPreview } from '@/lib/message-visibility'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 import type { SearchResultMessage } from '@/lib/types'
 
@@ -23,7 +24,7 @@ const Q_MAX = 64
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const userId = (url.searchParams.get('userId') ?? '').trim()
-  const q = (url.searchParams.get('q') ?? '').trim().slice(0, Q_MAX)
+  const q = (url.searchParams.get('q') ?? '').trim()
 
   if (userId.length === 0) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
@@ -31,6 +32,10 @@ export async function GET(req: Request) {
   if (q.length === 0) {
     return NextResponse.json({ error: 'q (search text) is required.' }, { status: 400 })
   }
+
+  const denied = await requireActionOwner(req, userId, 'message search')
+  if (denied) return denied
+  if (q.length > Q_MAX) return NextResponse.json({ error: `Search text must be ${Q_MAX} UTF-16 units or fewer.` }, { status: 400 })
 
   const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
   if (!user) {
@@ -52,7 +57,7 @@ export async function GET(req: Request) {
     },
   })
   if (participations.length === 0) {
-    return NextResponse.json({ messages: [], total: 0 })
+    return NextResponse.json({ messages: [], total: 0 }, { headers: { 'Cache-Control': 'private, no-store' } })
   }
 
   // Resolve a display title per conversation (group name / DM partner name).
@@ -71,11 +76,15 @@ export async function GET(req: Request) {
   const convIds = participations.map((p) => p.conversationId)
 
   // Scan the newest rows once (bounded), filter in Node, keep the best hits.
+  const now = new Date()
   const rows = await db.message.findMany({
-    where: { conversationId: { in: convIds }, deletedAt: null, ...unexpiredMessages(new Date()) },
+    where: { conversationId: { in: convIds }, deletedAt: null, viewOnce: false, ...unexpiredMessages(now),
+      conversation: { participants: { some: { userId } } },
+      AND: [{ OR: [{ parentId: null }, { parent: { is: { parentId: null, deletedAt: null, ...unexpiredMessages(now) } } }] }],
+    },
     orderBy: { createdAt: 'desc' },
     take: SCAN_WINDOW,
-    include: MESSAGE_FULL_INCLUDE,
+    include: { ...MESSAGE_FULL_INCLUDE, parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } } },
   })
 
   const messages: SearchResultMessage[] = []
@@ -83,13 +92,15 @@ export async function GET(req: Request) {
     // Avoid serializing up to 1,200 rich messages when only 30 previews are needed.
     if (messages.length === RESULT_CAP) break
     if (row.viewOnce || !(row.content.toLowerCase().includes(needle) || (row.fileName ?? '').toLowerCase().includes(needle))) continue
+    const visible = visibleInboxPreview(row, row.conversationId, new Date())
+    if (!visible) continue
     const hit = visibleSearchHit({
-      ...mapMessage(row, userId),
+      ...mapMessage(visible, userId),
       conversationName: titleByConv.get(row.conversationId) ?? 'Chat',
       isGroup: groupByConv.get(row.conversationId) ?? false,
     }, needle)
     if (hit) messages.push(hit)
   }
 
-  return NextResponse.json({ messages, total: messages.length })
+  return NextResponse.json({ messages, total: messages.length }, { headers: { 'Cache-Control': 'private, no-store' } })
 }

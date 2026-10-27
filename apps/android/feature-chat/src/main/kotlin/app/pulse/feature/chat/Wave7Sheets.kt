@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -247,9 +248,9 @@ fun KanbanSheet(
     viewerId: String,
     isAdmin: Boolean,
     loadBoard: suspend () -> KanbanPageDto?,
-    onAddCard: (title: String, column: String, assigneeId: String?) -> Unit,
-    onMoveCard: (cardId: String, column: String, position: Long?) -> Unit,
-    onDeleteCard: (cardId: String) -> Unit,
+    onAddCard: suspend (title: String, column: String, assigneeId: String?) -> Boolean,
+    onMoveCard: suspend (cardId: String, column: String, position: Long?) -> Boolean,
+    onDeleteCard: suspend (cardId: String) -> Boolean,
     prefillTitle: String?,
     onDismiss: () -> Unit,
 ) {
@@ -258,14 +259,31 @@ fun KanbanSheet(
     var addTitle by remember { mutableStateOf(prefillTitle ?: "") }
     var ticking by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) { addTitle = prefillTitle ?: addTitle }
-
-    // 1500 ms poll while open (web parity), paused by ticking=false.
-    LaunchedEffect(ticking) {
-        while (ticking) {
-            loadBoard()?.let { board = it }
-            delay(1_500)
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var draftRevision by remember { mutableStateOf(0L) }
+    val scope = rememberCoroutineScope()
+    val refreshGate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    suspend fun refresh() {
+        val ticket = refreshGate.beginRead() ?: return
+        val page = loadBoard()
+        if (!refreshGate.accepts(ticket)) return
+        if (page != null) board = page else notice = "Couldn't load the complete board. Last confirmed cards are kept."
+    }
+    fun mutate(operation: suspend () -> Boolean, accepted: () -> Unit = {}) {
+        if (busy) return
+        busy = true; notice = null; refreshGate.beginWrite()
+        scope.launch {
+            try {
+                if (operation()) accepted() else notice = "Task update wasn't confirmed. Your input is kept."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { notice = error.message ?: "Could not update this task."
+            } finally { busy = false; refreshGate.endWrite() }
+            refresh()
         }
+    }
+    LaunchedEffect(ticking) {
+        while (ticking) { refresh(); delay(1_500) }
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -274,6 +292,8 @@ fun KanbanSheet(
                 Text("Kanban", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { ticking = !ticking }) { Text(if (ticking) "Pause" else "Live") }
             }
+            notice?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+            if (board == null && notice == null) Text("Loading board…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             val cards = board?.cards ?: emptyList()
             PulseWave7Logic.KANBAN_COLUMNS.forEach { col ->
                 val colCards = cards.filter { it.column == col }.sortedBy { it.position }
@@ -289,20 +309,23 @@ fun KanbanSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = { addColumn = if (addColumn == col) null else col; addTitle = prefillTitle ?: "" }) { Text("+ Add") }
+                    TextButton(enabled = !busy, onClick = { draftRevision++; addColumn = if (addColumn == col) null else col; addTitle = prefillTitle ?: "" }) { Text("+ Add") }
                 }
                 if (addColumn == col) {
                     OutlinedTextField(
-                        value = addTitle, onValueChange = { addTitle = it.take(120) },
+                        value = addTitle, onValueChange = { draftRevision++; addTitle = it.take(120) },
                         label = { Text("Task title") }, modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(6.dp))
                     Button(
+                        enabled = !busy,
                         onClick = {
                             if (addTitle.isNotBlank()) {
-                                onAddCard(addTitle.trim(), col, null)
-                                addTitle = ""
-                                addColumn = null
+                                val revision = draftRevision
+                                val title = addTitle.trim()
+                                mutate(operation = { onAddCard(title, col, null) }, accepted = {
+                                    if (draftRevision == revision) { addTitle = ""; addColumn = null; draftRevision++ }
+                                })
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -329,10 +352,10 @@ fun KanbanSheet(
                         }
                         // move controls - native-native equivalent of web drag/drop
                         if (col != "todo") {
-                            Text("‹", Modifier.clickable { onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) - 1], null) }.padding(6.dp), fontSize = 18.sp)
+                            Text("‹", Modifier.clickable(enabled = !busy) { mutate({ onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) - 1], null) }) }.padding(6.dp), fontSize = 18.sp)
                         }
                         if (col != "done") {
-                            Text("›", Modifier.clickable { onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) + 1], null) }.padding(6.dp), fontSize = 18.sp)
+                            Text("›", Modifier.clickable(enabled = !busy) { mutate({ onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) + 1], null) }) }.padding(6.dp), fontSize = 18.sp)
                         }
                         if (card.createdById == viewerId || isAdmin) {
                             Icon(
@@ -340,7 +363,7 @@ fun KanbanSheet(
                                 contentDescription = "Delete card",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
-                                    .clickable { onDeleteCard(card.id) }
+                                    .clickable(enabled = !busy) { mutate({ onDeleteCard(card.id) }) }
                                     .padding(6.dp)
                                     .size(16.dp),
                             )
@@ -569,10 +592,10 @@ fun EventsSheet(
     viewerId: String,
     isAdmin: Boolean,
     load: suspend () -> List<GroupEventDto>?,
-    onCreate: (title: String, startsAtIso: String, description: String?, location: String?) -> Unit,
-    onRsvp: (eventId: String, status: String) -> Unit,
-    onCheckin: (eventId: String) -> Unit,
-    onDelete: (eventId: String) -> Unit,
+    onCreate: suspend (title: String, startsAtIso: String, description: String?, location: String?) -> Boolean,
+    onRsvp: suspend (eventId: String, status: String) -> Boolean,
+    onCheckin: suspend (eventId: String) -> Boolean,
+    onDelete: suspend (eventId: String) -> Boolean,
     onDismiss: () -> Unit,
 ) {
     var events by remember { mutableStateOf<List<GroupEventDto>>(emptyList()) }
@@ -580,10 +603,34 @@ fun EventsSheet(
     var title by remember { mutableStateOf("") }
     var dateText by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
-    var tick by remember { mutableStateOf(0) }
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) { while (true) { load()?.let { events = it }; delay(4_000); tick++ } }
+    val scope = rememberCoroutineScope()
+    val refreshGate = remember(conversationId, viewerId) { app.pulse.domain.sync.RoomRefreshGate() }
+    var busy by remember { mutableStateOf(false) }
+    var loaded by remember { mutableStateOf(false) }
+    var draftRevision by remember { mutableStateOf(0L) }
+    suspend fun refresh() {
+        val ticket = refreshGate.beginRead() ?: return
+        val page = load()
+        if (!refreshGate.accepts(ticket)) return
+        if (page != null) { events = page; loaded = true }
+        else error = "Couldn't refresh events. Showing the last available list."
+    }
+    fun mutate(operation: suspend () -> Boolean, accepted: () -> Unit = {}) {
+        if (busy) return
+        busy = true; error = null; refreshGate.beginWrite()
+        scope.launch {
+            try {
+                if (operation()) accepted() else error = "Event update wasn't confirmed. Your input has been kept."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (failure: Exception) { error = failure.message ?: "Could not update this event."
+            } finally { busy = false; refreshGate.endWrite() }
+            refresh()
+        }
+    }
+    LaunchedEffect(conversationId, viewerId) { while (true) { refresh(); delay(4_000); nowMs = System.currentTimeMillis() } }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
@@ -592,40 +639,44 @@ fun EventsSheet(
                 TextButton(onClick = { creating = !creating }) { Text(if (creating) "Close" else "+ New") }
             }
             if (creating) {
-                OutlinedTextField(value = title, onValueChange = { title = it.take(120) }, label = { Text("Event title") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = title, onValueChange = { draftRevision++; title = it.take(120) }, label = { Text("Event title") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
-                    value = dateText, onValueChange = { dateText = it.take(16) }, label = { Text("Date (YYYY-MM-DD HH:mm)") }, modifier = Modifier.fillMaxWidth(),
+                    value = dateText, onValueChange = { draftRevision++; dateText = it.take(40) }, label = { Text("Local date (YYYY-MM-DD HH:mm)") }, modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(value = location, onValueChange = { location = it.take(200) }, label = { Text("Location (optional)") }, modifier = Modifier.fillMaxWidth())
-                error?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-                }
+                OutlinedTextField(value = location, onValueChange = { draftRevision++; location = it.take(200) }, label = { Text("Location (optional)") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 Button(
+                    enabled = !busy,
                     onClick = {
                         val parsed = parseEventDate(dateText)
                         if (title.isBlank()) error = "title must be 1-120 characters."
-                        else if (parsed == null) error = "startsAt must be a parseable ISO date string."
+                        else if (parsed == null) error = "Use a valid local date/time or an ISO timestamp with an explicit offset."
                         else {
                             error = null
-                            onCreate(title.trim(), parsed, null, location.trim().ifBlank { null })
-                            title = ""; dateText = ""; location = ""; creating = false
+                            val revision = draftRevision
+                            val submittedTitle = title.trim()
+                            val submittedLocation = location.trim().ifBlank { null }
+                            mutate(operation = { onCreate(submittedTitle, parsed, null, submittedLocation) }, accepted = {
+                                if (draftRevision == revision) {
+                                    title = ""; dateText = ""; location = ""; creating = false; draftRevision++
+                                }
+                            })
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Schedule event") }
                 Spacer(Modifier.height(10.dp))
             }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
             if (events.isEmpty()) {
-                Text("No events yet - schedule the first one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (loaded) "No events yet - schedule the first one." else "Loading events…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             events.forEach { e ->
                 val counts = e.counts ?: EventCountsDto()
                 val startsMs = runCatching { Instant.parse(e.startsAt).toEpochMilli() }.getOrDefault(0L)
-                val inWindow = PulseWave7Logic.checkinWindowOpen(startsMs, System.currentTimeMillis())
+                val inWindow = PulseWave7Logic.checkinWindowOpen(startsMs, nowMs)
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -641,7 +692,7 @@ fun EventsSheet(
                                 contentDescription = "Delete event",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
-                                    .clickable { onDelete(e.id) }
+                                    .clickable(enabled = !busy) { mutate({ onDelete(e.id) }) }
                                     .padding(4.dp)
                                     .size(16.dp),
                             )
@@ -661,7 +712,8 @@ fun EventsSheet(
                                 else -> "Can't"
                             }
                             OutlinedButton(
-                                onClick = { onRsvp(e.id, s) },
+                                onClick = { mutate({ onRsvp(e.id, s) }) },
+                                enabled = !busy && !selected,
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     containerColor = if (selected) PulsePalette.Emerald.copy(alpha = 0.2f) else Color.Transparent,
                                 ),
@@ -671,7 +723,10 @@ fun EventsSheet(
                     }
                     if (e.myStatus != null && e.myStatus != "no" && inWindow) {
                         Spacer(Modifier.height(6.dp))
-                        Button(onClick = { onCheckin(e.id) }, modifier = Modifier.fillMaxWidth()) { Text("Check in · +15 XP") }
+                        val checkedIn = e.rsvps.any { it.userId == viewerId && it.checkedInAt != null }
+                        Button(onClick = { mutate({ onCheckin(e.id) }) }, enabled = !busy && !checkedIn, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (checkedIn) "Checked in" else "Check in · +15 XP")
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -688,19 +743,7 @@ private fun countOf(c: EventCountsDto, s: String): Int = when (s) {
 }
 
 /** Accepts "YYYY-MM-DD HH:mm" (local) or ISO strings → ISO-8601 UTC wire form. */
-internal fun parseEventDate(text: String): String? {
-    val t = text.trim()
-    if (t.isEmpty()) return null
-    runCatching {
-        return Instant.parse(t.replace(" ", "T").let { if (it.endsWith("Z") || it.contains("+")) it else "$it:00Z" }).toString()
-    }
-    return runCatching {
-        val d = LocalDateTime.parse(t.replace("T", " ").let { it }, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        d.atZone(ZoneId.systemDefault()).toInstant().toString()
-    }.getOrElse {
-        runCatching { LocalDate.parse(t).atTime(19, 0).atZone(ZoneId.systemDefault()).toInstant().toString() }.getOrNull()
-    }
-}
+internal fun parseEventDate(text: String): String? = PulseWave7Logic.parseEventStart(text)
 
 internal fun formatEventTime(iso: String?): String {
     val ms = runCatching { Instant.parse(iso).toEpochMilli() }.getOrDefault(0)
@@ -716,7 +759,7 @@ internal fun formatEventTime(iso: String?): String {
 fun RemindersSheet(
     viewerId: String,
     load: suspend () -> RemindersPageDto?,
-    onCreate: (note: String, remindAtIso: String, anchoredMessageId: String?) -> Unit,
+    onCreate: suspend (note: String, remindAtIso: String, anchoredMessageId: String?) -> Boolean,
     onResolve: (id: String) -> Unit,
     onDelete: (id: String) -> Unit,
     // R7 item 4 - web REMINDER_JUMP_EVENT parity: rows anchored to a message
@@ -725,6 +768,8 @@ fun RemindersSheet(
     anchoredMessageId: String?,
     onDismiss: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    var creating by remember { mutableStateOf(false) }
     var items by remember { mutableStateOf(listOf<app.pulse.protocol.ReminderItemDto>()) }
     var note by remember { mutableStateOf("") }
     var when_ by remember { mutableStateOf("") }
@@ -760,23 +805,32 @@ fun RemindersSheet(
                 onClick = {
                     val now = System.currentTimeMillis()
                     val zone = ZoneId.systemDefault()
-                    val parsed = PulseWave7Logic.parseRelativeReminder(when_, now, zone)
+                    val parsed = PulseWave7Logic.parseReminderTime(when_, now, zone)
                     val iso = parsed?.let {
-                        java.time.Instant.ofEpochMilli(it.remindAtEpochMs).toString()
+                        java.time.Instant.ofEpochMilli(it).toString()
                     } ?: parseEventDate(when_)
-                    val finalNote = parsed?.note ?: note.trim()
+                    val finalNote = note.trim()
                     when {
                         iso == null -> error = "No sane time found - try \"in 30m\", \"tomorrow\" or an exact date."
                         finalNote.isEmpty() -> error = "Note can't be empty."
                         else -> {
                             error = null
-                            onCreate(finalNote, iso, anchoredMessageId)
-                            note = ""; when_ = ""
+                            if (!creating) {
+                                val submittedNote = note; val submittedWhen = when_; val anchor = anchoredMessageId
+                                creating = true
+                                scope.launch {
+                                    try {
+                                        if (onCreate(finalNote, iso, anchor)) {
+                                            if (note == submittedNote && when_ == submittedWhen) { note = ""; when_ = "" }
+                                        } else error = "Reminder was not confirmed. Your note and time are kept; check the list before retrying."
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { error = "Reminder was not confirmed. Your note and time are kept; check the list before retrying." } finally { creating = false }
+                                }
+                            }
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Set reminder") }
+                modifier = Modifier.fillMaxWidth(), enabled = !creating,
+            ) { Text(if (creating) "Setting reminder…" else "Set reminder") }
             Spacer(Modifier.height(12.dp))
             if (items.isEmpty()) {
                 Text("No reminders yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)

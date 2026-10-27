@@ -1,161 +1,92 @@
-// /api/conversations/[id]/members/[userId] - promote · demote · remove
-// Group role governance (admin-only mutations on other members).
+import { invalidateNativeReadState } from '@/lib/push/transport'
+// Targeted role/remove aliases use the same guards as the collection endpoint.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { GroupMembershipError, removeGroupMember, setGroupRole } from '@/lib/group-membership'
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   buildConversationDetail,
   CONVERSATION_FULL_INCLUDE,
   notifySocket,
   safeJson,
+  strField,
 } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
-
 interface RouteCtx {
   params: Promise<{ id: string; userId: string }>
 }
-
-/** Shared preconditions for both verbs. */
-async function loadContext(id: string, userId: string, body: Record<string, unknown>) {
-  const requesterId = typeof body.requesterId === 'string' ? body.requesterId.trim() : ''
-  if (!requesterId) {
-    return { error: NextResponse.json({ error: 'requesterId is required.' }, { status: 400 }) }
-  }
-
-  const conv = await db.conversation.findUnique({ where: { id } })
-  if (!conv) {
-    return { error: NextResponse.json({ error: 'Conversation not found.' }, { status: 404 }) }
-  }
-  if (!conv.isGroup) {
-    return { error: NextResponse.json({ error: 'Direct conversations have no roles.' }, { status: 400 }) }
-  }
-
-  const requester = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId: requesterId, conversationId: id } },
-    select: { role: true },
-  })
-  if (!requester) {
-    return { error: NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 }) }
-  }
-  if (requester.role !== 'admin') {
-    return { error: NextResponse.json({ error: 'Only group admins can manage members.' }, { status: 403 }) }
-  }
-
-  const target = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: id } },
-    select: { id: true, role: true },
-  })
-  if (!target) {
-    return { error: NextResponse.json({ error: 'That user is not a member of this group.' }, { status: 404 }) }
-  }
-
-  return { conv, target }
+function failure(error: unknown) {
+  if (error instanceof GroupMembershipError)
+    return NextResponse.json({ error: error.message }, { status: error.status })
+  throw error
 }
-
-/**
- * PATCH /api/conversations/[id]/members/[userId]  body { requesterId, action: "promote" | "demote" }
- * Admin-only. Guards: promote fails if already admin; demote fails when the target
- * would be the group's last remaining admin.
- * → 200 { conversation: ConversationDetail }; relays conversation:updated.
- */
-export async function PATCH(req: Request, { params }: RouteCtx) {
-  const { id, userId } = await params
-
-  const body = await safeJson(req)
-  const ctx = await loadContext(id, userId, body)
-  if ('error' in ctx) return ctx.error
-
-  const action = typeof body.action === 'string' ? body.action.trim() : ''
-  if (action !== 'promote' && action !== 'demote') {
-    return NextResponse.json(
-      { error: 'action must be either "promote" or "demote".' },
-      { status: 400 },
-    )
-  }
-
-  const target = ctx.target!
-
-  if (action === 'promote') {
-    if (target.role === 'admin') {
-      return NextResponse.json({ error: 'That member is already an admin.' }, { status: 400 })
-    }
-    await db.conversationParticipant.update({ where: { id: target.id }, data: { role: 'admin' } })
-  } else {
-    if (target.role !== 'admin') {
-      return NextResponse.json({ error: 'That member is not an admin.' }, { status: 400 })
-    }
-    const otherAdmins = await db.conversationParticipant.count({
-      where: { conversationId: id, role: 'admin', NOT: { id: target.id } },
-    })
-    if (otherAdmins === 0) {
-      return NextResponse.json(
-        { error: 'Cannot demote the only admin of this group.' },
-        { status: 400 },
-      )
-    }
-    await db.conversationParticipant.update({ where: { id: target.id }, data: { role: 'member' } })
-  }
-
-  // Bump so list ordering / previews refresh uniformly.
-  await db.conversation.update({ where: { id }, data: { updatedAt: new Date() } })
-
-  const updated = await db.conversation.findUnique({
-    where: { id },
-    include: CONVERSATION_FULL_INCLUDE,
-  })
-  if (!updated) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
-
-  const recipients = (
-    await db.conversationParticipant.findMany({ where: { conversationId: id }, select: { userId: true } })
-  ).map((p) => p.userId)
+async function notify(id: string, recipients: string[]) {
   await notifySocket('conversation:updated', recipients, {
     type: 'conversation:updated',
     conversationId: id,
     recipientIds: recipients,
   })
-
-  return NextResponse.json({ conversation: await buildConversationDetail(updated, userId) })
 }
 
-/**
- * DELETE /api/conversations/[id]/members/[userId]  body { requesterId }
- * Remove (kick) a NON-admin member. Kicking yourself is a leave operation → 400;
- * kicking another admin is forbidden → 403.
- * → 200 { ok: true, remainingMembers }; relays conversation:updated.
- */
-export async function DELETE(req: Request, { params }: RouteCtx) {
+export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id, userId } = await params
-
-  const body = await safeJson(req)
-  const ctx = await loadContext(id, userId, body)
-  if ('error' in ctx) return ctx.error
-
-  const requesterId = String(body.requesterId)
-  if (userId === requesterId) {
+  const body = await safeJson(req),
+    requesterId = strField(body.requesterId),
+    action = strField(body.action)
+  if (!requesterId) return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
+  if (action !== 'promote' && action !== 'demote')
     return NextResponse.json(
-      { error: 'Use "Leave group" to remove yourself from this chat.' },
+      { error: 'action must be either "promote" or "demote".' },
       { status: 400 },
     )
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, requesterId, 'group membership')
+    if (denied) return denied
   }
-
-  const target = ctx.target!
-  if (target.role === 'admin') {
-    return NextResponse.json({ error: 'Admins cannot be removed from the group.' }, { status: 403 })
+  try {
+    const result = await setGroupRole(
+      db,
+      id,
+      requesterId,
+      userId,
+      action === 'promote' ? 'admin' : 'member',
+    )
+    if (result.changed) await notify(id, result.recipients)
+    const updated = await db.conversation.findFirst({
+      where: { id, participants: { some: { userId: requesterId } } },
+      include: CONVERSATION_FULL_INCLUDE,
+    })
+    if (!updated)
+      return NextResponse.json(
+        { error: 'Conversation is no longer available to this participant.' },
+        { status: 403 },
+      )
+    // Viewer-private fields belong to the requester, NEVER the role-change target.
+    return NextResponse.json({ conversation: await buildConversationDetail(updated, requesterId) })
+  } catch (error) {
+    return failure(error)
   }
+}
 
-  await db.conversationParticipant.delete({ where: { id: target.id } })
-
-  const remaining = (
-    await db.conversationParticipant.findMany({ where: { conversationId: id }, select: { userId: true } })
-  ).map((p) => p.userId)
-
-  await notifySocket('conversation:updated', [...remaining, userId], {
-    type: 'conversation:updated',
-    conversationId: id,
-    recipientIds: [...remaining, userId],
-  })
-
-  return NextResponse.json({ ok: true, remainingMembers: remaining.length })
+export async function DELETE(req: Request, { params }: RouteCtx) {
+  const { id, userId } = await params
+  const body = await safeJson(req),
+    requesterId = strField(body.requesterId)
+  if (!requesterId) return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, requesterId, 'group membership')
+    if (denied) return denied
+  }
+  try {
+    const result = await removeGroupMember(db, id, requesterId, userId)
+    if (result.changed) {
+      invalidateNativeReadState(userId, id)
+      await notify(id, [...result.recipients, userId])
+    }
+    return NextResponse.json({ ok: true, remainingMembers: result.recipients.length })
+  } catch (error) {
+    return failure(error)
+  }
 }

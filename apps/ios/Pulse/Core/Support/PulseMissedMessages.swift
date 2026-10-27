@@ -36,7 +36,7 @@ struct PulseMissedMessages {
     }
 
     private static func eligible(_ row: WireChatMessage, roomId: String, viewerId: String?, topicId: String?, now: Date) -> Bool {
-        guard let viewerId, row.conversationId == roomId, row.senderId != viewerId,
+        guard let viewerId, row.conversationId == roomId, !row.isOutgoingFor(viewerId),
               !row.id.hasPrefix("local_"), row.parentId == nil, row.deletedAt == nil,
               topicId == nil || row.topicId == topicId else { return false }
         if let expiry = row.expiresAt { return PulseFormat.date(expiry).map { $0 > now } ?? false }

@@ -43,6 +43,27 @@ class ConversationExpiryTest {
         reader.cancelAndJoin()
     }
 
+    @Test fun `root bounded reply buckets retire offline without loading any thread history`() = runTest {
+        val source = MutableStateFlow(listOf(row().copy(lastMessageExpiresAtEpochMs = 3000,
+            unreadCount = 7, unreadExpirations = listOf(UnreadExpiration(2500, 1),
+                UnreadExpiration(3000, 4), UnreadExpiration(4000, 1)))))
+        var visible = emptyList<Conversation>()
+        val reader = backgroundScope.launch { source.withConversationExpiry { testScheduler.currentTime }.collect { visible = it } }
+        runCurrent()
+        advanceTimeBy(2500); runCurrent()
+        assertEquals(6, visible.single().unreadCount)
+        assertNotNull(visible.single().lastMessagePreview)
+        advanceTimeBy(500); runCurrent()
+        assertEquals(2, visible.single().unreadCount)
+        assertNull(visible.single().lastMessagePreview)
+        assertEquals("unfinished", visible.single().myDraft)
+        assertTrue(visible.single().myManualUnread)
+        advanceTimeBy(1000); runCurrent()
+        assertEquals(1, visible.single().unreadCount)
+        assertTrue(visible.single().unreadExpirations.isEmpty())
+        reader.cancelAndJoin()
+    }
+
     @Test fun `new snapshot cancels old deadlines and stopped observers stay silent`() = runTest {
         val source = MutableStateFlow(listOf(row()))
         val emissions = mutableListOf<List<Conversation>>()
@@ -76,5 +97,18 @@ class ConversationExpiryTest {
         wallClock = 0; advanceTimeBy(30000); runCurrent()
         assertNull(visible.single().lastMessagePreview)
         reader.cancelAndJoin()
+    }
+    @Test fun `scoped expiry includes unloaded replies and manual reminders remain visible in dock`() = runTest {
+        val snapshot = app.pulse.domain.model.ReadScopeState(4, "unloaded", listOf(UnreadExpiration(1000, 3)))
+        val flow = MutableStateFlow<app.pulse.domain.model.ReadScopeState?>(snapshot)
+        val counts = mutableListOf<Int?>()
+        val job = launch { flow.withReadScopeExpiry { testScheduler.currentTime }.collect { counts += it } }
+        runCurrent()
+        assertEquals(4, counts.last())
+        advanceTimeBy(1000); runCurrent()
+        assertEquals(1, counts.last())
+        assertEquals(1, row().copy(unreadCount = 0).badgeUnreadCount)
+        assertEquals(4, row().badgeUnreadCount)
+        job.cancelAndJoin()
     }
 }

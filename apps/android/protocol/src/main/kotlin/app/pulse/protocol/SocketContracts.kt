@@ -142,6 +142,9 @@ data class SocketMessageEnvelope(
 /** S→C message:read - a viewer advanced their watermark. */
 @Serializable
 data class ReadEventPayload(
+    val messageIds: List<String> = emptyList(),
+    val readerMembershipId: String? = null,
+    val all: Boolean = false,
     val conversationId: String = "",
     val userId: String = "",
     val lastReadAt: String? = null,

@@ -1,39 +1,40 @@
-// GET /api/group-call-state?conversationId=<id>
-// Proxy to the socket service's group-call probe so clients can learn about
-// an ONGOING group call without a live ring (late room open, page reload).
-// Socket down / no call → { members: [] } (honest empty, not an error).
+// Viewer-scoped ongoing-call probe. Authority/relay failure is not proof that a call ended.
 import { NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { canJoinConversationCall, readGroupCallProbe } from '@/lib/group-call-access'
 
 export const dynamic = 'force-dynamic'
-
 const SOCKET_URL = 'http://localhost:3003'
+const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } })
 
 export async function GET(req: Request) {
-  const conversationId = (new URL(req.url).searchParams.get('conversationId') ?? '').trim().slice(0, 128)
-  if (!conversationId) {
-    return NextResponse.json({ error: 'conversationId is required.' }, { status: 400 })
+  const url = new URL(req.url)
+  const conversationId = (url.searchParams.get('conversationId') ?? '').trim()
+  const userId = (url.searchParams.get('userId') ?? '').trim()
+  if (!conversationId || conversationId.length > 128 || !userId || userId.length > 64) {
+    return reply({ error: 'Valid conversationId and userId are required.' }, 400)
   }
+  // Preserve the existing migration policy, but never accept another owner's presented credential.
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, userId, 'call state')
+    if (denied) return denied
+  }
+  if (!await canJoinConversationCall(db, conversationId, userId)) return reply({ error: 'Conversation is unavailable.' }, 403)
+  const secret = process.env.CRON_SECRET
+  if (!secret) return reply({ error: 'Call state is unavailable.' }, 503)
   try {
-    const res = await fetch(`${SOCKET_URL}/gcall?conversationId=${encodeURIComponent(conversationId)}`, {
-      signal: AbortSignal.timeout(2000),
+    const response = await fetch(`${SOCKET_URL}/gcall?conversationId=${encodeURIComponent(conversationId)}`, {
+      headers: { 'x-pulse-key': secret }, signal: AbortSignal.timeout(2000), cache: 'no-store',
     })
-    if (!res.ok) {
-      return NextResponse.json({ members: [], kind: 'voice' })
-    }
-    const body = (await res.json()) as {
-      state?: { members?: unknown; kind?: unknown; callId?: unknown; startedAt?: unknown } | null
-    }
-    const state = body.state ?? null
-    if (!state || !Array.isArray(state.members)) {
-      return NextResponse.json({ members: [], kind: 'voice' })
-    }
-    return NextResponse.json({
-      callId: typeof state.callId === 'string' ? state.callId : null,
-      kind: state.kind === 'video' ? 'video' : 'voice',
-      startedAt: typeof state.startedAt === 'number' ? state.startedAt : null,
-      members: state.members,
-    })
+    if (!response.ok) return reply({ error: 'Call state is unavailable.' }, 503)
+    const snapshot = readGroupCallProbe(await response.json(), conversationId)
+    if (!snapshot) return reply({ error: 'Call state could not be verified.' }, 503)
+    // A leave/removal while the relay request was in flight must not disclose its roster.
+    if (!await canJoinConversationCall(db, conversationId, userId)) return reply({ error: 'Conversation is unavailable.' }, 403)
+    return reply({ callStateVersion: 1, conversationId, userId, ...snapshot })
   } catch {
-    return NextResponse.json({ members: [], kind: 'voice' })
+    return reply({ error: 'Call state is unavailable.' }, 503)
   }
 }

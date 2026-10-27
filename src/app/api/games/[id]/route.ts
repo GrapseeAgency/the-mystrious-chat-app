@@ -1,3 +1,5 @@
+import { readRoomGame, gameReadErrorResponse, gameReadHeaders } from '@/lib/game-read'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/games/[id] - match detail with resolved player identities
 // (Task R23-b - in-chat tic-tac-toe)
 //
@@ -5,8 +7,8 @@
 //           playerX: {id, name, color},
 //           playerO: {id, name, color} | null }
 //
-// Read-only: mirrors the messages GET policy (no membership gate on
-// reads - moves/joins carry the guards). The chat card self-fetches
+// Private room data: reads require an owned credential and current room
+// membership in the same transaction. The chat card self-fetches
 // this endpoint and polls while status === 'active'.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -89,31 +91,37 @@ interface GamePlayer {
  * GET /api/games/[id]
  * → 200 { match, playerX: {id,name,color}, playerO: {id,name,color}|null }
  */
-export async function GET(_req: Request, { params }: RouteCtx) {
+export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
+  const userId = new URL(req.url).searchParams.get('userId')?.trim() ?? ''
+  if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, userId, 'game read')
+  if (denied) return denied
+  try { return await readRoomGame(db, userId, { matchId: id }, async (tx, conversationId) => {
+    const row = await tx.gameMatch.findUnique({ where: { id } })
+    if (!row) {
+      return NextResponse.json({ error: 'Game match not found.' }, { status: 404 })
+    }
 
-  const row = await db.gameMatch.findUnique({ where: { id } })
-  if (!row) {
-    return NextResponse.json({ error: 'Game match not found.' }, { status: 404 })
-  }
+    const ids = [row.playerXId, ...(row.playerOId ? [row.playerOId] : [])]
+    const users = await tx.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true, color: true },
+    })
+    const byId = new Map(users.map((u) => [u.id, u]))
+    const x = byId.get(row.playerXId)
+    const o = row.playerOId ? byId.get(row.playerOId) : null
 
-  const ids = [row.playerXId, ...(row.playerOId ? [row.playerOId] : [])]
-  const users = await db.user.findMany({
-    where: { id: { in: ids } },
-    select: { id: true, name: true, color: true },
-  })
-  const byId = new Map(users.map((u) => [u.id, u]))
-  const x = byId.get(row.playerXId)
-  const o = row.playerOId ? byId.get(row.playerOId) : null
-
-  return NextResponse.json(
-    {
-      match: serializeMatch(row),
-      playerX: x
-        ? { id: x.id, name: x.name, color: x.color }
-        : { id: row.playerXId, name: 'Player', color: 'emerald' },
-      playerO: o ? { id: o.id, name: o.name, color: o.color } : null,
-    },
-    { headers: { 'Cache-Control': 'no-store' } },
-  )
+    return NextResponse.json(
+      {
+        gameReadVersion: 1, userId, conversationId,
+        match: serializeMatch(row),
+        playerX: x
+          ? { id: x.id, name: x.name, color: x.color }
+          : { id: row.playerXId, name: 'Player', color: 'emerald' },
+        playerO: o ? { id: o.id, name: o.name, color: o.color } : null,
+      },
+      { headers: gameReadHeaders },
+    )
+  }) } catch (error) { return gameReadErrorResponse(error) }
 }

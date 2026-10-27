@@ -88,4 +88,34 @@ class PulseDeepLinkTest {
         assertEquals(PulseDeepLink.Room("c1", "m1"), PulseDeepLink.parse("pulse://room/c1?x=1&jump=m1"))
         assertEquals(PulseDeepLink.User("u1"), PulseDeepLink.parse("pulse://user/u1?jump=m1"))
     }
+    @Test fun `pasted invite links extract only a valid invite code`() {
+        for (raw in listOf(" abcd1234 ", "pulse://invite/abcd1234?from=share", "pulse:join/ABCD1234",
+            "https://pulse.test/?join=abcd1234&other=1", "https://pulse.test/invite/ABCD1234/")) {
+            assertEquals("ABCD1234", PulseDeepLink.inviteCode(raw))
+        }
+        for (raw in listOf(null, "", "abc", "pulse://room/ABCD1234", "javascript:ABCD1234",
+            "https://pulse.test/user/ABCD1234", "https://pulse.test/?join=%ZZ")) {
+            assertNull(PulseDeepLink.inviteCode(raw))
+        }
+    }
+
+    @Test fun `OS rendered FCM taps preserve the room and message without requiring a URI`() {
+        assertEquals(PulseDeepLink.Room("room", "message"), PulseDeepLink.notificationRoom("message", " room ", " message "))
+        assertEquals(PulseDeepLink.Room("room"), PulseDeepLink.notificationRoom("message", "room", "  "))
+        for (kind in listOf("call", "gcall")) {
+            assertEquals(PulseDeepLink.Room("room"), PulseDeepLink.notificationRoom(kind, "room", "not-a-message"))
+        }
+        for (kind in listOf(null, "unknown", "")) assertNull(PulseDeepLink.notificationRoom(kind, "room", "message"))
+        assertNull(PulseDeepLink.notificationRoom("message", "  ", "message"))
+        assertNull(PulseDeepLink.notificationRoom("message", null, "message"))
+    }
+
+    @Test fun `room URI round trips reserved delimiters and percent escapes exactly once`() {
+        val room = "room/a+b%2F?&é"
+        val message = "message/one+two%2F?&é"
+        assertEquals(PulseDeepLink.Room(room, message), PulseDeepLink.parse(PulseDeepLink.roomUri(room, message)))
+        assertEquals(PulseDeepLink.Room("a+b"), PulseDeepLink.parse("pulse://room/a+b"))
+        assertEquals(PulseDeepLink.Room("a%2Fb", "m%2F1"), PulseDeepLink.parse("pulse://room/a%252Fb?jump=m%252F1"))
+    }
+
 }

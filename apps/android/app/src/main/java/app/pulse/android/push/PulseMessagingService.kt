@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 /**
  * R8 Task 3-c - the FCM entry point. The system only ever starts this service
@@ -27,7 +28,8 @@ import kotlinx.coroutines.launch
  * with no config it stays dormant, which IS the fail-closed behavior.
  *
  * Push envelope (server fanout contract, src/lib/push/transport.ts):
- *   notification { title, body } + data { kind, conversationId, messageId?,
+ *   Capability-enabled messages/calls use data-only delivery (including cold starts).
+ *   Legacy messages retain notification { title, body } + data { kind, conversationId, messageId?,
  *   callKind?, callerName? } with kind = message | gcall | call.
  *
  *   message → the "Messages" channel (default); tap deep-links into the
@@ -40,6 +42,8 @@ import kotlinx.coroutines.launch
 @AndroidEntryPoint
 class PulseMessagingService : FirebaseMessagingService() {
 
+    @Inject lateinit var prefs: app.pulse.domain.repository.PulsePrefsStore
+
     @Inject lateinit var repository: app.pulse.domain.repository.PulseRepository
 
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -51,7 +55,29 @@ class PulseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
+        data["expiresAt"]?.let { expiry ->
+            if ((app.pulse.domain.sync.messageExpiryEpochMs(expiry) ?: Long.MIN_VALUE) <= System.currentTimeMillis()) return
+        }
+        val recipient = data["recipientUserId"]
         val kind = data["kind"] ?: "message"
+        if (kind == "read-state") {
+            // Cold FCM delivery can precede repository startup. The durable worker
+            // checks the persisted owner; this hint never creates a notification or Seen.
+            if (!recipient.isNullOrBlank()) app.pulse.android.OutboxWorker.enqueue(this, recipient, data["conversationId"])
+            return
+        }
+        // Inbox reconciliation is independent of notification permission or a
+        // short cold-owner lookup. The worker revalidates the durable recipient.
+        if (kind == "message" && !recipient.isNullOrBlank()) {
+            app.pulse.android.OutboxWorker.enqueue(this, recipient, data["conversationId"])
+        }
+        // Modern message pushes are data-only, so cold-process delivery reaches
+        // this guard too. Loading the durable owner must not depend on a UI
+        // having started the repository. No network work blocks the FCM callback.
+        val owner = repository.viewerId ?: runCatching { kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.withTimeoutOrNull(2_000) { prefs.viewerId.first() }
+        } }.getOrNull()
+        if (recipient != null && recipient != owner) return
         val conversationId = data["conversationId"]
         val notification = message.notification
         val title = notification?.title ?: data["title"] ?: "Pulse"
@@ -60,6 +86,8 @@ class PulseMessagingService : FirebaseMessagingService() {
 
         when (kind) {
             "gcall", "call" -> {
+                val deadline = data["expiresAt"]?.let { app.pulse.domain.sync.messageExpiryEpochMs(it) }
+                if (kind == "gcall" && (data["callId"].isNullOrBlank() || deadline == null)) return
                 val callerName = data["callerName"].orEmpty()
                 val callKind = data["callKind"] ?: "voice"
                 CallRingNotifier.showIncoming(
@@ -74,15 +102,24 @@ class PulseMessagingService : FirebaseMessagingService() {
                     },
                     conversationId = conversationId,
                     notificationId = CALL_NOTIFICATION_BASE + (conversationId?.hashCode()?.and(0x3FFFFFFF) ?: 0),
+                    timeoutMillis = deadline?.let { it - System.currentTimeMillis() } ?: 45_000,
                 )
             }
 
-            else -> showMessageNotification(title, body, conversationId, data["messageId"])
+            else -> {
+                val handledInApp = app.pulse.android.notify.IncomingAttention.foreground && runCatching {
+                    kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeoutOrNull(500) {
+                        repository.observeConnected().first()
+                    } == true }
+                }.getOrDefault(false)
+                // The socket path already applies mute/quiet-hours/toast/sound policy.
+                if (!handledInApp) showMessageNotification(title, body, conversationId, data["messageId"], recipient)
+            }
         }
     }
 
     /** The default-importance message push with the room deep-link tap. */
-    private fun showMessageNotification(title: String, body: String, conversationId: String?, messageId: String?) {
+    private fun showMessageNotification(title: String, body: String, conversationId: String?, messageId: String?, recipientUserId: String?) {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -105,6 +142,8 @@ class PulseMessagingService : FirebaseMessagingService() {
             launch,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val identity = if (!conversationId.isNullOrBlank() && !messageId.isNullOrBlank() && !recipientUserId.isNullOrBlank())
+            app.pulse.domain.sync.MessageNotificationIdentity(recipientUserId, conversationId, messageId) else null
         val notification = NotificationCompat.Builder(this, PulsePush.MESSAGES_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_email)
             .setContentTitle(title)
@@ -115,12 +154,18 @@ class PulseMessagingService : FirebaseMessagingService() {
         // R10-a - quick reply (RemoteInput): the action routes through
         // PulseReplyReceiver → SendMessageUseCase - the SAME send path the
         // room composer uses, so offline replies queue in the outbox.
-        if (!conversationId.isNullOrBlank()) {
+        if (!conversationId.isNullOrBlank() && !recipientUserId.isNullOrBlank()) {
             val remoteInput = androidx.core.app.RemoteInput.Builder(PulseReplyPayload.KEY_REPLY_TEXT)
                 .setLabel(getString(app.pulse.android.R.string.reply_action))
                 .build()
             val replyIntent = Intent(this, app.pulse.android.notify.PulseReplyReceiver::class.java).apply {
                 putExtra(PulseReplyPayload.EXTRA_CONVERSATION_ID, conversationId)
+                putExtra(PulseReplyPayload.EXTRA_RECIPIENT_USER_ID, recipientUserId)
+                identity?.let {
+                    putExtra(PulseReplyPayload.EXTRA_NOTIFICATION_TAG, it.tag)
+                    // PendingIntent identity must not reuse another message's reply extras.
+                    data = Uri.parse("pulse://notification-reply/${Uri.encode(it.tag)}")
+                }
             }
             val replyPi = PendingIntent.getBroadcast(
                 this,
@@ -142,7 +187,9 @@ class PulseMessagingService : FirebaseMessagingService() {
         val built = notification.build()
         runCatching {
             val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-            nm.notify((conversationId ?: "pulse").hashCode().and(0x3FFFFFFF), built)
+            if (identity != null) nm.notify(identity.tag, 0, built)
+            else nm.notify((conversationId ?: "pulse").hashCode().and(0x3FFFFFFF), built)
+            if (identity != null) app.pulse.android.OutboxWorker.enqueue(this, identity.ownerId, identity.conversationId)
         }.onFailure { Log.w(TAG, "message notification failed", it) }
     }
 

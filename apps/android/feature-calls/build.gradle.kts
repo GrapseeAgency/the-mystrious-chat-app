@@ -44,4 +44,5 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
 
     testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

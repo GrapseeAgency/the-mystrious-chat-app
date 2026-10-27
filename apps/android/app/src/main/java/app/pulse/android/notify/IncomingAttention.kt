@@ -1,5 +1,6 @@
 package app.pulse.android.notify
 
+import app.pulse.domain.sync.incomingPreview
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.RingtoneManager
@@ -18,9 +19,8 @@ import java.util.concurrent.ConcurrentHashMap
  * stay silent until a real push channel exists (honest limitation, same as
  * the reminder loop). Gates, in order:
  *  1. app foregrounded (MainActivity onStart/onStop flips the flag)
- *  2. NOT the viewer's own row (sender filter; optimistic echoes never ride
- *     PulseEvent.MessageReceived - the outbox swap handles those - but the
- *     viewer's own automation replies do arrive and must stay silent)
+ *  2. live main-room arrivals, not the viewer's outgoing action; server-marked
+ *     automation is incoming even if it represents that member's senderId
  *  3. LOCAL quiet hours (ReminderAlertPolicy.quietNow - the same window the
  *     reminder notifier honors)
  *  4. per-room mute (the conversation's mutedUntil window is in the future)
@@ -37,15 +37,24 @@ object IncomingAttention {
     var foreground: Boolean = false
 
     @Volatile var activeReadingRoom: String? = null
+        private set
+    private var readingOwner: Any? = null
 
-    /**
-     * R7 item 7 - notifPreviews mirror (Wave-8 server blob). ON → the
-     * attention toast shows the full preview ("Sender: body", 80-char cap);
-     * OFF → the honest generic "New message". PulseApplication keeps it live
-     * alongside the ReminderAlertPolicy mirrors.
-     */
-    @Volatile
-    var previewsOn: Boolean = true
+    /** A closing obscured room must not clear a newer thread's attention lease. */
+    @Synchronized
+    fun beginReading(roomId: String): () -> Unit {
+        val owner = Any()
+        readingOwner = owner
+        activeReadingRoom = roomId
+        return { endReading(owner) }
+    }
+
+    @Synchronized
+    private fun endReading(owner: Any) {
+        if (readingOwner !== owner) return
+        readingOwner = null
+        activeReadingRoom = null
+    }
 
     /** conversationId → mutedUntil epoch-ms (only future windows are kept). */
     private val mutedUntilMs = ConcurrentHashMap<String, Long>()
@@ -60,10 +69,9 @@ object IncomingAttention {
     }
 
     /** One PulseEvent.MessageReceived - evaluates the gate chain live. */
-    fun onMessageReceived(context: Context, conversationId: String, message: Message, viewerId: String?) {
+    fun onMessageReceived(context: Context, conversationId: String, message: Message, viewerId: String?, alertPrefs: app.pulse.protocol.WirePulsePrefs) {
         if (!foreground || activeReadingRoom == conversationId) return
-        if (viewerId == null || message.authorId == viewerId) return
-        if (message.isDeleted) return
+        val preview = message.incomingPreview(viewerId, conversationId) ?: return
         if (ReminderAlertPolicy.quietNow()) return
         if ((mutedUntilMs[conversationId] ?: 0L) > System.currentTimeMillis()) return
         // R7 item 7 - the preview line the settings row promises ("Message
@@ -74,12 +82,12 @@ object IncomingAttention {
         runCatching {
             android.widget.Toast.makeText(
                 context,
-                app.pulse.protocol.PulseWave8Logic.incomingPreviewText(previewsOn, message.authorName, message.body),
+                app.pulse.protocol.PulseWave8Logic.incomingPreviewText(alertPrefs.notifPreviews == true, preview.senderName, preview.body),
                 android.widget.Toast.LENGTH_SHORT,
             ).show()
         }
-        if (ReminderAlertPolicy.deviceSoundOn && ReminderAlertPolicy.soundOn) playPing(context)
-        if (ReminderAlertPolicy.vibrateOn) buzz(context)
+        if (ReminderAlertPolicy.deviceSoundOn && alertPrefs.notifSound == true) playPing(context)
+        if (alertPrefs.notifVibrate == true) buzz(context)
     }
 
     /**

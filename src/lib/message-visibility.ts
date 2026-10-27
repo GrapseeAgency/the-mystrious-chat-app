@@ -1,12 +1,24 @@
+import { privacyPreferenceEnabled } from './privacy-preferences.ts'
 import type { Prisma } from '../../prisma/generated-client'
 
 /** Evaluate per request, not once when the server module loads. */
 export function unexpiredMessages(at: Date): Prisma.MessageWhereInput {
   return { OR: [{ expiresAt: null }, { expiresAt: { gt: at } }] }
 }
+/** Tombstones may remain as redacted previews, but inaccessible replies may not. */
+export function inboxMessagesWhere(room: string, at: Date): Prisma.MessageWhereInput {
+  return { conversationId: room, ...unexpiredMessages(at),
+    AND: [{ OR: [{ parentId: null }, { parent: { is: {
+      conversationId: room, parentId: null, deletedAt: null, ...unexpiredMessages(at),
+    } } }] }],
+  }
+}
+/** Legacy query helper only; native/application badges must use unreadSnapshot below. */
 export function unreadMessages(room: string, viewer: string, readAt: Date, at: Date): Prisma.MessageWhereInput {
-  return { conversationId: room, senderId: { not: viewer }, deletedAt: null,
-    createdAt: { gt: readAt }, ...unexpiredMessages(at) }
+  // An integration may use a member's senderId without being that member's
+  // outgoing action. Only the persisted server flag changes unread semantics.
+  return { AND: [inboxMessagesWhere(room, at), { OR: [{ senderId: { not: viewer } }, { viaAutomation: true }] }],
+    deletedAt: null, createdAt: { gt: readAt } }
 }
 export function isExpiredMessage(message: { expiresAt: Date | null }, at: Date): boolean {
   return message.expiresAt !== null && message.expiresAt <= at
@@ -20,6 +32,24 @@ export function threadRootAvailable(root: {
     root.parentId === null && !isExpiredMessage(root, at)
 }
 
+/** Preview-only projection: do not overwrite the canonical message in storage.
+ * Existing native expiry schedulers can retire the preview at the ROOT deadline
+ * even when no thread history was ever downloaded on this device.
+ */
+export function visibleInboxPreview<T extends {
+  conversationId: string; parentId: string | null; expiresAt: Date | null;
+  parent?: { conversationId: string; parentId: string | null; deletedAt: Date | null; expiresAt: Date | null } | null;
+}>(message: T | null | undefined, room: string, at: Date): T | null {
+  if (!message || message.conversationId !== room || isExpiredMessage(message, at)) return null
+  if (message.parentId === null) return message
+  if (!threadRootAvailable(message.parent ?? null, room, at)) return null
+  const deadline = message.parent!.expiresAt
+  if (deadline !== null && (message.expiresAt === null || deadline < message.expiresAt)) {
+    return { ...message, expiresAt: deadline }
+  }
+  return message
+}
+
 /** A malformed cross-room parent link must not bypass the root's membership check. */
 export function threadRepliesWhere(rootId: string, roomId: string, at: Date): Prisma.MessageWhereInput {
   return { parentId: rootId, conversationId: roomId, ...unexpiredMessages(at) }
@@ -29,18 +59,58 @@ export function threadRepliesWhere(rootId: string, roomId: string, at: Date): Pr
  * Never derive unread from a client's partial message page or the latest preview.
  */
 export async function unreadSnapshot(
-  db: Pick<import('../../prisma/generated-client').PrismaClient, 'message'>,
+  db: Pick<import('../../prisma/generated-client').PrismaClient, '$queryRaw'>,
   room: string, viewer: string, readAt: Date, at: Date,
-): Promise<{ unreadCount: number; unreadExpirations: { expiresAt: string; count: number }[] }> {
-  const groups = await db.message.groupBy({
-    by: ['expiresAt'], where: unreadMessages(room, viewer, readAt, at), _count: { _all: true },
-  })
+  scope?: { threadId?: string; topicId?: string },
+): Promise<{ firstUnreadMessageId: string | null; unreadCount: number; unreadExpirations: { expiresAt: string; count: number }[] }> {
+  // SQLite is the production datasource. Aggregate in ONE statement: fetching
+  // roots after a child-only count could mix deletion/expiry snapshots. A reply
+  // expires for inbox purposes at min(its own deadline, its canonical root's).
+  // No message bodies or full history are materialized in the application.
+  const groups = await db.$queryRaw<{ expiresAt: number | null; count: bigint; firstUnreadMessageId: string }[]>`
+    WITH unread AS (
+      SELECT m.id, m.createdAt, CASE
+        WHEN m.parentId IS NULL OR p.expiresAt IS NULL THEN m.expiresAt
+        WHEN m.expiresAt IS NULL OR p.expiresAt < m.expiresAt THEN p.expiresAt
+        ELSE m.expiresAt END AS deadline
+      FROM Message m
+      LEFT JOIN Message p ON p.id = m.parentId
+      JOIN ConversationParticipant member ON member.conversationId = m.conversationId AND member.userId = ${viewer}
+      WHERE m.conversationId = ${room} AND (m.senderId <> ${viewer} OR m.viaAutomation = 1)
+        AND m.deletedAt IS NULL AND m.createdAt >= member.joinedAt
+        AND NOT EXISTS (SELECT 1 FROM MessageReadObservation r WHERE r.participantId = member.id AND r.messageId = m.id)
+        AND (${scope?.threadId ?? null} IS NULL OR m.parentId = ${scope?.threadId ?? null})
+        AND (${scope?.topicId ?? null} IS NULL OR COALESCE(m.topicId, p.topicId) = ${scope?.topicId ?? null})
+        AND (m.expiresAt IS NULL OR m.expiresAt > ${at})
+        AND (m.parentId IS NULL OR (
+          p.id IS NOT NULL AND p.conversationId = m.conversationId
+          AND p.parentId IS NULL AND p.deletedAt IS NULL
+          AND (p.expiresAt IS NULL OR p.expiresAt > ${at})
+        ))
+    ), ordered AS (
+      SELECT *, FIRST_VALUE(id) OVER (ORDER BY createdAt, id) AS firstUnreadMessageId FROM unread
+    )
+    SELECT CAST(deadline AS REAL) AS expiresAt, COUNT(*) AS count, MIN(firstUnreadMessageId) AS firstUnreadMessageId
+    FROM ordered GROUP BY deadline ORDER BY deadline ASC
+  `
   return {
-    unreadCount: groups.reduce((total, group) => total + group._count._all, 0),
+    firstUnreadMessageId: groups[0]?.firstUnreadMessageId ?? null,
+    unreadCount: groups.reduce((total, group) => total + Number(group.count), 0),
     unreadExpirations: groups.flatMap(group => group.expiresAt === null ? [] : [{
-      expiresAt: group.expiresAt.toISOString(), count: group._count._all,
-    }]).sort((a, b) => a.expiresAt.localeCompare(b.expiresAt)),
+      expiresAt: new Date(group.expiresAt).toISOString(), count: Number(group.count),
+    }]),
   }
+}
+
+/** Database prefilter for the saved library; validate the parent/child room
+ * relationship on the joined snapshot too (Prisma cannot compare those aliases). */
+export function savedMessagesWhere(userId: string, at: Date): Prisma.SavedMessageWhereInput {
+  return { userId, message: { deletedAt: null, viewOnce: false, ...unexpiredMessages(at),
+    conversation: { participants: { some: { userId } } },
+    AND: [{ OR: [{ parentId: null }, { parent: { is: {
+      parentId: null, deletedAt: null, ...unexpiredMessages(at),
+    } } }] }],
+  } }
 }
 
 /** Explicit removal is repeat-safe, including after message deletion or leaving
@@ -98,4 +168,34 @@ export async function readThreadSnapshot<Root extends ThreadRootRecord, Reply ex
     }
     throw error
   }
+}
+
+/** Indexed exact alert projection, with the same membership/history/expiry rules
+ * as unreadSnapshot. No missing/partial local cache is involved. */
+export async function notificationMessageUnread(
+  db: Pick<import('../../prisma/generated-client').PrismaClient, 'message'>,
+  room: string, viewer: string, membership: { id: string; joinedAt: Date }, messageId: string, at: Date,
+): Promise<boolean> {
+  return !!await db.message.findFirst({ where: {
+    id: messageId, deletedAt: null, createdAt: { gte: membership.joinedAt },
+    readObservations: { none: { participantId: membership.id } },
+    AND: [inboxMessagesWhere(room, at), { OR: [{ senderId: { not: viewer } }, { viaAutomation: true }] }],
+  }, select: { id: true } })
+}
+
+/** Canonical exact evidence, not the inverse of an unread badge. No message
+ * bodies, inferred legacy observations, or other rooms' memberships escape. */
+export async function exactMessageReadState(
+  db: Pick<import('../../prisma/generated-client').PrismaClient, 'message'>,
+  room: string, viewer: string, messageId: string, at: Date,
+): Promise<string[] | null> {
+  const message = await db.message.findFirst({ where: {
+    id: messageId, deletedAt: null, AND: [inboxMessagesWhere(room, at)],
+  }, select: { readObservations: {
+    where: { source: { not: 'legacy' }, participant: { conversationId: room } },
+    select: { participant: { select: { id: true, userId: true, user: { select: { preferences: true } } } } },
+  } } })
+  if (!message) return null
+  return message.readObservations.filter(({ participant }) => participant.userId === viewer ||
+    privacyPreferenceEnabled(participant.user.preferences, 'readReceipts')).map(({ participant }) => participant.id).sort()
 }

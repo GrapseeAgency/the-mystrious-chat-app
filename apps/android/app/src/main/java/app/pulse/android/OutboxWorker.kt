@@ -35,15 +35,37 @@ class OutboxWorker(
         return try {
             val prefs = graph.prefs()
             val owner = prefs.viewerId.first() ?: return Result.success()
+            val recipient = inputData.getString("recipientUserId")
+            if (recipient != null && recipient != owner) return Result.success()
             val base = prefs.serverBase.first()
             if (!base.isNullOrBlank()) app.pulse.core.PulseEndpoints.applyBase(base)
             else graph.endpoints().applyPersisted()
             val token = graph.tokens().load() ?: return Result.retry()
             if (prefs.viewerId.first() != owner || graph.tokens().cached != token) return Result.retry()
             val repo = graph.pulseRepository()
-            repo.start(owner)
-            val report = repo.flushOutbox()
-            if (report.pending > 0) Result.retry() else Result.success()
+            if (!repo.startBackgroundIfIdle(owner)) return Result.retry()
+            val target = repo.boundToCurrentAccount()
+            if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) return Result.retry()
+            // A slow upload must not postpone the open thread's canonical refresh.
+            inputData.getString("readStateRoom")?.takeIf { it.isNotBlank() && it.length <= 128 }
+                ?.let(target::invalidateReadProjections)
+            val complete = app.pulse.domain.sync.flushBackgroundQueues(
+                messages = { target.flushOutbox().pending == 0 },
+                readState = {
+                    val pendingReads = target.flushReadReceipts().getOrThrow()
+                    // No count from a push is trusted. Replay, then fetch the
+                    // canonical inbox and exact alert proofs while media sends run.
+                    target.refreshConversations().getOrThrow()
+                    if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) false
+                    else {
+                        val notifications = app.pulse.android.push.PulseMessageNotifications.reconcile(applicationContext, target) {
+                            prefs.viewerId.first() == owner && graph.tokens().cached == token && repo.viewerId == owner
+                        }
+                        pendingReads == 0 && notifications
+                    }
+                },
+            )
+            if (complete) Result.success() else Result.retry()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -68,11 +90,13 @@ class OutboxWorker(
         }
 
         /**
-         * Network-constrained, unique-name KEEP: multiple
-         * enqueue bursts collapse into one pending flush.
+         * Enqueued on empty → pending transitions. Append never cancels a
+         * running delivery and cannot lose an observation enqueued as that
+         * worker completes. Failed/cancelled chains are replaced safely.
          */
-        fun enqueue(context: Context) {
+        fun enqueue(context: Context, recipientUserId: String? = null, readStateRoom: String? = null) {
             val request = OneTimeWorkRequestBuilder<OutboxWorker>()
+                .setInputData(androidx.work.workDataOf("recipientUserId" to recipientUserId, "readStateRoom" to readStateRoom))
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -80,7 +104,7 @@ class OutboxWorker(
                 )
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.KEEP, request)
+                .enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
         }
     }
 }

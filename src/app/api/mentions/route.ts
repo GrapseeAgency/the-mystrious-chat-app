@@ -28,6 +28,9 @@
 // Rooms with more than 200 '@'-bearing messages in 14 days may miss older
 // mentions - acceptable for a mentions inbox; no full-table scans.
 import { NextResponse } from 'next/server'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { inboxMessagesWhere, visibleInboxPreview } from '@/lib/message-visibility'
+import { clipUtf16 } from '@/lib/text-limits'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -45,10 +48,13 @@ function escapeRegex(text: string): string {
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
-  const userId = url.searchParams.get('userId')
+  const userId = url.searchParams.get('userId')?.trim()
   if (!userId || userId.trim() === '') {
     return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
   }
+
+  const denied = await requireActionOwner(req, userId, 'mentions')
+  if (denied) return denied
 
   const rawLimit = url.searchParams.get('limit')
   let limit = DEFAULT_LIMIT
@@ -80,16 +86,18 @@ export async function GET(req: Request) {
   })
   const conversationIds = participations.map((p) => p.conversationId)
   if (conversationIds.length === 0) {
-    return NextResponse.json({ items: [] })
+    return NextResponse.json({ items: [] }, { headers: { 'Cache-Control': 'private, no-store' } })
   }
 
-  const since = new Date(Date.now() - WINDOW_DAYS * 24 * 3600 * 1000)
+  const now = new Date()
+  const since = new Date(now.getTime() - WINDOW_DAYS * 24 * 3600 * 1000)
   const windows = await Promise.all(
     conversationIds.map((conversationId) =>
       db.message.findMany({
         where: {
-          conversationId,
-          deletedAt: null,
+          ...inboxMessagesWhere(conversationId, now),
+          conversation: { participants: { some: { userId } } },
+          deletedAt: null, viewOnce: false,
           senderId: { not: userId },
           createdAt: { gte: since },
           content: { contains: '@' },
@@ -100,7 +108,8 @@ export async function GET(req: Request) {
           id: true,
           conversationId: true,
           content: true,
-          createdAt: true,
+          createdAt: true, expiresAt: true, parentId: true, anon: true, anonAlias: true,
+          parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
           sender: { select: { id: true, name: true, color: true, avatar: true } },
           conversation: { select: { isGroup: true, name: true } },
         },
@@ -112,7 +121,10 @@ export async function GET(req: Request) {
 
   const items = windows
     .flat()
-    .filter((m) => m.content.length > 0 && mentionPattern.test(m.content))
+    .flatMap(m => {
+      const live = visibleInboxPreview(m, m.conversationId, new Date())
+      return live && live.content.length > 0 && mentionPattern.test(live.content) ? [live] : []
+    })
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()) // newest first
     .slice(0, limit)
     .map((m) => ({
@@ -120,15 +132,16 @@ export async function GET(req: Request) {
       conversationId: m.conversationId,
       conversationName: m.conversation.name,
       isGroup: m.conversation.isGroup,
-      author: {
+      author: m.anon ? { id: '', name: m.anonAlias || 'Anonymous', color: 'orange', avatar: null } : {
         id: m.sender.id,
         name: m.sender.name,
         color: m.sender.color,
         avatar: m.sender.avatar,
       },
-      snippet: m.content.slice(0, SNIPPET_MAX_CHARS),
+      snippet: clipUtf16(m.content, SNIPPET_MAX_CHARS),
+      expiresAt: m.expiresAt?.toISOString() ?? null,
       createdAt: m.createdAt.toISOString(),
     }))
 
-  return NextResponse.json({ items })
+  return NextResponse.json({ items }, { headers: { 'Cache-Control': 'private, no-store' } })
 }

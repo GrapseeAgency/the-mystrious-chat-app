@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/games/[id]/move - play one tic-tac-toe cell (Task R23-b)
 //
 //   POST body { userId, cell: 0..8 }
@@ -124,6 +125,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'game')
+  if (denied) return denied
   const cellRaw = typeof body.cell === 'number' ? body.cell : NaN
   if (!Number.isInteger(cellRaw) || cellRaw < 0 || cellRaw >= BOARD_SIZE) {
     return NextResponse.json({ error: 'cell must be an integer between 0 and 8.' }, { status: 400 })

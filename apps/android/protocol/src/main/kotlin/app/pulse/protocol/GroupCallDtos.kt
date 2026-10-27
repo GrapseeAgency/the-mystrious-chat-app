@@ -61,6 +61,18 @@ data class GroupCallStatePayload(
     val members: List<GroupCallMemberDto> = emptyList(),
 )
 
+/** Viewer-bound HTTP probe; not the unscoped socket roster decoder. */
+@Serializable
+data class GroupCallProbeReceiptDto(
+    val callStateVersion: Int,
+    val conversationId: String,
+    val userId: String,
+    val callId: String,
+    val kind: String,
+    val members: List<GroupCallMemberDto>,
+    val startedAt: Long? = null,
+)
+
 /** C→S/S→C gcall:offer - joiner → existing member, relayed to the target's user room. */
 @Serializable
 data class GroupCallOfferDto(
@@ -97,6 +109,8 @@ data class GroupCallIceDto(
 /** S→C gcall:ring - HTTP-relayed ring for ONLINE members (banner). */
 @Serializable
 data class GroupCallRingPayload(
+    val callId: String = "",
+    val expiresAt: String? = null,
     val type: String = "",
     val conversationId: String = "",
     val kind: String = "voice",
@@ -107,6 +121,7 @@ data class GroupCallRingPayload(
 /** S→C gcall:ended - the call was torn down (host/last member left, or kicked). */
 @Serializable
 data class GroupCallEndedPayload(
+    val joinAttemptId: String? = null,
     val conversationId: String = "",
     val callId: String = "",
     val reason: String = "",
@@ -115,6 +130,7 @@ data class GroupCallEndedPayload(
 /** S→C gcall:full - join rejected (8 max). */
 @Serializable
 data class GroupCallFullPayload(
+    val joinAttemptId: String? = null,
     val conversationId: String = "",
     val callId: String = "",
     val max: Int = GroupCallEvents.MAX_PARTICIPANTS,
@@ -127,7 +143,11 @@ fun groupCallJoinPayload(
     conversationId: String,
     kind: String,
     user: GroupCallMemberDto,
+    expectedCallId: String? = null,
+    joinAttemptId: String? = null,
 ): JsonObject = buildJsonObject {
+    if (joinAttemptId != null) put("joinAttemptId", joinAttemptId)
+    if (expectedCallId != null) put("expectedCallId", expectedCallId)
     put("conversationId", conversationId)
     put("kind", kind)
     put("user", buildJsonObject {
@@ -169,7 +189,9 @@ fun GroupCallIceDto.toJsonObject(): JsonObject = buildJsonObject {
 }
 
 /** gcall:leave - explicit exit (roster rebroadcast; last member ends the call). */
-fun groupCallLeavePayload(conversationId: String, from: String): JsonObject = buildJsonObject {
+fun groupCallLeavePayload(conversationId: String, from: String, callId: String? = null, joinAttemptId: String? = null): JsonObject = buildJsonObject {
+    if (callId != null) put("callId", callId)
+    if (joinAttemptId != null) put("joinAttemptId", joinAttemptId)
     put("conversationId", conversationId)
     put("from", from)
 }

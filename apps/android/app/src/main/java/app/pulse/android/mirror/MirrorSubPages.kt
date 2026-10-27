@@ -52,6 +52,7 @@ import app.pulse.domain.repository.PulseRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -787,33 +788,30 @@ internal fun MirrorMentionsPage(
     onOpenConv: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    var items by remember { mutableStateOf<List<MentionItem>?>(null) }
-    var errorText by remember { mutableStateOf<String?>(null) }
+    val epoch = repository.attachmentSessionKey()
+    val account = remember(repository, epoch) { repository.boundToCurrentAccount() }
+    var items by remember(epoch) { mutableStateOf<List<MentionItem>?>(null) }
+    var errorText by remember(epoch) { mutableStateOf<String?>(null) }
     var tick by remember { mutableStateOf(0) }
-
-    fun load() {
-        CoroutineScope(Dispatchers.IO).launch {
-            repository.mentions().fold(
-                onSuccess = {
-                    items = it
-                    errorText = null
-                },
-                onFailure = {
-                    if (items == null) items = emptyList()
-                    errorText = it.message ?: "Something went wrong."
-                },
-            )
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) }
+    }
+    LaunchedEffect(repository, epoch, tick) {
+        if (epoch == null) return@LaunchedEffect
+        while (true) {
+            val result = account.mentions()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
+            result.fold(onSuccess = { items = it; errorText = null }, onFailure = {
+                if (items == null || (it as? app.pulse.domain.model.PulseApiException)?.status in listOf(401, 403, 404)) items = emptyList()
+                errorText = it.message ?: "Could not load mentions."
+            })
+            kotlinx.coroutines.delay(30_000)
         }
     }
-    LaunchedEffect(Unit) { load() }
-    LaunchedEffect(tick) {
-        if (tick > 0) load()
-        // web refetchInterval 30_000
-        kotlinx.coroutines.delay(30_000)
-        tick++
-    }
 
-    val list = items
+    val list = items?.filter { it.isVisible(now) }
     MirrorSubPageScaffold(
         title = "Mentions",
         // web mentions-page.tsx:204 subtitle truth
@@ -856,12 +854,15 @@ internal fun MirrorMentionsPage(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
+                if (errorText != null) item {
+                    Text(errorText.orEmpty(), color = SubPageInk.Rose400, modifier = Modifier.padding(12.dp))
+                }
                 item {
                     MirrorGlassGroup {
                         for (mention in list) {
                             MirrorMentionRow(
                                 mention = mention,
-                                onPress = { onOpenConv(mention.conversationId) },
+                                onPress = { if (mention.isVisible() && repository.attachmentSessionKey() == epoch) onOpenConv(mention.conversationId) },
                             )
                         }
                     }

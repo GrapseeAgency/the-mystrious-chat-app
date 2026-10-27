@@ -1,13 +1,14 @@
 // /api/conversations - list my chats, create DM / group
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { createConversationOnce, ConversationCreationError } from '@/lib/conversation-creation'
 import { DirectConversationError, openDirectConversation } from '@/lib/direct-conversation'
-import { bearerToken } from '@/lib/session-token'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   buildConversationSummary,
   CONVERSATION_FULL_INCLUDE,
   GROUP_NAME_MAX,
+  notifySocket,
   safeJson,
   strField,
 } from '@/lib/serializers'
@@ -29,6 +30,9 @@ export async function GET(req: Request) {
       { status: 400 },
     )
   }
+
+  const denied = await requireActionOwner(req, userId, 'conversation list')
+  if (denied) return denied
 
   const participations = await db.conversationParticipant.findMany({
     where: { userId },
@@ -54,13 +58,13 @@ export async function GET(req: Request) {
     return Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
   })
 
-  return NextResponse.json({ conversations: summaries })
+  return NextResponse.json({ conversations: summaries }, { headers: { 'Cache-Control': 'private, no-store' } })
 }
 
 /**
  * POST /api/conversations { creatorId, memberIds, isGroup?, name? }
  * DM: exactly creatorId + 1 member; dedupes to an existing 1-on-1 chat.
- * Group: ≥ 3 distinct members incl. creator, always creates a new one.
+ * Group: ≥ 3 distinct members incl. creator, creates a new room unless the same clientId is being retried.
  * → 201 { conversation } or 200 { conversation } when an existing DM matched.
  */
 export async function POST(req: Request) {
@@ -71,10 +75,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'creatorId is required.' }, { status: 400 })
   }
 
-  if (bearerToken(req)) {
-    const denied = await requireActionOwner(req, creatorId, 'conversation creation')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, creatorId, 'conversation creation')
+  if (denied) return denied
 
   if (!Array.isArray(body.memberIds)) {
     return NextResponse.json({ error: 'memberIds must be an array of user ids.' }, { status: 400 })
@@ -86,16 +88,13 @@ export async function POST(req: Request) {
   // Distinct participant set incl. the creator.
   const distinctIds = Array.from(new Set([creatorId, ...memberIds]))
 
-  // Every id must reference a real user.
-  const foundUsers = await db.user.findMany({
-    where: { id: { in: distinctIds } },
-    select: { id: true },
-  })
-  if (foundUsers.length !== distinctIds.length) {
-    return NextResponse.json(
-      { error: 'One or more user ids do not exist.' },
-      { status: 400 },
-    )
+  // DMs need their current pair. Group retries may refer to people who have
+  // since left/deleted their account, so validate group users only on creation.
+  if (!isGroup) {
+    const foundUsers = await db.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true } })
+    if (foundUsers.length !== distinctIds.length) {
+      return NextResponse.json({ error: 'One or more user ids do not exist.' }, { status: 400 })
+    }
   }
 
   let groupName: string | null = null
@@ -134,30 +133,37 @@ export async function POST(req: Request) {
     groupName = rawName || `Group of ${distinctIds.length}`
   }
 
-  const created = await db.conversation.create({
-    data: {
-      isGroup,
-      name: groupName,
-      participants: {
-        create: distinctIds.map((userId) => ({
-          userId,
-          ...(isGroup && userId === creatorId ? { role: 'admin' } : {}),
-        })),
-      },
-    },
-    select: { id: true },
-  })
-
-  const full = await db.conversation.findUnique({
-    where: { id: created.id },
-    include: CONVERSATION_FULL_INCLUDE,
-  })
-  if (!full) {
-    return NextResponse.json({ error: 'Failed to load new conversation.' }, { status: 500 })
+  try {
+    const created = await createConversationOnce(db, creatorId, body.clientId, 'group',
+      [groupName, [...distinctIds].sort()], async tx => {
+        const users = await tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true } })
+        if (users.length !== distinctIds.length) throw new ConversationCreationError(400, 'One or more user ids do not exist.')
+        return tx.conversation.create({
+          data: {
+            isGroup: true, name: groupName,
+            participants: { create: distinctIds.map(userId => ({
+              userId, ...(userId === creatorId ? { role: 'admin' } : {}),
+            })) },
+          },
+          select: { id: true },
+        })
+      })
+    const full = await db.conversation.findFirst({
+      where: { id: created.id, participants: { some: { userId: creatorId } } },
+      include: CONVERSATION_FULL_INCLUDE,
+    })
+    if (!full) return NextResponse.json({ error: 'The created conversation is no longer available.' }, { status: 404 })
+    const recipients = full.participants.map(member => member.userId)
+    await notifySocket('conversation:updated', recipients, {
+      type: 'conversation:updated', conversationId: full.id, recipientIds: recipients,
+    })
+    return NextResponse.json(
+      { conversation: await buildConversationSummary(full, creatorId), clientId: created.clientId, replayed: created.replayed },
+      { status: created.replayed ? 200 : 201 },
+    )
+  } catch (error) {
+    if (error instanceof ConversationCreationError) return NextResponse.json(
+      { error: error.message, code: error.code, clientId: error.clientId }, { status: error.status })
+    throw error
   }
-
-  return NextResponse.json(
-    { conversation: await buildConversationSummary(full, creatorId) },
-    { status: 201 },
-  )
 }

@@ -147,36 +147,11 @@ class PipOverlayViewModel @Inject constructor(
     val conversations: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** Per-pane message cache - feeds pane-local unread + the seen marker. */
-    private val paneMessages: StateFlow<Map<String, List<Message>>> = state
-        .map { s -> s.panes.map { it.conversationId }.distinct() }
-        .distinctUntilChanged()
-        .flatMapLatest { ids ->
-            if (ids.isEmpty()) {
-                flowOf(emptyMap())
-            } else {
-                combine(ids.map { id -> repo.observeMessages(id).map { id to it } }) { pairs ->
-                    pairs.toMap()
-                }
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-
-    /**
-     * Pane-local unread per conversation - web usePaneUnread formula:
-     * incoming (not mine, not pending, not deleted) messages that arrived
-     * after the pane was last the focused window.
-     */
-    val unread: StateFlow<Map<String, Int>> = combine(state, paneMessages) { s, msgs ->
-        val viewer = repo.viewerId
-        s.panes.associate { p ->
-            p.conversationId to msgs[p.conversationId].orEmpty().count { m ->
-                m.authorId != viewer &&
-                    !m.id.startsWith(TEMP_MESSAGE_PREFIX) &&
-                    m.deletedAt == null &&
-                    PulseTime.epochMs(m.createdAt) > p.lastSeenAt
-            }
-        }
+    /** A truncated preview is not reading. Use the same exact, expiry-projected
+     * room badge as the inbox, including unloaded gaps and manual reminders. */
+    val unread: StateFlow<Map<String, Int>> = combine(state, conversations) { panes, rooms ->
+        val byId = rooms.associateBy { it.id }
+        panes.panes.associate { it.conversationId to (byId[it.conversationId]?.badgeUnreadCount ?: 0) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     init {
@@ -188,19 +163,6 @@ class PipOverlayViewModel @Inject constructor(
                 .map { s -> s.panes.map { it.conversationId } }
                 .distinctUntilChanged()
                 .collect { ids -> ids.forEach(::seedOnce) }
-        }
-        // The expanded window is the reading surface - incoming history is
-        // seen (web onSeen on message-list change; the store's 1s guard
-        // caps the writes).
-        viewModelScope.launch {
-            paneMessages.collect { msgs ->
-                val s = state.value
-                val focused = s.conversationId ?: return@collect
-                if (s.panes.none { it.conversationId == focused && !it.minimized }) return@collect
-                if (msgs[focused].orEmpty().isNotEmpty()) {
-                    pip.markSeen(focused, System.currentTimeMillis())
-                }
-            }
         }
     }
 

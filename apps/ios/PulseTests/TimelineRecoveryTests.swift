@@ -2,13 +2,23 @@ import XCTest
 @testable import Pulse
 
 final class TimelineRecoveryTests: XCTestCase {
-    private func row(_ id: String, body: String = "same", topic: String? = nil) throws -> WireChatMessage {
+    private func row(_ id: String, body: String = "same", topic: String? = nil,
+                     createdAt: String = "2026-10-19T00:00:00.000Z") throws -> WireChatMessage {
         let row = OutboxFixtures.makeMessage(id: id, conversationId: "room", content: body)
         let data = try JSONEncoder().encode(row)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         object["topicId"] = topic
-        object["createdAt"] = "2026-10-19T00:00:00.000Z"
+        object["createdAt"] = createdAt
         return try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    func testReadReconciliationIncludesDisplayedHistoryBeyondTheBoundedCacheWindow() throws {
+        let old = try row("old-visible", createdAt: "2026-10-18T00:00:00Z")
+        let cache = try (0..<300).map { try row("recent-\($0)") }
+        let pending = try row("local_pending")
+        XCTAssertEqual(PulseHistoryCursor.reconciliationStart(cached: cache, displayed: [old, pending]), old.createdAt)
+        XCTAssertEqual(PulseHistoryCursor.reconciliationStart(cached: [old], displayed: cache), old.createdAt)
+        XCTAssertNil(PulseHistoryCursor.reconciliationStart(cached: [], displayed: [pending]))
     }
 
     func testReconnectReplacesKnownEditsAndRetainsDistinctPendingOperations() throws {

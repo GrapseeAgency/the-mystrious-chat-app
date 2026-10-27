@@ -11,6 +11,55 @@ final class TextDeliveryTests: XCTestCase {
         return try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: body))
     }
 
+    func testManagerCannotClearNewerOrUncommittedDraftIntent() throws {
+        let store = try PulseStore()
+        try store.saveDraft(conversationId: "room", text: "displayed")
+        let displayed = try XCTUnwrap(try store.allDraftRows().first)
+        let revision = store.captureDraftConsumption(conversationId: "room").revision
+        let pending = store.reserveDraftWrite(conversationId: "room")
+        XCTAssertFalse(try store.deleteDraftIfUnchanged(displayed, revision: revision))
+        // Even a snapshot loaded after reservation cannot wipe an unseen journal write.
+        XCTAssertFalse(try store.deleteDraftIfUnchanged(displayed, revision: pending))
+        try store.saveDraftSnapshot(conversationId: "room", text: "newer", expectedRevision: pending)
+        XCTAssertFalse(try store.deleteDraftIfUnchanged(displayed, revision: pending))
+        XCTAssertEqual(store.draft(conversationId: "room"), "newer")
+        let current = try XCTUnwrap(try store.allDraftRows().first)
+        XCTAssertTrue(try store.deleteDraftIfUnchanged(current, revision: pending))
+        XCTAssertEqual(store.draftSnapshot(conversationId: "room"), "")
+        // A late writer cannot resurrect text after a confirmed removal.
+        try store.saveDraftSnapshot(conversationId: "room", text: "late", expectedRevision: pending)
+        XCTAssertEqual(store.draftSnapshot(conversationId: "room"), "")
+    }
+
+    func testStaleManagerRowCannotDiscardRetriedSendOrLaterEnqueue() throws {
+        let store = try PulseStore()
+        let queued = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: "first")
+        let pending = try XCTUnwrap(try store.outboxAll().first)
+        XCTAssertTrue(try store.rejectOutbox(clientId: pending.clientId, reason: "offline refusal"))
+        XCTAssertFalse(try store.discardOutboxIfUnchanged(pending))
+        let failed = try XCTUnwrap(try store.outboxAll().first)
+        XCTAssertTrue(try store.retryOutbox(clientId: pending.clientId, message: queued))
+        XCTAssertFalse(try store.discardOutboxIfUnchanged(failed))
+        let retried = try XCTUnwrap(try store.outboxAll().first)
+        try store.appendOutbox(conversationId: "room", clientId: "later", content: "keep")
+        XCTAssertTrue(try store.discardOutboxIfUnchanged(retried))
+        XCTAssertNil(try store.message(id: queued.id))
+        XCTAssertEqual(try store.outboxAll().map(\.clientId), ["later"])
+    }
+
+    func testFootprintUsesActiveAccountDatabaseAndSidecars() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("specific-account.sqlite").path
+        try Data(repeating: 0, count: 4).write(to: URL(fileURLWithPath: path))
+        try Data(repeating: 0, count: 7).write(to: URL(fileURLWithPath: path + "-wal"))
+        try Data(repeating: 0, count: 9).write(to: URL(fileURLWithPath: path + "-shm"))
+        XCTAssertEqual(SettingsView.databaseFootprint(path: path), 20)
+        XCTAssertNil(SettingsView.databaseFootprint(path: path + "-missing"))
+        XCTAssertNil(SettingsView.databaseFootprint(path: "memory:test"))
+    }
+
     func testEffectReplyTopicAndMaskSurviveReopeningBeforeDelivery() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -50,7 +99,7 @@ final class TextDeliveryTests: XCTestCase {
         let store = try PulseStore()
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: " \n", effect: "echo"))
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: "hello", effect: "unknown"))
-        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
         XCTAssertTrue(try store.messages(conversationId: "room").isEmpty)
     }
 
@@ -75,10 +124,10 @@ final class TextDeliveryTests: XCTestCase {
         let store = try PulseStore()
         XCTAssertEqual(try PulseTextDelivery.validatedContent(String(repeating: "🌿", count: 1000), allowEmpty: false).utf16.count, 2000)
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: String(repeating: "🌿", count: 1001)))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertThrowsError(try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: "room",
             content: String(repeating: "x", count: 2001), dataUrl: "data:image/jpeg;base64,YQ==", envelope: PulseOutboxForward(kind: "image")))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testIdenticalThreadRepliesKeepSeparateDurableOperationIdsAndParentMetadata() throws {
@@ -115,7 +164,7 @@ final class TextDeliveryTests: XCTestCase {
         XCTAssertEqual(envelope.anon, true)
         XCTAssertEqual(try store.message(id: sticker.id)?.payload, envelope.payload)
         XCTAssertThrowsError(try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: "room", kind: "location", payload: ["lat": Double.nan, "lng": 10.0]))
-        XCTAssertEqual(store.countPendingOutbox(), 2)
+        XCTAssertEqual(try store.countPendingOutbox(), 2)
     }
 
 }

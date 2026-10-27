@@ -2,10 +2,7 @@ package app.pulse.feature.stories
 
 import app.pulse.ui.PulseIcons
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,10 +54,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.media.PulseMedia
 import coil.compose.AsyncImage
-import java.io.ByteArrayOutputStream
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.cancelChildren
 
 private val Zinc700 = Color(0xFF3F3F46)
 private val Zinc800 = Color(0xFF27272A)
@@ -69,55 +68,12 @@ private val Rose500 = Color(0xFFEF4444)
 
 /**
  * Image → downscaled JPEG data-URL - the EXACT ≤1280px q0.82 wire policy.
- * feature-chat's MediaSupport is module-internal, so the pipeline is mirrored
- * here with the SAME :core constants ([PulseMedia.MAX_IMAGE_DIMENSION_PX] +
- * [PulseMedia.IMAGE_JPEG_QUALITY]) - one source of truth for the policy.
+ * Delegates to the same bounded, orientation-aware preparation as chat and camera.
+ * Policy constants remain in [PulseMedia]; decoder ownership is shared in :ui.
  */
 object StoryMedia {
-    suspend fun imageToDataUrl(context: Context, uri: Uri): Result<String> = withContext(Dispatchers.IO) {
-        runCatching {
-            val resolver = context.contentResolver
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                ?: throw IllegalStateException("Could not read the selected image")
-            check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Not a readable image" }
-
-            var sample = 1
-            while (bounds.outWidth / (sample * 2) >= PulseMedia.MAX_IMAGE_DIMENSION_PX ||
-                bounds.outHeight / (sample * 2) >= PulseMedia.MAX_IMAGE_DIMENSION_PX
-            ) {
-                sample *= 2
-            }
-            val options = BitmapFactory.Options().apply { inSampleSize = sample }
-            val decoded = resolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, options)
-            } ?: throw IllegalStateException("Could not decode the selected image")
-
-            val bitmap = if (decoded.width > PulseMedia.MAX_IMAGE_DIMENSION_PX || decoded.height > PulseMedia.MAX_IMAGE_DIMENSION_PX) {
-                val scale = minOf(
-                    PulseMedia.MAX_IMAGE_DIMENSION_PX.toFloat() / decoded.width,
-                    PulseMedia.MAX_IMAGE_DIMENSION_PX.toFloat() / decoded.height,
-                )
-                val scaled = Bitmap.createScaledBitmap(
-                    decoded,
-                    (decoded.width * scale).toInt().coerceAtLeast(1),
-                    (decoded.height * scale).toInt().coerceAtLeast(1),
-                    true,
-                )
-                if (scaled !== decoded) decoded.recycle()
-                scaled
-            } else {
-                decoded
-            }
-
-            val bytes = ByteArrayOutputStream().use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, PulseMedia.IMAGE_JPEG_QUALITY, out)
-                out.toByteArray()
-            }
-            bitmap.recycle()
-            "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-        }
-    }
+    suspend fun imageToDataUrl(context: Context, uri: Uri): Result<String> =
+        app.pulse.ui.media.ImagePreparation.imageToDataUrl(context, uri)
 }
 
 /**
@@ -133,44 +89,57 @@ fun StoryComposerScreen(
     onClose: () -> Unit,
     storiesVm: StoriesViewModel,
 ) {
+    val owner = storiesVm.composerSession()?.owner
+    androidx.compose.runtime.key(owner) {
+        OwnedStoryComposerScreen(onPublished, onClose, storiesVm)
+    }
+}
+
+@Composable
+private fun OwnedStoryComposerScreen(onPublished: () -> Unit, onClose: () -> Unit, storiesVm: StoriesViewModel) {
     var cs by remember { mutableStateOf(ComposerState()) }
-    var localPreview by remember { mutableStateOf<String?>(null) }
+    var localPreview by remember { mutableStateOf<ByteArray?>(null) }
+    var photoJob by remember { mutableStateOf<Job?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val session = remember { storiesVm.composerSession() }
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            localPreview = uri.toString()
+        if (uri != null && !cs.posting && session != null) {
+            photoJob?.cancel()
             cs = cs.withUploading(true)
-            scope.launch {
-                val dataUrl = StoryMedia.imageToDataUrl(context, uri).getOrNull()
-                if (dataUrl == null) {
-                    localPreview = null
-                    cs = cs.withUploading(false).withError("Couldn't read that image - try another one")
-                    return@launch
-                }
-                storiesVm.uploadStoryImage(dataUrl) { path ->
-                    cs = if (path == null) {
-                        localPreview = null
-                        cs.withUploading(false).withError("Upload failed - check your connection and retry")
-                    } else {
-                        cs.withImage(path).withUploading(false)
-                    }
+            photoJob = scope.launch {
+                try {
+                    val dataUrl = StoryMedia.imageToDataUrl(context, uri).getOrThrow()
+                    currentCoroutineContext().ensureActive()
+                    val path = storiesVm.uploadStoryImage(dataUrl, session).getOrThrow()
+                    currentCoroutineContext().ensureActive()
+                    if (!storiesVm.acceptsComposer(session)) return@launch
+                    localPreview = android.util.Base64.decode(dataUrl.substringAfter(','), android.util.Base64.DEFAULT)
+                    cs = cs.withImage(path).withUploading(false)
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (failure: Exception) {
+                    if (storiesVm.acceptsComposer(session)) cs = cs.withUploading(false)
+                        .withError(failure.message ?: "Couldn't upload that photo. Any previous photo is kept.")
                 }
             }
         }
     }
 
     fun post() {
-        if (!cs.canPost) return
+        if (!cs.canPost || session == null) return
+        val submitted = cs
         cs = cs.withPosting(true)
-        val background = if (cs.mode == ComposerState.Mode.TEXT) cs.background else null
-        val imagePath = if (cs.mode == ComposerState.Mode.PHOTO) cs.imagePath else null
-        storiesVm.publishStory(cs.caption, background, imagePath) { ok, error ->
-            if (ok) {
-                onPublished()
-            } else {
-                cs = cs.withPosting(false).withError(error ?: "Could not post your status")
+        scope.launch {
+            try {
+                storiesVm.publishStory(submitted.caption,
+                    if (submitted.mode == ComposerState.Mode.TEXT) submitted.background else null,
+                    if (submitted.mode == ComposerState.Mode.PHOTO) submitted.imagePath else null, session).getOrThrow()
+                currentCoroutineContext().ensureActive()
+                if (storiesVm.acceptsComposer(session)) onPublished()
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (failure: Exception) {
+                if (storiesVm.acceptsComposer(session)) cs = cs.withPosting(false).withError(failure.message ?: "Could not post your status")
             }
         }
     }
@@ -190,7 +159,7 @@ fun StoryComposerScreen(
                         .size(38.dp)
                         .clip(CircleShape)
                         .background(Zinc800)
-                        .clickable(onClick = onClose),
+                        .clickable { scope.coroutineContext.cancelChildren(); onClose() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(PulseIcons.X, contentDescription = "Close composer", tint = Color.White, modifier = Modifier.size(20.dp))
@@ -205,7 +174,7 @@ fun StoryComposerScreen(
                 )
                 Button(
                     onClick = { post() },
-                    enabled = cs.canPost,
+                    enabled = cs.canPost && session != null,
                     shape = RoundedCornerShape(999.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Emerald600, contentColor = Color.White),
                 ) {
@@ -230,11 +199,16 @@ fun StoryComposerScreen(
                     .padding(4.dp),
             ) {
                 ModePill("Text", PulseIcons.Pencil, cs.mode == ComposerState.Mode.TEXT) {
-                    cs = cs.withMode(ComposerState.Mode.TEXT)
+                    if (!cs.posting) {
+                        photoJob?.cancel()
+                        cs = cs.withUploading(false).withMode(ComposerState.Mode.TEXT)
+                    }
                 }
                 ModePill("Photo", PulseIcons.Camera, cs.mode == ComposerState.Mode.PHOTO) {
-                    cs = cs.withMode(ComposerState.Mode.PHOTO)
-                    photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    if (!cs.posting) {
+                        cs = cs.withMode(ComposerState.Mode.PHOTO)
+                        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
                 }
             }
 
@@ -252,7 +226,8 @@ fun StoryComposerScreen(
                 ) {
                     TextField(
                         value = cs.caption,
-                        onValueChange = { cs = cs.withCaption(it) },
+                        onValueChange = { if (!cs.posting) cs = cs.withCaption(it) },
+                        enabled = !cs.posting,
                         placeholder = {
                             Text(
                                 "Type your status…",
@@ -316,7 +291,8 @@ fun StoryComposerScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextField(
                     value = cs.caption,
-                    onValueChange = { cs = cs.withCaption(it) },
+                    onValueChange = { if (!cs.posting) cs = cs.withCaption(it) },
+                        enabled = !cs.posting,
                     placeholder = {
                         Text(
                             if (cs.mode == ComposerState.Mode.TEXT) "Type your status…" else "Add a caption (optional)…",

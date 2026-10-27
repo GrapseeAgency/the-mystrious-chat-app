@@ -2,6 +2,8 @@ import SwiftUI
 import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
+import ImageIO
+import CoreTransferable
 
 /// Wave 1 media messaging support - the pure helpers behind the composer's
 /// attach flow (spec §1.1 media upload contract):
@@ -21,19 +23,65 @@ enum PulseMediaSupport {
 
     // images
 
-    /// Re-renders the image so its longest edge is ≤ maxImageDimension and
-    /// encodes it as JPEG q0.82 - the exact bytes the data-URL carries.
-    static func downscaledJPEGData(from data: Data) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        let longest = max(image.size.width, image.size.height)
-        let scale = longest > maxImageDimension ? maxImageDimension / longest : 1
-        let target = CGSize(width: (image.size.width * scale).rounded(.down), height: (image.size.height * scale).rounded(.down))
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        let rendered = UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: target))
+    static let maxImageSourceBytes = 64 * 1024 * 1024
+
+    /// Camera already supplies a UIImage. Render only the bounded output instead
+    /// of allocating another full-resolution JPEG and decoding it again.
+    @MainActor
+    static func downscaledJPEGData(from image: UIImage) -> Data? {
+        let width = image.size.width * image.scale, height = image.size.height * image.scale
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else { return nil }
+        let scale = min(1, maxImageDimension / max(width, height))
+        let size = CGSize(width: max(1, (width * scale).rounded(.down)), height: max(1, (height * scale).rounded(.down)))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1; format.opaque = true
+        let rendered = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.white.setFill(); context.fill(CGRect(origin: .zero, size: size))
+            image.draw(in: CGRect(origin: .zero, size: size))
         }
         return rendered.jpegData(compressionQuality: imageQuality)
+    }
+
+    static func downscaledJPEGData(from data: Data) -> Data? {
+        guard data.count <= maxImageSourceBytes,
+              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        return downscaledJPEGData(source: source)
+    }
+
+    /// PhotosPicker supplies a temporary file. Decode it inside the transfer closure,
+    /// while its access is valid, without loading a full-resolution Data/UIImage first.
+    static func downscaledJPEGData(from url: URL) -> Data? {
+        guard url.isFileURL,
+              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= maxImageSourceBytes,
+              let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        return downscaledJPEGData(source: source)
+    }
+
+    private static func downscaledJPEGData(source: CGImageSource) -> Data? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxImageDimension),
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              image.width > 0, image.height > 0,
+              image.width <= Int(maxImageDimension), image.height <= Int(maxImageDimension),
+              let context = CGContext(data: nil, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        // Match Android's explicit white background for transparent PNG/HEIC input.
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        let rect = CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height))
+        context.fill(rect)
+        context.draw(image, in: rect)
+        guard let opaque = context.makeImage() else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, opaque, [kCGImageDestinationLossyCompressionQuality: imageQuality] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
     }
 
     // documents
@@ -46,11 +94,13 @@ enum PulseMediaSupport {
     }
 
     static func readDocument(url: URL) throws -> Data {
+        guard url.isFileURL else { throw CocoaError(.fileReadUnsupportedScheme) }
         guard let stream = InputStream(url: url) else { throw CocoaError(.fileReadUnknown) }
         stream.open(); defer { stream.close() }
         var result = Data()
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
+            try Task.checkCancellation()
             let count = stream.read(&buffer, maxLength: buffer.count)
             if count < 0 { throw stream.streamError ?? CocoaError(.fileReadUnknown) }
             if count == 0 { break }
@@ -59,6 +109,8 @@ enum PulseMediaSupport {
             }
             result.append(contentsOf: buffer.prefix(count))
         }
+        try Task.checkCancellation()
+        guard !result.isEmpty else { throw PulseAPIClient.Failure(kind: .validation, message: "The selected document is empty.") }
         return result
     }
 
@@ -82,6 +134,19 @@ enum PulseMediaSupport {
     /// ByteCountFormatter humanization for the file bubble ("1.2 MB").
     static func humanized(bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+}
+
+/// Only the small prepared JPEG escapes the temporary-file transfer scope.
+struct PulsePickedPhoto: Transferable {
+    let jpeg: Data
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .image) { received in
+            try Task.checkCancellation()
+            guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: received.file) else { throw CocoaError(.fileReadCorruptFile) }
+            try Task.checkCancellation()
+            return PulsePickedPhoto(jpeg: jpeg)
+        }
     }
 }
 

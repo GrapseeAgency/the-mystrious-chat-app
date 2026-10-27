@@ -27,6 +27,13 @@ struct ReportPanelView: View {
     @State private var details = ""
     @State private var history: [WireReportReasonRow] = []
     @State private var pending = false
+    @State private var historyError: String?
+    @State private var surfaceEpoch: UUID?
+    @State private var surfaceTarget: String?
+    @State private var actionTicket = UUID()
+    @State private var readTicket = UUID()
+    @State private var submitTask: Task<Void, Never>?
+    @State private var historyTask: Task<Void, Never>?
 
     private var firstName: String {
         reported.name.split(separator: " ").first.map(String.init) ?? reported.name
@@ -45,8 +52,8 @@ struct ReportPanelView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     header
-                    reasonList
-                    detailsField
+                    reasonList.disabled(pending)
+                    detailsField.disabled(pending)
                     submitButton
                 }
                 .padding(16)
@@ -61,7 +68,13 @@ struct ReportPanelView: View {
                 }
             }
             .interactiveDismissDisabled(pending)
-            .task { await loadHistory() }
+            .task(id: "\(session.sessionGeneration):\(reported.id)") {
+                retire()
+                surfaceEpoch = session.sessionGeneration; surfaceTarget = reported.id
+                reason = ""; details = ""; history = []; historyError = nil
+                loadHistory()
+            }
+            .onDisappear { retire() }
         }
     }
 
@@ -73,6 +86,10 @@ struct ReportPanelView: View {
             Text("Tell us what's happening. Reports are private - \(firstName) will not be notified.")
                 .font(.system(size: 12.5))
                 .foregroundStyle(PulseTheme.textSecondary)
+            if let historyError {
+                Text(historyError).font(.footnote).foregroundStyle(PulseTheme.textSecondary)
+                Button("Retry report history") { loadHistory() }.disabled(pending)
+            }
             if let hint {
                 Text(hint)
                     .font(.system(size: 11.5, weight: .medium))
@@ -143,7 +160,7 @@ struct ReportPanelView: View {
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 12).fill(PulseTheme.rowFill))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PulseTheme.hairlineSoft, lineWidth: 1))
-            Text("\(details.count)/\(Self.detailsMax)")
+            Text("\(details.utf16.count)/\(Self.detailsMax)")
                 .font(.system(size: 11))
                 .foregroundStyle(PulseTheme.textTertiary)
         }
@@ -151,7 +168,7 @@ struct ReportPanelView: View {
 
     private var submitButton: some View {
         Button {
-            Task { await submit() }
+            submit()
         } label: {
             Group {
                 if pending {
@@ -166,34 +183,59 @@ struct ReportPanelView: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(PulseButtonStyle())
-        .disabled(reason.isEmpty || pending || details.count > Self.detailsMax)
+        .disabled(reason.isEmpty || pending || details.utf16.count > Self.detailsMax)
     }
 
     // actions
 
-    private func loadHistory() async {
-        history = await session.api.reportHistory(reportedId: reported.id)
+    private func owns(_ epoch: UUID, _ target: String) -> Bool {
+        !Task.isCancelled && surfaceEpoch == epoch && session.sessionGeneration == epoch &&
+            surfaceTarget == target && reported.id == target
     }
 
-    private func submit() async {
-        guard !pending, !reason.isEmpty else { return }
-        pending = true
-        defer { pending = false }
-        let trimmed = details.trimmingCharacters(in: .whitespacesAndNewlines)
-        do {
-            let verdict = try await session.api.report(
-                userId: reported.id,
-                reason: reason,
-                details: trimmed.isEmpty ? nil : String(trimmed.prefix(Self.detailsMax)),
-            )
-            PulseHaptics.success()
-            session.toasts.show(verdict.updated == true
-                ? "Report updated - thanks for the extra detail"
-                : "Report submitted. Thanks for helping keep Pulse safe.")
-            dismiss()
-            onDone()
-        } catch {
-            session.toasts.show(ChatsViewModel.describe(error))
+    private func retire() {
+        surfaceEpoch = nil; surfaceTarget = nil
+        readTicket = UUID(); actionTicket = UUID()
+        historyTask?.cancel(); submitTask?.cancel()
+        historyTask = nil; submitTask = nil; pending = false
+    }
+
+    private func loadHistory() {
+        guard let epoch = surfaceEpoch, let target = surfaceTarget, owns(epoch, target), !pending else { return }
+        let api = session.api, ticket = UUID()
+        readTicket = ticket; historyTask?.cancel()
+        historyTask = Task { @MainActor in
+            do {
+                let fresh = try await api.reportHistory(reportedId: target)
+                guard owns(epoch, target), readTicket == ticket else { return }
+                history = fresh; historyError = nil
+            } catch {
+                guard owns(epoch, target), readTicket == ticket else { return }
+                historyError = "Could not refresh your prior reports. You can still submit a report."
+            }
+        }
+    }
+
+    private func submit() {
+        guard let epoch = surfaceEpoch, let target = surfaceTarget, owns(epoch, target),
+              !pending, !reason.isEmpty, details.utf16.count <= Self.detailsMax else { return }
+        let api = session.api, chosenReason = reason, content = details, ticket = UUID()
+        pending = true; actionTicket = ticket; readTicket = UUID(); historyTask?.cancel()
+        submitTask = Task { @MainActor in
+            defer { if owns(epoch, target), actionTicket == ticket { pending = false; submitTask = nil } }
+            do {
+                let verdict = try await api.report(userId: target, reason: chosenReason, details: content)
+                guard owns(epoch, target), actionTicket == ticket else { return }
+                PulseHaptics.success()
+                session.toasts.show(verdict.updated == true
+                    ? "Report updated - thanks for the extra detail"
+                    : "Report submitted. Thanks for helping keep Pulse safe.")
+                dismiss()
+                onDone()
+            } catch {
+                guard owns(epoch, target), actionTicket == ticket else { return }
+                session.toasts.show(ChatsViewModel.describe(error))
+            }
         }
     }
 }

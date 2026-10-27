@@ -48,6 +48,29 @@ class OutboxOwnershipTest {
             assertEquals(55, db.outboxDao().allOwned("a").size)
         } finally { db.close() }
     }
+    @Test fun snapshotDiscardRejectsStaleRetryAndPreservesOtherOwnersAndNewRows() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
+        try {
+            suspend fun enqueue(id: String) {
+                db.outboxDao().insert(OutboxEntity(conversationId = "room", clientId = id, content = id, createdAt = "stamp"))
+                db.messageDao().upsertAll(listOf(MessageEntity.from(Message(id = "local_$id", conversationId = "room",
+                    authorId = "owner", authorName = "Owner", kind = Message.Kind.TEXT, body = id, createdAt = "stamp"))))
+            }
+            enqueue("first")
+            enqueue("later")
+            val dao = db.outboxDao()
+            assertEquals(0, dao.discardOwnedSnapshot("foreign", "room", "first", "stamp", null))
+            assertEquals(0, dao.discardOwnedSnapshot("owner", "wrong-room", "first", "stamp", null))
+            assertEquals(0, dao.discardOwnedSnapshot("owner", "room", "first", "wrong-stamp", null))
+            dao.markFailed("first", "refused")
+            assertEquals(0, dao.discardOwnedSnapshot("owner", "room", "first", "stamp", null))
+            assertEquals(1, dao.retryFailed("first", "owner"))
+            assertEquals(0, dao.discardOwnedSnapshot("owner", "room", "first", "stamp", "refused"))
+            assertEquals(1, dao.discardOwnedSnapshot("owner", "room", "first", "stamp", null))
+            assertEquals(listOf("later"), dao.allOwned("owner").map { it.clientId })
+        } finally { db.close() }
+    }
+
     @Test fun heldRoomExclusionPrecedesLimitAndCountsKeepAllOwnedPendingIntent() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
         try {
@@ -115,6 +138,7 @@ class OutboxOwnershipTest {
             db.outboxDao().insert(OutboxEntity.from(OutboxEntry(conversationId = "room", clientId = "failed",
                 content = "Reply", createdAt = root.createdAt)))
             db.outboxDao().markFailed("failed", "rejected")
+            assertEquals(listOf("root"), db.messageDao().cachedThreadTargetRows("room", "root", "local_failed").map { it.id })
             db.messageDao().upsertAll(listOf(MessageEntity.from(reply))) // duplicate relay
             fun counts(rows: List<MessageEntity>) = app.pulse.domain.sync.cachedThreadReplyCounts(rows.map { it.toDomain() })
             assertEquals(mapOf("root" to 1), counts(db.messageDao().observeFor("room").first()))
@@ -161,6 +185,8 @@ class OutboxOwnershipTest {
                 kind = Message.Kind.TEXT, body = "Root", createdAt = "2026-10-21T00:00:00Z")
             val reply = root.copy(id = "reply", threadRootId = root.id)
             db.messageDao().upsertAll(listOf(root, reply).map { MessageEntity.from(it) })
+            assertEquals(setOf("root", "reply"), db.messageDao().cachedThreadTargetRows("room", "root", "reply").map { it.id }.toSet())
+            assertEquals(emptyList<MessageEntity>(), db.messageDao().cachedThreadTargetRows("other", "root", "reply"))
             val key = app.pulse.domain.sync.threadDenialKey(root.id)
             db.draftDao().upsert(DraftEntity("draft", "keep typing", root.createdAt))
             db.outboxDao().insert(OutboxEntity.from(OutboxEntry(conversationId = "room", clientId = "pending", content = "keep reply", createdAt = root.createdAt)))
@@ -178,6 +204,7 @@ class OutboxOwnershipTest {
             db.messageDao().upsertAll(listOf(MessageEntity.from(reply)))
             assertEquals(emptyList<MessageEntity>(), db.messageDao().observeThread("root").first())
             assertEquals(0, db.messageDao().countByThread("root"))
+            assertEquals(emptyList<MessageEntity>(), db.messageDao().cachedThreadTargetRows("room", "root", "reply"))
             assertEquals(1, db.outboxDao().all().size)
             assertEquals("keep typing", db.draftDao().get("draft")?.text)
             assertEquals(null, other.wave7Dao().get(key))

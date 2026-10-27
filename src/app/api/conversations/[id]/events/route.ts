@@ -1,3 +1,5 @@
+import type { Prisma } from '../../../../../../prisma/generated-client'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/conversations/[id]/events - group calendar + RSVP
 // (Task R23-d "Beyond Chat" wave 2 - Pulse group events)
 //
@@ -44,9 +46,10 @@ function asStatus(raw: string): RsvpStatus {
 
 /** 403/404 response when the user is not a conversation member, else null. */
 async function participantGuard(
+  db: Prisma.TransactionClient,
   conversationId: string,
   userId: string,
-): Promise<NextResponse | null> {
+): Promise<Response | null> {
   const [conv, participant] = await Promise.all([
     db.conversation.findUnique({ where: { id: conversationId }, select: { id: true } }),
     db.conversationParticipant.findUnique({
@@ -123,7 +126,7 @@ function serializeEvent(
 }
 
 /** Resolve display names for rsvp users + creators in one query. */
-async function nameMapOf(userIds: Array<string | null>): Promise<Map<string, string>> {
+async function nameMapOf(db: Prisma.TransactionClient, userIds: Array<string | null>): Promise<Map<string, string>> {
   const ids = [
     ...new Set(userIds.filter((id): id is string => typeof id === 'string' && id.length > 0)),
   ]
@@ -136,7 +139,7 @@ async function nameMapOf(userIds: Array<string | null>): Promise<Map<string, str
  * GET /api/conversations/[id]/events?userId=
  * Upcoming events ascending first, then past descending, cap 50.
  */
-export async function GET(req: Request, { params }: RouteCtx) {
+async function getEvents(req: Request, { params }: RouteCtx, db: Prisma.TransactionClient) {
   const { id } = await params
   const url = new URL(req.url)
   const userId = strField(url.searchParams.get('userId'))
@@ -144,7 +147,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const guard = await participantGuard(id, userId)
+  const guard = await participantGuard(db, id, userId)
   if (guard) return guard
 
   const now = new Date()
@@ -174,7 +177,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   ])
 
   const merged = [...upcoming, ...past].slice(0, LIST_CAP)
-  const names = await nameMapOf([
+  const names = await nameMapOf(db, [
     ...merged.map((e) => e.createdById),
     ...merged.flatMap((e) => e.rsvps.map((r) => r.userId)),
   ])
@@ -189,7 +192,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
  * POST /api/conversations/[id]/events  body { userId, title, startsAt, description?, location? }
  * → 201 { event } - brand-new event, zero RSVPs.
  */
-export async function POST(req: Request, { params }: RouteCtx) {
+async function postEvent(req: Request, { params }: RouteCtx, db: Prisma.TransactionClient) {
   const { id } = await params
   const body = await safeJson(req)
   const userId = strField(body.userId)
@@ -197,7 +200,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const guard = await participantGuard(id, userId)
+  const guard = await participantGuard(db, id, userId)
   if (guard) return guard
 
   const title = strField(body.title)
@@ -237,6 +240,28 @@ export async function POST(req: Request, { params }: RouteCtx) {
     },
   })
 
-  const names = await nameMapOf([created.createdById])
+  const names = await nameMapOf(db, [created.createdById])
   return NextResponse.json({ event: serializeEvent(created, names, userId) }, { status: 201 })
 }
+
+/** Do not authorize in one snapshot and create/read in another. A failed final
+ * serialization/name lookup must roll creation back rather than lose its ACK. */
+async function ownedSnapshot(req: Request, context: RouteCtx, method: 'get' | 'post') {
+  const userId = method === 'get' ? strField(new URL(req.url).searchParams.get('userId')) : strField((await safeJson(req.clone())).userId)
+  if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  if (req.headers.has('authorization')) {
+    const denied = await requireActionOwner(req, userId, 'events')
+    if (denied) return denied
+  }
+  try {
+    return await db.$transaction(tx => method === 'get' ? getEvents(req, context, tx) : postEvent(req, context, tx),
+      { isolationLevel: 'Serializable' })
+  } catch (error) {
+    if (['P1008', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? '')) {
+      return NextResponse.json({ error: 'Events changed or are busy. Refresh and try again.' }, { status: 409 })
+    }
+    throw error
+  }
+}
+export async function GET(req: Request, context: RouteCtx) { return ownedSnapshot(req, context, 'get') }
+export async function POST(req: Request, context: RouteCtx) { return ownedSnapshot(req, context, 'post') }

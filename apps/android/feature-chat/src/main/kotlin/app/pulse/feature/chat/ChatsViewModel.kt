@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /** One-shot user-facing notice - the snackbar/toast copy channel (web toast parity). */
@@ -81,6 +82,9 @@ class ChatsViewModel @Inject constructor(
     private val _searchHits = MutableStateFlow<List<MessageHit>>(emptyList())
     val searchHits: StateFlow<List<MessageHit>> = _searchHits.asStateFlow()
 
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError: StateFlow<String?> = _searchError.asStateFlow()
+    private var searchGeneration = 0L
     private val _searching = MutableStateFlow(false)
     val searching: StateFlow<Boolean> = _searching.asStateFlow()
 
@@ -252,6 +256,10 @@ class ChatsViewModel @Inject constructor(
     /** Debounced server message search - ≥2 chars, 250ms (web rhythm). */
     fun search(query: String) {
         searchJob?.cancel()
+        val generation = ++searchGeneration
+        val epoch = repo.attachmentSessionKey()
+        val account = repo.boundToCurrentAccount()
+        _searchError.value = null
         val trimmed = query.trim()
         if (trimmed.length < 2) {
             _searchHits.value = emptyList()
@@ -262,7 +270,10 @@ class ChatsViewModel @Inject constructor(
         _searching.value = true
         searchJob = viewModelScope.launch {
             delay(250)
-            repo.observeMessageSearch(trimmed).collect { result ->
+            account.observeMessageSearch(trimmed).collect { result ->
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (generation != searchGeneration || repo.attachmentSessionKey() != epoch) return@collect
+                _searchError.value = result.exceptionOrNull()?.message
                 _searchHits.value = result.getOrDefault(emptyList())
                 _searching.value = false
             }
@@ -279,110 +290,122 @@ class ChatsViewModel @Inject constructor(
         _notice.value = HomeNotice(text, isError)
     }
 
-    // row actions (web endpoint parity - see HOMEPAGE-SPEC §8/§14)
-
-    fun togglePin(conversationId: String, pinned: Boolean) {
+    // Synchronously claim all target rooms and capture one repository before
+    // launching: a queued/batch action must never retarget a later account.
+    private var actionOwner: String? = null
+    private val roomActions = mutableMapOf<String, java.util.UUID>()
+    private fun performConversationActions(
+        ids: List<String>, success: (Int) -> String, failure: String,
+        onDone: (List<String>) -> Unit = {},
+        request: suspend (PulseRepository, String) -> Result<Unit>,
+    ) {
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
+        val targets = ids.distinct().filter { it.isNotBlank() }
+        if (targets.isEmpty()) return
+        if (actionOwner != epoch) { actionOwner = epoch; roomActions.clear() }
+        if (targets.any { it in roomActions }) { notify("This chat is still updating. Please wait."); return }
+        val ticket = java.util.UUID.randomUUID()
+        targets.forEach { roomActions[it] = ticket }
         viewModelScope.launch {
-            repo.togglePin(conversationId, pinned)
-                .onSuccess { notify(if (pinned) "Pinned to top" else "Unpinned") }
-                .onFailure { notify("Could not update the pin", isError = true) }
-        }
-    }
-
-    fun toggleMute(conversationId: String, muted: Boolean) {
-        setMutedUntil(conversationId, if (muted) "8h" else null)
-    }
-
-    fun setMutedUntil(conversationId: String, until: String?) {
-        viewModelScope.launch {
-            repo.setMutedUntil(conversationId, until)
-                .onSuccess {
-                    notify(
-                        when (until) {
-                            null -> "Notifications unmuted"
-                            "always" -> "Muted - always"
-                            else -> {
-                                val offsetMs = if (until == "1w") 7L * 24 * 60 * 60 * 1000 else 8L * 60 * 60 * 1000
-                                val stamp = java.time.Instant.ofEpochMilli(System.currentTimeMillis() + offsetMs)
-                                    .atZone(ZoneId.systemDefault())
-                                if (stamp.toLocalDate() == java.time.LocalDate.now()) {
-                                    "Muted until " + stamp.format(DateTimeFormatter.ofPattern("HH:mm"))
-                                } else {
-                                    "Muted until " + stamp.format(DateTimeFormatter.ofPattern("d MMM"))
-                                }
-                            }
-                        },
-                    )
+            try {
+                val failed = mutableListOf<String>()
+                for (id in targets) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (repo.attachmentSessionKey() != epoch) return@launch
+                    val result = try { request(owned, id) }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (repo.attachmentSessionKey() != epoch) return@launch
+                    if (result.isFailure) failed += id
                 }
-                .onFailure { notify("Could not update the mute", isError = true) }
-        }
-    }
-
-    fun markUnread(conversationId: String, on: Boolean) {
-        viewModelScope.launch {
-            repo.markUnread(conversationId, on)
-                .onSuccess { notify(if (on) "Marked as unread" else "Marked as read") }
-                .onFailure { notify("Could not update the unread flag", isError = true) }
-        }
-    }
-
-    fun archive(conversationId: String, archived: Boolean) {
-        viewModelScope.launch {
-            repo.archive(conversationId, archived)
-                .onSuccess { notify(if (archived) "Chat archived" else "Chat unarchived") }
-                .onFailure { notify("Could not update the archive", isError = true) }
-        }
-    }
-
-    fun markRead(conversationId: String) {
-        viewModelScope.launch { repo.markRead(conversationId) }
-    }
-
-    // batch multi-select (web copies)
-
-    fun batchArchive(ids: List<String>, archived: Boolean) {
-        viewModelScope.launch {
-            var done = 0
-            for (id in ids) {
-                if (repo.archive(id, archived).isSuccess) done += 1
+                val done = targets.size - failed.size
+                notify(when {
+                    failed.isEmpty() -> success(done)
+                    done == 0 -> failure
+                    else -> "${success(done)}. ${failed.size} changes could not be confirmed; retry them."
+                }, isError = failed.isNotEmpty())
+                onDone(failed)
+            } finally {
+                if (actionOwner == epoch) targets.forEach { if (roomActions[it] == ticket) roomActions.remove(it) }
             }
-            notify("Archived $done ${if (done == 1) "chat" else "chats"}")
         }
     }
 
-    fun batchMute8h(ids: List<String>) {
-        viewModelScope.launch {
-            var done = 0
-            for (id in ids) {
-                if (repo.setMutedUntil(id, "8h").isSuccess) done += 1
-            }
-            notify("Muted $done ${if (done == 1) "chat" else "chats"} for 8 hours")
-        }
-    }
+    fun togglePin(conversationId: String, pinned: Boolean) = performConversationActions(
+        listOf(conversationId), success = { if (pinned) "Pinned to top" else "Unpinned" }, failure = "Could not update the pin",
+    ) { owned, id -> owned.togglePin(id, pinned) }
 
-    /** Returns the ids that FAILED so the screen keeps the mode on partial failure. */
-    fun batchMarkRead(ids: List<String>, onDone: (failed: List<String>) -> Unit) {
-        viewModelScope.launch {
-            val failed = mutableListOf<String>()
-            for (id in ids) {
-                if (repo.markRead(id).isFailure) failed += id
-            }
-            val read = ids.size - failed.size
-            if (read > 0) notify("$read ${if (read == 1) "chat" else "chats"} marked as read")
-            if (failed.isNotEmpty()) {
-                notify("${failed.size} ${if (failed.size == 1) "chat" else "chats"} could not be marked read - try again", isError = true)
-            }
-            onDone(failed)
-        }
-    }
+    fun toggleMute(conversationId: String, muted: Boolean) = setMutedUntil(conversationId, if (muted) "8h" else null)
+
+    fun setMutedUntil(conversationId: String, until: String?) = performConversationActions(
+        listOf(conversationId), success = { if (until == null) "Notifications unmuted" else "Notifications muted" },
+        failure = "Could not update the mute",
+    ) { owned, id -> owned.setMutedUntil(id, until) }
+
+    fun markUnread(conversationId: String, on: Boolean) = performConversationActions(
+        listOf(conversationId), success = { "Unread reminder change confirmed" }, failure = "Could not update the unread flag",
+    ) { owned, id -> owned.markUnread(id, on) }
+
+    fun archive(conversationId: String, archived: Boolean) = performConversationActions(
+        listOf(conversationId), success = { if (archived) "Chat archived" else "Chat unarchived" }, failure = "Could not update the archive",
+    ) { owned, id -> owned.archive(id, archived) }
+
+    fun markRead(conversationId: String) = performConversationActions(
+        listOf(conversationId), success = { "Marked as read" }, failure = "Could not mark this chat read",
+    ) { owned, id -> owned.markRead(id) }
+
+    fun batchArchive(ids: List<String>, archived: Boolean, onDone: (List<String>) -> Unit = {}) = performConversationActions(
+        ids, success = { "${if (archived) "Archived" else "Unarchived"} $it ${if (it == 1) "chat" else "chats"}" },
+        failure = "Could not confirm the selected archive changes", onDone = onDone,
+    ) { owned, id -> owned.archive(id, archived) }
+
+    fun batchMute8h(ids: List<String>, onDone: (List<String>) -> Unit = {}) = performConversationActions(
+        ids, success = { "Muted $it ${if (it == 1) "chat" else "chats"} for 8 hours" },
+        failure = "Could not confirm the selected mutes", onDone = onDone,
+    ) { owned, id -> owned.setMutedUntil(id, "8h") }
+
+    /** Failed IDs remain selected; success is not a reason to remove failures. */
+    fun batchMarkRead(ids: List<String>, onDone: (List<String>) -> Unit) = performConversationActions(
+        ids, success = { "$it ${if (it == 1) "chat" else "chats"} marked as read" },
+        failure = "Could not confirm the selected read changes", onDone = onDone,
+    ) { owned, id -> owned.markRead(id) }
 
     // Note to Self
 
+    private var selfOpeningOwner: String? = null
+    private var selfOpeningTicket: java.util.UUID? = null
+    private var selfOpeningTask: Job? = null
+
+    fun cancelSelfOpening() {
+        selfOpeningTicket = null
+        selfOpeningTask?.cancel(); selfOpeningTask = null
+    }
+
     fun createSelfChat(onOpened: (String) -> Unit) {
-        viewModelScope.launch {
-            repo.createSelfChat()
-                .onSuccess { onOpened(it.id) }
-                .onFailure { notify("Could not open Note to Self", isError = true) }
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owner = repo.viewerId ?: return
+        if (selfOpeningOwner != epoch) { cancelSelfOpening(); selfOpeningOwner = epoch }
+        if (selfOpeningTicket != null) return
+        val owned = repo.boundToCurrentAccount()
+        val ticket = java.util.UUID.randomUUID(); selfOpeningTicket = ticket
+        selfOpeningTask = viewModelScope.launch {
+            fun owns() = repo.attachmentSessionKey() == epoch && selfOpeningTicket == ticket
+            try {
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                val cached = owned.observeConversations().firstOrNull().orEmpty()
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                val notebook = app.pulse.domain.sync.resolvePersonalConversation(owner, owner, cached,
+                    owned::createSelfChat, owned::createDm)
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                onOpened(notebook.id)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (owns()) notify("Could not open Note to Self. Reconnect and try again.", isError = true)
+            } finally {
+                if (selfOpeningTicket == ticket) { selfOpeningTicket = null; selfOpeningTask = null }
+            }
         }
     }
 
@@ -392,7 +415,7 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch {
             repo.exportChat(conversationId)
                 .onSuccess { notify("Chat exported - Saved $it") }
-                .onFailure { notify("Could not export this chat", isError = true) }
+                .onFailure { notify(it.message ?: "Could not export this chat", isError = true) }
         }
     }
 
@@ -406,7 +429,12 @@ class ChatsViewModel @Inject constructor(
                         notify("Cleared $cleared ${if (cleared == 1) "message" else "messages"}")
                     }
                 }
-                .onFailure { notify("Could not clear this chat", isError = true) }
+                .onFailure { notify(it.message ?: "Could not clear this chat", isError = true) }
         }
     }
 }
+
+
+/** Remove only confirmed targets, retaining failures and newly selected rooms. */
+internal fun remainingBatchSelection(current: Set<String>, attempted: Set<String>, failed: List<String>): Set<String> =
+    current - (attempted - failed.toSet())

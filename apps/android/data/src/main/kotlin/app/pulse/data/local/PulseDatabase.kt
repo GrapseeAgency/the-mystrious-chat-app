@@ -12,6 +12,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import app.pulse.domain.sync.restrictQuote
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.pulse.domain.model.Conversation
@@ -63,6 +64,7 @@ data class ConversationEntity(
     val lastMessageKind: String?,
     val lastActivityAt: String?,
     val unreadCount: Int,
+    val firstUnreadMessageId: String? = null,
     val isPinned: Boolean,
     val isMuted: Boolean,
     val isArchived: Boolean,
@@ -98,6 +100,7 @@ data class ConversationEntity(
         lastMessageKind = lastMessageKind,
         lastActivityAt = lastActivityAt,
         unreadCount = unreadCount,
+        firstUnreadMessageId = firstUnreadMessageId,
         isPinned = isPinned,
         isMuted = isMuted,
         isArchived = isArchived,
@@ -134,7 +137,8 @@ data class ConversationEntity(
             lastMessageAuthorName = m.lastMessageAuthorName,
             lastMessageKind = m.lastMessageKind,
             lastActivityAt = m.lastActivityAt,
-            unreadCount = m.unreadCount, isPinned = m.isPinned,
+            unreadCount = m.unreadCount,
+            firstUnreadMessageId = m.firstUnreadMessageId, isPinned = m.isPinned,
             isMuted = m.isMuted, isArchived = m.isArchived,
             memberIdsCsv = m.memberIds.joinToString(","),
             memberNamesCsv = m.memberNames.joinToString(","),
@@ -173,7 +177,7 @@ private fun membersOf(json: String): List<ConversationMember> = runCatching {
     )
 }.getOrDefault(emptyList())
 
-@Entity(tableName = "messages")
+@Entity(tableName = "messages", indices = [Index(value = ["replyToId"]), Index(value = ["threadRootId"])])
 data class MessageEntity(
     @PrimaryKey val id: String,
     val conversationId: String,
@@ -209,6 +213,7 @@ data class MessageEntity(
     val topicId: String? = null,
     // Wave 7 (v9) - raw rich-object payload JSON (red packet / game / tournament).
     val payloadJson: String? = null,
+    val quoteBoundsJson: String? = null,
 ) {
     fun toDomain(): Message {
         val reactionDtos = reactionsJson?.let { json ->
@@ -230,6 +235,9 @@ data class MessageEntity(
             createdAt = createdAt, editedAt = editedAt, deletedAt = deletedAt,
             replyToId = replyToId, threadRootId = threadRootId, pinnedAt = pinnedAt,
             reactions = reactions, replyToBody = replyToBody, replyToAuthor = replyToAuthor,
+            quoteBounds = quoteBoundsJson?.let { raw -> runCatching {
+                app.pulse.protocol.PulseJson.decodeFromString(app.pulse.domain.model.QuoteBounds.serializer(), raw)
+            }.getOrNull() },
             senderColor = senderColor, viaAutomation = viaAutomation, durationMs = durationMs,
             imagePath = imagePath, audioPath = audioPath, filePath = filePath,
             fileName = fileName, fileSize = fileSize, viewOnce = viewOnce,
@@ -247,6 +255,12 @@ data class MessageEntity(
                 }.getOrNull()
             },
             topicId = topicId,
+            readByMembershipIds = runCatching {
+                val obj = app.pulse.protocol.PulseJson.parseToJsonElement(payloadJson ?: "{}") as? kotlinx.serialization.json.JsonObject
+                (obj?.get(KEY_READERS) as? kotlinx.serialization.json.JsonArray)?.mapNotNull {
+                    (it as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { value -> value.isString }?.content
+                }.orEmpty()
+            }.getOrDefault(emptyList()),
             payload = payloadClean,
             anon = anon,
             anonAlias = anonAlias,
@@ -259,11 +273,14 @@ data class MessageEntity(
         // incognito + disappearing fields persist inside payloadJson as
         // "pulse:*" keys. Every payload consumer (web + natives) reads known
         // keys only and ignores the rest, so the extras are inert on the wire.
+        private const val KEY_READERS = "pulse:readMemberships"
         private const val KEY_ANON = "pulse:anon"
         private const val KEY_ALIAS = "pulse:anonAlias"
         private const val KEY_EXPIRES = "pulse:expiresAtMs"
 
         /** payloadJson → (clean payload, anon, anonAlias, expiresAtEpochMs). */
+        internal fun expiryFromPayload(raw: String?): Long? = payloadPulseKeys(raw).expiresAtEpochMs
+
         private fun payloadPulseKeys(raw: String?): Tuple4 = run {
             val obj = raw?.let { r ->
                 runCatching {
@@ -273,10 +290,12 @@ data class MessageEntity(
             if (obj == null) return@run Tuple4(raw, false, null, null)
             val anon = (obj[KEY_ANON] as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull ?: false
             val alias = (obj[KEY_ALIAS] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
-            val expires = (obj[KEY_EXPIRES] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull
-            val clean = kotlinx.serialization.json.JsonObject(obj - KEY_ANON - KEY_ALIAS - KEY_EXPIRES)
+            val expires = if (KEY_EXPIRES in obj)
+                (obj[KEY_EXPIRES] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull ?: Long.MIN_VALUE
+            else null
+            val clean = kotlinx.serialization.json.JsonObject(obj - KEY_ANON - KEY_ALIAS - KEY_EXPIRES - KEY_READERS)
                 .let { if (it.isEmpty()) null else it.toString() }
-            Tuple4(clean, anon, alias, expires?.takeIf { it > 0L })
+            Tuple4(clean, anon, alias, expires)
         }
 
         private data class Tuple4(
@@ -295,11 +314,12 @@ data class MessageEntity(
             } ?: kotlinx.serialization.json.JsonObject(emptyMap())
             val withKeys = kotlinx.serialization.json.buildJsonObject {
                 base.forEach { (k, v) ->
-                    if (k !in setOf(KEY_ANON, KEY_ALIAS, KEY_EXPIRES)) put(k, v)
+                    if (k !in setOf(KEY_ANON, KEY_ALIAS, KEY_EXPIRES, KEY_READERS)) put(k, v)
                 }
+                put(KEY_READERS, kotlinx.serialization.json.JsonArray(m.readByMembershipIds.distinct().map { kotlinx.serialization.json.JsonPrimitive(it) }))
                 if (m.anon) put(KEY_ANON, kotlinx.serialization.json.JsonPrimitive(true))
                 if (!m.anonAlias.isNullOrBlank()) put(KEY_ALIAS, kotlinx.serialization.json.JsonPrimitive(m.anonAlias))
-                m.expiresAtEpochMs?.takeIf { it > 0L }?.let {
+                m.expiresAtEpochMs?.let {
                     put(KEY_EXPIRES, kotlinx.serialization.json.JsonPrimitive(it))
                 }
             }
@@ -313,6 +333,9 @@ data class MessageEntity(
             replyToId = m.replyToId, threadRootId = m.threadRootId, pinnedAt = m.pinnedAt,
             reactionsJson = reactionsJson, replyToBody = m.replyToBody,
             replyToAuthor = m.replyToAuthor, senderColor = m.senderColor,
+            quoteBoundsJson = m.quoteBounds?.let {
+                app.pulse.protocol.PulseJson.encodeToString(app.pulse.domain.model.QuoteBounds.serializer(), it)
+            },
             viaAutomation = m.viaAutomation, durationMs = m.durationMs,
             imagePath = m.imagePath, audioPath = m.audioPath, filePath = m.filePath,
             fileName = m.fileName, fileSize = m.fileSize, viewOnce = m.viewOnce,
@@ -413,14 +436,23 @@ data class TopicEntity(
     @ColumnInfo(defaultValue = "chat") val emoji: String = app.pulse.protocol.TOPIC_ICON_DEFAULT,
     val lastMessageAt: String?,
     @ColumnInfo(defaultValue = "0") val messageCount: Int = 0,
+    val unreadCount: Int? = null,
+    val readStateJson: String? = null,
 ) {
-    fun toDomain(): app.pulse.domain.model.Topic = app.pulse.domain.model.Topic(
+    fun toDomain(): app.pulse.domain.model.Topic {
+        val state = readStateJson?.let { runCatching { app.pulse.protocol.PulseJson.decodeFromString(
+            app.pulse.domain.model.ReadScopeState.serializer(), it) }.getOrNull() }
+        return app.pulse.domain.model.Topic(
         id = id,
         name = name,
         emoji = app.pulse.protocol.topicIconId(emoji),
         lastMessageAt = app.pulse.core.time.PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
         messageCount = messageCount,
-    )
+        unreadCount = state?.unreadCount ?: unreadCount,
+        firstUnreadMessageId = state?.firstUnreadMessageId,
+        unreadExpirations = state?.unreadExpirations.orEmpty(),
+        )
+    }
 
     companion object {
         fun from(conversationId: String, t: app.pulse.domain.model.Topic) = TopicEntity(
@@ -431,6 +463,10 @@ data class TopicEntity(
             emoji = app.pulse.protocol.topicIconId(t.emoji),
             lastMessageAt = t.lastMessageAt?.let { java.time.Instant.ofEpochMilli(it).toString() },
             messageCount = t.messageCount,
+            unreadCount = t.unreadCount,
+            readStateJson = t.unreadCount?.let { app.pulse.protocol.PulseJson.encodeToString(
+                app.pulse.domain.model.ReadScopeState.serializer(), app.pulse.domain.model.ReadScopeState(
+                    it, t.firstUnreadMessageId, t.unreadExpirations)) },
         )
     }
 }
@@ -650,6 +686,12 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || messages.threadRootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
+    /** The repository validates root/reply structure and lifetime in the same transaction. */
+    @Query("SELECT * FROM messages WHERE conversationId = :roomId AND id IN (:rootId, :targetId) " +
+        "AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) " +
+        "AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
+    suspend fun cachedThreadTargetRows(roomId: String, rootId: String, targetId: String): List<MessageEntity>
+
     /** Thread screen rehydration - replies asc from the Room cache. */
     @Query("SELECT * FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeThread(rootId: String): Flow<List<MessageEntity>>
@@ -694,13 +736,45 @@ interface MessageDao {
             val old = current[incoming.id]
             val candidate = incoming.toDomain()
             val safe = app.pulse.domain.sync.mergeMessageState(old?.toDomain(), candidate)
-            val row = if (safe == candidate && !safe.isDeleted) incoming.copy(viewOnce = safe.viewOnce) else MessageEntity.from(safe,
+            val sanitized = MessageEntity.from(safe,
                 if (safe.isDeleted) null else if (safe.reactions == candidate.reactions) incoming.reactionsJson else old?.reactionsJson)
+            // Preserve raw timestamps and unknown JSON fields when no domain merge
+            // changed them. Quote redaction still applies even if toDomain sanitized
+            // the candidate before comparison (legacy snippets must not bypass it).
+            val row = if (safe == candidate && !safe.isDeleted) incoming.copy(
+                viewOnce = safe.viewOnce, replyToBody = safe.replyToBody,
+                replyToAuthor = safe.replyToAuthor, quoteBoundsJson = sanitized.quoteBoundsJson,
+            ) else sanitized
             current[row.id] = row
             row
         }
         replaceMerged(merged)
+        // Resolve after ALL source rows commit to this transaction, so a page
+        // containing a quote before its tombstone cannot resurrect that quote.
+        for (changed in merged.map { it.id }.distinct().chunked(200)) {
+            var after = ""
+            while (true) {
+                val owners = quoteDependents(changed, after)
+                if (owners.isEmpty()) break
+                val sources = byIds(owners.mapNotNull { it.replyToId }.distinct()).associateBy { it.id }
+                val roots = byIds(sources.values.mapNotNull { it.threadRootId }.distinct()).associateBy { it.id }
+                for (owner in owners) {
+                    val source = sources[owner.replyToId]?.toDomain()
+                    val safe = owner.toDomain().restrictQuote(source, roots[source?.threadRootId]?.toDomain())
+                    val bounds = safe.quoteBounds?.let { app.pulse.protocol.PulseJson.encodeToString(app.pulse.domain.model.QuoteBounds.serializer(), it) }
+                    if (owner.replyToBody != safe.replyToBody || owner.replyToAuthor != safe.replyToAuthor || owner.quoteBoundsJson != bounds)
+                        updateQuote(owner.id, safe.replyToBody, safe.replyToAuthor, bounds)
+                }
+                after = owners.last().id
+            }
+        }
     }
+
+    @Query("SELECT * FROM messages WHERE replyToId IS NOT NULL AND id > :after AND (id IN (:changed) OR replyToId IN (:changed) OR replyToId IN (SELECT id FROM messages WHERE threadRootId IN (:changed))) ORDER BY id LIMIT 200")
+    suspend fun quoteDependents(changed: List<String>, after: String): List<MessageEntity>
+
+    @Query("UPDATE messages SET replyToBody = :body, replyToAuthor = :author, quoteBoundsJson = :bounds WHERE id = :id")
+    suspend fun updateQuote(id: String, body: String?, author: String?, bounds: String?)
 
     /** Implementation primitive. Call upsertAll so terminal state is never bypassed. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -753,6 +827,14 @@ interface OutboxDao {
     @Query("DELETE FROM outbox WHERE clientId = :clientId AND conversationId = :room AND failureReason IS NOT NULL AND " +
         "EXISTS (SELECT 1 FROM messages m WHERE m.id = 'local_' || outbox.clientId AND m.conversationId = :room AND m.authorId = :owner AND m.threadRootId = :rootId)")
     suspend fun discardFailedThread(owner: String, room: String, rootId: String, clientId: String): Int
+
+    @Query("DELETE FROM outbox WHERE clientId = :clientId AND conversationId = :room AND createdAt = :createdAt " +
+        "AND failureReason IS :expectedFailure AND EXISTS (SELECT 1 FROM messages m " +
+        "WHERE m.id = 'local_' || outbox.clientId AND m.authorId = :owner AND m.conversationId = outbox.conversationId)")
+    suspend fun discardOwnedSnapshot(owner: String, room: String, clientId: String, createdAt: String, expectedFailure: String?): Int
+
+    @Query("SELECT * FROM outbox WHERE clientId = :clientId")
+    suspend fun byClientId(clientId: String): OutboxEntity?
 
     @Query("SELECT * FROM outbox WHERE clientId = :clientId AND failureReason IS NULL")
     suspend fun pendingByClientId(clientId: String): OutboxEntity?
@@ -917,23 +999,32 @@ data class SavedLibraryRow(
     val savedStamp: String,
     val savedConversationName: String?,
     val savedConversationKind: String?,
+    val savedRootPayload: String? = null,
 ) {
-    fun toDomain() = app.pulse.domain.model.SavedItem(
-        savedAt = app.pulse.core.time.PulseTime.epochMs(savedStamp),
-        conversationId = message.conversationId,
-        conversationName = savedConversationName,
-        isGroup = savedConversationKind?.let { it != "DM" } ?: false,
-        message = message.toDomain(),
-    )
+    fun toDomain(): app.pulse.domain.model.SavedItem {
+        val canonical = message.toDomain()
+        val rootExpiry = MessageEntity.expiryFromPayload(savedRootPayload)
+        // This is a preview projection only; never persist the parent's deadline
+        // into the canonical reply row. The existing expiry flow owns its timer.
+        val preview = if (rootExpiry == null) canonical else canonical.copy(
+            expiresAtEpochMs = minOf(canonical.expiresAtEpochMs ?: rootExpiry, rootExpiry))
+        return app.pulse.domain.model.SavedItem(
+            savedAt = app.pulse.core.time.PulseTime.epochMs(savedStamp),
+            conversationId = message.conversationId,
+            conversationName = savedConversationName,
+            isGroup = savedConversationKind?.let { it != "DM" } ?: false,
+            message = preview,
+        )
+    }
 }
 
 /** Saved-library index (Wave 2) - server cap 100, newest first, no pagination. */
 @Dao
 interface SavedDao {
-    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId WHERE m.deletedAt IS NULL ORDER BY s.savedAt DESC, s.messageId DESC")
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind, p.payloadJson AS savedRootPayload FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId LEFT JOIN messages p ON p.id = m.threadRootId WHERE m.deletedAt IS NULL AND m.viewOnce = 0 AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.key = 'thread-access-denied:v1|' || m.threadRootId) AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.threadRootId IS NULL AND p.deletedAt IS NULL)) ORDER BY s.savedAt DESC, s.messageId DESC")
     fun observeLibrary(): Flow<List<SavedLibraryRow>>
 
-    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId WHERE m.deletedAt IS NULL ORDER BY s.savedAt DESC, s.messageId DESC")
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind, p.payloadJson AS savedRootPayload FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId LEFT JOIN messages p ON p.id = m.threadRootId WHERE m.deletedAt IS NULL AND m.viewOnce = 0 AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.key = 'thread-access-denied:v1|' || m.threadRootId) AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.threadRootId IS NULL AND p.deletedAt IS NULL)) ORDER BY s.savedAt DESC, s.messageId DESC")
     suspend fun library(): List<SavedLibraryRow>
 
     @Query("DELETE FROM savedMessages")
@@ -1008,6 +1099,18 @@ data class Wave7CacheEntity(
 
 @Dao
 interface Wave7Dao {
+    @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
+    suspend fun insertReadIntent(item: Wave7CacheEntity)
+
+    @Query("SELECT * FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix ORDER BY updatedAt, `key`")
+    suspend fun readJournal(prefix: String): List<Wave7CacheEntity>
+
+    @Query("SELECT COUNT(*) FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix")
+    fun observeReadJournalCount(prefix: String): Flow<Int>
+
+    @Query("DELETE FROM wave7_cache WHERE `key` = :key AND json = :json")
+    suspend fun acknowledgeReadIntent(key: String, json: String)
+
     @Upsert
     suspend fun upsert(item: Wave7CacheEntity)
 
@@ -1021,7 +1124,7 @@ interface Wave7Dao {
     suspend fun delete(key: String)
 
     // Access refusals are durable metadata, not disposable feature snapshots.
-    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|'")
+    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|' AND substr(`key`, 1, 16) != 'read-journal:v1|' AND substr(`key`, 1, 14) != 'read-fence:v1|'")
     suspend fun clearAll()
 }
 
@@ -1039,7 +1142,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 13,
+    version = 18,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1179,6 +1282,61 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /** Index reverse quote dependencies; retire previously cached quotes
+         * whose source/root is already known deleted, without deleting replies. */
+        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val exists = db.query("PRAGMA table_info(topics)").use { cursor ->
+                    var found = false
+                    while (cursor.moveToNext()) if (cursor.getString(1) == "readStateJson") found = true
+                    found
+                }
+                if (!exists) db.execSQL("ALTER TABLE topics ADD COLUMN readStateJson TEXT")
+            }
+        }
+
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val exists = db.query("PRAGMA table_info(conversations)").use { cursor ->
+                    var found = false
+                    while (cursor.moveToNext()) if (cursor.getString(1) == "firstUnreadMessageId") found = true
+                    found
+                }
+                if (!exists) db.execSQL("ALTER TABLE conversations ADD COLUMN firstUnreadMessageId TEXT")
+                val topicExists = db.query("PRAGMA table_info(topics)").use { cursor ->
+                    var found = false
+                    while (cursor.moveToNext()) if (cursor.getString(1) == "unreadCount") found = true
+                    found
+                }
+                if (!topicExists) db.execSQL("ALTER TABLE topics ADD COLUMN unreadCount INTEGER")
+            }
+        }
+
+        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_replyToId ON messages(replyToId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_threadRootId ON messages(threadRootId)")
+                db.execSQL("UPDATE messages SET replyToBody = '', replyToAuthor = 'Unavailable message', quoteBoundsJson = '{\"version\":1,\"deleted\":true}' WHERE replyToId IN (SELECT id FROM messages WHERE deletedAt IS NOT NULL) OR replyToId IN (SELECT child.id FROM messages child JOIN messages root ON root.id = child.threadRootId WHERE root.deletedAt IS NOT NULL OR root.threadRootId IS NOT NULL OR root.conversationId <> child.conversationId) OR EXISTS (SELECT 1 FROM messages source WHERE source.id = messages.replyToId AND source.conversationId <> messages.conversationId)")
+            }
+        }
+
+        /** Old inbox projections did not retain anonymous/view-once provenance.
+         * Retire only the derived preview; preserve unread, drafts and outbox. */
+        val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE conversations SET lastMessagePreview = NULL, lastMessageAuthorName = NULL, lastMessageKind = NULL, lastMessageMine = 0, lastMessageDeleted = 0, lastMessageIsReply = 0, lastMessageIsImage = 0, lastMessageIsAudio = 0, lastMessageIsFile = 0, lastMessageFileName = NULL")
+            }
+        }
+
+        /** v13 → v14: no trust in legacy cached quote authors/content. Keep the
+         * source id for navigation and keep all messages, drafts and queued sends. */
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN quoteBoundsJson TEXT")
+                db.execSQL("UPDATE messages SET replyToBody = NULL, replyToAuthor = NULL WHERE replyToId IS NOT NULL")
             }
         }
 

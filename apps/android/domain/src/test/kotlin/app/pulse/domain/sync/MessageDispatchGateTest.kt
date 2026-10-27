@@ -69,4 +69,26 @@ class MessageDispatchGateTest {
         assertEquals("sent", gate.tryImmediate({ true }, "slow") { "sent" })
     }
 
+    @Test fun `failed queue pass schedules recovery and releases the single writer`() = runTest {
+        val gate = MessageDispatchGate()
+        var recovery = 0
+        val failure = IllegalStateException("storage temporarily unavailable")
+        val result = runCatching { gate.serialized(onFailure = { recovery++ }) { throw failure } }
+        assertSame(failure, result.exceptionOrNull())
+        assertEquals(1, recovery)
+        assertEquals("recovered", gate.serialized(onFailure = { recovery++ }) { "recovered" })
+        assertEquals(1, recovery)
+    }
+
+    @Test fun `canceling an account pass does not schedule new recovery work`() = runTest {
+        val gate = MessageDispatchGate()
+        var recovery = 0
+        val blocker = CompletableDeferred<Unit>()
+        val worker = launch { gate.serialized(onFailure = { recovery++ }) { blocker.await() } }
+        runCurrent()
+        worker.cancelAndJoin()
+        assertEquals(0, recovery)
+        assertEquals("released", gate.serialized { "released" })
+    }
+
 }

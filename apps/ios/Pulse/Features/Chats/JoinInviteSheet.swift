@@ -18,6 +18,14 @@ struct JoinInviteSheet: View {
     @State private var loading = true
     @State private var invalid = false
     @State private var joining = false
+    @State private var loadError: String?
+    @State private var mounted = false
+    @State private var ownerEpoch: UUID?
+    @State private var loadTicket = UUID()
+    @State private var actionTicket = UUID()
+    @State private var loadTask: Task<Void, Never>?
+    @State private var actionTask: Task<Void, Never>?
+    @State private var joinedRoom: String?
 
     var body: some View {
         VStack(spacing: 14) {
@@ -30,6 +38,12 @@ struct JoinInviteSheet: View {
                     RoundedRectangle(cornerRadius: 8).fill(PulseTheme.chipFill).frame(width: 96, height: 16)
                 }
                 .padding(.vertical, 26)
+            } else if let loadError {
+                VStack(spacing: 10) {
+                    Text(loadError).font(.footnote).foregroundStyle(PulseTheme.textSecondary)
+                    Button("Retry") { startPreview() }
+                    Button("Not now") { dismiss() }
+                }.padding(.vertical, 18)
             } else if invalid || preview == nil {
                 VStack(spacing: 10) {
                     Image(systemName: "link")
@@ -65,7 +79,19 @@ struct JoinInviteSheet: View {
         .padding(.top, 6)
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
-        .task { await loadPreview() }
+        .onAppear {
+            mounted = true
+            if ownerEpoch != session.sessionGeneration { joinedRoom = nil }
+            ownerEpoch = session.sessionGeneration
+            startPreview()
+        }
+        .onDisappear { retire() }
+        .onChange(of: session.sessionGeneration) { _, _ in retire(); dismiss() }
+        .onChange(of: code) { _, _ in
+            actionTicket = UUID(); actionTask?.cancel(); actionTask = nil
+            joining = false; joinedRoom = nil
+            startPreview()
+        }
     }
 
     @ViewBuilder
@@ -92,11 +118,7 @@ struct JoinInviteSheet: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
             Button {
-                if invite.alreadyMember == true {
-                    finish(alreadyMember: true)
-                } else {
-                    Task { await join() }
-                }
+                startJoin()
             } label: {
                 HStack(spacing: 8) {
                     if joining {
@@ -104,7 +126,7 @@ struct JoinInviteSheet: View {
                         Text("Joining…")
                     } else {
                         Image(systemName: "arrow.right.to.line")
-                        Text(invite.alreadyMember == true ? "Open chat" : "Join group")
+                        Text(invite.alreadyMember == true || joinedRoom != nil ? "Open chat" : "Join group")
                     }
                 }
                 .font(.system(size: 14, weight: .semibold))
@@ -132,46 +154,80 @@ struct JoinInviteSheet: View {
         return "\(value) member\(value == 1 ? "" : "s")"
     }
 
-    private func loadPreview() async {
-        defer { loading = false }
-        do {
-            preview = try await session.api.invitePreview(code: code)
-        } catch {
-            invalid = true
-        }
+    private func owns(_ epoch: UUID) -> Bool {
+        mounted && ownerEpoch == epoch && session.sessionGeneration == epoch && !Task.isCancelled
     }
 
-    private func join() async {
-        guard !joining else { return }
-        joining = true
-        defer { joining = false }
-        do {
-            let result = try await session.api.joinInvite(code: code)
-            let name = preview?.name ?? "the group"
-            PulseHaptics.success()
-            session.toasts.show(result.alreadyMember == true ? "You are already in this group" : "Welcome to \(name)!")
-            session.noteInboxChanged()
-            if let conv = try? await session.api.conversationDetail(id: result.conversationId, userId: session.api.userId) {
-                dismiss()
-                onJoined(conv)
-            } else {
-                session.toasts.show("Joined - find it at the top of your chats")
+    private func retire() {
+        mounted = false
+        loadTicket = UUID(); actionTicket = UUID()
+        loadTask?.cancel(); actionTask?.cancel()
+        loadTask = nil; actionTask = nil
+        joining = false
+    }
+
+    private func startPreview() {
+        let epoch = session.sessionGeneration
+        guard owns(epoch), !joining else { return }
+        let api = session.api, requestedCode = code, ticket = UUID()
+        loadTask?.cancel(); loadTicket = ticket
+        loading = true; invalid = false; loadError = nil; preview = nil
+        loadTask = Task { @MainActor in
+            defer { if owns(epoch), loadTicket == ticket { loading = false; loadTask = nil } }
+            do {
+                guard owns(epoch), loadTicket == ticket else { return }
+                let result = try await api.invitePreview(code: requestedCode)
+                guard owns(epoch), loadTicket == ticket, code == requestedCode else { return }
+                guard let room = result.conversationId, !room.isEmpty else {
+                    loadError = "The server didn't identify this invite's group. Retry loading it."
+                    return
+                }
+                preview = result
+            } catch {
+                guard owns(epoch), loadTicket == ticket else { return }
+                if PulseInviteRules.isInvalidPreview(error) { invalid = true }
+                else { loadError = "Couldn't load this invite. Check your connection and retry; the link has not been confirmed invalid." }
             }
-        } catch let failure as PulseAPIClient.Failure {
-            session.toasts.show(failure.message ?? "Could not join the group")
-        } catch {
-            session.toasts.show("Could not join the group")
         }
     }
 
-    private func finish(alreadyMember: Bool) {
-        guard let conversationId = preview?.conversationId else { return }
-        Task {
-            if let conv = try? await session.api.conversationDetail(id: conversationId, userId: session.api.userId) {
-                dismiss()
+    private func startJoin() {
+        let epoch = session.sessionGeneration
+        guard owns(epoch), !joining, let preview, let expectedRoom = preview.conversationId else { return }
+        let api = session.api, requestedCode = code, ticket = UUID()
+        session.noteRoomNavigationIntent()
+        let navigation = session.roomNavigationGeneration
+        actionTicket = ticket
+        joining = true
+        actionTask = Task { @MainActor in
+            defer { if actionTicket == ticket { joining = false; actionTask = nil } }
+            do {
+                guard owns(epoch), actionTicket == ticket else { return }
+                var room = joinedRoom ?? expectedRoom
+                if preview.alreadyMember != true && joinedRoom == nil {
+                    let result = try await api.joinInvite(code: requestedCode)
+                    guard owns(epoch), actionTicket == ticket, code == requestedCode else { return }
+                    guard result.conversationId == expectedRoom else {
+                        session.noteInboxChanged()
+                        session.toasts.show("The joined chat didn't match the preview. Check Chats before trying again.")
+                        return
+                    }
+                    room = result.conversationId
+                    joinedRoom = room // an opening failure must not repeat the membership mutation
+                    PulseHaptics.success()
+                    session.toasts.show(result.alreadyMember == true ? "You are already in this group" : "Welcome to \(preview.name ?? "the group")!")
+                    session.noteInboxChanged()
+                }
+                let conv = try await PulseConversationNavigation.conversation(id: room, cached: []) {
+                    try await api.conversationDetail(id: room, userId: api.userId)
+                }
+                guard owns(epoch), actionTicket == ticket, session.roomNavigationGeneration == navigation else { return }
                 onJoined(conv)
-            } else {
-                session.toasts.show("That chat isn't available right now")
+                dismiss()
+            } catch {
+                guard owns(epoch), actionTicket == ticket, session.roomNavigationGeneration == navigation else { return }
+                session.toasts.show(joinedRoom != nil ? "Joined, but opening failed. Tap Open chat or find it in Chats."
+                    : ChatsViewModel.describe(error))
             }
         }
     }

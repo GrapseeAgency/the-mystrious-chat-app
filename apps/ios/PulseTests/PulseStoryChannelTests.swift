@@ -111,6 +111,29 @@ final class PulseStoryChannelTests: XCTestCase {
         )
     }
 
+    func testOfflineInvitePreviewIsNotMisreportedAsRevoked() {
+        let transientStatuses: [Int?] = [nil, 401, 403, 408, 429, 500, 503]
+        for status in transientStatuses {
+            XCTAssertFalse(PulseInviteRules.isInvalidPreview(PulseAPIClient.Failure(kind: .network, message: nil, status: status)))
+        }
+        for status in [400, 404, 410] {
+            XCTAssertTrue(PulseInviteRules.isInvalidPreview(PulseAPIClient.Failure(kind: .notFound, message: nil, status: status)))
+        }
+        XCTAssertTrue(PulseInviteRules.isInvalidPreview(PulseAPIClient.Failure(kind: .notFound, message: nil)))
+        XCTAssertFalse(PulseInviteRules.isInvalidPreview(CancellationError()))
+    }
+
+    func testRealDirectoryRowsOpenWithoutCreationOnlyAlias() throws {
+        let decoder = JSONDecoder()
+        func decode(_ json: String) throws -> WireChannelSummary {
+            try decoder.decode(WireChannelSummary.self, from: Data(json.utf8))
+        }
+        XCTAssertEqual(PulseChannelDirectory.roomId(try decode(#"{"id":"room","isSubscribed":true}"#)), "room")
+        XCTAssertEqual(PulseChannelDirectory.roomId(try decode(#"{"id":"room","conversationId":"room"}"#)), "room")
+        XCTAssertNil(PulseChannelDirectory.roomId(try decode(#"{"id":"room","conversationId":"other"}"#)))
+        XCTAssertNil(PulseChannelDirectory.roomId(try decode(#"{"id":""}"#)))
+    }
+
     func testChannelPartitionPutsNilMembershipInDiscover() {
         let feed = [
             channel(id: "a", isSubscribed: true),

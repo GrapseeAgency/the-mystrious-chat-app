@@ -122,16 +122,24 @@ public struct WireKanbanCard: Codable, Hashable, Sendable {
 }
 
 public struct WireKanbanPage: Codable, Sendable {
+    public let boardReceiptVersion: Int
+    public let userId: String
+    public let conversationId: String
     public let cards: [WireKanbanCard]
 }
 
 public struct WireKanbanCardEnvelope: Codable, Sendable {
+    public let boardReceiptVersion: Int
+    public let userId: String
+    public let conversationId: String
     public let card: WireKanbanCard?
 }
 
 // MARK: - Events (F-RO-05)
 
 public struct WireEventRsvp: Codable, Hashable, Sendable {
+    public let id: String?
+    public let eventId: String?
     public let userId: String?
     public let name: String?
     public let status: String?
@@ -166,6 +174,9 @@ public struct WireEventEnvelope: Codable, Sendable {
 }
 
 public struct WireRsvpResult: Codable, Sendable {
+    public let eventReceiptVersion: Int?
+    public let eventId: String?
+    public let userId: String?
     public let rsvp: WireEventRsvp?
     public let counts: WireEventCounts?
 }
@@ -179,6 +190,9 @@ public struct WireCheckinStamp: Codable, Hashable, Sendable {
 }
 
 public struct WireCheckinResult: Codable, Sendable {
+    public let eventReceiptVersion: Int?
+    public let eventId: String?
+    public let userId: String?
     public let checkIn: WireCheckinStamp?
     public let xpAwarded: Bool?
     public let checkedInCount: Int?
@@ -391,6 +405,7 @@ public struct WireSwapResult: Codable, Sendable {
 }
 
 public struct WireHubTask: Codable, Hashable, Sendable {
+    public let ownerId: String?
     public let id: String
     public let title: String?
     public let status: String?
@@ -399,6 +414,7 @@ public struct WireHubTask: Codable, Hashable, Sendable {
 }
 
 public struct WireHubTasksPage: Codable, Sendable {
+    public let userId: String
     public let tasks: [WireHubTask]
 }
 
@@ -427,14 +443,21 @@ public struct WireMarketListing: Codable, Hashable, Sendable {
 }
 
 public struct WireMarketPage: Codable, Sendable {
+    public let marketVersion: Int
+    public let userId: String
     public let listings: [WireMarketListing]
 }
 
 public struct WireMarketListingEnvelope: Codable, Sendable {
+    public let marketVersion: Int
+    public let userId: String
     public let listing: WireMarketListing?
 }
 
 public struct WireMarketBuyResult: Codable, Sendable {
+    public let marketVersion: Int
+    public let userId: String
+    public let listingId: String
     public let ok: Bool?
     public let wallet: WireWallet?
 }
@@ -457,10 +480,15 @@ public struct WireHubLog: Codable, Hashable, Sendable {
 }
 
 public struct WireHubLogsPage: Codable, Sendable {
+    public let activityVersion: Int
+    public let userId: String
     public let logs: [WireHubLog]
 }
 
 public struct WireAppInstallState: Codable, Hashable, Sendable {
+    public let appVersion: Int
+    public let appId: String
+    public let userId: String
     public let installed: Bool?
     public let status: String?
     public let installedAt: String?
@@ -469,12 +497,20 @@ public struct WireAppInstallState: Codable, Hashable, Sendable {
 }
 
 public struct WireAppInstallResult: Codable, Sendable {
+    public let appVersion: Int
+    public let appId: String
+    public let userId: String
     public let installed: Bool?
     public let status: String?
     public let installs: Int?
+    public let installedAt: String?
+    public let installers: [WireHubLogUser]?
 }
 
 public struct WireAppCommunity: Codable, Sendable {
+    public let appVersion: Int
+    public let appId: String
+    public let userId: String
     public let conversation: WireConversationSummary?
     public let memberCount: Int?
     public let joined: Bool?

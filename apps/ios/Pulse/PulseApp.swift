@@ -81,8 +81,14 @@ struct PulseApp: App {
     }
 
     @MainActor
-    private static func flushBackgroundOutbox() async -> Bool {
-        if let active = PulseOutboxEngine.active { return await active.flush() }
+    static func flushBackgroundOutbox(recipientUserId: String? = nil, readStateRoom: String? = nil) async -> Bool {
+        if let recipientUserId, PulseKeychain.shared.loadViewer()?.id != recipientUserId { return false }
+        if let active = PulseOutboxEngine.active {
+            // Invalidate open scopes promptly even if an unrelated upload is slow.
+            // The session callback is generation-fenced and fetches canonical counts.
+            if let readStateRoom { active.invalidateReadProjections(readStateRoom) }
+            return await active.flushBackgroundQueues()
+        }
         guard let viewer = PulseKeychain.shared.loadViewer(),
               let token = PulseKeychain.shared.loadSessionToken() else { return false }
         PulseEndpoints.loadPersistedOverride()
@@ -92,9 +98,27 @@ struct PulseApp: App {
         do {
             let store = try PulseStore.openAccount(gateway: PulseEndpoints.gatewayURL.absoluteString, viewerId: viewer.id)
             let api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: token)
-            let engine = PulseOutboxEngine(store: store) { api }
+            // A foreground engine may take over while a cold upload/receipt is
+            // awaiting HTTP. The old task must leave its original journal/ACK
+            // pending, not write through a second store into the live account.
+            let ownsColdWake = {
+                PulseOutboxEngine.active == nil && PulseKeychain.shared.loadViewer()?.id == viewer.id &&
+                PulseKeychain.shared.loadSessionToken() == token && PulseEndpoints.gatewayURL == api.baseURL
+            }
+            let engine = PulseOutboxEngine(store: store, isCurrent: ownsColdWake) { api }
+            engine.onReadJournalFlush = {
+                await PulseReadJournalReplay.flush(store: store, owner: viewer.id,
+                    isCurrent: ownsColdWake,
+                    send: { read in
+                        try await api.markRead(conversationId: read.room, messageId: read.message,
+                            minimumReadAt: read.minimumReadAt, readIntent: read.intent)
+                    })
+            }
+            engine.onBadgeRefresh = {
+                await PulsePushNotifications.refreshUnreadBadge(using: api, store: store, isCurrent: ownsColdWake)
+            }
             defer { engine.stop() }
-            return await engine.flush()
+            return await engine.flushBackgroundQueues()
         } catch { return false }
     }
 

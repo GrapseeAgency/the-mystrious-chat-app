@@ -1,7 +1,8 @@
 // /api/conversations/[id]/pinned - list pinned messages
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { unexpiredMessages } from '@/lib/message-visibility'
+import { inboxMessagesWhere, visibleInboxPreview } from '@/lib/message-visibility'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -24,22 +25,29 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const participant = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: id } },
-    select: { id: true },
-  })
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
+  if (req.headers.has('authorization')) {
+    const denied = await requireActionOwner(req, userId, 'pinned messages')
+    if (denied) return denied
   }
+  return db.$transaction(async tx => {
+    const participant = await tx.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId, conversationId: id } },
+      select: { id: true },
+    })
+    if (!participant) {
+      return NextResponse.json(
+        { error: 'You are not a participant of this conversation.' },
+        { status: 403 },
+      )
+    }
 
-  const rows = await db.message.findMany({
-    where: { conversationId: id, pinnedAt: { not: null }, deletedAt: null, ...unexpiredMessages(new Date()) },
-    orderBy: { pinnedAt: 'asc' },
-    include: MESSAGE_FULL_INCLUDE,
-  })
+    const rows = await tx.message.findMany({
+      where: { ...inboxMessagesWhere(id, new Date()), pinnedAt: { not: null }, deletedAt: null, viewOnce: false },
+      orderBy: { pinnedAt: 'asc' },
+      include: { ...MESSAGE_FULL_INCLUDE, parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } } },
+    })
 
-  return NextResponse.json({ messages: rows.map((m) => mapMessage(m, userId)) })
+    const deliveredAt = new Date()
+    return NextResponse.json({ messages: rows.filter(m => visibleInboxPreview(m, id, deliveredAt) !== null).map((m) => mapMessage(m, userId)) })
+  }, { isolationLevel: 'Serializable' })
 }

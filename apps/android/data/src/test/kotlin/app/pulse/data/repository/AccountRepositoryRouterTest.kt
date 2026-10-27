@@ -8,6 +8,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -19,8 +20,13 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountRepositoryRouterTest {
-    private class Account(val owner: String) {
+    private class Account(val owner: String?) {
+        val pendingReads = MutableStateFlow(true)
+        val readRevision = MutableStateFlow(4L)
         val draft = MutableStateFlow<String?>("draft-$owner")
+        val search = MutableStateFlow(Result.success(listOf(app.pulse.domain.model.MessageHit(
+            id = owner ?: "guest", conversationId = "room", conversationName = "Room", isGroup = false,
+            senderName = "Sender", senderColor = null, content = "body", createdAt = ""))))
         var completed = 0
         var completeRequest: (() -> Unit)? = null
         @Suppress("UNCHECKED_CAST")
@@ -28,6 +34,9 @@ class AccountRepositoryRouterTest {
             arrayOf(PulseRepository::class.java)) { _, method, args ->
             when {
                 method.name == "observeDraft" -> draft
+                method.name == "observePendingReads" -> pendingReads
+                method.name == "observeReadStateRevision" -> readRevision
+                method.name == "observeMessageSearch" -> search
                 method.name == "getViewerId" -> owner
                 method.name == "equals" -> false
                 method.name.startsWith("refreshConversations") -> {
@@ -58,6 +67,34 @@ class AccountRepositoryRouterTest {
         assertTrue(seen.contains(null))
     }
 
+    @Test fun searchSwitchEmitsAResultNotAnUnboxedList() = runTest {
+        val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(a.repo, { b.repo }, { b.repo })
+        val seen = mutableListOf<List<String>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            router.repository.observeMessageSearch("query").collect { result -> seen += result.getOrThrow().map { it.id } }
+        }
+        runCurrent(); router.repository.start("b"); runCurrent()
+        assertEquals(listOf(listOf("a"), emptyList(), listOf("b")), seen)
+        a.search.value = Result.success(emptyList()); runCurrent()
+        assertEquals(listOf("b"), seen.last())
+    }
+
+    @Test fun readProjectionSwitchEmitsLongAndDoesNotReplayTheRetiredAccount() = runTest {
+        val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(a.repo, { b.repo }, { b.repo })
+        val seen = mutableListOf<Long>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            router.repository.observeReadStateRevision("room").toList(seen)
+        }
+        runCurrent(); router.repository.start("b"); runCurrent()
+        assertEquals(listOf(4L, 0L, 4L), seen)
+        a.readRevision.value = 9L; runCurrent()
+        assertEquals(listOf(4L, 0L, 4L), seen)
+        b.readRevision.value = 5L; runCurrent()
+        assertEquals(5L, seen.last())
+    }
+
     @Test fun initialSnapshotReadsStoredValueRatherThanSyntheticNull() = runTest {
         val a = Account("a")
         val router = AccountRepositoryRouter(a.repo, { a.repo }, { a.repo })
@@ -77,4 +114,27 @@ class AccountRepositoryRouterTest {
         assertEquals(0, b.completed)
         assertEquals("b", router.repository.viewerId)
     }
+    @Test fun readJournalAccountSwitchEmitsBooleanAndRetiresOldOwner() = runTest {
+        val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(a.repo, { b.repo }, { b.repo })
+        val seen = mutableListOf<Boolean>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            router.repository.observePendingReads().toList(seen)
+        }
+        router.repository.start("b"); runCurrent()
+        assertEquals(listOf(true, false, true), seen)
+        a.pendingReads.value = false; runCurrent()
+        assertTrue(seen.last())
+    }
+    @Test fun backgroundWakeCannotReplaceAForegroundAccountSelection() {
+        val guest = Account(null); val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(guest.repo, { if (it == "a") a.repo else b.repo }, { guest.repo })
+        assertTrue(router.repository.startBackgroundIfIdle("a"))
+        assertEquals("a", router.repository.viewerId)
+        router.repository.start("b")
+        assertFalse(router.repository.startBackgroundIfIdle("a"))
+        assertTrue(router.repository.startBackgroundIfIdle("b"))
+        assertEquals("b", router.repository.viewerId)
+    }
+
 }

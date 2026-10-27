@@ -1,5 +1,7 @@
 package app.pulse.android.mirror
 
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.ensureActive
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -65,7 +67,6 @@ import app.pulse.protocol.HubTaskDto
 import app.pulse.protocol.MarketListingDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -87,8 +88,8 @@ internal fun MirrorHub(
     viewerId: String,
     onOpenConversation: (String) -> Unit,
 ) {
-    var walletCoins by remember { mutableStateOf<Long?>(null) }
-    var walletGems by remember { mutableStateOf<Long?>(null) }
+    var walletCoins by remember(viewerId) { mutableStateOf<Long?>(null) }
+    var walletGems by remember(viewerId) { mutableStateOf<Long?>(null) }
     var panel by remember { mutableStateOf("wallet") }
     // R75 - the full-page category surface (web #/hub/c/<slug>, MINE_SLUG = "mine")
     var categoryPage by remember { mutableStateOf<String?>(null) }
@@ -97,13 +98,19 @@ internal fun MirrorHub(
     // backHash('/hub') behavior, app-detail-sheet.tsx:1077)
     var appPage by remember { mutableStateOf<Int?>(null) }
 
+    val hubScope = rememberCoroutineScope()
+    val hubOwner = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val hubEpoch = remember(repository, viewerId) { repository.attachmentSessionKey() }
     suspend fun loadWallet() {
-        repository.wallet().onSuccess { page ->
-            walletCoins = page.wallet.coins
-            walletGems = page.wallet.gems
+        if (repository.attachmentSessionKey() != hubEpoch) return
+        hubOwner.wallet().onSuccess { page ->
+            if (repository.attachmentSessionKey() == hubEpoch && page.wallet.userId == viewerId) {
+                walletCoins = page.wallet.coins
+                walletGems = page.wallet.gems
+            }
         }
     }
-    LaunchedEffect(Unit) { loadWallet() }
+    LaunchedEffect(hubOwner) { loadWallet() }
 
     Box(
         Modifier
@@ -227,11 +234,11 @@ internal fun MirrorHub(
                 .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
         ) {
             when (panel) {
-                "tasks" -> HubTasksPanel(repository)
-                "market" -> HubMarketPanel(repository, viewerId, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
-                "swap" -> HubSwapPanel(repository, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
-                "logs" -> HubLogsPanel(repository)
-                "apps" -> HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it }, onOpenApp = { appPage = it })
+                "tasks" -> androidx.compose.runtime.key(viewerId) { HubTasksPanel(repository, viewerId) }
+                "market" -> androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey()) { HubMarketPanel(repository, viewerId, onCoinsChanged = { hubScope.launch { loadWallet() } }) }
+                "swap" -> HubSwapPanel(repository, onCoinsChanged = { hubScope.launch { loadWallet() } })
+                "logs" -> androidx.compose.runtime.key(viewerId) { HubLogsPanel(repository, viewerId) }
+                "apps" -> androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey()) { HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it }, onOpenApp = { appPage = it }) }
                 else -> HubWalletPanel(repository, onCoinsChanged = { walletCoins = it.first; walletGems = it.second })
             }
         }
@@ -302,7 +309,7 @@ private val HUB_FIELD_BG = Color(0x12FFFFFF) // white/[0.07] field fill
 private val HUB_CARD_BG = SubPageInk.Panel // glass-deep dark
 
 @Composable
-private fun HubField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, numeric: Boolean = false) {
+private fun HubField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, numeric: Boolean = false, enabled: Boolean = true) {
     Box(
         modifier
             .heightIn(min = 36.dp)
@@ -313,6 +320,7 @@ private fun HubField(value: String, onValueChange: (String) -> Unit, placeholder
     ) {
         if (value.isBlank()) Text(placeholder, color = SubPageInk.Zinc500, fontSize = 13.sp)
         BasicTextField(
+            enabled = enabled,
             value = value,
             onValueChange = { next ->
                 onValueChange(if (numeric) next.filter { it.isDigit() } else next)
@@ -603,36 +611,51 @@ private fun hubTimestamp(iso: String?, withDate: Boolean): String {
 // ── Tasks panel (3-column kanban) ────────────────────────────────────────────
 
 @Composable
-private fun HubTasksPanel(repository: PulseRepository) {
+private fun HubTasksPanel(repository: PulseRepository, viewerId: String) {
     var tasks by remember { mutableStateOf<List<HubTaskDto>>(emptyList()) }
     var title by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) {
-        tasks = repository.hubTasks().getOrNull()?.tasks ?: emptyList()
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val owned = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val epoch = remember(repository, viewerId) { repository.attachmentSessionKey() }
+    val gate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    fun current() = repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch
+    suspend fun refresh() {
+        val ticket = gate.beginRead() ?: return
+        try {
+            if (!current()) return
+            val page = owned.hubTasks().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (current() && gate.accepts(ticket)) tasks = page.tasks
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { if (current() && gate.accepts(ticket)) notice = error.message ?: "Could not refresh tasks." }
     }
-
+    LaunchedEffect(owned) { refresh() }
+    fun <T> mutate(operation: suspend () -> Result<T>, accepted: (T) -> Unit) {
+        if (busy || !current()) return
+        busy = true; notice = null; gate.beginWrite()
+        scope.launch {
+            try {
+                val result = operation().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) accepted(result)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current()) notice = error.message ?: "Task update failed; your input is kept."
+            } finally { busy = false; gate.endWrite() }
+            if (current()) refresh()
+        }
+    }
     fun move(task: HubTaskDto) {
-        val next = when (task.status) {
-            "todo" -> "doing"
-            "doing" -> "done"
-            else -> "todo"
-        }
-        tasks = tasks.map { if (it.id == task.id) it.copy(status = next) else it }
-        CoroutineScope(Dispatchers.IO).launch {
-            repository.updateHubTask(task.id, null, next).onSuccess { fresh ->
-                tasks = tasks.map { if (it.id == fresh.id) fresh else it }
-            }
-        }
+        val next = when (task.status) { "todo" -> "doing"; "doing" -> "done"; else -> "todo" }
+        mutate({ owned.updateHubTask(task.id, null, next) }) { fresh -> tasks = tasks.map { if (it.id == fresh.id) fresh else it } }
     }
-
     fun remove(task: HubTaskDto) {
-        tasks = tasks.filterNot { it.id == task.id }
-        CoroutineScope(Dispatchers.IO).launch {
-            repository.deleteHubTask(task.id)
-        }
+        mutate({ owned.deleteHubTask(task.id) }) { tasks = tasks.filterNot { it.id == task.id } }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        notice?.let { Text(it, color = SubPageInk.Amber400, fontSize = 12.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             HubField(title, { title = it }, "New task…", modifier = Modifier.weight(1f))
             Box(
@@ -640,13 +663,11 @@ private fun HubTasksPanel(repository: PulseRepository) {
                     .size(36.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (title.isNotBlank()) SubPageInk.Amber600 else Color(0x1AF59E0B))
-                    .clickable(enabled = title.isNotBlank()) {
-                        val t = title.trim()
-                        title = ""
-                        CoroutineScope(Dispatchers.IO).launch {
-                            repository.createHubTask(t, null).onSuccess { fresh ->
-                                tasks = tasks + fresh
-                            }
+                    .clickable(enabled = !busy && title.isNotBlank()) {
+                        val submitted = title
+                        mutate({ owned.createHubTask(submitted.trim(), null) }) { fresh ->
+                            tasks = tasks + fresh
+                            if (title == submitted) title = ""
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -699,14 +720,14 @@ private fun HubTasksPanel(repository: PulseRepository) {
                                     color = SubPageInk.Amber400,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.clickable { move(task) },
+                                    modifier = Modifier.clickable(enabled = !busy) { move(task) },
                                 )
                                 MirrorLucideIcon(
                                     "LX",
                                     tint = SubPageInk.Zinc400,
                                     modifier = Modifier
                                         .size(14.dp)
-                                        .clickable { remove(task) },
+                                        .clickable(enabled = !busy) { remove(task) },
                                 )
                             }
                         }
@@ -742,9 +763,42 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        listings = repository.market().getOrNull()?.listings ?: emptyList()
-        coins = repository.wallet().getOrNull()?.wallet?.coins
+    var loaded by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val owned = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val epoch = remember(repository, viewerId) { repository.attachmentSessionKey() }
+    val gate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    fun current() = repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch
+    suspend fun refresh() {
+        val ticket = gate.beginRead() ?: return
+        loading = true
+        try {
+            if (!current()) return
+            val page = owned.market().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (current() && gate.accepts(ticket)) { listings = page.listings; loaded = true }
+            val wallet = owned.wallet().getOrThrow()
+            if (current() && gate.accepts(ticket)) coins = wallet.wallet.coins
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { if (current() && gate.accepts(ticket)) notice = error.message ?: "Could not refresh the market."
+        } finally { if (current() && gate.accepts(ticket)) loading = false }
+    }
+    LaunchedEffect(owned) { refresh() }
+    fun <T> mutate(operation: suspend () -> Result<T>, accepted: (T) -> Unit) {
+        if (busy || !current()) return
+        busy = true; notice = null; gate.beginWrite(); loading = false
+        scope.launch {
+            try {
+                if (!current()) return@launch
+                val result = operation().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) accepted(result)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current()) notice = error.message ?: "Market action was not confirmed; your input is kept."
+            } finally { busy = false; gate.endWrite() }
+            if (current()) refresh()
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -764,28 +818,23 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
                 Spacer(Modifier.weight(1f))
                 coins?.let { Text("you: $it PC", color = SubPageInk.Zinc500, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
             }
-            HubField(title, { title = it }, "Title (what are you selling?)")
-            HubField(description, { description = it }, "Description (optional)")
+            HubField(title, { title = it.take(80) }, "Title (what are you selling?)", enabled = !busy)
+            HubField(description, { description = it.take(200) }, "Description (optional)", enabled = !busy)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HubField(price, { price = it }, "Price PC", modifier = Modifier.weight(1f), numeric = true)
+                HubField(price, { price = it.take(6) }, "Price PC", modifier = Modifier.weight(1f), numeric = true, enabled = !busy)
                 HubPrimaryButton(
                     label = "List",
                     enabled = !busy && title.isNotBlank() && price.isNotBlank(),
                     onClick = {
-                        busy = true
-                        CoroutineScope(Dispatchers.IO).launch {
-                            repository.createListing(title.trim(), description.takeIf { it.isNotBlank() }, price.toLongOrNull() ?: 0).fold(
-                                onSuccess = { fresh ->
-                                    listings = listOf(fresh) + listings
-                                    notice = "Listing posted to the market"
-                                    title = ""
-                                    description = ""
-                                    price = ""
-                                },
-                                onFailure = { notice = it.message },
-                            )
-                            coins = repository.wallet().getOrNull()?.wallet?.coins
-                            busy = false
+                        val sentTitle = title; val sentDescription = description; val sentPrice = price
+                        val amount = price.toLongOrNull() ?: 0
+                        if (amount !in 1..100_000) { notice = "Price must be 1–100,000 PC." }
+                        else mutate({ owned.createListing(sentTitle.trim(), sentDescription.takeIf { it.isNotBlank() }, amount) }) { fresh ->
+                            listings = listOf(fresh) + listings.filterNot { it.id == fresh.id }
+                            loaded = true; notice = "Listing posted to the market"
+                            if (title == sentTitle && description == sentDescription && price == sentPrice) {
+                                title = ""; description = ""; price = ""
+                            }
                         }
                     },
                 )
@@ -838,15 +887,11 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
                                     .clip(CircleShape)
                                     .border(1.dp, SubPageInk.PanelBorder, CircleShape)
                                     .clickable(enabled = !busy) {
-                                        busy = true
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            repository.buyListing(listing.id).fold(
-                                                onSuccess = { onCoinsChanged() },
-                                                onFailure = { notice = it.message },
-                                            )
-                                            listings = repository.market().getOrNull()?.listings ?: emptyList()
-                                            coins = repository.wallet().getOrNull()?.wallet?.coins
-                                            busy = false
+                                        mutate({ owned.buyListing(listing.id) }) { receipt ->
+                                            listings = listings.filterNot { it.id == listing.id }
+                                            coins = receipt.wallet.coins
+                                            notice = "Purchase confirmed"
+                                            onCoinsChanged()
                                         }
                                     }
                                     .padding(horizontal = 10.dp, vertical = 5.dp),
@@ -863,7 +908,9 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
             }
         }
 
-        if (listings.isEmpty()) {
+        if (loading) Text("Refreshing market…", color = SubPageInk.Zinc500, fontSize = 12.sp)
+        if (notice != null) HubPrimaryButton(label = "Refresh", enabled = !busy && !loading, onClick = { scope.launch { refresh() } })
+        if (loaded && listings.isEmpty()) {
             Text(
                 "The board is empty - be the first seller.",
                 color = SubPageInk.Zinc500,
@@ -1065,17 +1112,30 @@ private fun HubSwapPanel(repository: PulseRepository, onCoinsChanged: () -> Unit
 // ── Logs panel (terminal) ────────────────────────────────────────────────────
 
 @Composable
-private fun HubLogsPanel(repository: PulseRepository) {
-    var logs by remember { mutableStateOf<List<HubLogDto>>(emptyList()) }
-    var tick by remember { mutableStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        logs = repository.hubLogs(80, null).getOrNull()?.logs ?: emptyList()
-    }
-    // web refetchInterval 12s
-    LaunchedEffect(tick) {
-        delay(12_000)
-        logs = repository.hubLogs(80, null).getOrNull()?.logs ?: emptyList()
+private fun HubLogsPanel(repository: PulseRepository, viewerId: String) {
+    var logs by remember(viewerId) { mutableStateOf<List<HubLogDto>>(emptyList()) }
+    var error by remember(viewerId) { mutableStateOf<String?>(null) }
+    var loaded by remember(viewerId) { mutableStateOf(false) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(repository, viewerId, lifecycle) {
+        val epoch = repository.attachmentSessionKey()
+        val owned = repository.boundToCurrentAccount()
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                if (repository.viewerId != viewerId || repository.attachmentSessionKey() != epoch) break
+                try {
+                    val page = owned.hubLogs(80, null).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (repository.viewerId != viewerId || repository.attachmentSessionKey() != epoch) break
+                    logs = page.logs; loaded = true; error = null
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (failure: Exception) {
+                    if (repository.viewerId != viewerId || repository.attachmentSessionKey() != epoch) break
+                    error = failure.message ?: "Could not refresh private activity."
+                }
+                delay(12_000)
+            }
+        }
     }
 
     Column(
@@ -1098,16 +1158,17 @@ private fun HubLogsPanel(repository: PulseRepository) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(SubPageInk.Amber500))
             Spacer(Modifier.width(4.dp))
             Text(
-                "pulse://logs - live event stream",
+                "pulse://logs - your private activity",
                 color = SubPageInk.Zinc400,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
             )
         }
         Column(Modifier.heightIn(max = 416.dp)) {
+            error?.let { Text(it, color = SubPageInk.Amber400, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) }
             if (logs.isEmpty()) {
                 Text(
-                    "no events yet - use the economy panels to generate some",
+                    if (error != null) "Activity unavailable" else if (loaded) "No activity yet" else "Loading private activity…",
                     color = SubPageInk.Zinc600,
                     fontSize = 11.sp,
                     modifier = Modifier
@@ -1168,42 +1229,47 @@ private fun HubAppsPanel(
     onOpenApp: (Int) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
-    var installed by remember { mutableStateOf<Set<String>>(emptySet()) } // matrix app.n ids
+    var installed by remember { mutableStateOf<Set<String>?>(null) }
     var busyId by remember { mutableStateOf<String?>(null) }
-
+    var loading by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val owned = remember { repository.boundToCurrentAccount() }
+    val epoch = remember { repository.attachmentSessionKey() }
+    val gate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    fun current() = repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch
     suspend fun loadInstalled() {
-        // fan the real install states across the catalog (web hydrateInstalledSet:
-        // Promise.all over the matrix) - batched to keep the phone's pool sane
-        val ids = mutableSetOf<String>()
-        for (batch in HubCatalog.MATRIX.chunked(8)) {
-            val results = batch.map { app ->
-                CoroutineScope(Dispatchers.IO).async {
-                    val state = runCatching {
-                        repository.appInstallState(app.n.toString()).getOrNull()
-                    }.getOrNull()
-                    app to (state?.installed == true)
-                }
-            }.map { it.await() }
-            for ((app, on) in results) {
-                if (on) ids.add(app.n.toString())
-            }
-        }
-        installed = ids
+        val ticket = gate.beginRead() ?: return
+        loading = true
+        try {
+            if (!current()) return
+            val ids = app.pulse.domain.sync.appInstallSnapshot(HubCatalog.MATRIX.map { it.n.toString() }, viewerId) { owned.appInstallState(it) }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (current() && gate.accepts(ticket)) { installed = ids; notice = null }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) {
+            if (current() && gate.accepts(ticket)) notice = "Could not verify all connections. The last confirmed list is kept."
+        } finally { if (current() && gate.accepts(ticket)) loading = false }
     }
-
     fun toggleApp(app: MatrixApp) {
-        busyId = app.n.toString()
-        CoroutineScope(Dispatchers.IO).launch {
-            if (app.n.toString() in installed) {
-                repository.uninstallApp(app.n.toString())
-            } else {
-                repository.installApp(app.n.toString())
-            }
-            loadInstalled()
-            busyId = null
+        val confirmed = installed ?: run { scope.launch { loadInstalled() }; return }
+        if (busyId != null || !current()) return
+        val id = app.n.toString(); val disconnect = id in confirmed
+        busyId = id; gate.beginWrite(); loading = false; notice = null
+        scope.launch {
+            var failure: String? = null
+            try {
+                if (!current()) return@launch
+                val result = (if (disconnect) owned.uninstallApp(id) else owned.installApp(id)).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) installed = if (result.installed) installed.orEmpty() + id else installed.orEmpty() - id
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { failure = error.message ?: "Connection change was not confirmed."
+            } finally { busyId = null; gate.endWrite() }
+            if (current()) { loadInstalled(); if (failure != null) notice = failure }
         }
     }
-    LaunchedEffect(Unit) { CoroutineScope(Dispatchers.IO).launch { loadInstalled() } }
+    LaunchedEffect(owned) { loadInstalled() }
 
     val chips = buildList {
         // static order first (minus 'all'), then live categories the static list misses
@@ -1228,6 +1294,11 @@ private fun HubAppsPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (loading) Text("Checking connections…", color = SubPageInk.Zinc500, fontSize = 12.sp)
+        notice?.let {
+            Text(it, color = SubPageInk.Rose400, fontSize = 12.sp)
+            HubPrimaryButton(label = "Refresh connections", enabled = !loading && busyId == null, onClick = { scope.launch { loadInstalled() } })
+        }
         // glass search pill h-11
         Box(
             Modifier
@@ -1275,7 +1346,7 @@ private fun HubAppsPanel(
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
-                    "My apps" + if (installed.isNotEmpty()) " · ${installed.size}" else "",
+                    "My apps" + if (installed.orEmpty().isNotEmpty()) " · ${installed.orEmpty().size}" else "",
                     color = SubPageInk.Amber400,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -1310,8 +1381,8 @@ private fun HubAppsPanel(
                 for (app in pair) {
                     HubAppTile(
                         app = app,
-                        installed = app.n.toString() in installed,
-                        busy = busyId == app.n.toString(),
+                        installed = app.n.toString() in installed.orEmpty(),
+                        busy = busyId != null || installed == null,
                         onToggle = { toggleApp(app) },
                         // R76 - web root tiles NAVIGATE to the full app page
                         // (hub-tab.tsx:875 navigateHash('/hub/app/${a.n}'))
@@ -1441,6 +1512,19 @@ internal fun MirrorHubCategoryPage(
     // R76 - web rows navigateHash('/hub/app/<n>') - the FULL app page
     onOpenApp: (Int) -> Unit = {},
 ) {
+    androidx.compose.runtime.key(slug, repository.viewerId, repository.attachmentSessionKey()) {
+        MirrorHubCategoryContent(slug, repository, onBack, onOpenApp)
+    }
+}
+
+@Composable
+private fun MirrorHubCategoryContent(
+    slug: String,
+    repository: PulseRepository,
+    onBack: () -> Unit,
+    // R76 - web rows navigateHash('/hub/app/<n>') - the FULL app page
+    onOpenApp: (Int) -> Unit = {},
+) {
     val isMine = slug == HubCatalog.MINE_SLUG
     val category = HubCatalog.categoryBySlug(slug)
     val meta = category?.let { HubCatalog.CATEGORY_META[it] }
@@ -1450,33 +1534,27 @@ internal fun MirrorHubCategoryPage(
     var installed by remember { mutableStateOf<Set<String>?>(null) }
     var installFailed by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
+    val owned = remember { repository.boundToCurrentAccount() }
+    val owner = remember { repository.viewerId }
+    val epoch = remember { repository.attachmentSessionKey() }
+    var loading by remember { mutableStateOf(false) }
+    fun current() = repository.viewerId == owner && repository.attachmentSessionKey() == epoch
     fun loadInstalled() {
-        CoroutineScope(Dispatchers.IO).launch {
+        if (loading || !current()) return
+        loading = true
+        scope.launch {
             try {
-                val ids = mutableSetOf<String>()
-                for (batch in HubCatalog.MATRIX.chunked(8)) {
-                    val results = batch.map { app ->
-                        CoroutineScope(Dispatchers.IO).async {
-                            val state = runCatching {
-                                repository.appInstallState(app.n.toString()).getOrNull()
-                            }.getOrNull()
-                            app to (state?.installed == true)
-                        }
-                    }.map { it.await() }
-                    for ((app, on) in results) if (on) ids.add(app.n.toString())
-                }
-                installed = ids
-                installFailed = false
-            } catch (_: Exception) {
-                installFailed = true
-            }
+                if (!current()) return@launch
+                val ids = app.pulse.domain.sync.appInstallSnapshot(HubCatalog.MATRIX.map { it.n.toString() }, owner.orEmpty()) { owned.appInstallState(it) }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) { installed = ids; installFailed = false }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current()) installFailed = true
+            } finally { loading = false }
         }
     }
-    LaunchedEffect(slug) {
-        installed = null
-        installFailed = false
-        loadInstalled()
-    }
+    LaunchedEffect(owned) { loadInstalled() }
 
     val apps = when {
         isMine -> (installed ?: emptySet()).let { set -> HubCatalog.MATRIX.filter { it.n.toString() in set } }
@@ -1618,6 +1696,10 @@ internal fun MirrorHubCategoryPage(
                 .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         ) {
+            if (installFailed && (!isMine || apps.isNotEmpty())) {
+                Text("Could not refresh connections. Showing the last confirmed state.", color = SubPageInk.Rose400)
+                HubPrimaryButton(label = "Retry", enabled = !loading, onClick = { loadInstalled() })
+            }
             when {
                 // unknown slug (web lines 140-159)
                 category == null && !isMine -> HubCategoryStateCard(
@@ -1649,7 +1731,7 @@ internal fun MirrorHubCategoryPage(
                     }
                 }
                 // failed install verification (web lines 165-169)
-                isMine && installFailed -> HubCategoryStateCard(
+                isMine && installFailed && apps.isEmpty() -> HubCategoryStateCard(
                     glyph = "LSearchX",
                     title = "Something went wrong",
                     body = "Could not verify your connected apps.",

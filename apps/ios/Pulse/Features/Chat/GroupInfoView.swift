@@ -19,13 +19,16 @@ struct GroupInfoView: View {
     /// sheet push fresh detail (veil flag, photo) back into the room.
     @ObservedObject var prefs: PulsePrefs
     var onDetailUpdated: ((WireConversationSummary) -> Void)? = nil
+    var onLeft: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     enum Phase: Equatable { case loading, loaded, failed(String) }
     @State private var phase: Phase = .loading
     @State private var detail: WireConversationSummary?
-    @State private var busy = false
+    @State private var mutationGate = PulseMutationGate()
+    @State private var mutationTask: Task<Void, Never>?
+    private var busy: Bool { mutationGate.isBusy }
 
     // modals
     @State private var renameOpen = false
@@ -37,6 +40,11 @@ struct GroupInfoView: View {
     @State private var broadcastOpen = false
     @State private var inviteCode: String?
     @State private var inviteBusy = false
+    @State private var surfaceEpoch: UUID?
+    @State private var loadTicket = UUID()
+    @State private var loadTask: Task<Void, Never>?
+    @State private var inviteTask: Task<Void, Never>?
+    @State private var inviteTicket = UUID()
     // R2-B - group photo edit (web R33-b "Edit photo" overlay parity)
     @State private var photoItem: PhotosPickerItem?
     @State private var photoBusy = false
@@ -82,7 +90,7 @@ struct GroupInfoView: View {
                             .font(.system(size: 26, weight: .light))
                             .foregroundStyle(.secondary)
                         Text(message).font(.footnote).foregroundStyle(.secondary)
-                        Button("Retry") { Task { await load() } }
+                        Button("Retry") { reloadDetail() }
                             .font(.footnote.weight(.semibold))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -103,18 +111,40 @@ struct GroupInfoView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await load() }
+        .onAppear {
+            surfaceEpoch = session.sessionGeneration
+            reloadDetail()
+        }
+        .onDisappear { retireSurfaceWork() }
+        .onChange(of: session.sessionGeneration) { _, _ in retireSurfaceWork(); dismiss() }
     }
 
     // data
 
+    private func reloadDetail() {
+        let epoch = session.sessionGeneration
+        guard surfaceEpoch == epoch else { return }
+        loadTask?.cancel(); loadTicket = UUID()
+        loadTask = Task { @MainActor in
+            guard !Task.isCancelled, surfaceEpoch == epoch, session.sessionGeneration == epoch else { return }
+            await load()
+        }
+    }
+
     private func load() async {
+        let epoch = session.sessionGeneration, api = session.api, owner = viewerId, ticket = UUID()
+        guard surfaceEpoch == epoch, !Task.isCancelled else { return }
+        let privacyRead = prefs.screenPrivacyRead(conversationId: conversation.id)
+        loadTicket = ticket
         phase = detail == nil ? .loading : phase
         do {
-            detail = try await session.api.conversationDetail(id: conversation.id, userId: viewerId)
+            let fresh = try await api.conversationDetail(id: conversation.id, userId: owner)
+            guard surfaceEpoch == epoch, session.sessionGeneration == epoch, loadTicket == ticket, !Task.isCancelled else { return }
+            try acceptDetail(fresh)
+            if let privacyRead, let mine = fresh.myScreenPrivacy { prefs.adoptServerScreenPrivacy(privacyRead, on: mine) }
             phase = .loaded
-            if let code = detail?.inviteCode { inviteCode = code }
         } catch {
+            guard surfaceEpoch == epoch, session.sessionGeneration == epoch, loadTicket == ticket, !Task.isCancelled else { return }
             if detail == nil { phase = .failed(RoomViewModel.describe(error)) }
         }
     }
@@ -122,7 +152,7 @@ struct GroupInfoView: View {
     // content
 
     private func content(_ detail: WireConversationSummary) -> some View {
-        return groupContentStyled3(detail)
+        return groupContentStyled3(detail).disabled(busy || inviteBusy)
     }
 
     // GroupInfoView.content - R12 type-check decomposition: the original
@@ -280,7 +310,7 @@ struct GroupInfoView: View {
     private func groupContentPart7(_ detail: WireConversationSummary) -> some View {
             Section {
                 Toggle(isOn: Binding(
-                    get: { prefs.screenPrivacy[conversation.id] ?? false },
+                    get: { prefs.screenPrivacy[conversation.id] ?? true },
                     set: { setMyScreenPrivacy($0) },
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -292,6 +322,7 @@ struct GroupInfoView: View {
                     }
                 }
                 .accessibilityLabel("Screen security for you")
+                ScreenPrivacySyncNotice(prefs: prefs, room: conversation.id)
                 Toggle(isOn: Binding(
                     get: { detail.screenPrivacy ?? false },
                     set: { setRoomScreenPrivacy($0) },
@@ -328,6 +359,7 @@ struct GroupInfoView: View {
                         } label: {
                             Label("Copy pulse://invite/\(code)", systemImage: "doc.on.doc")
                         }
+                        .disabled(inviteBusy)
                         Button {
                             rotateInvite(regenerate: true)
                         } label: {
@@ -345,7 +377,7 @@ struct GroupInfoView: View {
                             if inviteBusy {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Label("Create invite link", systemImage: "link.badge.plus")
+                                Label("Get invite link", systemImage: "link.badge.plus")
                             }
                         }
                         .disabled(inviteBusy)
@@ -511,7 +543,7 @@ struct GroupInfoView: View {
             // pipeline → /api/uploads → PATCH conversation photo.
             guard let item else { return }
             photoItem = nil
-            Task { await uploadPhoto(item) }
+            uploadPhoto(item)
         }
     }
 
@@ -522,7 +554,7 @@ struct GroupInfoView: View {
             Button("Save") { rename() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("1–32 characters.")
+            Text("1–48 characters.")
         }
         .confirmationDialog(
             "Announcement mode",
@@ -600,11 +632,10 @@ struct GroupInfoView: View {
                 existing: detail.members.map(\.id),
                 session: session,
             ) { added in
-                Task {
-                    await load()
-                    session.toasts.show("Added \(added) member\(added == 1 ? "" : "s")")
-                    session.noteInboxChanged()
-                }
+                guard surfaceEpoch == session.sessionGeneration else { return }
+                session.toasts.show(added == 0 ? "Selected people are already members" : "Added \(added) member\(added == 1 ? "" : "s")")
+                session.noteInboxChanged()
+                reloadDetail()
             }
         }
     }
@@ -672,181 +703,196 @@ struct GroupInfoView: View {
 
     @State private var renameDraft = ""
 
-    private func rename() {
-        let name = renameDraft.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        Task {
-            busy = true
-            defer { busy = false }
-            do {
-                detail = try await session.api.patchConversation(conversation.id, requesterId: viewerId, name: name)
-                session.noteInboxChanged()
+    private func requireSurface(_ epoch: UUID) throws {
+        try Task.checkCancellation()
+        guard surfaceEpoch == epoch, session.sessionGeneration == epoch else { throw CancellationError() }
+    }
 
-                session.toasts.show("Group renamed")
+    private func acceptDetail(_ fresh: WireConversationSummary, notice: String? = nil) throws {
+        guard fresh.id == conversation.id else {
+            throw PulseAPIClient.Failure(kind: .server, message: "The response didn't match this group. Refresh group info.")
+        }
+        let epoch = session.sessionGeneration
+        detail = fresh
+        inviteCode = fresh.inviteCode
+        if let notice { session.toasts.show(notice) }
+        guard surfaceEpoch == epoch, session.sessionGeneration == epoch else { return }
+        onDetailUpdated?(fresh)
+    }
+
+    private func mutate<Value: Sendable>(photo: Bool = false, optimistic: () -> Void = {},
+        request: @escaping @MainActor (PulseAPIClient, String) async throws -> Value,
+        apply: @escaping @MainActor (Value) throws -> Void) {
+        let epoch = session.sessionGeneration, api = session.api, owner = viewerId
+        guard surfaceEpoch == epoch, !inviteBusy, !Task.isCancelled,
+              let ticket = mutationGate.begin(owner: epoch, resource: conversation.id) else { return }
+        loadTicket = UUID()
+        photoBusy = photo
+        optimistic()
+        mutationTask = Task { @MainActor in
+            defer {
+                if mutationGate.finish(ticket) { photoBusy = false; mutationTask = nil }
+                // Even cancellation/lost transport can follow a committed change.
+                if session.sessionGeneration == epoch { session.noteInboxChanged() }
+            }
+            do {
+                try requireSurface(epoch)
+                guard mutationGate.isCurrent(ticket, owner: session.sessionGeneration, resource: conversation.id) else { return }
+                let result = try await request(api, owner)
+                try requireSurface(epoch)
+                guard mutationGate.isCurrent(ticket, owner: session.sessionGeneration, resource: conversation.id) else { return }
+                loadTicket = UUID()
+                try apply(result)
             } catch {
+                guard surfaceEpoch == epoch, session.sessionGeneration == epoch, !Task.isCancelled,
+                      mutationGate.isCurrent(ticket, owner: epoch, resource: conversation.id) else { return }
                 session.toasts.show(RoomViewModel.describe(error))
+                if (error as? PulseAPIClient.Failure)?.kind != .validation {
+                    // Permission may have changed, or the reply may have been lost
+                    // after commit. Do not leave stale controls as the only truth.
+                    detail = nil; phase = .loading
+                    reloadDetail()
+                }
             }
         }
+    }
+
+    private func rename() {
+        let name = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (1...48).contains(name.utf16.count) else {
+            session.toasts.show("Group name is empty or too long (maximum 48 characters)")
+            return
+        }
+        mutate(request: { api, owner in
+            try await api.patchConversation(conversation.id, requesterId: owner, name: name)
+        }, apply: { fresh in
+            try acceptDetail(fresh, notice: "Group renamed")
+        })
     }
 
     private func toggleBroadcast() {
         let next = !(detail?.broadcastMode == true)
-        Task {
-            busy = true
-            defer { busy = false }
-            do {
-                detail = try await session.api.patchConversation(conversation.id, requesterId: viewerId, broadcast: next)
-                session.noteInboxChanged()
-                session.toasts.show(next ? "Announcement mode on - only admins can post" : "Announcement mode off")
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
-            }
-        }
+        mutate(request: { api, owner in
+            try await api.patchConversation(conversation.id, requesterId: owner, broadcast: next)
+        }, apply: { fresh in
+            try acceptDetail(fresh, notice: fresh.broadcastMode == true ? "Announcement mode on - only admins can post" : "Announcement mode off")
+        })
     }
 
     private func leave() {
-        Task {
-            busy = true
-            defer { busy = false }
-            do {
-                let result = try await session.api.leaveGroup(conversation.id, requesterId: viewerId)
-                session.noteInboxChanged()
-
-                dismiss()
-                let promoted = result.promotedUserId.flatMap { id in
-                    detail?.members.first(where: { $0.id == id })?.name
-                }
-                session.toasts.show(promoted != nil ? "You left the group - \(promoted!) is now an admin" : "You left the group")
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
-            }
-        }
+        let members = detail?.members ?? []
+        mutate(request: { api, owner in
+            try await api.leaveGroup(conversation.id, requesterId: owner)
+        }, apply: { result in
+            guard result.ok == true else { throw PulseAPIClient.Failure(kind: .server, message: "Leaving was not confirmed. Refresh Chats before retrying.") }
+            let promoted = result.promotedUserId.flatMap { id in members.first(where: { $0.id == id })?.name }
+            session.toasts.show(promoted.map { "You left the group - \($0) is now an admin" } ?? "You left the group")
+            onLeft()
+        })
     }
 
     private func runMemberAction() {
         guard let action = confirmAction else { return }
         confirmAction = nil
-        Task {
-            busy = true
-            defer { busy = false }
-            do {
-                switch action.kind {
-                case .promote:
-                    detail = try await session.api.setMemberRole(conversation.id, requesterId: viewerId, userId: action.memberId, role: "admin")
-                    session.toasts.show("\(action.memberName) is now an admin")
-                case .demote:
-                    detail = try await session.api.setMemberRole(conversation.id, requesterId: viewerId, userId: action.memberId, role: "member")
-                    session.toasts.show("\(action.memberName) is now a member")
-                case .kick:
-                    try await session.api.kickMember(conversation.id, requesterId: viewerId, userId: action.memberId)
-                    await load()
-                    session.toasts.show("\(action.memberName) removed from the group")
-                }
-                session.noteInboxChanged()
-
-            } catch {
-                // Honest copy - "Cannot demote the only admin…", 403s, etc.
-                session.toasts.show(RoomViewModel.describe(error))
-            }
+        switch action.kind {
+        case .promote, .demote:
+            let role = action.kind == .promote ? "admin" : "member"
+            mutate(request: { api, owner in
+                try await api.setMemberRole(conversation.id, requesterId: owner, userId: action.memberId, role: role)
+            }, apply: { fresh in
+                try acceptDetail(fresh, notice: "\(action.memberName) is now \(role == "admin" ? "an admin" : "a member")")
+            })
+        case .kick:
+            mutate(request: { api, owner in
+                try await api.kickMember(conversation.id, requesterId: owner, userId: action.memberId)
+            }, apply: { _ in
+                // The removal is confirmed; a later roster fetch is a separate operation.
+                session.toasts.show("\(action.memberName) removed from the group")
+                detail = nil; phase = .loading
+                reloadDetail()
+            })
         }
     }
 
+    private func retireSurfaceWork() {
+        surfaceEpoch = nil; loadTicket = UUID(); inviteTicket = UUID()
+        loadTask?.cancel(); loadTask = nil
+        inviteTask?.cancel(); inviteTask = nil; inviteBusy = false
+        mutationGate.cancel(); mutationTask?.cancel(); mutationTask = nil; photoBusy = false
+    }
+
     private func rotateInvite(regenerate: Bool) {
-        Task {
-            inviteBusy = true
-            defer { inviteBusy = false }
+        let epoch = session.sessionGeneration, api = session.api, owner = viewerId, ticket = UUID()
+        guard surfaceEpoch == epoch, !inviteBusy, !busy, isAdmin else { return }
+        inviteTicket = ticket
+        inviteBusy = true // claim before launching; two taps cannot enqueue two rotations
+        loadTicket = UUID()
+        inviteTask = Task { @MainActor in
+            defer { if inviteTicket == ticket { inviteBusy = false; inviteTask = nil } }
             do {
-                inviteCode = try await session.api.inviteCreate(conversation.id, requesterId: viewerId, regenerate: regenerate)
+                guard surfaceEpoch == epoch, session.sessionGeneration == epoch, inviteTicket == ticket, !Task.isCancelled else { return }
+                let next = try await api.inviteCreate(conversation.id, requesterId: owner, regenerate: regenerate)
+                guard surfaceEpoch == epoch, session.sessionGeneration == epoch, inviteTicket == ticket, !Task.isCancelled else { return }
+                loadTicket = UUID() // a pre-rotation detail load cannot restore the retired code
+                inviteCode = next
                 PulseHaptics.success()
                 session.toasts.show(regenerate ? "Invite link regenerated" : "Invite link created")
             } catch {
-                session.toasts.show(RoomViewModel.describe(error))
+                guard surfaceEpoch == epoch, session.sessionGeneration == epoch, inviteTicket == ticket, !Task.isCancelled else { return }
+                loadTicket = UUID()
+                inviteCode = nil // an unconfirmed rotation may already have retired the displayed code
+                session.toasts.show("Couldn't confirm the invite link. Get the current link again before sharing it.")
             }
         }
     }
 
     private func setTtl(_ seconds: Int) {
-        Task {
-            do {
-                detail = try await session.api.setDisappearingTtl(conversation.id, userId: viewerId, ttlSeconds: seconds)
-                session.toasts.show(seconds == 0 ? "Disappearing messages off" : "New messages disappear after \(Self.ttlLabel(seconds).lowercased())")
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
+        mutate(request: { api, owner in
+            try await api.setDisappearingTtl(conversation.id, userId: owner, ttlSeconds: seconds)
+        }, apply: { fresh in
+            guard let applied = fresh.ttlSeconds else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Disappearing-message setting couldn't be confirmed")
             }
-        }
+            try acceptDetail(fresh, notice: applied == 0 ? "Disappearing messages off" : "New messages disappear after \(Self.ttlLabel(applied).lowercased())")
+        })
     }
 
     private func setSlowMode(_ seconds: Int) {
-        Task {
-            do {
-                let applied = try await session.api.setSlowMode(conversation.id, userId: viewerId, seconds: seconds)
-                detail?.slowModeSeconds = applied
-                session.toasts.show(applied == 0 ? "Slow mode off" : "Slow mode: 1 message per \(Self.slowModeLabel(applied).lowercased())")
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
-            }
-        }
+        mutate(request: { api, owner in
+            try await api.setSlowMode(conversation.id, userId: owner, seconds: seconds)
+        }, apply: { applied in
+            detail?.slowModeSeconds = applied
+            if let detail { onDetailUpdated?(detail) }
+        })
     }
 
-    // R2-B - screen security + group photo
-
-    /// R42 - MY veil: the prefs map is the instant local write-through, the
-    /// dedicated per-viewer route is the server mirror (a comfort setting,
-    /// never admin-gated - web parity). Failures keep the local value.
+    /// Preserve the existing immediate device-local comfort preference; only
+    /// the matching server acknowledgement may adopt its mirror afterward.
     private func setMyScreenPrivacy(_ on: Bool) {
+        guard surfaceEpoch == session.sessionGeneration, prefs.viewer?.id == viewerId else { return }
         prefs.setScreenPrivacy(conversationId: conversation.id, on: on)
-        Task {
-            do {
-                let confirmed = try await session.api.setMyScreenPrivacy(conversation.id, on: on)
-                prefs.adoptServerScreenPrivacy(conversationId: conversation.id, on: confirmed)
-                session.toasts.show(confirmed ? "Screen security on for you" : "Screen security off for you")
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
-            }
-        }
     }
 
-    /// R38 - the room-wide switch: PATCH conversation { screenPrivacy }.
-    /// Any participant may toggle it (deliberately not admin-gated).
     private func setRoomScreenPrivacy(_ on: Bool) {
-        Task {
-            do {
-                let fresh = try await session.api.patchConversation(
-                    conversation.id,
-                    requesterId: viewerId,
-                    screenPrivacy: on,
-                )
-                detail = fresh
-                onDetailUpdated?(fresh)
-                session.toasts.show(on ? "Screen security on" : "Screen security off")
-            } catch {
-                session.toasts.show(RoomViewModel.describe(error))
-            }
-        }
+        mutate(request: { api, owner in
+            try await api.patchConversation(conversation.id, requesterId: owner, screenPrivacy: on)
+        }, apply: { fresh in try acceptDetail(fresh) })
     }
 
-    /// R33-b - PhotosPicker → square ≤512 JPEG q0.85 → /api/uploads →
-    /// PATCH conversation { photo } → refresh the header (web parity).
-    private func uploadPhoto(_ item: PhotosPickerItem) async {
-        guard !photoBusy else { return }
-        guard let raw = try? await item.loadTransferable(type: Data.self),
-              let jpeg = PulseAvatarImage.jpegData(from: raw) else {
-            session.toasts.show("Couldn't read that image - try another one")
-            return
-        }
-        photoBusy = true
-        defer { photoBusy = false }
-        do {
-            let path = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
-            let fresh = try await session.api.patchConversation(conversation.id, requesterId: viewerId, photo: path)
-            detail = fresh
-            onDetailUpdated?(fresh)
-            session.noteInboxChanged()
-            PulseHaptics.success()
-            session.toasts.show("Photo updated")
-        } catch {
-            session.toasts.show(RoomViewModel.describe(error))
-        }
+    private func uploadPhoto(_ item: PhotosPickerItem) {
+        let epoch = session.sessionGeneration
+        mutate(photo: true, request: { api, owner in
+            let photo = try await item.loadTransferable(type: PulsePickedPhoto.self)
+            try requireSurface(epoch)
+            guard let photo, let jpeg = PulseAvatarImage.jpegData(from: photo.jpeg) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Couldn't read that image - try another one")
+            }
+            let path = try await api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
+            try requireSurface(epoch) // dismissal must not progress an upload into a group mutation
+            return try await api.patchConversation(conversation.id, requesterId: owner, photo: try PulseAvatarImage.managedPath(path))
+        }, apply: { fresh in
+            try acceptDetail(fresh, notice: "Photo updated")
+        })
     }
 
     // preset ladders (backend-verbatim)
@@ -926,7 +972,16 @@ struct GroupMemberAddSheet: View {
     @State private var picked: Set<String> = []
     @State private var query = ""
     @State private var phase: Phase = .loading
-    @State private var adding = false
+    @State private var mutationGate = PulseMutationGate()
+    @State private var mutationTask: Task<Void, Never>?
+    @State private var loadTask: Task<Void, Never>?
+    @State private var surfaceEpoch: UUID?
+    @State private var loadTicket = UUID()
+    private var adding: Bool { mutationGate.isBusy }
+    private var canAdd: Bool {
+        if case .ready = phase { return !picked.isEmpty && !adding }
+        return false
+    }
 
     enum Phase { case loading, ready, failed(String) }
 
@@ -945,7 +1000,10 @@ struct GroupMemberAddSheet: View {
                 case .loading:
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 case .failed(let message):
-                    ContentUnavailableCompat(title: "Can't load contacts", systemImage: "wifi.exclamationmark", note: message)
+                    VStack {
+                        ContentUnavailableCompat(title: "Can't load contacts", systemImage: "wifi.exclamationmark", note: message)
+                        Button("Retry") { retryLoad() }.buttonStyle(.borderedProminent)
+                    }
                 case .ready:
                     if candidates.isEmpty {
                         ContentUnavailableCompat(title: "No one to add", systemImage: "person.2", note: "Everyone on this Pulse is already in the group.")
@@ -979,6 +1037,7 @@ struct GroupMemberAddSheet: View {
                     }
                 }
             }
+            .disabled(adding)
             .navigationTitle("Add members")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search name or @handle")
@@ -997,34 +1056,78 @@ struct GroupMemberAddSheet: View {
                                 .font(.subheadline.weight(.semibold))
                         }
                     }
-                    .disabled(picked.isEmpty || adding)
+                    .disabled(!canAdd)
                 }
             }
         }
         .presentationDetents([.medium, .large])
-        .task { await load() }
+        .task {
+            guard !Task.isCancelled else { return }
+            surfaceEpoch = session.sessionGeneration
+            await load()
+        }
+        .onDisappear { retireWork() }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            retireWork(); users = []; picked = []; phase = .loading
+            dismiss()
+        }
+    }
+
+    private func retireWork() {
+        surfaceEpoch = nil; loadTicket = UUID()
+        loadTask?.cancel(); loadTask = nil
+        mutationGate.cancel(); mutationTask?.cancel(); mutationTask = nil
+    }
+
+    private func retryLoad() {
+        let epoch = session.sessionGeneration
+        guard surfaceEpoch == epoch, !adding else { return }
+        loadTask?.cancel()
+        loadTask = Task { @MainActor in
+            guard !Task.isCancelled, surfaceEpoch == epoch, session.sessionGeneration == epoch else { return }
+            await load()
+        }
     }
 
     private func load() async {
+        let epoch = session.sessionGeneration, api = session.api, owner = session.viewer?.id ?? ""
+        guard surfaceEpoch == epoch, !adding, !Task.isCancelled else { return }
+        let ticket = UUID(); loadTicket = ticket
+        phase = .loading
         do {
-            users = try await session.api.users()
+            let all = try await api.users()
+            guard !Task.isCancelled, surfaceEpoch == epoch, session.sessionGeneration == epoch, loadTicket == ticket else { return }
+            users = all.filter { $0.id != owner && !existing.contains($0.id) }
+            picked.formIntersection(Set(users.map(\.id)))
             phase = .ready
         } catch {
+            guard !Task.isCancelled, surfaceEpoch == epoch, session.sessionGeneration == epoch, loadTicket == ticket else { return }
             phase = .failed(RoomViewModel.describe(error))
         }
     }
 
     private func add() {
-        guard !picked.isEmpty, !adding else { return }
-        adding = true
-        let viewerId = session.viewer?.id ?? ""
-        Task {
-            defer { adding = false }
+        let epoch = session.sessionGeneration, api = session.api, owner = session.viewer?.id ?? ""
+        let ids = picked.sorted()
+        guard surfaceEpoch == epoch, !owner.isEmpty, canAdd,
+              let ticket = mutationGate.begin(owner: epoch, resource: conversationId) else { return }
+        loadTicket = UUID()
+        mutationTask = Task { @MainActor in
+            defer {
+                if mutationGate.finish(ticket) { mutationTask = nil }
+                if session.sessionGeneration == epoch { session.noteInboxChanged() }
+            }
             do {
-                let added = try await session.api.addMembers(conversationId, requesterId: viewerId, userIds: Array(picked))
-                dismiss()
+                guard !Task.isCancelled, surfaceEpoch == epoch, session.sessionGeneration == epoch,
+                      mutationGate.isCurrent(ticket, owner: epoch, resource: conversationId) else { return }
+                let added = try await api.addMembers(conversationId, requesterId: owner, userIds: ids)
+                guard !Task.isCancelled, surfaceEpoch == epoch, session.sessionGeneration == epoch,
+                      mutationGate.isCurrent(ticket, owner: epoch, resource: conversationId) else { return }
                 onAdded(added.count)
+                if surfaceEpoch == epoch, session.sessionGeneration == epoch { dismiss() }
             } catch {
+                guard !Task.isCancelled, surfaceEpoch == epoch, session.sessionGeneration == epoch,
+                      mutationGate.isCurrent(ticket, owner: epoch, resource: conversationId) else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }

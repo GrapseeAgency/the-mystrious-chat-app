@@ -1,7 +1,7 @@
 /**
  * Pulse Chat — realtime mini service (socket.io)
  * ------------------------------------------------
- * Port: 3003 (hardcoded — reached from Next.js/preview via Caddy `/?XTransformPort=3003`).
+ * Port: 3003 by default (Caddy `/?XTransformPort=3003`); PULSE_SOCKET_PORT permits isolated tests.
  *
  * Responsibilities (NO database access ever):
  *  - Presence tracking   : onlineUsers Map<userId, Set<socketId>>, rooms `user:{userId}`
@@ -23,7 +23,7 @@
  *  - Privacy gating (R47) : typing relay + presence snapshots are FILTERED by
  *                           per-user privacy flags fetched from Next's
  *                           /api/internal/privacy (shared key, 30s TTL cache,
- *                           fail-open). Still NO database access here.
+ *                           fail-closed). Still NO database access here.
  *  - Health probe        : GET / (or anything unknown) → { ok:true, service:'pulse-socket' }
  *
  * Routing note (verified against engine.io@6.6.9 source): because our socket.io
@@ -40,7 +40,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Server } from 'socket.io'
 import type { Socket } from 'socket.io'
 
-const PORT = 3003
+const PORT = Number(process.env.PULSE_SOCKET_PORT ?? 3003)
 
 // ---------------------------------------------------------------------------
 // Bootstrap http server + socket.io (options copied from examples/websocket)
@@ -113,12 +113,13 @@ function dropPresence(socketId: string): boolean {
 //   presenceVisible ← User prefs lastSeenVisible (Telegram couples last seen
 //                     AND online under one toggle)
 //   typingVisible   ← User prefs typingVisible (R47)
-// Consumers FAIL OPEN: a missing/stale flag means "visible", so an API hiccup
-// never blinds the whole mesh. Flags refresh lazily with a 30s TTL.
+// Missing/stale/invalid policy fails closed. Valid snapshots have a 30s TTL;
+// a periodic sweep also updates idle clients after privacy settings change.
 // ---------------------------------------------------------------------------
 const NEXT_API_BASE = process.env.PULSE_ORIGIN ?? 'http://localhost:3000'
 // Fail-closed (audit finding S5): no default secret; empty key never sent.
 const PRIVACY_KEY = process.env.CRON_SECRET ?? ''
+if (!PRIVACY_KEY) console.warn('[pulse-socket] CRON_SECRET missing: internal relay endpoints and call access are unavailable.')
 const PRIVACY_TTL_MS = 30_000
 
 // ---------------------------------------------------------------------------
@@ -167,59 +168,94 @@ async function verifySessionToken(userId: string, token: string): Promise<boolea
   return verdict
 }
 
+type GroupCallAccessVerdict = 'allowed' | 'denied' | 'unavailable'
+
+/** Admission fails closed; active leases distinguish a refusal from a temporary outage. */
+async function groupCallAccessVerdict(conversationId: string, userId: string, signal: AbortSignal): Promise<GroupCallAccessVerdict> {
+  if (!PRIVACY_KEY || signal.aborted) return 'unavailable'
+  try {
+    const response = await fetch(`${NEXT_API_BASE}/api/internal/call-access?conversationId=${encodeURIComponent(conversationId)}&userId=${encodeURIComponent(userId)}`, {
+      headers: { 'x-pulse-key': PRIVACY_KEY }, signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
+    })
+    if (!response.ok) return 'unavailable'
+    const receipt = await response.json()
+    if (signal.aborted || receipt?.callAccessVersion !== 1 || receipt.conversationId !== conversationId ||
+        receipt.userId !== userId || typeof receipt.allowed !== 'boolean') return 'unavailable'
+    return receipt.allowed ? 'allowed' : 'denied'
+  } catch { return 'unavailable' }
+}
+
+async function groupCallAccessAllowed(conversationId: string, userId: string, signal: AbortSignal): Promise<boolean> {
+  return await groupCallAccessVerdict(conversationId, userId, signal) === 'allowed'
+}
+
 type PrivacyFlags = { typingVisible: boolean; presenceVisible: boolean }
-const privacyCache = new Map<string, { flags: PrivacyFlags; fetchedAt: number }>()
+const PRIVATE_FLAGS: PrivacyFlags = { typingVisible: false, presenceVisible: false }
+const privacyCache = new Map<string, { flags: PrivacyFlags; validUntil: number }>()
 let privacyInflight: Promise<void> | null = null
 
 async function fetchPrivacyFlags(ids: string[]): Promise<void> {
-  if (ids.length === 0) return
-  const stale = (id: string): boolean => {
-    const hit = privacyCache.get(id)
-    return !hit || Date.now() - hit.fetchedAt > PRIVACY_TTL_MS
-  }
-  let need = ids.filter(stale)
+  const stale = (id: string): boolean => (privacyCache.get(id)?.validUntil ?? 0) <= Date.now()
+  let need = [...new Set(ids)].filter(stale)
   if (need.length === 0) return
-  if (privacyInflight) {
+  // Recheck the lock after every await: multiple waiters must not overwrite
+  // each other's in-flight refresh or incorrectly unlock a newer request.
+  while (privacyInflight) {
     await privacyInflight.catch(() => {})
-    need = ids.filter(stale)
+    need = need.filter(stale)
     if (need.length === 0) return
   }
   privacyInflight = (async () => {
     try {
-      const res = await fetch(
-        `${NEXT_API_BASE}/api/internal/privacy?ids=${encodeURIComponent(need.slice(0, 500).join(','))}`,
-        { headers: PRIVACY_KEY ? { 'x-pulse-key': PRIVACY_KEY } : {}, signal: AbortSignal.timeout(5000) },
-      )
-      const body = (await res.json().catch(() => null)) as {
-        flags?: Record<string, { typingVisible?: unknown; presenceVisible?: unknown }>
-      } | null
-      if (res.ok && body && body.flags) {
+      // Do not permanently starve users beyond the API's first 500 IDs.
+      for (let offset = 0; offset < need.length; offset += 500) {
+        const batch = need.slice(offset, offset + 500)
+        let flags: Record<string, { typingVisible?: unknown; presenceVisible?: unknown }> | undefined
+        try {
+          const res = await fetch(
+            `${NEXT_API_BASE}/api/internal/privacy?ids=${encodeURIComponent(batch.join(','))}`,
+            { headers: PRIVACY_KEY ? { 'x-pulse-key': PRIVACY_KEY } : {}, signal: AbortSignal.timeout(5000) },
+          )
+          const body = await res.json().catch(() => null)
+          if (res.ok && body?.flags && typeof body.flags === 'object' && !Array.isArray(body.flags)) flags = body.flags
+        } catch { /* restart/outage is not permission to disclose */ }
         const now = Date.now()
-        for (const [id, raw] of Object.entries(body.flags)) {
-          if (
-            raw &&
-            typeof raw.typingVisible === 'boolean' &&
-            typeof raw.presenceVisible === 'boolean'
-          ) {
-            privacyCache.set(id, {
-              flags: { typingVisible: raw.typingVisible, presenceVisible: raw.presenceVisible },
-              fetchedAt: now,
-            })
-          }
+        for (const id of batch) {
+          const raw = flags?.[id]
+          const valid = raw && typeof raw.typingVisible === 'boolean' && typeof raw.presenceVisible === 'boolean'
+          privacyCache.set(id, {
+            flags: valid ? { typingVisible: raw.typingVisible as boolean, presenceVisible: raw.presenceVisible as boolean } : PRIVATE_FLAGS,
+            // A short negative cache prevents an API outage/unknown ID from
+            // turning every typing event into another request. Never cache an
+            // unrelated unsolicited ID from a provider response.
+            validUntil: now + (valid ? PRIVACY_TTL_MS : Math.min(PRIVACY_TTL_MS, 5000)),
+          })
         }
       }
-    } catch {
-      // app may be mid-restart — fail OPEN until the next poll
-    } finally {
-      privacyInflight = null
-    }
+    } finally { privacyInflight = null }
   })()
   await privacyInflight
 }
 
 function privacyOf(userId: string): PrivacyFlags {
   const hit = privacyCache.get(userId)
-  return hit?.flags ?? { typingVisible: true, presenceVisible: true }
+  return hit && hit.validUntil > Date.now() ? hit.flags : PRIVATE_FLAGS
+}
+
+let privacySweepBusy = false
+let lastPrivacySnapshot: string | null = null
+async function refreshPresencePrivacy(): Promise<void> {
+  if (privacySweepBusy || onlineUsers.size === 0) return
+  privacySweepBusy = true
+  try {
+    await fetchPrivacyFlags(Array.from(onlineUsers.keys()))
+    const snapshot = Array.from(onlineUsers.keys()).filter(id => privacyOf(id).presenceVisible).sort()
+    const key = JSON.stringify(snapshot)
+    if (key !== lastPrivacySnapshot) {
+      lastPrivacySnapshot = key
+      io.emit('presence:snapshot', { onlineUserIds: snapshot })
+    }
+  } finally { privacySweepBusy = false }
 }
 
 /** Presence snapshot filtered to users whose "Last seen & online" toggle allows it. */
@@ -235,6 +271,9 @@ async function typingAllowed(userId: string): Promise<boolean> {
   await fetchPrivacyFlags([userId])
   return privacyOf(userId).typingVisible
 }
+
+// Privacy revocation must not wait indefinitely for another join or typing event.
+setInterval(() => { void refreshPresencePrivacy().catch(() => {}) }, PRIVACY_TTL_MS).unref()
 
 // ---------------------------------------------------------------------------
 // Live voice rooms (R21-b) — pure in-memory, ephemeral by design.
@@ -542,6 +581,9 @@ interface CallSession {
   conversationId: string
   callerId: string
   calleeId: string
+  callerSocketId: string
+  calleeSocketId: string | null
+  answeredAt: number | null
   kind: 'voice' | 'video'
   /** Ring phase (offer sent, no answer yet) when false. */
   answered: boolean
@@ -580,18 +622,19 @@ function dropCallSession(
     conversationId: session.conversationId,
     kind: session.kind,
   }
-  if (session.answered && (reason === 'hangup' || reason === 'error')) {
+  if (session.answered) {
     // Active call torn down — the surviving party stops the media UI.
     const survivorId = endedByUserId === session.callerId ? session.calleeId : session.callerId
-    io.to(roomOf(survivorId)).emit('call:hangup', {
+    const survivorSocket = survivorId === session.callerId ? session.callerSocketId : session.calleeSocketId
+    if (survivorSocket) io.to(survivorSocket).emit('call:hangup', {
       ...base,
       from: endedByUserId ?? '',
       to: survivorId,
-      durationSec: Math.round((Date.now() - session.createdAt) / 1000),
+      durationSec: Math.max(0, Math.round((Date.now() - (session.answeredAt ?? session.createdAt)) / 1000)),
     })
   } else if (!session.answered) {
     // Ring torn down — BOTH sides drop the ringer (terminal before media).
-    io.to(roomOf(session.callerId)).emit('call:cancel', {
+    io.to(session.callerSocketId).emit('call:cancel', {
       ...base,
       from: endedByUserId ?? session.calleeId,
       to: session.callerId,
@@ -614,7 +657,7 @@ function dropCallSession(
 //
 // ONE live group call per conversation, keyed by conversationId. The JOINER
 // offers to every existing member (deterministic direction, no glare);
-// signaling is targeted per-peer via `roomOf(userId)` so the conversation
+// signaling is targeted at each member's admitted socket so the conversation
 // room itself never carries a flood. Rings travel through Next's HTTP relay
 // (`/notify` event `gcall:ring`) so the ring also reaches members who are
 // merely in another room, and push fanout (Next side) covers OFFLINE users.
@@ -625,10 +668,13 @@ const GCALL_ICE_MAX_CHARS = CALL_ICE_MAX_CHARS
 
 interface GroupCallMember {
   userId: string
+  socketId: string // the device that actually joined, not every session of this user
   name: string
   color: string
   avatar: string | null
   joinedAt: number
+  accessValidUntil: number
+  joinAttemptId?: string // per-device intent; never a room-wide leave capability
 }
 
 interface GroupCallSession {
@@ -638,6 +684,7 @@ interface GroupCallSession {
   hostId: string
   createdAt: number
   members: Map<string, GroupCallMember> // userId -> member
+  ringRecipients?: string[] // defined after the one accepted ring, even when empty
 }
 
 /** conversationId -> live group call */
@@ -651,6 +698,7 @@ function gcallStatePayload(conversationId: string): Record<string, unknown> | nu
   const call = groupCalls.get(conversationId)
   if (!call) return null
   const members = Array.from(call.members.values())
+    .filter(member => member.accessValidUntil > Date.now())
     .sort((a, b) => a.joinedAt - b.joinedAt)
     .map((m) => ({ id: m.userId, name: m.name, color: m.color, avatar: m.avatar }))
   return {
@@ -669,11 +717,11 @@ function broadcastGcallState(conversationId: string): void {
   if (payload) io.to(gcallRoomName(conversationId)).emit('gcall:state', payload)
 }
 
-/** Tear down the whole group call (host left or last member departed). */
+/** Tear down the whole group call after its last member departed. */
 function dropGroupCall(
   conversationId: string,
   reason: string,
-  notifyUserIds: Iterable<string> = [],
+  notifySocketIds: Iterable<string> = [],
 ): void {
   const call = groupCalls.get(conversationId)
   if (!call) return
@@ -682,19 +730,19 @@ function dropGroupCall(
   }
   groupCalls.delete(conversationId)
   const payload = { conversationId, callId: call.callId, reason }
-  // Room broadcast + per-member user rooms: the departing last member has
-  // already left the socket room AND the roster by the time this runs, so the
-  // user-room copies (from the caller's member snapshot) are the ONLY
-  // guaranteed delivery — without them `gcall:ended` is undeliverable.
+  // Idle invitees need to dismiss this exact ring too, not just joined devices.
+  for (const userId of call.ringRecipients ?? []) io.to(roomOf(userId)).emit('gcall:ended', payload)
+  // The departing owner already left the room. Notify that device directly,
+  // not unrelated tabs/devices belonging to the same account.
   io.to(gcallRoomName(conversationId)).emit('gcall:ended', payload)
-  for (const userId of new Set(notifyUserIds)) {
-    io.to(roomOf(userId)).emit('gcall:ended', payload)
+  for (const socketId of new Set(notifySocketIds)) {
+    io.to(socketId).emit('gcall:ended', payload)
   }
   console.log(`[gcall] drop conv=${conversationId} members=${call.members.size} reason=${reason}`)
 }
 
 /** Remove one user from their group call (leave/disconnect path). */
-function leaveGroupCall(userId: string, reason: string): void {
+function leaveGroupCall(userId: string, reason: string, expectedSocketId?: string): void {
   const conversationId = groupCallByUser.get(userId)
   if (!conversationId) return
   const call = groupCalls.get(conversationId)
@@ -702,18 +750,78 @@ function leaveGroupCall(userId: string, reason: string): void {
     groupCallByUser.delete(userId)
     return
   }
-  // Snapshot BEFORE mutation — dropGroupCall needs everyone who was in the
-  // call (including the leaver) to receive `gcall:ended` on their user room.
-  const memberSnapshot = Array.from(call.members.keys())
+  const member = call.members.get(userId)
+  if (!member || (expectedSocketId && member.socketId !== expectedSocketId)) return
+  const memberSnapshot = Array.from(call.members.values(), value => value.socketId)
+  const owner = io.sockets.sockets.get(member.socketId)
+  void owner?.leave(gcallRoomName(conversationId))
   call.members.delete(userId)
   groupCallByUser.delete(userId)
   if (call.members.size === 0) {
     dropGroupCall(conversationId, reason, memberSnapshot)
     return
   }
+  owner?.emit('gcall:ended', { conversationId, callId: call.callId, reason })
   broadcastGcallState(conversationId)
   console.log(`[gcall] leave conv=${conversationId} user=${userId} remaining=${call.members.size}`)
 }
+
+const GROUP_CALL_ACCESS_LEASE_MS = 30_000
+const pendingGroupAccessRooms = new Set<string>()
+let groupAccessRefreshBusy = false
+
+function liveGroupCallMember(call: GroupCallSession, userId: string): GroupCallMember | undefined {
+  const member = call.members.get(userId)
+  return member && member.accessValidUntil > Date.now() ? member : undefined
+}
+
+/** Identity checks precede removal: an old reply cannot revoke a new admission. */
+async function refreshGroupCallMemberAccess(call: GroupCallSession, member: GroupCallMember): Promise<void> {
+  const checkedAt = Date.now()
+  const verdict = await groupCallAccessVerdict(call.conversationId, member.userId, new AbortController().signal)
+  if (groupCalls.get(call.conversationId) !== call || call.members.get(member.userId) !== member) return
+  if (member.accessValidUntil <= Date.now()) {
+    leaveGroupCall(member.userId, 'access-unavailable', member.socketId)
+  } else if (verdict === 'denied') {
+    leaveGroupCall(member.userId, 'membership-revoked', member.socketId)
+  } else if (verdict === 'allowed') {
+    // Request start, not response arrival: backend latency must not extend permission.
+    member.accessValidUntil = checkedAt + GROUP_CALL_ACCESS_LEASE_MS
+  }
+}
+
+function expireGroupCallAccess(now = Date.now()): void {
+  for (const call of groupCalls.values()) {
+    for (const member of [...call.members.values()]) {
+      if (member.accessValidUntil <= now) leaveGroupCall(member.userId, 'access-unavailable', member.socketId)
+    }
+  }
+}
+
+/** One room (at most eight checks) at a time; events coalesce rather than spawning unbounded requests. */
+async function drainGroupAccessRefreshes(): Promise<void> {
+  if (groupAccessRefreshBusy) return
+  groupAccessRefreshBusy = true
+  try {
+    while (pendingGroupAccessRooms.size) {
+      const room = pendingGroupAccessRooms.values().next().value!
+      pendingGroupAccessRooms.delete(room)
+      const call = groupCalls.get(room)
+      if (call) await Promise.all([...call.members.values()].map(member => refreshGroupCallMemberAccess(call, member)))
+    }
+  } finally { groupAccessRefreshBusy = false }
+}
+
+function queueGroupAccessRefresh(conversationId: string): void {
+  if (!groupCalls.has(conversationId)) return
+  pendingGroupAccessRooms.add(conversationId)
+  void drainGroupAccessRefreshes().catch(() => {})
+}
+
+setInterval(() => {
+  expireGroupCallAccess()
+  for (const room of groupCalls.keys()) queueGroupAccessRefresh(room)
+}, 5000).unref()
 
 function asGroupMember(value: unknown): GroupCallMember | null {
   if (typeof value !== 'object' || value === null) return null
@@ -722,11 +830,13 @@ function asGroupMember(value: unknown): GroupCallMember | null {
   if (!id) return null
   return {
     userId: id,
+    socketId: "", // assigned by the server on admission; never trusted from the payload
     name: asTrimmedString(v.name).slice(0, 64) || 'Someone',
     color: asTrimmedString(v.color).slice(0, 24) || 'emerald',
     avatar:
       typeof v.avatar === 'string' && v.avatar.length > 0 && v.avatar.length <= 256 ? v.avatar : null,
     joinedAt: 0,
+    accessValidUntil: 0,
   }
 }
 
@@ -802,6 +912,37 @@ async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<
   }
 
   const recipients = sanitizeRecipients(body.recipients)
+  if (event === 'conversation:updated') {
+    queueGroupAccessRefresh(asTrimmedString((body.payload as Record<string, unknown> | null)?.conversationId))
+  }
+  if (event === 'gcall:ring') {
+    const raw = body.payload as Record<string, unknown> | null
+    const caller = raw?.caller as Record<string, unknown> | null
+    const conversationId = asTrimmedString(raw?.conversationId)
+    const callId = asTrimmedString(raw?.callId)
+    const callerId = asTrimmedString(caller?.id)
+    const call = groupCalls.get(conversationId)
+    const deadline = call ? call.createdAt + 45_000 : 0
+    // Check immediately before emitting, not against a stale HTTP preflight.
+    if (!call || !callId || call.callId !== callId || !liveGroupCallMember(call, callerId) ||
+        raw?.kind !== call.kind || Date.now() >= deadline) {
+      sendJson(res, 409, { ok: false, error: 'call is not available to ring' })
+      return
+    }
+    const expiresAt = new Date(deadline).toISOString()
+    const accepted = call.ringRecipients === undefined
+    let delivered = 0
+    if (accepted) {
+      call.ringRecipients = recipients.filter(id => id !== callerId)
+      for (const recipient of call.ringRecipients) {
+        io.to(roomOf(recipient)).emit(event, { ...raw, type: event, callId, expiresAt })
+        delivered++
+      }
+    }
+    sendJson(res, 200, { ok: true, ringReceiptVersion: 1, accepted, delivered,
+      conversationId, callId, callerId, expiresAt })
+    return
+  }
   let delivered = 0
   for (const recipient of recipients) {
     io.to(roomOf(recipient)).emit(event, body.payload ?? null)
@@ -912,6 +1053,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return
   }
 
+  // Shared-key boundary applies before any body parsing, privacy lookup or fanout.
+  // Socket.IO and health traffic above/below remain available without this server secret.
+  if (['/notify', '/typing', '/online', '/gcall'].includes(pathname)) {
+    res.setHeader('Cache-Control', 'no-store')
+    if (!PRIVACY_KEY || req.headers['x-pulse-key'] !== PRIVACY_KEY) {
+      sendJson(res, 401, { ok: false, error: 'Unauthorized' })
+      return
+    }
+  }
+
   // 3. relay endpoints (Next.js API routes call these internally)
   if (req.method === 'POST' && pathname === '/notify') {
     await handleNotify(req, res)
@@ -981,6 +1132,11 @@ httpServer.on('upgrade', (req, socket, head) => {
 // Socket lifecycle & realtime events
 // ---------------------------------------------------------------------------
 io.on('connection', (socket: Socket) => {
+  let pendingGroupJoin: { userId: string; conversationId: string; joinAttemptId?: string; controller: AbortController } | null = null
+  function cancelPendingGroupJoin() {
+    pendingGroupJoin?.controller.abort()
+    pendingGroupJoin = null
+  }
   console.log(`[ws] connect sock=${socket.id} clients=${io.engine.clientsCount}`)
 
   /** join { userId } — register presence, enter personal room, ack + snapshot broadcast */
@@ -1005,6 +1161,10 @@ io.on('connection', (socket: Socket) => {
       }
     }
 
+    if (socketUser.get(socket.id) && socketUser.get(socket.id) !== userId) {
+      cancelPendingGroupJoin()
+      leaveGroupCall(socketUser.get(socket.id)!, 'identity-changed', socket.id)
+    }
     // Defensive re-join: forget previous mapping of THIS socket first.
     if (socketUser.has(socket.id)) dropPresence(socket.id)
 
@@ -1505,6 +1665,13 @@ io.on('connection', (socket: Socket) => {
     if (!callId || !conversationId || !from || !to || from === to || !kind || !sdp) return
     // Identity gate: you may only ring people AS the user your socket joined as.
     if (socketUser.get(socket.id) !== from) return
+    const existing = callSessions.get(callId)
+    if (existing && existing.callerSocketId === socket.id && existing.callerId === from &&
+        existing.calleeId === to && existing.conversationId === conversationId) return
+    if (existing || callByUser.has(from)) {
+      socket.emit('call:cancel', { callId, conversationId, from, to, kind, reason: 'busy' })
+      return
+    }
     if (!onlineUsers.has(to)) {
       socket.emit('call:cancel', { callId, conversationId, from, to, kind, reason: 'offline' })
       console.log(`[call] offer rejected (callee offline) call=${callId} from=${from} to=${to}`)
@@ -1516,15 +1683,14 @@ io.on('connection', (socket: Socket) => {
       console.log(`[call] offer rejected (busy) call=${callId} from=${from} to=${to} against=${calleeBusy}`)
       return
     }
-    // Defensive: a stale session of the caller's own never blocks a new ring.
-    const callerBusy = callByUser.get(from)
-    if (callerBusy) dropCallSession(callerBusy, 'cancel', from)
-
     const session: CallSession = {
       callId,
       conversationId,
       callerId: from,
       calleeId: to,
+      callerSocketId: socket.id,
+      calleeSocketId: null,
+      answeredAt: null,
       kind,
       answered: false,
       createdAt: Date.now(),
@@ -1564,11 +1730,13 @@ io.on('connection', (socket: Socket) => {
         ? data.sdp
         : null
     const session = callSessions.get(callId)
-    if (!session || !sdp) return
+    if (!session || !sdp || session.answered) return
     if (socketUser.get(socket.id) !== from || from !== session.calleeId) return
+    session.calleeSocketId = socket.id
+    session.answeredAt = Date.now()
     session.answered = true
     clearTimeout(session.timer)
-    io.to(roomOf(session.callerId)).emit('call:answer', {
+    io.to(session.callerSocketId).emit('call:answer', {
       callId,
       conversationId: session.conversationId,
       from,
@@ -1576,6 +1744,13 @@ io.on('connection', (socket: Socket) => {
       kind: session.kind,
       sdp,
     })
+    // The first accepting device wins; stop ringing on the other devices only.
+    for (const other of onlineUsers.get(session.calleeId) ?? []) {
+      if (other !== socket.id) io.to(other).emit('call:cancel', {
+        callId, conversationId: session.conversationId, from: session.callerId,
+        to: session.calleeId, kind: session.kind, reason: 'cancel', answeredElsewhere: true,
+      })
+    }
     console.log(`[call] answer call=${callId} from=${from} → caller=${session.callerId}`)
   })
 
@@ -1596,8 +1771,11 @@ io.on('connection', (socket: Socket) => {
     if (!session || !candidate) return
     if (socketUser.get(socket.id) !== from) return
     if (from !== session.callerId && from !== session.calleeId) return
+    if (from === session.callerId && session.callerSocketId !== socket.id) return
+    if (from === session.calleeId && session.answered && session.calleeSocketId !== socket.id) return
     const to = from === session.callerId ? session.calleeId : session.callerId
-    io.to(roomOf(to)).emit('call:ice', {
+    const destination = to === session.callerId ? session.callerSocketId : (session.calleeSocketId ?? roomOf(to))
+    io.to(destination).emit('call:ice', {
       callId,
       conversationId: session.conversationId,
       from,
@@ -1621,13 +1799,13 @@ io.on('connection', (socket: Socket) => {
     const callId = asTrimmedString(data.callId).slice(0, 64)
     const from = asTrimmedString(data.from).slice(0, 64)
     const session = callSessions.get(callId)
-    if (!session) return
+    if (!session || session.answered) return
     if (socketUser.get(socket.id) !== from || from !== session.calleeId) return
     clearTimeout(session.timer)
     callSessions.delete(callId)
     if (callByUser.get(session.callerId) === callId) callByUser.delete(session.callerId)
     if (callByUser.get(session.calleeId) === callId) callByUser.delete(session.calleeId)
-    io.to(roomOf(session.callerId)).emit('call:reject', {
+    io.to(session.callerSocketId).emit('call:reject', {
       callId,
       conversationId: session.conversationId,
       from,
@@ -1654,7 +1832,7 @@ io.on('connection', (socket: Socket) => {
     const callId = asTrimmedString(data.callId).slice(0, 64)
     const from = asTrimmedString(data.from).slice(0, 64)
     const session = callSessions.get(callId)
-    if (!session) return
+    if (!session || session.answered || session.callerSocketId !== socket.id) return
     if (socketUser.get(socket.id) !== from || from !== session.callerId) return
     dropCallSession(callId, 'cancel', from)
   })
@@ -1670,6 +1848,8 @@ io.on('connection', (socket: Socket) => {
     const session = callSessions.get(callId)
     if (!session) return
     if (socketUser.get(socket.id) !== from || (from !== session.callerId && from !== session.calleeId)) return
+    const owner = from === session.callerId ? session.callerSocketId : session.calleeSocketId
+    if (owner !== socket.id) return
     dropCallSession(callId, 'hangup', from)
   })
 
@@ -1682,7 +1862,7 @@ io.on('connection', (socket: Socket) => {
    * The caller POSTs /api/conversations/[id]/calls/ring separately so rings
    * (and pushes) reach members outside this socket room.
    */
-  socket.on('gcall:join', (raw: unknown) => {
+  socket.on('gcall:join', async (raw: unknown) => {
     const data = (raw ?? {}) as Record<string, unknown>
     const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
     const kind = callKindOf(data.kind)
@@ -1690,14 +1870,52 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !kind || !me) return
     if (socketUser.get(socket.id) !== me.userId) return
 
-    // One group call per user: re-joining the same conversation is idempotent;
-    // joining a DIFFERENT one first leaves the old call (single-writer honesty).
-    const currentConv = groupCallByUser.get(me.userId)
-    if (currentConv && currentConv !== conversationId) {
-      leaveGroupCall(me.userId, 'switch')
+    const joinAttemptId = data.joinAttemptId === undefined ? undefined : asTrimmedString(data.joinAttemptId)
+    if (joinAttemptId !== undefined && (!joinAttemptId || joinAttemptId.length > 128)) return
+    const currentMember = groupCalls.get(conversationId)?.members.get(me.userId)
+    if (!joinAttemptId && (pendingGroupJoin?.joinAttemptId ||
+        (currentMember?.socketId === socket.id && currentMember.joinAttemptId))) return
+    cancelPendingGroupJoin()
+    const intent = { userId: me.userId, conversationId, joinAttemptId, controller: new AbortController() }
+    pendingGroupJoin = intent
+    const accessValidUntil = Date.now() + GROUP_CALL_ACCESS_LEASE_MS
+    const allowed = await groupCallAccessAllowed(conversationId, me.userId, intent.controller.signal)
+    // A cancelled/older permission request cannot create a call or evict any member.
+    if (pendingGroupJoin !== intent || !socket.connected || socketUser.get(socket.id) !== me.userId) return
+    pendingGroupJoin = null
+    if (!allowed || accessValidUntil <= Date.now()) {
+      socket.emit('gcall:ended', { conversationId, callId: asTrimmedString(data.expectedCallId), joinAttemptId, reason: 'access-unavailable' })
+      return
     }
-
     let call = groupCalls.get(conversationId)
+    const priorMember = call?.members.get(me.userId)
+    // A legacy/unbound replay cannot remove a modern admission's leave fence.
+    if (priorMember?.socketId === socket.id && priorMember.joinAttemptId && !joinAttemptId) return
+    // An invitation/probe join is not permission to CREATE a replacement call
+    // or take over this account's already-admitted device. Check before any leave.
+    if (data.expectedCallId !== undefined) {
+      const expected = asTrimmedString(data.expectedCallId)
+      const existingDevice = call?.members.get(me.userId)?.socketId
+      if (!expected || call?.callId !== expected || (existingDevice && existingDevice !== socket.id)) {
+        socket.emit('gcall:ended', { conversationId, callId: expected, joinAttemptId, reason: 'unavailable' })
+        return
+      }
+    }
+    // Capacity refusal must not evict an existing call on the user's other device.
+    if (call && !call.members.has(me.userId) && call.members.size >= MAX_GROUP_CALL_PARTICIPANTS) {
+      socket.emit('gcall:full', { conversationId, callId: call.callId, joinAttemptId, max: MAX_GROUP_CALL_PARTICIPANTS })
+      return
+    }
+    const currentConv = groupCallByUser.get(me.userId)
+    if (currentConv) {
+      const previous = groupCalls.get(currentConv)?.members.get(me.userId)
+      if (currentConv !== conversationId || previous?.socketId !== socket.id) {
+        // Explicit takeover: remove the old endpoint and publish departure BEFORE
+        // re-admission, so peers rebuild their media connection to the new device.
+        leaveGroupCall(me.userId, 'replaced')
+      }
+    }
+    call = groupCalls.get(conversationId)
     if (!call) {
       call = {
         callId: `gcall-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
@@ -1712,12 +1930,16 @@ io.on('connection', (socket: Socket) => {
     }
     if (!call.members.has(me.userId)) {
       if (call.members.size >= MAX_GROUP_CALL_PARTICIPANTS) {
-        socket.emit('gcall:full', { conversationId, callId: call.callId, max: MAX_GROUP_CALL_PARTICIPANTS })
+        socket.emit('gcall:full', { conversationId, callId: call.callId, joinAttemptId, max: MAX_GROUP_CALL_PARTICIPANTS })
         console.log(`[gcall] join rejected (full) conv=${conversationId} user=${me.userId}`)
         return
       }
-      call.members.set(me.userId, { ...me, joinedAt: Date.now() })
+      call.members.set(me.userId, { ...me, socketId: socket.id, joinedAt: Date.now(), joinAttemptId })
     }
+    // Rejoining the same live call on the same device transfers ownership to
+    // this intent even when the roster/call ID itself did not change.
+    const admitted = call.members.get(me.userId)!
+    call.members.set(me.userId, { ...admitted, joinAttemptId, accessValidUntil })
     socket.join(gcallRoomName(conversationId))
     groupCallByUser.set(me.userId, conversationId)
     broadcastGcallState(conversationId)
@@ -1731,9 +1953,21 @@ io.on('connection', (socket: Socket) => {
     const me = asTrimmedString(data.from).slice(0, 64)
     if (!conversationId || !me) return
     if (socketUser.get(socket.id) !== me) return
+    if (pendingGroupJoin?.userId === me && pendingGroupJoin.conversationId === conversationId &&
+        (pendingGroupJoin.joinAttemptId ? asTrimmedString(data.joinAttemptId) === pendingGroupJoin.joinAttemptId : data.joinAttemptId === undefined)) {
+      cancelPendingGroupJoin()
+    }
     if (groupCallByUser.get(me) !== conversationId) return
+    const call = groupCalls.get(conversationId)
+    const member = call?.members.get(me)
+    if (!call || member?.socketId !== socket.id) return
+    if (data.callId !== undefined && asTrimmedString(data.callId) !== call.callId) return
+    if (member.joinAttemptId) {
+      if (asTrimmedString(data.joinAttemptId) !== member.joinAttemptId) return
+    } else if (data.joinAttemptId !== undefined) return
+    // Validate before leaving the room as well as before mutating membership.
     socket.leave(gcallRoomName(conversationId))
-    leaveGroupCall(me, 'leave')
+    leaveGroupCall(me, 'leave', socket.id)
   })
 
   /**
@@ -1753,8 +1987,9 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !sdp || !kind) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || !call.members.has(from) || !call.members.has(to)) return
-    io.to(roomOf(to)).emit('gcall:offer', { conversationId, callId: call.callId, from, to, kind, sdp })
+    if (!call || liveGroupCallMember(call, from)?.socketId !== socket.id || !liveGroupCallMember(call, to)) return
+    if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
+    io.to(call.members.get(to)!.socketId).emit('gcall:offer', { conversationId, callId: call.callId, from, to, kind, sdp })
   })
 
   /** gcall:answer { conversationId, to, sdp } — existing member → joiner. */
@@ -1770,8 +2005,9 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !sdp) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || !call.members.has(from) || !call.members.has(to)) return
-    io.to(roomOf(to)).emit('gcall:answer', { conversationId, callId: call.callId, from, to, sdp })
+    if (!call || liveGroupCallMember(call, from)?.socketId !== socket.id || !liveGroupCallMember(call, to)) return
+    if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
+    io.to(call.members.get(to)!.socketId).emit('gcall:answer', { conversationId, callId: call.callId, from, to, sdp })
   })
 
   /** gcall:ice { conversationId, to, candidate, sdpMid, sdpMLineIndex } — targeted relay. */
@@ -1787,8 +2023,9 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !candidate) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || !call.members.has(from) || !call.members.has(to)) return
-    io.to(roomOf(to)).emit('gcall:ice', {
+    if (!call || liveGroupCallMember(call, from)?.socketId !== socket.id || !liveGroupCallMember(call, to)) return
+    if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
+    io.to(call.members.get(to)!.socketId).emit('gcall:ice', {
       conversationId,
       callId: call.callId,
       from,
@@ -1807,6 +2044,7 @@ io.on('connection', (socket: Socket) => {
   })
 
   socket.on('disconnect', (reason: string) => {
+    cancelPendingGroupJoin()
     // Voice rooms clean up FIRST: the departed mic must never keep the stage.
     leaveVoiceRoom(socket.id, `disconnect:${reason}`)
     // Stage + spatial presence rosters follow (mirror cleanup).
@@ -1817,9 +2055,13 @@ io.on('connection', (socket: Socket) => {
     const departedUserId = socketUser.get(socket.id)
     if (departedUserId) {
       const callId = callByUser.get(departedUserId)
-      if (callId) dropCallSession(callId, 'timeout', departedUserId)
+      const call = callId ? callSessions.get(callId) : undefined
+      if (call && (call.callerSocketId === socket.id || call.calleeSocketId === socket.id ||
+          (!call.answered && call.calleeId === departedUserId && (onlineUsers.get(departedUserId)?.size ?? 0) <= 1))) {
+        dropCallSession(call.callId, call.answered ? 'hangup' : 'timeout', departedUserId)
+      }
       // Group calls: the departed member drops out; last one out ends the call.
-      leaveGroupCall(departedUserId, `disconnect:${reason}`)
+      leaveGroupCall(departedUserId, `disconnect:${reason}`, socket.id)
     }
     const wentOffline = dropPresence(socket.id)
     if (wentOffline) {
@@ -1844,14 +2086,26 @@ const DISPATCH_INTERVAL_MS = 20_000
 // Fail-closed (audit finding S5): no default secret; empty key never sent.
 const DISPATCH_KEY = process.env.CRON_SECRET ?? ''
 
+let dispatchCursor: string | null = null
+let dispatchBusy = false
 async function tickDispatch(): Promise<void> {
+  if (dispatchBusy || !DISPATCH_KEY) return
+  dispatchBusy = true
   try {
-    const res = await fetch(`${NEXT_APP_URL}/api/maintenance/dispatch`, {
+    const suffix = dispatchCursor ? `?cursor=${encodeURIComponent(dispatchCursor)}` : ''
+    const res = await fetch(`${NEXT_APP_URL}/api/maintenance/dispatch${suffix}`, {
       method: 'POST',
       headers: DISPATCH_KEY ? { 'x-pulse-key': DISPATCH_KEY } : {},
       signal: AbortSignal.timeout(8000),
     })
-    const body = (await res.json().catch(() => null)) as { dispatched?: number } | null
+    if (!res.ok) {
+      if (res.status === 400) dispatchCursor = null
+      return
+    }
+    const body = (await res.json().catch(() => null)) as { dispatched?: number; nextCursor?: unknown } | null
+    if (body && typeof body.dispatched === 'number') {
+      dispatchCursor = typeof body.nextCursor === 'string' && body.nextCursor.length <= 1024 && body.nextCursor ? body.nextCursor : null
+    }
     if (body && typeof body.dispatched === 'number' && body.dispatched > 0) {
       console.log(`[cron] dispatched ${body.dispatched} scheduled message(s)`)
     }
@@ -1860,7 +2114,7 @@ async function tickDispatch(): Promise<void> {
     if (process.env.PULSE_DISPATCH_DEBUG === '1') {
       console.log('[cron] dispatch probe failed:', error instanceof Error ? error.message : error)
     }
-  }
+  } finally { dispatchBusy = false }
 }
 setInterval(() => void tickDispatch(), DISPATCH_INTERVAL_MS)
 
@@ -1875,7 +2129,9 @@ process.on('unhandledRejection', (err) => {
 })
 
 httpServer.listen(PORT, () => {
-  console.log(`Pulse socket service listening on port ${PORT} (path "/", presence+relay+voice+stage+space ready)`)
+  const address = httpServer.address()
+  const actualPort = address && typeof address === 'object' ? address.port : PORT
+  console.log(`Pulse socket service listening on port ${actualPort} (path "/", presence+relay+voice+stage+space ready)`)
 })
 
 let shuttingDown = false

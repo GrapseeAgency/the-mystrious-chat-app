@@ -150,7 +150,7 @@ class Wave7ApiTest {
     @Test
     fun `kanban board GET and card create POST`() = runTest {
         configured()
-        response = """{"card":{"id":"k1","conversationId":"c1","title":"Ship it","column":"todo","position":0}}"""
+        response = """{"boardReceiptVersion":1,"userId":"u1","conversationId":"c1","card":{"id":"k1","conversationId":"c1","title":"Ship it","column":"todo","position":0,"createdById":"u1","createdAt":"2026-10-22T00:00:00Z","updatedAt":"2026-10-22T00:00:00Z"}}"""
         val r = api().createKanbanCard("c1", "u1", title = "Ship it", column = "todo", assigneeId = null, messageId = null)
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Post, lastMethod)
@@ -161,7 +161,7 @@ class Wave7ApiTest {
     @Test
     fun `kanban PATCH moves card and DELETE goes with query`() = runTest {
         configured()
-        response = """{"card":{"id":"k1","column":"doing","position":4}}"""
+        response = """{"boardReceiptVersion":1,"userId":"u1","conversationId":"c1","card":{"id":"k1","conversationId":"c1","title":"Ship it","column":"doing","position":4,"createdAt":"2026-10-22T00:00:00Z","updatedAt":"2026-10-22T00:00:00Z"}}"""
         val r = api().updateKanbanCard("k1", "u1", title = null, column = "doing", assigneeId = null, clearAssignee = false, position = null)
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Patch, lastMethod)
@@ -169,7 +169,7 @@ class Wave7ApiTest {
         assertTrue(lastBody.contains("\"column\":\"doing\""))
         assertTrue(!lastBody.contains("position"))
 
-        response = """{"ok":true}"""
+        response = """{"boardReceiptVersion":1,"userId":"u1","conversationId":"c1","cardId":"k1","ok":true}"""
         val d = api().deleteKanbanCard("k1", "u1")
         assertTrue(d is PulseResult.Success)
         assertEquals(HttpMethod.Delete, lastMethod)
@@ -181,12 +181,12 @@ class Wave7ApiTest {
     @Test
     fun `event create posts startsAt ISO and RSVP posts status`() = runTest {
         configured()
-        response = """{"event":{"id":"e1","title":"Standup","startsAt":"2026-01-20T10:00:00.000Z","rsvps":[],"counts":{"going":0,"maybe":0,"no":0},"myStatus":null}}"""
+        response = """{"event":{"id":"e1","title":"Standup","createdById":"u1","startsAt":"2026-01-20T10:00:00.000Z","rsvps":[],"counts":{"going":0,"maybe":0,"no":0},"myStatus":null}}"""
         val r = api().createEvent("c1", "u1", "Standup", "2026-01-20T10:00:00.000Z", null, null)
         assertTrue(r is PulseResult.Success)
         assertTrue(lastBody.contains("\"startsAt\":\"2026-01-20T10:00:00.000Z\""))
 
-        response = """{"rsvp":{"id":"r1","eventId":"e1","userId":"u1","status":"going"},"counts":{"going":1,"maybe":0,"no":0}}"""
+        response = """{"eventReceiptVersion":1,"eventId":"e1","userId":"u1","rsvp":{"id":"r1","eventId":"e1","userId":"u1","status":"going"},"counts":{"going":1,"maybe":0,"no":0}}"""
         val s = api().rsvpEvent("e1", "u1", "going")
         assertTrue(s is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/events/e1/rsvp"))
@@ -196,7 +196,7 @@ class Wave7ApiTest {
     @Test
     fun `checkin posts and idempotent response decodes`() = runTest {
         configured()
-        response = """{"checkIn":null,"xpAwarded":false,"checkedInCount":3,"alreadyCheckedIn":true}"""
+        response = """{"eventReceiptVersion":1,"eventId":"e1","userId":"u1","checkIn":{"id":"r1","eventId":"e1","userId":"u1","status":"going","checkedInAt":"2026-01-20T10:00:00Z"},"xpAwarded":false,"checkedInCount":3,"alreadyCheckedIn":true}"""
         val r = api().checkinEvent("e1", "u1")
         assertTrue(r is PulseResult.Success)
         assertTrue((r as PulseResult.Success).value.alreadyCheckedIn)
@@ -246,7 +246,7 @@ class Wave7ApiTest {
         response = """{"match":{"id":"m","playerXId":"u1","playerOId":"u2","board":"XXXOO    ","turn":"X","status":"x_won","moveCount":5}}"""
         assertTrue(api().gameMove("m", "u1", 2) is PulseResult.Success)
         assertTrue(api().gameMove("m", "u1", 8) is PulseResult.Failure)
-        assertTrue(api().game("other-match") is PulseResult.Failure)
+        assertTrue(api().game("other-match", "u1") is PulseResult.Failure)
     }
 
     @Test
@@ -254,7 +254,7 @@ class Wave7ApiTest {
         configured()
         for (body in listOf("{}", """{"match":{"id":"m"}}""", """{"match":{"id":"m","playerXId":"u1","board":"short","turn":"X","status":"active","moveCount":0}}""")) {
             response = body
-            assertTrue(api().game("m") is PulseResult.Failure)
+            assertTrue(api().game("m", "u1") is PulseResult.Failure)
             assertTrue(api().createGame("u1", "room", null) is PulseResult.Failure)
         }
     }
@@ -275,7 +275,7 @@ class Wave7ApiTest {
         configured()
         response = "{}"
         assertTrue(api().tournaments("room", "u1") is PulseResult.Failure)
-        response = """{"tournaments":[{"id":"season","joined":true,"status":"running"}]}"""
+        response = """{"gameReadVersion":1,"userId":"u1","conversationId":"room","tournaments":[{"id":"season","conversationId":"room","joined":true,"status":"running"}]}"""
         val result = api().tournaments("room", "u1")
         assertTrue(result is PulseResult.Success)
         assertTrue(lastUrl.contains("userId=u1"))
@@ -360,7 +360,7 @@ class Wave7ApiTest {
     @Test
     fun `market buy posts and returns ok plus wallet`() = runTest {
         configured()
-        response = """{"ok":true,"wallet":{"userId":"u2","coins":40,"gems":0}}"""
+        response = """{"marketVersion":1,"userId":"u2","listingId":"l1","ok":true,"wallet":{"userId":"u2","coins":40,"gems":0}}"""
         val r = api().buyListing("l1", "u2")
         assertTrue(r is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/hub/market/l1/buy"))
@@ -370,15 +370,16 @@ class Wave7ApiTest {
     @Test
     fun `app install state GET install POST and uninstall DELETE`() = runTest {
         configured()
-        response = """{"installed":true,"status":"connected","installedAt":"2026-01-15T00:00:00.000Z","installs":3,"installers":[{"id":"u1","name":"A"}]}"""
+        response = """{"appVersion":1,"appId":"11","userId":"u1","installed":true,"status":"connected","installedAt":"2026-01-15T00:00:00.000Z","installs":3,"installers":[{"id":"u1","name":"A"}]}"""
         val g = api().appInstallState("11", "u1")
         assertTrue(g is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/hub/apps/11/install?userId=u1"))
 
-        response = """{"installed":true,"status":"connected","installs":4}"""
+        response = """{"appVersion":1,"appId":"11","userId":"u1","installed":true,"status":"connected","installs":4}"""
         val p = api().installApp("11", "u1")
         assertTrue(p is PulseResult.Success)
 
+        response = """{"appVersion":1,"appId":"11","userId":"u1","installed":false,"status":null,"installs":3}"""
         val d = api().uninstallApp("11", "u1")
         assertTrue(d is PulseResult.Success)
         assertEquals(HttpMethod.Delete, lastMethod)
@@ -387,7 +388,7 @@ class Wave7ApiTest {
     @Test
     fun `app community join posts userId and decodes conversation`() = runTest {
         configured()
-        response = """{"conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community"},"memberCount":2,"joined":true}"""
+        response = """{"appVersion":1,"appId":"11","userId":"u1","conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community","members":[{"id":"u1","name":"A"},{"id":"u2","name":"B"}]},"memberCount":2,"joined":true}"""
         val r = api().joinAppCommunity("11", "u1")
         assertTrue(r is PulseResult.Success)
         val v = (r as PulseResult.Success).value

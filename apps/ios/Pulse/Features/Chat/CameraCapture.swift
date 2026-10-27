@@ -11,14 +11,18 @@ struct CameraPicker: UIViewControllerRepresentable {
     var onCancel: () -> Void
     @Environment(\.dismiss) private var dismiss
 
-    func makeUIViewController(context: Context) -> UIImagePickerController {
+    func makeUIViewController(context: Context) -> UIViewController {
+        guard Self.isAvailable else {
+            DispatchQueue.main.async { onCancel(); dismiss() }
+            return UIViewController()
+        }
         let picker = UIImagePickerController()
         picker.sourceType = .camera
         picker.delegate = context.coordinator
         return picker
     }
 
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -50,7 +54,10 @@ struct CameraPicker: UIViewControllerRepresentable {
 
     /// TCC gate - NSCameraUsageDescription already ships in project.yml
     /// (infoProperties). Denied callers surface the inline explainer state.
-    static func requestAccess(_ completion: @escaping (Bool) -> Void) {
+    @MainActor static var isAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+
+    @MainActor static func requestAccess(_ completion: @escaping (Bool) -> Void) {
+        guard isAvailable else { completion(false); return }
         AVCaptureDevice.requestAccess(for: .video) { granted in
             completion(granted)
         }

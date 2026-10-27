@@ -15,6 +15,7 @@ import app.pulse.protocol.PulseJson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -118,11 +120,55 @@ class SessionViewModel @Inject constructor(
                 }
             }
         }
-        // One network-constrained worker owns retries; KEEP avoids canceling
-        // an in-flight delivery on each queue emission.
+        // Observe both durable queues across hydration and account changes.
+        // Empty-to-pending edges append work without cancelling a running delivery.
         viewModelScope.launch {
-            repo.observeOutbox().collect { entries ->
-                if (entries.any { it.failureReason == null }) OutboxWorker.enqueue(appContext)
+            kotlinx.coroutines.flow.combine(repo.observeOutbox(), repo.observePendingReads()) { entries, reads ->
+                reads || entries.any { it.failureReason == null }
+            }.distinctUntilChanged().collect { pending ->
+                if (pending) OutboxWorker.enqueue(appContext)
+            }
+        }
+    }
+
+    /** A profile acknowledgement is not an identity switch. Keep the token, socket
+     * and pending outbox intact; only adopt fields that this write actually changed. */
+    fun adoptProfileMetadata(ownerId: String, expectedSession: String?, name: String?, color: String?) {
+        if (expectedSession == null || (name == null && color == null)) return
+        val bound = repo.boundToCurrentAccount()
+        fun current() = bound.viewerId == ownerId && bound.attachmentSessionKey() == expectedSession
+        if (!current()) return
+        viewModelScope.launch {
+            try {
+                prefs.updateViewerMetadata(ownerId, name, color, ::current)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (current()) _sessionNotice.value = "Profile saved. This device's name/color cache could not be refreshed."
+            }
+        }
+    }
+
+    /** Settings work belongs to the original session, not a detached UI scope.
+     * Inspect the repository Result; local persistence is not a server receipt. */
+    fun updateServerPreferences(ownerId: String, expectedSession: String?, patch: app.pulse.protocol.WirePulsePrefs) =
+        submitServerPreferences(ownerId, expectedSession) { it.updatePulsePrefs(patch) }
+
+    fun retryServerPreferences(ownerId: String, expectedSession: String?) =
+        submitServerPreferences(ownerId, expectedSession) { it.retryPendingSettings() }
+
+    private fun submitServerPreferences(ownerId: String, expectedSession: String?, operation: suspend (PulseRepository) -> Result<Unit>) {
+        if (expectedSession == null) return
+        val target = repo.boundToCurrentAccount()
+        fun current() = target.viewerId == ownerId && target.attachmentSessionKey() == expectedSession
+        if (!current()) return
+        viewModelScope.launch {
+            try {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!current()) return@launch
+                operation(target).getOrThrow()
+            } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) {
+                if (current()) _sessionNotice.value = "Settings were not confirmed. Review Settings and use Retry."
             }
         }
     }

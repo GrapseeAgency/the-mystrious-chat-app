@@ -32,6 +32,19 @@ data class ReactionDto(
     val createdAt: String? = null,
 )
 
+/** The server sends a snippet, not a recursive ChatMessageDto. JsonNull for
+ * expiresAt means explicitly permanent; a non-date sentinel means missing bounds. */
+@Serializable
+data class ReplySnippetDto(
+    val id: String,
+    val content: String,
+    val senderName: String = "Reply",
+    val deleted: Boolean? = null,
+    val quoteVersion: Int? = null,
+    val expiresAt: JsonElement = kotlinx.serialization.json.JsonPrimitive("__missing__"),
+    val viewOnce: Boolean? = null,
+)
+
 @Serializable
 data class ChatMessageDto(
     val id: String,
@@ -47,7 +60,7 @@ data class ChatMessageDto(
     val deletedAt: String? = null,
     val sender: SenderDto? = null,
     val reactions: List<ReactionDto> = emptyList(),
-    val replyTo: ChatMessageDto? = null,
+    val replyTo: ReplySnippetDto? = null,
     val parentId: String? = null,
     val imagePath: String? = null,
     val audioPath: String? = null,
@@ -70,6 +83,7 @@ data class ChatMessageDto(
     val anon: Boolean? = null,
     val anonAlias: String? = null,
     val expiresAt: String? = null,
+    val readByMembershipIds: List<String> = emptyList(),
 )
 
 @Serializable
@@ -92,6 +106,42 @@ data class ThreadPageDto(
     val replies: List<ChatMessageDto> = emptyList(),
 )
 
+/** Versioned bounded thread transport; all metadata is mandatory. */
+@Serializable
+data class ThreadSliceDto(
+    val parent: ChatMessageDto,
+    val replies: List<ChatMessageDto>,
+    val threadPageVersion: Int,
+    val hasMore: Boolean,
+    val nextCursor: String? = null,
+)
+
+@Serializable
+data class ManualUnreadReceiptDto(
+    val ok: Boolean,
+    val unreadReceiptVersion: Int,
+    val conversationId: String,
+    val userId: String,
+    val manualUnread: Boolean,
+    val readIntent: String,
+)
+
+@Serializable
+data class ReadIntentDto(val readIntentVersion: Int, val conversationId: String, val userId: String, val readIntent: String)
+
+/** Identity-bearing read receipt, not an arbitrary HTTP success. */
+@Serializable
+data class ReadReceiptDto(
+    val ok: Boolean,
+    val readReceiptVersion: Int,
+    val conversationId: String,
+    val userId: String,
+    val mode: String,
+    val lastReadAt: String,
+    val messageId: String? = null,
+    val readIntent: String,
+)
+
 /** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt ascending). */
 @Serializable
 data class PinnedPageDto(
@@ -105,6 +155,16 @@ data class UnpinAckDto(val unpinned: Boolean)
 @Serializable
 data class SavedToggleDto(
     val saved: Boolean,
+)
+
+/** Versioned explicit saved-state receipt; add preserves the server's first savedAt. */
+@Serializable
+data class SavedStateReceiptDto(
+    val savedReceiptVersion: Int,
+    val userId: String,
+    val messageId: String,
+    val saved: Boolean,
+    val savedAt: String? = null,
 )
 
 // R5-B: POST /api/conversations/[id]/messages response envelope
@@ -181,6 +241,8 @@ data class ConversationMemberDto(
     val statusText: String? = null,
     val lastReadAt: String? = null,
     val role: String? = null,
+    val readMembershipId: String? = null,
+    val readIntent: String? = null,
 )
 
 @Serializable
@@ -189,6 +251,7 @@ data class UnreadExpirationDto(val expiresAt: String, val count: Int)
 @Serializable
 data class ConversationSummaryDto(
     val id: String,
+    @Serializable(with = RoomPolicyBoolean::class)
     val isGroup: Boolean = false,
     val name: String? = null,
     val photo: String? = null,
@@ -200,15 +263,21 @@ data class ConversationSummaryDto(
     val updatedAt: String? = null,
     val members: List<ConversationMemberDto> = emptyList(),
     val lastMessage: ChatMessageDto? = null,
+    @Serializable(with = OptionalRoomPolicyInteger::class)
     val unreadCount: Int? = null,
+    val firstUnreadMessageId: String? = null,
     val unreadExpirations: List<UnreadExpirationDto> = emptyList(),
     val pinnedAt: String? = null,
     val mutedUntil: String? = null,
     val archivedAt: String? = null,
+    @Serializable(with = OptionalRoomPolicyInteger::class)
     val ttlSeconds: Int? = null,
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val broadcastMode: Boolean? = null,
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val isSelf: Boolean? = null,
     val myDraft: String? = null,
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val myManualUnread: Boolean? = null,
     val myStreak: JsonElement? = null,
     val deadStreak: JsonElement? = null,
@@ -218,14 +287,18 @@ data class ConversationSummaryDto(
     /** Shareable join code - groups only, null = no active link. */
     val inviteCode: String? = null,
     /** R44 slow mode - members wait Ns between sends (0 = off). */
+    @Serializable(with = OptionalRoomPolicyInteger::class)
     val slowModeSeconds: Int? = null,
     /** R38 Signal screen security (room-wide flag). */
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val screenPrivacy: Boolean? = null,
     /** R42 per-VIEWER screen security (the personal veil flag; detail rows). */
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val myScreenPrivacy: Boolean? = null,
     // R6 - M5: R47 DM dead-end flag (detail rows, web chat-room.tsx `dmBlocked`):
     // a UserBlock in EITHER direction between the DM pair. Detail-only -
     // summaries tolerate the key (defaulted null) exactly like screenPrivacy.
+    @Serializable(with = OptionalRoomPolicyBoolean::class)
     val dmBlocked: Boolean? = null,
 )
 
@@ -381,6 +454,7 @@ data class MentionDto(
     val author: SenderDto? = null,
     val snippet: String = "",
     val createdAt: String = "",
+    val expiresAt: String? = null,
 )
 
 @Serializable
@@ -529,6 +603,9 @@ data class TopicDto(
     val emoji: String = TOPIC_ICON_DEFAULT,
     val lastMessageAt: String? = null,
     val messageCount: Int = 0,
+    val unreadCount: Int? = null,
+    val firstUnreadMessageId: String? = null,
+    val unreadExpirations: List<UnreadExpirationDto> = emptyList(),
 )
 
 /** GET /api/conversations/{id}/topics?userId= → { topics: [...] }. */
@@ -641,3 +718,8 @@ fun JsonElement.unwrapOrRoot(key: String): JsonElement =
 
 /** Serializer handle for the Room reactions column (shared by data mappers). */
 val ReactionListSerializer = kotlinx.serialization.builtins.ListSerializer(ReactionDto.serializer())
+
+@Serializable
+data class ReadStateSnapshotDto(val readStateVersion: Int, val conversationId: String, val userId: String,
+    val threadId: String? = null, val topicId: String? = null, val unreadCount: Int,
+    val firstUnreadMessageId: String? = null, val unreadExpirations: List<UnreadExpirationDto> = emptyList())

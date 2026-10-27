@@ -57,4 +57,53 @@ final class RoomOperationOrderingTests: XCTestCase {
         XCTAssertEqual(draft, "keep")
         XCTAssertTrue(operations.pending.isEmpty)
     }
+    func testNewestPhraseReadAndRoomClosureRejectCancellationIgnoringOlderResponses() async throws {
+        let operations = PulseRoomOperations()
+        var visible = ["confirmed"]
+        let oldTicket = try XCTUnwrap(operations.beginRead())
+        var reply: CheckedContinuation<[String], Never>?
+        let started = expectation(description: "old read suspended")
+        let oldRead = Task { @MainActor in
+            let rows = await withCheckedContinuation { (continuation: CheckedContinuation<[String], Never>) in
+                reply = continuation; started.fulfill()
+            }
+            if operations.accepts(oldTicket) { visible = rows }
+        }
+        await fulfillment(of: [started], timeout: 1)
+        let newest = try XCTUnwrap(operations.beginRead())
+        if operations.accepts(newest) { visible = ["new confirmed phrase"] }
+        reply?.resume(returning: ["stale phrase"])
+        await oldRead.value
+        XCTAssertEqual(visible, ["new confirmed phrase"])
+        operations.stop()
+        XCTAssertFalse(operations.accepts(newest))
+        XCTAssertTrue(operations.accepts(try XCTUnwrap(operations.beginRead())))
+    }
+    func testReplacingAStoryPhotoInvalidatesTheOlderUploadAndItsCleanup() async throws {
+        let operations = PulseRoomOperations()
+        let started = expectation(description: "old photo suspended")
+        var reply: CheckedContinuation<Bool, Never>?
+        var preview = "previous confirmed photo"
+        let old = try XCTUnwrap(operations.run(key: "photo", operation: {
+            started.fulfill()
+            let accepted = await withCheckedContinuation { reply = $0 }
+            guard !Task.isCancelled else { return false }
+            preview = "old photo"
+            return accepted
+        }))
+        await fulfillment(of: [started], timeout: 2)
+        operations.stop()
+        let next = try XCTUnwrap(operations.run(key: "photo", operation: { true }, onSuccess: { preview = "new photo" }))
+        await next.value
+        reply?.resume(returning: true); await old.value
+        XCTAssertEqual(preview, "new photo")
+        XCTAssertTrue(operations.pending.isEmpty)
+    }
+    func testRetiredStoryModelCannotPublishThroughAReplacementSession() async {
+        let session = PulseSession()
+        let stories = StoriesSessionModel(session: session)
+        session.stop()
+        let error = await stories.publish(caption: "old draft", background: "emerald", imagePath: nil)
+        XCTAssertEqual(error, "The original story session ended.")
+    }
 }

@@ -34,12 +34,41 @@ sealed interface PulseDeepLink {
             buildString {
                 append(SCHEME)
                 append("://room/")
-                append(conversationId)
+                append(encode(conversationId))
                 if (!jumpMessageId.isNullOrBlank()) {
                     append("?jump=")
-                    append(jumpMessageId)
+                    append(encode(jumpMessageId))
                 }
             }
+
+        private fun encode(value: String): String = java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+        /** FCM's OS-rendered notification opens the launcher with data extras,
+         * not a URI. Keep this decoder pure; navigation still resolves the room
+         * through the normal session/membership-aware destination. */
+        fun notificationRoom(kind: String?, conversationId: String?, messageId: String?): Room? {
+            if (kind !in listOf("message", "gcall", "call")) return null
+            val room = conversationId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val jump = if (kind == "message") messageId?.trim()?.takeIf { it.isNotEmpty() } else null
+            return Room(room, jump)
+        }
+
+        /** User-pasted raw codes, native links and web ?join= links; never fetch the pasted host. */
+        fun inviteCode(raw: String?): String? {
+            fun valid(value: String?): String? = value?.trim()?.uppercase(java.util.Locale.ROOT)
+                ?.takeIf { Regex("[A-Z0-9]{4,16}").matches(it) }
+            valid(raw)?.let { return it }
+            (parse(raw) as? Invite)?.let { return valid(it.code) }
+            val uri = runCatching { java.net.URI(raw?.trim().orEmpty()) }.getOrNull() ?: return null
+            if (uri.scheme?.lowercase() !in listOf("https", "http")) return null
+            fun decode(value: String) = runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrNull()
+            uri.rawQuery?.split('&')?.forEach { item ->
+                if (decode(item.substringBefore('=')) == "join") return valid(decode(item.substringAfter('=', "")))
+            }
+            val parts = uri.rawPath.orEmpty().trim('/').split('/')
+            if (parts.size == 2 && parts[0].lowercase() in listOf("invite", "join", "group")) return valid(decode(parts[1]))
+            return null
+        }
 
         /** Parse a URI handed over by the system (onCreate/onNewIntent). */
         fun parse(rawUri: String?): PulseDeepLink? {
@@ -48,7 +77,7 @@ sealed interface PulseDeepLink {
             if (uri.scheme?.lowercase() != SCHEME) return null
 
             fun decode(segment: String): String? =
-                runCatching { java.net.URLDecoder.decode(segment, "UTF-8") }.getOrNull()
+                runCatching { java.net.URLDecoder.decode(segment.replace("+", "%2B"), "UTF-8") }.getOrNull()
                     ?.takeIf { it.isNotBlank() }
 
             // R7 item 4 - the `jump` query param rides along (first one wins).

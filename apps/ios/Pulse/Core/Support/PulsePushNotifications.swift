@@ -29,6 +29,94 @@ import UserNotifications
 // the failure states stay truthful about it.
 
 public enum PulsePushNotifications {
+    @MainActor private static var snapshotFence = PulseBadgeSnapshotFence()
+    @MainActor private static var desiredBadge = 0
+    @MainActor private static var appliedBadge: Int?
+    @MainActor private static var badgeTask: Task<Void, Never>?
+
+    /// Serialize writes: an older completion must not overwrite the newest
+    /// account's badge. The OS still owns whether badge permission is enabled.
+    @MainActor
+    public static func setUnreadBadge(_ count: Int) {
+        _ = snapshotFence.reserve()
+        desiredBadge = max(0, count)
+        guard badgeTask == nil, appliedBadge != desiredBadge else { return }
+        badgeTask = Task { @MainActor in
+            defer { badgeTask = nil }
+            while appliedBadge != desiredBadge {
+                let next = desiredBadge
+                do { try await UNUserNotificationCenter.current().setBadgeCount(next) }
+                catch { NSLog("Pulse badge update was not accepted: %@", error.localizedDescription); return }
+                appliedBadge = next
+            }
+        }
+    }
+
+    @MainActor
+    static func refreshUnreadBadge(using client: PulseAPIClient, store: PulseStore, isCurrent: () -> Bool) async -> Bool {
+        do {
+            guard !Task.isCancelled, isCurrent() else { return false }
+            let ticket = snapshotFence.reserve()
+            let rooms = try await client.conversations()
+            guard !Task.isCancelled, isCurrent(), snapshotFence.owns(ticket) else { return false }
+            try store.upsert(conversations: rooms.map { $0.toDomain() }, replacingSnapshot: true)
+            let count = rooms.filter { !$0.isArchived && $0.isSelf != true }
+                .reduce(0) { $0 + $1.removingExpiredSummary().badgeUnreadCount }
+            setUnreadBadge(count)
+            await badgeTask?.value
+            let alerts = await reconcileDeliveredMessages(using: client, isCurrent: isCurrent)
+            // Badge permission is optional. Failed server/proof refreshes are not.
+            return !Task.isCancelled && isCurrent() && alerts.complete
+        } catch { return false }
+    }
+
+    @MainActor
+    static func reconcileDeliveredMessages(using client: PulseAPIClient, isCurrent: () -> Bool,
+                                            failures: Int = 1) async -> PulseMessageAlertReconciliation {
+        let center = UNUserNotificationCenter.current()
+        let alerts = await center.deliveredNotifications().compactMap {
+            PulseDeliveredMessageAlert(identifier: $0.request.identifier,
+                userInfo: $0.request.content.userInfo, owner: client.userId)
+        }
+        return await reconcileDeliveredMessageAlerts(alerts, isCurrent: isCurrent, failures: failures,
+            unread: { room, message in
+                try await client.notificationMessageUnread(conversationId: room, messageId: message)
+            }, remove: { center.removeDeliveredNotifications(withIdentifiers: [$0]) })
+    }
+
+    @MainActor
+    static func reconcileDeliveredMessageAlerts(_ alerts: [PulseDeliveredMessageAlert],
+        isCurrent: () -> Bool, failures: Int = 1,
+        unread: (String, String) async throws -> Bool,
+        remove: (String) -> Void) async -> PulseMessageAlertReconciliation {
+        var result = PulseMessageAlertReconciliation(complete: true, retryDelay: nil)
+        for alert in alerts {
+            guard !Task.isCancelled, isCurrent() else {
+                return PulseMessageAlertReconciliation(complete: false, retryDelay: nil)
+            }
+            do {
+                // Aggregate counts never prove that THIS alert is obsolete.
+                let remainsUnread = try await unread(alert.room, alert.message)
+                guard !Task.isCancelled, isCurrent() else {
+                    return PulseMessageAlertReconciliation(complete: false, retryDelay: nil)
+                }
+                if !remainsUnread { remove(alert.identifier) }
+            } catch {
+                result.complete = false
+                if let delay = PulseVisibleReadRetry.delay(after: error, failures: failures) {
+                    result.retryDelay = max(result.retryDelay ?? 0, delay)
+                }
+            }
+        }
+        return result
+    }
+
+    @MainActor
+    static func refreshBadgePermission() {
+        appliedBadge = nil
+        setUnreadBadge(desiredBadge)
+    }
+
 
     /// Ask once per install (idempotent - a determined verdict returns
     /// immediately without a prompt); on grant, register with APNs. The
@@ -57,6 +145,28 @@ public enum PulsePushNotifications {
 /// (didRegister / didFail). Wired via @UIApplicationDelegateAdaptor in
 /// PulseApp; registration itself is requested by activate() above.
 public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
+
+    @MainActor
+    public func application(_ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+        guard let kind = userInfo["kind"] as? String, kind == "read-state" || kind == "message",
+              let recipient = userInfo["recipientUserId"] as? String,
+              PulseKeychain.shared.loadViewer()?.id == recipient else { return .noData }
+        // A wake-up is only an invalidation. Never apply a delayed payload's count
+        // or manufacture visibility; replay already-recorded reads, then fetch.
+        let room = userInfo["conversationId"] as? String
+        let work = Task { @MainActor in
+            await PulseApp.flushBackgroundOutbox(recipientUserId: recipient, readStateRoom: room)
+        }
+        let deadline = Task { @MainActor in
+            do { try await Task.sleep(nanoseconds: 25_000_000_000) }
+            catch { return }
+            work.cancel()
+        }
+        defer { deadline.cancel() }
+        return await work.value ? .newData : .failed
+    }
+
 
     public func application(
         _ application: UIApplication,
@@ -211,6 +321,7 @@ public final class PulsePushRegistrationCenter: ObservableObject {
                 }
                 NSLog("Pulse push: authorization granted - registering for remote notifications")
                 UIApplication.shared.registerForRemoteNotifications()
+                PulsePushNotifications.refreshBadgePermission()
             }
         }
     }
@@ -347,4 +458,32 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         }
         return error.localizedDescription
     }
+}
+
+/// Main-actor callers share this ordering fence across background fetches and
+/// foreground badge publications; OS write serialization alone is not enough.
+struct PulseBadgeSnapshotFence {
+    private var revision: UInt64 = 0
+    mutating func reserve() -> UInt64 { revision &+= 1; return revision }
+    func owns(_ ticket: UInt64) -> Bool { revision == ticket }
+}
+
+/// Identity is extracted before reconciliation; unrelated/local notifications
+/// and another account's messages are never guessed away.
+struct PulseDeliveredMessageAlert {
+    let identifier: String
+    let room: String
+    let message: String
+
+    init?(identifier: String, userInfo: [AnyHashable: Any], owner: String) {
+        guard userInfo["kind"] as? String == "message", userInfo["recipientUserId"] as? String == owner,
+              let room = userInfo["conversationId"] as? String, !room.isEmpty,
+              let message = userInfo["messageId"] as? String, !message.isEmpty else { return nil }
+        self.identifier = identifier; self.room = room; self.message = message
+    }
+}
+
+struct PulseMessageAlertReconciliation {
+    var complete: Bool
+    var retryDelay: TimeInterval?
 }

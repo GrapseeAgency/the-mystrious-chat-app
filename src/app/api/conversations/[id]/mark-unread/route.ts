@@ -1,13 +1,14 @@
+import { invalidateNativeReadState } from '@/lib/push/transport'
 // /api/conversations/[id]/mark-unread - per-VIEWER unread dot
 // R44 - WhatsApp/Telegram "mark as unread": a participant flags a row so it
 // re-appears with the unread badge even with nothing new to read. The dot
-// clears the next time the room is opened (the read route flips it off).
+// clears only under a current prepared read intent, never an unfenced late read.
 // Self-service comfort setting - never admin-gated (mirrors R42 screenPrivacy).
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { setManualUnread, ReadReceiptError } from '@/lib/read-receipt'
 import { safeJson, strField, notifySocket } from '@/lib/serializers'
 
-import { bearerToken } from '@/lib/session-token'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 
 export const dynamic = 'force-dynamic'
@@ -17,11 +18,11 @@ interface RouteCtx {
 }
 
 /**
- * PATCH /api/conversations/[id]/mark-unread  body { userId, on }
+ * PATCH /api/conversations/[id]/mark-unread  body { userId, on, readIntent }
  * on: boolean - true = badge my own row; false = clear it.
  * Participant-only (403 for everyone else). A viewer may only flag their
- * OWN row - userId IS the requester by construction of the call sites.
- * → { ok: true, manualUnread: boolean } | 400 | 403 | 404
+ * OWN row - the bearer credential must prove ownership of userId.
+ * → versioned owner/room/desired-state receipt | 400 | 403 | 404 | 409
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
@@ -31,36 +32,21 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
-  if (bearerToken(req)) {
-    const denied = await requireActionOwner(req, userId, 'unread marker')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, userId, 'unread marker')
+  if (denied) return denied
+  const readIntent = typeof body.readIntent === 'string' && body.readIntent.length <= 128 ? body.readIntent.trim() : ''
+  if (!readIntent) return NextResponse.json({ error: 'Capture a read intent before changing unread state.' }, { status: 400 })
   if (typeof body.on !== 'boolean') {
     return NextResponse.json({ error: 'on must be a boolean.' }, { status: 400 })
   }
 
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id }, select: { id: true } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: id } },
-      select: { id: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  try {
+    const receipt = await setManualUnread(db, id, userId, body.on, readIntent)
+    await notifySocket('conversation:updated', [userId], { conversationId: id })
+    invalidateNativeReadState(userId, id)
+    return NextResponse.json(receipt, { headers: { 'Cache-Control': 'private, no-store' } })
+  } catch (error) {
+    if (error instanceof ReadReceiptError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-
-  await db.conversationParticipant.update({
-    where: { id: participant.id },
-    data: { manualUnread: body.on },
-  })
-
-  await notifySocket('conversation:updated', [userId], { conversationId: id })
-  return NextResponse.json({ ok: true, manualUnread: body.on })
 }

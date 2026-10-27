@@ -41,6 +41,10 @@ export interface ReplySnippet {
   content: string
   senderName: string
   deleted: boolean
+  /** Versioned privacy bounds, optional only for legacy/local constructions. */
+  quoteVersion?: 1
+  expiresAt?: string | null
+  viewOnce?: boolean
 }
 
 /** Cached Open-Graph metadata attached to a message containing a link. */
@@ -79,6 +83,7 @@ export interface MessageTranslationEntry {
 }
 
 export interface ChatMessage {
+  readByMembershipIds?: string[]
   id: string
   conversationId: string
   senderId: string
@@ -128,14 +133,15 @@ export interface ChatMessage {
 
 /** Row of the conversations list */
 export interface ConversationSummary {
+  firstUnreadMessageId?: string | null
   id: string
   isGroup: boolean
   name: string | null // group title; null for DMs (UI derives other member's name)
   createdAt: string
   updatedAt: string
-  members: AppUser[] // every participant EXCEPT is never filtered; UI filters out self where needed
+  members: Array<AppUser & { readMembershipId?: string; readIntent?: string | null; lastReadAt?: string }> // every participant EXCEPT is never filtered; UI filters out self where needed
   lastMessage: ChatMessage | null
-  unreadCount: number // count of non-deleted messages from others newer than my lastReadAt
+  unreadCount: number // exact unobserved eligible messages; never derived from lastReadAt
   /** Expiring portions of this exact count, for offline native badge projection. */
   unreadExpirations?: { expiresAt: string; count: number }[]
   myStreak: { count: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
@@ -167,6 +173,7 @@ export type GroupRole = 'admin' | 'member'
 /** One row of the broadcast-channel directory (GET /api/channels, R30-c). */
 export interface ChannelSummary {
   id: string // conversation id
+  conversationId?: string // additive alias for native clients; identical to id
   name: string
   description: string
   createdAt: string
@@ -186,7 +193,7 @@ export interface ConversationDetail {
   createdAt: string
   updatedAt: string
   // per-member read watermark (→ double ticks) + group role (groups only)
-  members: Array<AppUser & { lastReadAt: string; role: GroupRole }>
+  members: Array<AppUser & { lastReadAt: string; role: GroupRole; readMembershipId?: string; readIntent?: string | null }>
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
   myStreak: { count: number; best: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
   /** R33-b additive - same semantics as ConversationSummary.deadStreak:
@@ -285,6 +292,9 @@ export interface TopicSummary {
   emoji: string
   lastMessageAt: string // ISO - sort key
   messageCount: number // real filed-message count
+  unreadCount?: number | null
+  firstUnreadMessageId?: string | null
+  unreadExpirations?: { expiresAt: string; count: number }[]
 }
 
 /** Signal/Beeper chat folder (GET /api/folders). */

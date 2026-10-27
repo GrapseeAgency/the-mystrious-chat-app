@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * R10-a - the notification quick-reply payload kernel, pinned as a pure JVM
- * test: parse (trim / blank rejection / server length cap), the queued verdict
+ * test: parse (trim / blank rejection / lossless oversized input), the queued verdict
  * (temp `local_` rows are outbox entries, not deliveries), and the shared
  * notification id math with PulseMessagingService.
  */
@@ -29,10 +29,12 @@ class PulseReplyReceiverTest {
     }
 
     @Test
-    fun `parse caps the reply at the server message cap`() {
-        val capped = PulseReplyPayload.parse("c1", "x".repeat(2500))
-        assertEquals(2000, capped?.text?.length)
-        assertEquals(PulseReplyPayload.MAX_CHARS, capped?.text?.length)
+    fun `parse never sends a truncated reply or splits a surrogate pair`() {
+        val body = "x".repeat(1999) + "😀" + "y".repeat(500)
+        val parsed = PulseReplyPayload.parse("c1", body)
+        assertEquals(body, parsed?.text)
+        assertTrue(parsed!!.text.length > PulseReplyPayload.MAX_CHARS)
+        assertEquals(app.pulse.domain.usecase.SendMessageUseCase.MAX_LENGTH, PulseReplyPayload.MAX_CHARS)
     }
 
     @Test

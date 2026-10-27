@@ -12,27 +12,36 @@
 //   • ios     → APNs token-based (JWT/ES256). Same fail-closed contract;
 //               arms when the Apple p8 key + ids are configured.
 //
-// Fanout policy: a user is skipped entirely while a socket session is online
-// (the socket already carries realtime events into the open app); everyone
-// else gets one push per registered device. Dead web endpoints (404/410) and
+// Fanout policy: opted-in native message/read-state delivery is per device;
+// an online desktop cannot suppress a phone. Legacy/web alerts and calls
+// retain online-user suppression. Dead web endpoints (404/410) and
 // unregistered mobile tokens prune their registry row so the registry
 // self-heals. Push must NEVER fail a user-facing request - every call site
 // is fire-and-forget.
 // 
 import 'server-only'
 import crypto from 'node:crypto'
+import { postApns, apnsOrigin } from './apns-http2.ts'
+import { pushDeliveryWindow, shouldRetirePushToken, apnsInvalidatedAt } from './delivery-policy.ts'
 import { db } from '@/lib/db'
 
 export type PushPlatform = 'web' | 'android' | 'ios'
 
 export interface PushPayload {
-  kind: 'message' | 'gcall' | 'call'
+  kind: 'message' | 'gcall' | 'call' | 'read-state'
+  /** Internal registry capability, overwritten by fanout (never caller authority). */
+  nativeReadStateHints?: boolean
   /** Notification title - sender display name (or "Group call"). */
   title: string
   /** Notification body - preview text, or a generic line when previews are off. */
   body: string
   conversationId: string
   messageId?: string
+  /** Assigned from the registration binding, never trusted from a caller. */
+  recipientUserId?: string
+  /** Absolute source/root deadline; never extend it during device fanout. */
+  expiresAt?: string
+  callId?: string
   callKind?: 'voice' | 'video'
   callerName?: string
 }
@@ -57,7 +66,7 @@ async function webPushSender(): Promise<typeof import('web-push') | null> {
     // Bundler interop: web-push is CJS - `.default` may be undefined under
     // webpack/turbopack; fall back to the namespace itself.
     const mod = await import('web-push')
-    const lib = ((mod as { default?: typeof mod }).default ?? mod) as typeof import('web-push')
+    const lib = mod.default ?? mod
     lib.setVapidDetails(
       process.env.VAPID_SUBJECT || 'mailto:push@pulse.chat',
       publicKey,
@@ -199,8 +208,10 @@ async function apnsBearer(): Promise<string | null> {
 // online suppression 
 
 async function onlineUserIds(): Promise<Set<string>> {
+  const secret = process.env.CRON_SECRET
+  if (!secret) return new Set()
   try {
-    const res = await fetch(`${SOCKET_URL}/online`, { signal: AbortSignal.timeout(1500) })
+    const res = await fetch(`${SOCKET_URL}/online`, { headers: { 'x-pulse-key': secret }, signal: AbortSignal.timeout(1500) })
     if (!res.ok) return new Set()
     const body = (await res.json()) as { onlineUserIds?: unknown }
     if (!Array.isArray(body.onlineUserIds)) return new Set()
@@ -212,7 +223,7 @@ async function onlineUserIds(): Promise<Set<string>> {
 
 // per-platform senders 
 
-type SendResult = { ok: boolean; pruneToken: boolean; skipped?: boolean }
+type SendResult = { ok: boolean; pruneToken: boolean; skipped?: boolean; invalidatedAt?: number }
 
 async function sendWeb(token: string, payload: PushPayload): Promise<SendResult> {
   const lib = await webPushSender()
@@ -229,7 +240,10 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
   }
   if (!subscription) subscription = { endpoint: token }
   if (!subscription.endpoint) return { ok: false, pruneToken: true }
-  const hasKeys = Boolean(subscription.keys?.p256dh && subscription.keys?.auth)
+  const window = pushDeliveryWindow(payload)
+  if (!window) return { ok: false, pruneToken: false, skipped: true }
+  const hasKeys = typeof subscription.keys?.p256dh === 'string' && subscription.keys.p256dh.length > 0 &&
+    typeof subscription.keys?.auth === 'string' && subscription.keys.auth.length > 0
   const body = hasKeys
     ? JSON.stringify({
         kind: payload.kind,
@@ -237,13 +251,21 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
         body: payload.body,
         conversationId: payload.conversationId,
         messageId: payload.messageId ?? null,
+        ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+        ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+        ...(payload.callId ? { callId: payload.callId } : {}),
         callKind: payload.callKind ?? null,
         callerName: payload.callerName ?? null,
       })
     : undefined
   try {
-    await lib.sendNotification(subscription as { endpoint: string; keys?: Record<string, string> }, body, {
-      TTL: 3600,
+    // web-push does not require encryption keys for a payload-free legacy ping.
+    // Its declarations require the keys object even in that mode.
+    await lib.sendNotification({ endpoint: subscription.endpoint, keys: {
+      p256dh: hasKeys ? subscription.keys!.p256dh : '',
+      auth: hasKeys ? subscription.keys!.auth : '',
+    } }, body, {
+      TTL: window.ttlSeconds,
       urgency: payload.kind === 'message' ? 'normal' : 'high',
     })
     return { ok: true, pruneToken: false }
@@ -262,6 +284,8 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
   const bearer = await fcmBearer()
   if (!bearer) return { ok: false, pruneToken: false, skipped: true }
   const projectId = fcmCredentials()?.projectId ?? ''
+  const window = pushDeliveryWindow(payload)
+  if (!window) return { ok: false, pruneToken: false, skipped: true }
   try {
     const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
       method: 'POST',
@@ -269,23 +293,35 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
       body: JSON.stringify({
         message: {
           token,
-          notification: { title: payload.title, body: payload.body },
+          // Call data must reach the native deadline/owner guard even when
+          // backgrounded; an OS-rendered mixed notification bypasses it.
+          ...(payload.kind === 'message' && !payload.nativeReadStateHints ? { notification: { title: payload.title, body: payload.body } } : {}),
           data: {
             kind: payload.kind,
+            ...(payload.kind !== 'message' || payload.nativeReadStateHints ? { title: payload.title, body: payload.body } : {}),
             conversationId: payload.conversationId,
             ...(payload.messageId ? { messageId: payload.messageId } : {}),
+            ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+            ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+            ...(payload.callId ? { callId: payload.callId } : {}),
             ...(payload.callKind ? { callKind: payload.callKind } : {}),
             ...(payload.callerName ? { callerName: payload.callerName } : {}),
           },
           android: {
-            priority: payload.kind === 'message' ? 'normal' : 'high',
+            ttl: `${window.ttlSeconds}s`,
+            ...(payload.kind === 'message' && !payload.nativeReadStateHints && payload.recipientUserId && payload.messageId ? {
+              notification: { tag: 'pulse-msg-v1/' + [payload.recipientUserId, payload.conversationId, payload.messageId]
+                .map(encodeURIComponent).join('/') },
+            } : {}),
+            priority: payload.kind === 'read-state' || (payload.kind === 'message' && !payload.nativeReadStateHints) ? 'normal' : 'high',
+            ...(payload.kind === 'read-state' ? { collapse_key: 'pulse-read-state' } : {}),
           },
         },
       }),
       signal: AbortSignal.timeout(8000),
     })
-    const prune = res.status === 404 || res.status === 410 || res.status === 400
-    return { ok: res.ok, pruneToken: prune }
+    const error: unknown = res.ok ? null : await res.json().catch(() => null)
+    return { ok: res.ok, pruneToken: shouldRetirePushToken('android', res.status, error) }
   } catch {
     return { ok: false, pruneToken: false }
   }
@@ -294,18 +330,22 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
 async function sendIos(token: string, payload: PushPayload): Promise<SendResult> {
   const bearer = await apnsBearer()
   if (!bearer) return { ok: false, pruneToken: false, skipped: true }
+  const window = pushDeliveryWindow(payload)
+  if (!window) return { ok: false, pruneToken: false, skipped: true }
   try {
-    const res = await fetch(`https://api.push.apple.com/3/device/${encodeURIComponent(token)}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `bearer ${bearer}`,
-        'apns-topic': process.env.PULSE_APNS_BUNDLE_ID || 'chat.pulse.app',
-        'apns-push-type': 'alert',
-        'apns-priority': '10',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        aps: {
+    const origin = apnsOrigin(process.env.PULSE_APNS_ENVIRONMENT)
+    if (!origin) return { ok: false, pruneToken: false, skipped: true }
+    const res = await postApns(origin, token, {
+      authorization: `bearer ${bearer}`,
+      'apns-topic': process.env.PULSE_APNS_BUNDLE_ID || 'app.pulse.chat',
+      'apns-push-type': payload.kind === 'read-state' ? 'background' : 'alert',
+      'apns-priority': payload.kind === 'read-state' ? '5' : '10',
+      ...(payload.kind === 'read-state' ? { 'apns-collapse-id': 'pulse-read-state' } : {}),
+      'apns-expiration': String(window.expiresAtSeconds),
+      'content-type': 'application/json',
+    }, {
+        aps: payload.kind === 'read-state' ? { 'content-available': 1 } : {
+          ...(payload.kind === 'message' ? { 'content-available': 1 } : {}),
           alert: { title: payload.title, body: payload.body },
           sound: 'default',
           // R10 - remote message pushes render the OS quick-reply action: the
@@ -320,13 +360,13 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
         kind: payload.kind,
         conversationId: payload.conversationId,
         ...(payload.messageId ? { messageId: payload.messageId } : {}),
+            ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+        ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
+        ...(payload.callId ? { callId: payload.callId } : {}),
         ...(payload.callKind ? { callKind: payload.callKind } : {}),
         ...(payload.callerName ? { callerName: payload.callerName } : {}),
-      }),
-      signal: AbortSignal.timeout(8000),
-    })
-    const prune = res.status === 404 || res.status === 410 || res.status === 403
-    return { ok: res.ok, pruneToken: prune }
+      })
+    return { ok: res.status === 200, pruneToken: shouldRetirePushToken('ios', res.status, res.body), invalidatedAt: apnsInvalidatedAt(res.body) }
   } catch {
     return { ok: false, pruneToken: false }
   }
@@ -351,8 +391,8 @@ export interface FanoutOptions {
 }
 
 /**
- * Send `payload` to every registered device of `userIds`, skipping users
- * whose socket session is currently online. Fire-and-forget safe: never
+ * Deliver per-device native message/read-state invalidations, retaining
+ * online-user suppression for legacy/web alerts and call fanout. Fire-and-forget safe: never
  * throws, always returns an honest report. Call sites `void` it.
  */
 export async function fanoutPush(
@@ -364,30 +404,49 @@ export async function fanoutPush(
   const ids = Array.from(new Set(userIds.filter((id) => typeof id === 'string' && id.trim())))
   if (ids.length === 0) return report
   try {
-    const online = await onlineUserIds()
-    const targets = ids.filter((id) => !online.has(id))
+    // Read invalidations must reach another device even while this user is
+    // reading on an online device. They carry no count or read authority.
+    const online = payload.kind === 'read-state' ? new Set<string>() : await onlineUserIds()
+    const targets = payload.kind === 'message' ? ids : ids.filter((id) => !online.has(id))
     report.users = targets.length
     if (targets.length === 0) return report
-    const tokens = await db.pushToken.findMany({ where: { userId: { in: targets } } })
+    const capability = payload.kind === 'read-state' ? { readStateCapability: { is: { version: 1 } } } : {}
+    const tokens = await db.pushToken.findMany({ where: { userId: { in: targets }, ...capability } })
     report.devices = tokens.length
     for (const row of tokens) {
-      const perUser: PushPayload = options?.bodyFor
-        ? { ...payload, body: options.bodyFor(row.userId) }
-        : payload
-      const result =
+      // Web Push requires a visible notification; never turn a read hint into a banner.
+      if (payload.kind === 'read-state' && row.platform === 'web') { report.skipped += 1; continue }
+      if (!pushDeliveryWindow(payload)) { report.skipped += 1; continue }
+      // A queued provider call must not use a registration rebound while earlier
+      // devices were being processed. This is a preflight, not provider recall.
+      const nativeReadStateHints = (row.platform === 'android' || row.platform === 'ios') &&
+        !!await db.pushReadStateCapability.findFirst({ where: { tokenId: row.id, version: 1 }, select: { tokenId: true } })
+      // User presence is not device presence. A desktop socket cannot suppress
+      // an opted-in phone; the native foreground receiver avoids duplicate alerts.
+      if (online.has(row.userId) && !nativeReadStateHints) { report.skipped += 1; continue }
+      const expectedCapability = nativeReadStateHints ? { readStateCapability: { is: { version: 1 } } } : capability
+      const binding = { id: row.id, userId: row.userId, platform: row.platform, token: row.token, updatedAt: row.updatedAt }
+      if (!await db.pushToken.findFirst({ where: { ...binding, ...expectedCapability }, select: { id: true } })) { report.skipped += 1; continue }
+      const perUser: PushPayload = {
+        ...payload,
+        recipientUserId: row.userId,
+        nativeReadStateHints,
+        ...(options?.bodyFor ? { body: options.bodyFor(row.userId) } : {}),
+      }
+      const result: SendResult =
         row.platform === 'web'
           ? await sendWeb(row.token, perUser)
           : row.platform === 'android'
             ? await sendAndroid(row.token, perUser)
             : row.platform === 'ios'
               ? await sendIos(row.token, perUser)
-              : { ok: false, pruneToken: true, skipped: true }
+              : { ok: false, pruneToken: false, skipped: true }
       if (result.skipped) report.skipped += 1
       else if (result.ok) report.sent += 1
-      if (result.pruneToken) {
-        report.pruned += 1
+      if (result.pruneToken && (result.invalidatedAt === undefined || result.invalidatedAt > row.updatedAt.getTime())) {
         try {
-          await db.pushToken.delete({ where: { id: row.id } })
+          const removed = await db.pushToken.deleteMany({ where: binding })
+          report.pruned += removed.count
         } catch {
           // already gone
         }
@@ -408,4 +467,12 @@ export async function fanoutPush(
 /** Public key served to web clients for PushManager.subscribe({ userVisibleOnly, applicationServerKey }). */
 export function vapidPublicKey(): string {
   return process.env.VAPID_PUBLIC_KEY ?? ''
+}
+
+/** A best-effort wake-up, never read authority. Foreground/reconnect fetches
+ * remain necessary because providers/OSes may collapse or suppress delivery. */
+export function invalidateNativeReadState(userIds: string | string[], conversationId: string): void {
+  const recipients = typeof userIds === 'string' ? [userIds] : [...new Set(userIds)]
+  if (recipients.length === 0) return
+  void fanoutPush(recipients, { kind: 'read-state', title: '', body: '', conversationId })
 }

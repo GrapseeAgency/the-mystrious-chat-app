@@ -132,7 +132,23 @@ enum PulseReactionId: String, CaseIterable, Equatable, Hashable {
     /// else falls back to the default (web reactionId).
     static func normalize(_ raw: String?) -> PulseReactionId {
         guard let raw, !raw.isEmpty else { return .fallback }
-        return PulseReactionId(rawValue: raw) ?? legacy[raw] ?? .fallback
+        let value = raw.replacingOccurrences(of: "\u{FE0E}", with: "").replacingOccurrences(of: "\u{FE0F}", with: "")
+        return PulseReactionId(rawValue: value) ?? legacy[value] ?? .fallback
+    }
+
+    /// Normalize cached pre-ID groups too, without counting one person twice.
+    static func groups(_ source: [WireReactionGroup]?) -> [WireReactionGroup] {
+        var order: [Self] = []
+        var members: [Self: Set<String>] = [:]
+        for group in source ?? [] {
+            let id = normalize(group.emoji)
+            if members[id] == nil { order.append(id) }
+            members[id, default: []].formUnion(group.userIds)
+        }
+        return order.compactMap { id in
+            let users = (members[id] ?? []).sorted()
+            return users.isEmpty ? nil : WireReactionGroup(emoji: id.rawValue, userIds: users, count: users.count)
+        }
     }
 
     /// Legacy emoji values (pre-id era) resolve to ids - web

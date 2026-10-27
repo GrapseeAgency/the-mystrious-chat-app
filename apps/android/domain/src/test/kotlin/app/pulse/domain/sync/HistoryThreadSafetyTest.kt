@@ -8,6 +8,55 @@ class HistoryThreadSafetyTest {
     private fun row(id: String) = Message(id = id, conversationId = "room", authorId = "peer", authorName = "Peer",
         kind = Message.Kind.TEXT, body = id, createdAt = "2026-10-21T00:00:00Z")
 
+    @Test fun `thread read boundary excludes prefetched rejected expired and foreign rows`() {
+        val root = row("root")
+        val reply = row("shown").copy(threadRootId = "root")
+        val candidates = listOf(reply, reply.copy(id = "prefetched"), reply.copy(id = "local_pending"),
+            reply.copy(id = "deleted", deletedAt = "now"), reply.copy(id = "expired", expiresAtEpochMs = 1000),
+            reply.copy(id = "foreign", conversationId = "other"), reply.copy(id = "wrong-parent", threadRootId = "elsewhere"))
+        val visible = candidates.map { it.id }.toSet() - "prefetched"
+        assertEquals("shown", visibleThreadReadBoundary(root, candidates, visible, 1000))
+        assertEquals("root", visibleThreadReadBoundary(root, candidates, setOf("root"), 1000))
+        assertNull(visibleThreadReadBoundary(root, candidates, emptySet(), 1000))
+        assertNull(visibleThreadReadBoundary(root.copy(deletedAt = "now"), candidates, visible, 1000))
+        assertNull(visibleThreadReadBoundary(root.copy(expiresAtEpochMs = 1000), candidates, visible, 1000))
+    }
+
+    @Test fun `offline jump consults cache only after transport failure`() = kotlinx.coroutines.test.runTest {
+        val root = row("root")
+        val reply = row("reply").copy(threadRootId = "root")
+        var failure: RuntimeException? = null
+        var cacheReads = 0
+        var saved: Pair<Message, Message>? = root to reply
+        val type = app.pulse.domain.repository.PulseRepository::class.java
+        val repo = java.lang.reflect.Proxy.newProxyInstance(type.classLoader, arrayOf(type)) { _, method, args ->
+            when (method.name) {
+                "loadThread" -> { failure?.let { throw it }; root to listOf(reply) }
+                "cachedThreadTarget" -> {
+                    assertEquals(listOf("room", "root", "reply"), args!!.take(3))
+                    cacheReads++; saved
+                }
+                else -> error("Unexpected repository call: ${method.name}")
+            }
+        } as app.pulse.domain.repository.PulseRepository
+        assertEquals(root to listOf(reply), resolveThreadJump(repo, "room", "root", "reply"))
+        assertEquals(0, cacheReads)
+        failure = app.pulse.domain.model.PulseApiException("NETWORK", "offline")
+        assertEquals(root to listOf(reply), resolveThreadJump(repo, "room", "root", "reply"))
+        assertEquals(1, cacheReads)
+        saved = null
+        val absent = runCatching { resolveThreadJump(repo, "room", "root", "reply") }.exceptionOrNull()
+        assertSame(failure, absent)
+        assertEquals(2, cacheReads)
+        for (error in listOf(app.pulse.domain.model.PulseApiException("FORBIDDEN", "refused", 403),
+                app.pulse.domain.model.PulseApiException("NETWORK", "superseded", 409),
+                kotlinx.coroutines.CancellationException("left room"))) {
+            failure = error
+            assertSame(error, runCatching { resolveThreadJump(repo, "room", "root", "reply") }.exceptionOrNull())
+        }
+        assertEquals(2, cacheReads)
+    }
+
     @Test fun `raw cursor crosses hidden replies and topic rows with tied timestamps`() {
         val cursor = MessageHistoryCursor.oldest(listOf(row("c")))!!
         val hidden = listOf(row("b").copy(threadRootId = "root"), row("a").copy(topicId = "other"), row("local_pending"))
@@ -103,5 +152,29 @@ class HistoryThreadSafetyTest {
         assertFalse(fence.isCurrent("root", current))
         assertTrue(fence.isCurrent("other", other))
         assertEquals("thread-access-denied:v1|root", threadDenialKey("root"))
+    }
+
+    @Test fun `offline target requires live exact root and reply without refusal`() {
+        val root = row("root")
+        val reply = row("reply").copy(threadRootId = "root")
+        assertEquals(root to reply, cachedThreadTarget(root, reply, "room", "root", "reply", false, 1000))
+        assertNull(cachedThreadTarget(root, reply, "room", "root", "reply", true, 1000))
+        for (invalid in listOf(null, root.copy(deletedAt = "now"), root.copy(expiresAtEpochMs = 1000),
+            root.copy(threadRootId = "nested"), root.copy(conversationId = "other"), root.copy(id = "local_root"))) {
+            assertNull(cachedThreadTarget(invalid, reply, "room", "root", "reply", false, 1000))
+        }
+        for (invalid in listOf(null, reply.copy(deletedAt = "now"), reply.copy(expiresAtEpochMs = 1000),
+            reply.copy(threadRootId = "another"), reply.copy(conversationId = "other"))) {
+            assertNull(cachedThreadTarget(root, invalid, "room", "root", "reply", false, 1000))
+        }
+    }
+
+    @Test fun `offline navigation never turns HTTP refusal or cancellation into cache permission`() {
+        assertTrue(mayUseOfflineThread(app.pulse.domain.model.PulseApiException("NETWORK", "offline")))
+        assertFalse(mayUseOfflineThread(kotlinx.coroutines.CancellationException()))
+        for (status in listOf(401, 403, 404, 409, 410, 429, 500)) {
+            assertFalse(mayUseOfflineThread(app.pulse.domain.model.PulseApiException("NETWORK", "failure", status)))
+        }
+        assertFalse(mayUseOfflineThread(IllegalStateException("decode failed")))
     }
 }

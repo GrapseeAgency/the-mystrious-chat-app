@@ -74,6 +74,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -100,6 +101,7 @@ class UserPageViewModel @Inject constructor(
         val stats: UserStats? = null,
         val statsError: Boolean = false,
         val blocked: Boolean = false,
+        val blockKnown: Boolean = false,
         val reasons: List<String> = emptyList(),
         val shared: List<Conversation> = emptyList(),
         val sharedOverflow: Int = 0,
@@ -111,90 +113,92 @@ class UserPageViewModel @Inject constructor(
     val state: StateFlow<State> = _state.asStateFlow()
 
     private var userId: String = ""
+    private var ownerEpoch: String? = null
+    private var revision = java.util.UUID.randomUUID()
 
     fun load(id: String) {
-        userId = id
+        val epoch = repo.attachmentSessionKey() ?: return
+        if (userId == id && ownerEpoch == epoch && _state.value.busy) return
+        val owned = repo.boundToCurrentAccount()
+        userId = id; ownerEpoch = epoch
+        val ticket = java.util.UUID.randomUUID(); revision = ticket
+        _state.value = State()
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, notice = null)
-            val profile = repo.userProfile(id).getOrNull()
-            if (profile == null) {
-                _state.value = _state.value.copy(loading = false, profile = null)
-                return@launch
-            }
-            val statsResult = repo.userStats(id)
-            val blocked = repo.blockState(id).getOrElse { false }
-            val reasons = repo.myReportReasons(id).getOrElse { emptyList() }
-            val mine = repo.viewerId
-            val shared = if (mine != null) {
-                repo.observeConversations().first().filter { it.memberIds.contains(id) && it.memberIds.contains(mine) }
-            } else emptyList()
-            _state.value = State(
-                loading = false,
-                profile = profile,
-                stats = statsResult.getOrNull(),
-                statsError = statsResult.isFailure,
-                blocked = blocked,
-                reasons = reasons,
-                shared = shared.take(3),
-                sharedOverflow = (shared.size - 3).coerceAtLeast(0),
-            )
+            fun owns() = repo.attachmentSessionKey() == epoch && revision == ticket
+            try {
+                val profile = owned.userProfile(id).getOrThrow()
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                val stats = owned.userStats(id)
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                val blocked = owned.blockState(id)
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                val reasons = owned.myReportReasons(id)
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                val mine = owned.viewerId
+                val shared = owned.observeConversations().first().filter { it.memberIds.contains(id) && mine != null && it.memberIds.contains(mine) }
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                _state.value = State(loading = false, profile = profile, stats = stats.getOrNull(), statsError = stats.isFailure,
+                    blocked = blocked.getOrDefault(false), blockKnown = blocked.isSuccess, reasons = reasons.getOrDefault(emptyList()),
+                    shared = shared.take(3), sharedOverflow = (shared.size - 3).coerceAtLeast(0))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (owns()) _state.value = _state.value.copy(notice = error.message ?: "Could not load profile")
+            } finally { if (owns()) _state.value = _state.value.copy(loading = false) }
+        }
+    }
+
+    private fun act(action: suspend (PulseRepository, UserProfile, () -> Boolean) -> Unit) {
+        val profile = _state.value.profile ?: return
+        val epoch = ownerEpoch ?: return
+        if (_state.value.busy || repo.attachmentSessionKey() != epoch) return
+        val owned = repo.boundToCurrentAccount()
+        val ticket = java.util.UUID.randomUUID(); revision = ticket
+        _state.value = _state.value.copy(busy = true, notice = null)
+        viewModelScope.launch {
+            fun owns() = repo.attachmentSessionKey() == epoch && revision == ticket
+            try {
+                coroutineContext.ensureActive(); if (!owns()) return@launch
+                action(owned, profile, ::owns)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (owns()) _state.value = _state.value.copy(notice = error.message ?: "Action was not confirmed. Please retry.")
+            } finally { if (owns()) _state.value = _state.value.copy(busy = false) }
         }
     }
 
     fun toggleBlock() {
-        val current = _state.value
-        val profile = current.profile ?: return
-        viewModelScope.launch {
-            _state.value = current.copy(busy = true)
-            val targetBlocked = !current.blocked
-            val result = if (targetBlocked) repo.block(profile.id) else repo.unblock(profile.id)
-            val fresh = repo.blockState(profile.id).getOrElse { targetBlocked }
-            _state.value = _state.value.copy(
-                busy = false,
-                blocked = fresh,
-                notice = if (result.isSuccess) {
-                    (if (fresh) "Blocked " else "Unblocked ") + profile.firstName
-                } else {
-                    "Could not update the block - try again"
-                },
-            )
+        val snapshot = _state.value
+        act { owned, profile, owns ->
+            if (!snapshot.blockKnown) {
+                val fresh = owned.blockState(profile.id).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (owns()) _state.value = _state.value.copy(blocked = fresh, blockKnown = true)
+            } else {
+                val desired = !snapshot.blocked
+                (if (desired) owned.block(profile.id) else owned.unblock(profile.id)).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (owns()) _state.value = _state.value.copy(blocked = desired, blockKnown = true,
+                    notice = (if (desired) "Blocked " else "Unblocked ") + profile.firstName)
+            }
         }
     }
 
-    fun submitReport(reason: String, details: String) {
-        val profile = _state.value.profile ?: return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
-            val result = repo.report(profile.id, reason, details.ifBlank { null })
-            val reasons = repo.myReportReasons(profile.id).getOrElse { emptyList() }
-            _state.value = _state.value.copy(
-                busy = false,
-                reasons = reasons,
-                notice = if (result.isSuccess) {
-                    "Report submitted. Thanks for helping keep Pulse safe."
-                } else {
-                    "Could not submit the report - try again"
-                },
-            )
+    fun submitReport(reason: String, details: String, onConfirmed: () -> Unit) = act { owned, profile, owns ->
+        owned.report(profile.id, reason, details).getOrThrow()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (owns()) {
+            _state.value = _state.value.copy(reasons = (_state.value.reasons + reason).distinct(),
+                notice = "Report submitted. Thanks for helping keep Pulse safe.")
+            onConfirmed()
         }
     }
 
-    fun startDm(onReady: (String) -> Unit) {
-        val profile = _state.value.profile ?: return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
-            repo.createDm(profile.id)
-                .onSuccess { conversation ->
-                    _state.value = _state.value.copy(busy = false)
-                    onReady(conversation.id)
-                }
-                .onFailure { error ->
-                    _state.value = _state.value.copy(
-                        busy = false,
-                        notice = error.message ?: "Could not open the direct chat - try again",
-                    )
-                }
-        }
+    fun startDm(onReady: (String) -> Unit) = act { owned, profile, owns ->
+        val conversation = owned.createDm(profile.id).getOrThrow()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (owns()) onReady(conversation.id)
     }
 
     fun consumeNotice() {
@@ -374,7 +378,7 @@ fun UserPageScreen(
                         Icon(PulseIcons.Lock, contentDescription = null, tint = EmberPalette.Signal)
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            (if (state.blocked) "Unblock " else "Block ") + profile.firstName,
+                            if (!state.blockKnown) "Retry block status" else (if (state.blocked) "Unblock " else "Block ") + profile.firstName,
                             color = EmberPalette.Signal,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -415,10 +419,10 @@ fun UserPageScreen(
             firstName = profile.firstName,
             priorReasons = state.reasons,
             busy = state.busy,
+            errorText = state.notice,
             onDismiss = { reportOpen = false },
             onSubmit = { reason, details ->
-                reportOpen = false
-                viewModel.submitReport(reason, details)
+                viewModel.submitReport(reason, details) { reportOpen = false }
             },
         )
     }
@@ -492,11 +496,12 @@ fun ReportPanel(
     busy: Boolean,
     onDismiss: () -> Unit,
     onSubmit: (String, String) -> Unit,
+    errorText: String? = null,
 ) {
     val sheetState = rememberModalBottomSheetState()
     var reason by remember { mutableStateOf("") }
     var details by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 26.dp)) {
             Text("Report $firstName", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(6.dp))
@@ -514,22 +519,24 @@ fun ReportPanel(
                     fontSize = 13.sp,
                 )
             }
+            errorText?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
             Spacer(Modifier.height(12.dp))
             REPORT_REASONS.forEach { key ->
                 Row(
                     Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { reason = key }
+                        .clickable(enabled = !busy) { reason = key }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RadioButton(selected = reason == key, onClick = { reason = key })
+                    RadioButton(selected = reason == key, enabled = !busy, onClick = { reason = key })
                     Text(REPORT_LABELS[key] ?: key, fontSize = 14.sp)
                 }
             }
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = details,
+                enabled = !busy,
                 onValueChange = { if (it.length <= 500) details = it },
                 placeholder = { Text("Add details (optional)") },
                 supportingText = { Text("${details.length}/500") },

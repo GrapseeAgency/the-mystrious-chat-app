@@ -1,3 +1,4 @@
+import { requireWalletOwner } from '@/lib/wallet-authorization'
 // /api/hub/wallet/checkin - daily +25 PC with streak bonus
 // Streak logic: consecutive UTC days → +2 PC per streak day (max +20).
 import { NextResponse } from 'next/server'
@@ -16,6 +17,8 @@ export async function POST(req: Request) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireWalletOwner(req, userId)
+  if (denied) return denied
 
   const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
   if (!user) {

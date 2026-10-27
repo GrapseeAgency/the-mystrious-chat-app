@@ -10,6 +10,18 @@ enum PulseThreadNavigation {
         }
     }
 
+    /// Offline history is not an alternate route around a server refusal or a
+    /// superseded validation. Only an actual transport failure permits this path.
+    static func mayUseOfflineCache(after error: Error) -> Bool {
+        if let network = error as? URLError {
+            let transportCodes: [URLError.Code] = [.notConnectedToInternet, .networkConnectionLost, .timedOut,
+                .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff]
+            return transportCodes.contains(network.code)
+        }
+        if let failure = error as? PulseAPIClient.Failure { return failure.kind == .network && failure.status == nil }
+        return false
+    }
+
     static func shouldFollowTail(nearTail: Bool, pendingTarget: Bool) -> Bool {
         nearTail && !pendingTarget
     }
@@ -27,4 +39,18 @@ struct PulseThreadValidationFence {
     mutating func finish(_ rootId: String, _ ticket: UUID) {
         if isCurrent(rootId, ticket) { tickets.removeValue(forKey: rootId) }
     }
+}
+
+/// A local SQLite cursor includes pending local_ IDs too. It is not a server history cursor.
+struct PulseCachedThreadCursor: Equatable {
+    let roomId: String
+    let rootId: String
+    let createdAt: String
+    let id: String
+}
+
+struct PulseCachedThreadPage {
+    let messages: [WireChatMessage]
+    let cursor: PulseCachedThreadCursor?
+    let hasMore: Bool
 }

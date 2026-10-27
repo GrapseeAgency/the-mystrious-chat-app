@@ -93,6 +93,8 @@ import kotlinx.coroutines.flow.Flow
 /** Live events pushed by the relay - the UDF event side of the repository. */
 sealed interface PulseEvent {
     data class MessageReceived(val conversationId: String, val message: Message) : PulseEvent
+    /** Existing row changed; never an arrival, sound, effect or unread increment. */
+    data class MessageUpdated(val conversationId: String, val message: Message) : PulseEvent
     data class MessageDeleted(val conversationId: String, val messageId: String) : PulseEvent
     data class MessageRead(val conversationId: String, val userId: String, val at: String?) : PulseEvent
     data class Typing(
@@ -228,6 +230,10 @@ interface PulsePrefsStore {
     suspend fun clearWhiteboardDraft(conversationId: String)
 
     suspend fun setViewer(id: String?, name: String?, color: String? = null)
+    /** Metadata-only acknowledgement: implementations must check owner and session
+     * inside the storage transaction. Null fields are untouched; never changes identity,
+     * credentials or transport. The non-suspending guard must read the live session. */
+    suspend fun updateViewerMetadata(ownerId: String, name: String?, color: String?, isCurrent: () -> Boolean): Boolean = false
     suspend fun setFxMode(mode: String)
     suspend fun setDarkOverride(value: String)
     suspend fun setReducedMotion(value: Boolean)
@@ -237,10 +243,18 @@ interface PulsePrefsStore {
     suspend fun setVoiceCaptions(value: Boolean)
 }
 
+/** Local staging failed; a network Retry cannot claim this value was retained. */
+class SettingsPersistenceFailure(cause: Throwable) : Exception(
+    "Settings could not be saved on this device. Choose the setting again.", cause,
+)
+
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */
 interface PulseRepository {
     /** Bind the client to a viewer identity (REST userId + socket join). Idempotent per id. */
     fun start(userId: String)
+    /** Background wake-ups must not replace a foreground account selection. */
+    fun startBackgroundIfIdle(userId: String): Boolean = viewerId == userId
+
 
     /** End the current account transport and cancel account-owned work. */
     fun stop() {}
@@ -275,6 +289,8 @@ interface PulseRepository {
      * failure so the surface can hint at it.
      */
     suspend fun updatePulsePrefs(patch: app.pulse.protocol.WirePulsePrefs): Result<Unit>
+    fun observePendingSettings(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    suspend fun retryPendingSettings(): Result<Unit> = Result.failure(IllegalStateException("Settings retry is unavailable"))
 
     /**
      * POST /api/users/login { name } - reclaim an existing identity and
@@ -293,6 +309,9 @@ interface PulseRepository {
 
     /** Data & Storage manager - drop ONE held outbox row (+ its temp bubble). */
     suspend fun discardOutboxEntry(clientId: String)
+
+    /** Compare the manager's displayed operation state; never discard a newly retried send. */
+    suspend fun discardOutboxEntryIfUnchanged(entry: OutboxEntry): Boolean = false
 
     /** Explicit retry of this owner's rejected intent; preserves its original ID/envelope. */
     suspend fun retryOutboxEntry(clientId: String): Result<Unit> =
@@ -343,11 +362,37 @@ interface PulseRepository {
         topicId: String? = null,
         draftToken: app.pulse.domain.model.ComposerDraftToken? = null,
     ): Result<SendReceipt>
+    /** No fallback to an unbound send when a repository cannot validate the owner. */
+    suspend fun sendNotificationReply(conversationId: String, body: String,
+        owner: app.pulse.domain.sync.NotificationReplyOwner): Result<SendReceipt> =
+        Result.failure(IllegalStateException("Open the original account to reply"))
     suspend fun markRead(conversationId: String): Result<Unit>
     /** Displayed server message boundary; never acknowledge unseen arrivals. */
-    suspend fun markReadThrough(conversationId: String, messageId: String): Result<Unit> = markRead(conversationId)
+    suspend fun notificationMessageUnread(conversationId: String, messageId: String): Result<Boolean> =
+        Result.failure(UnsupportedOperationException("Notification state is unavailable"))
+
+    suspend fun readScopeState(conversationId: String, threadId: String? = null, topicId: String? = null): Result<app.pulse.domain.model.ReadScopeState> =
+        Result.failure(UnsupportedOperationException("Read scope is unavailable"))
+    suspend fun readStateSnapshot(conversationId: String, threadId: String? = null, topicId: String? = null): Result<Int> =
+        Result.failure(UnsupportedOperationException("Read state is unavailable"))
+    /** LOCAL-only snapshot. VisibleReadIntent shields capture + persistence from UI cancellation. */
+    fun observePendingReads(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    /** Canonical single-row Seen repair; false means definitive loss of access, never unread. */
+    suspend fun refreshMessageReadState(conversationId: String, messageId: String): Result<Boolean> =
+        Result.failure(UnsupportedOperationException("Message read state is unavailable"))
+    /** Replayed per-room invalidation after HTTP settlement, independent of socket delivery. */
+    fun observeReadStateRevision(conversationId: String): Flow<Long> = kotlinx.coroutines.flow.flowOf(0L)
+    /** Push hints request canonical scoped reads; they never carry accepted counts. */
+    fun invalidateReadProjections(conversationId: String) {}
+    suspend fun flushReadReceipts(): Result<Int> = Result.success(0)
+    /** Queue metadata repair without waiting or supplying authority to an older observation. */
+    fun requestReadMembershipRefresh(conversationId: String) {}
+    suspend fun captureReadIntent(conversationId: String): Result<String> = Result.failure(UnsupportedOperationException("Read intent is unavailable"))
+    /** Persist locally and schedule independent replay; success does not imply server delivery. */
+    suspend fun markReadThrough(conversationId: String, messageId: String, readIntent: String? = null): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Visible read is unavailable"))
     suspend fun setTyping(conversationId: String, userName: String, typing: Boolean)
-    suspend fun react(messageId: String, emoji: String): Result<Unit>
+    suspend fun react(messageId: String, emoji: String, present: Boolean): Result<Unit>
     suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit>
     suspend fun setMuted(conversationId: String, muted: Boolean): Result<Unit>
     suspend fun archive(conversationId: String, archived: Boolean): Result<Unit>
@@ -417,6 +462,14 @@ interface PulseRepository {
     suspend fun queueAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, topicId: String?, sessionKey: String): Result<Message> =
         Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
 
+    /** Queue a frozen prepared attachment without replacing a separate room composer draft. */
+    suspend fun queuePreparedAttachment(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Message> =
+        Result.failure(UnsupportedOperationException("Prepared attachment storage unavailable"))
+
+    /** External share: journal raw image bytes without overwriting a room's unsent attachment draft. */
+    suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> =
+        Result.failure(UnsupportedOperationException("Shared image storage unavailable"))
+
     // offline outbox + drafts (Wave 0 - web pulse-outbox/pulse-drafts parity)
 
     /** Persist an outgoing message for later delivery (FIFO, capped at 50). */
@@ -478,11 +531,11 @@ interface PulseRepository {
     /** PATCH /api/messages/{id} {userId, content} - sender-only edit → fresh row (editedAt set). */
     suspend fun editMessage(messageId: String, content: String): Result<Message>
 
-    /** POST /api/messages/{id}/pin {userId} - toggle → fresh row (pinnedAt/pinnedBy). */
-    suspend fun toggleMessagePin(messageId: String): Result<Message>
+    /** POST /api/messages/{id}/pin-state {userId, pinned:true} - replay-safe addition, never a toggle. */
+    suspend fun pinMessage(messageId: String): Result<Message>
 
-    /** POST /api/messages/{id}/save {userId} - toggle → the new saved state. */
-    suspend fun toggleMessageSave(messageId: String): Result<Boolean>
+    /** Explicit desired bookmark state; retrying Save must never remove it. */
+    suspend fun setMessageSaved(messageId: String, saved: Boolean): Result<Boolean>
 
     /** GET /api/conversations/{id}/pinned?userId= - pinned rows, pinnedAt asc (also upserts Room). */
     suspend fun pinnedMessages(conversationId: String): List<Message>
@@ -495,6 +548,9 @@ interface PulseRepository {
 
     /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) - also upserts Room. */
     suspend fun loadThread(rootId: String): Pair<Message, List<Message>>
+
+    /** Exact offline navigation target, never permission revalidation or a complete thread snapshot. */
+    suspend fun cachedThreadTarget(roomId: String, rootId: String, targetId: String): Pair<Message, Message>? = null
 
     /** Explicit refusal survives reopening; transport failures never clear it. */
     fun observeThreadAccessDenied(rootId: String): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
@@ -581,6 +637,10 @@ interface PulseRepository {
 
     /** PATCH /api/conversations/{id}/screen-privacy { userId, on } - R42 the per-VIEWER veil flag. */
     suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit>
+    fun observePersonalScreenPrivacy(conversationId: String): Flow<app.pulse.domain.model.PersonalScreenPrivacy> =
+        kotlinx.coroutines.flow.flowOf(app.pulse.domain.model.PersonalScreenPrivacy())
+    suspend fun retryPersonalScreenPrivacy(conversationId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Screen-security retry is unavailable"))
 
     /** PATCH /api/conversations/{id} { photo } - admin-only; photo is an uploaded "/api/uploads/<file>" path. */
     suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit>
@@ -639,8 +699,9 @@ interface PulseRepository {
     /** GET /api/conversations/{id}/scheduled?userId= - THIS viewer's pending delayed sends. */
     suspend fun scheduledMessages(conversationId: String): Result<List<ScheduledItem>>
 
-    /** POST /api/conversations/{id}/scheduled { content, scheduledAt } - 30s..30d horizon server-side. */
+    /** Versioned scheduled create with durable retry identity; caller acknowledges after accepting the item. */
     suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem>
+    suspend fun acknowledgeScheduledCreation(item: ScheduledItem): Result<Unit> = Result.success(Unit)
 
     /** DELETE /api/scheduled/{id} { requesterId } - owner-only cancel. */
     suspend fun cancelScheduled(scheduledId: String): Result<Unit>
@@ -780,7 +841,7 @@ interface PulseRepository {
      * member calls this AFTER gcall:join; rings online members + pushes the
      * offline ones (fire-and-forget on the web).
      */
-    suspend fun postGroupCallRing(conversationId: String, kind: CallKind): Result<Unit>
+    suspend fun postGroupCallRing(conversationId: String, kind: CallKind, callId: String): Result<Unit>
 
     /**
      * GET /api/group-call-state?conversationId= - probe for an ONGOING call

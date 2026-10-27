@@ -14,6 +14,65 @@ final class MessageMergeTests: XCTestCase {
         return try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object))
     }
 
+    func testActionAndDeliveryAcknowledgementsKeepCurrentReadProofIncludingCanonicalNegatives() throws {
+        let store = try PulseStore()
+        for proof in [[String](), ["current-member"]] {
+            let current = try row(["readByMembershipIds": proof])
+            let ack = try row(["content": "Confirmed action", "readByMembershipIds": ["obsolete-member"]])
+            try store.upsert(messages: [current])
+            let retained = try store.mergeMessageAcknowledgement(ack)
+            XCTAssertEqual(retained.content, ack.content)
+            XCTAssertEqual(retained.readByMembershipIds, proof)
+            XCTAssertEqual(try store.message(id: current.id)?.readByMembershipIds, proof)
+            try store.appendOutbox(conversationId: "room", clientId: "operation", content: ack.content)
+            let delivered = try store.resolveDelivery(clientId: "operation", message: ack)
+            XCTAssertEqual(delivered.readByMembershipIds, proof)
+            XCTAssertTrue(try store.outboxAll().isEmpty)
+            // Only the acknowledgement lane retains proof; a newer GET must
+            // still be able to replace/remove it rather than unioning arrays.
+            _ = try store.mergeMessages([ack], snapshotRequest: store.beginMessageSnapshot())
+            XCTAssertEqual(try store.message(id: current.id)?.readByMembershipIds, ["obsolete-member"])
+        }
+    }
+
+    func testPublicSocketRetainsOnlyExistingOwnProofAndCanonicalSnapshotsCanStillRemoveIt() throws {
+        let stored = try row(["readByMembershipIds": ["own-member", "stale-peer"]])
+        let incoming = try row(["content": "New socket content", "readByMembershipIds": ["public-peer"]])
+        var retained = PulseMessageMerge.retainOwnSocketReadState(stored, incoming: incoming, membership: "own-member")
+        XCTAssertEqual(retained.readByMembershipIds, ["public-peer", "own-member"])
+        retained.readByMembershipIds = incoming.readByMembershipIds
+        XCTAssertEqual(retained, incoming, "Only the existing owner's proof may be retained")
+        for membership: String? in [nil, "", " ", "rejoined-member"] {
+            XCTAssertEqual(PulseMessageMerge.retainOwnSocketReadState(stored, incoming: incoming, membership: membership), incoming)
+        }
+        XCTAssertEqual(PulseMessageMerge.retainOwnSocketReadState(nil, incoming: incoming, membership: "own-member"), incoming)
+        XCTAssertEqual(PulseMessageMerge.retainOwnSocketReadState(try row(["conversationId": "other"]), incoming: incoming, membership: "own-member"), incoming)
+        let deleted = incoming.deletedCopy()
+        XCTAssertEqual(PulseMessageMerge.retainOwnSocketReadState(stored, incoming: deleted, membership: "own-member"), deleted)
+        let canonical = try row(["readByMembershipIds": [String]()])
+        XCTAssertEqual(PulseMessageMerge.merge(stored, incoming: canonical).readByMembershipIds, [])
+    }
+
+    func testSocketProofUsesTheCurrentPersistedMembershipAndLegacyCachesFailClosed() throws {
+        let store = try PulseStore()
+        let stored = try row(["readByMembershipIds": ["own-member"]])
+        let incoming = try row(["readByMembershipIds": [String]()])
+        for membership in ["own-member", "rejoined-member"] {
+            let summary = try JSONDecoder().decode(WireConversationSummary.self, from: JSONSerialization.data(withJSONObject: [
+                "id": "room", "isGroup": false,
+                "members": [["id": "owner", "name": "Owner", "color": "amber", "readMembershipId": membership]],
+            ]))
+            try store.upsert(conversations: [summary.toDomain()])
+            let cached = try XCTUnwrap(store.cachedConversation(id: "room"))
+            let ownMembership = WireConversationSummary(cached: cached).members.first(where: { $0.id == "owner" })?.readMembershipId
+            let result = PulseMessageMerge.retainOwnSocketReadState(stored, incoming: incoming, membership: ownMembership)
+            XCTAssertEqual(result.readByMembershipIds, membership == "own-member" ? ["own-member"] : [])
+        }
+        try store.upsert(conversations: [PulseConversation(id: "room", kind: .DM, title: "Legacy")])
+        let legacy = try XCTUnwrap(store.cachedConversation(id: "room"))
+        XCTAssertTrue(WireConversationSummary(cached: legacy).members.isEmpty)
+    }
+
     func testTombstoneNeverResurrectsInRiverOrThreadAndRedactsSensitiveFields() throws {
         let live = try row()
         let deleted = live.deletedCopy()
@@ -43,6 +102,23 @@ final class MessageMergeTests: XCTestCase {
         XCTAssertEqual(merged.pinnedAt, incoming.pinnedAt)
     }
 
+    func testLateEditUpdatesOnlyTextWithoutLosingNewerUnrelatedEvents() throws {
+        let current = try row(["pinnedAt": "2026-10-22T00:02:00Z",
+            "reactions": [["emoji": "fire", "userIds": ["peer"], "count": 1]]])
+        let incoming = try row(["content": "edited", "editedAt": "2026-10-22T00:01:00Z"])
+        let merged = PulseMessageMerge.acceptEdit(current, incoming: incoming)
+        XCTAssertEqual(merged.content, "edited")
+        XCTAssertEqual(merged.pinnedAt, current.pinnedAt)
+        XCTAssertEqual(merged.reactions?.first?.emoji, "fire")
+        let newer = try row(["content": "latest", "editedAt": "2026-10-22T00:03:00Z"])
+        XCTAssertEqual(PulseMessageMerge.acceptEdit(newer, incoming: incoming).content, "latest")
+        XCTAssertNotNil(PulseMessageMerge.acceptEdit(current.deletedCopy(), incoming: incoming).deletedAt)
+        let store = try PulseStore()
+        try store.upsert(messages: [current, merged])
+        XCTAssertEqual(try store.message(id: current.id)?.reactions?.first?.emoji, "fire")
+        XCTAssertEqual(try store.message(id: current.id)?.content, "edited")
+    }
+
     func testStoreRejectsLateResurrectionAndDuplicateBatchOrdering() throws {
         let store = try PulseStore()
         let live = try row()
@@ -66,4 +142,17 @@ final class MessageMergeTests: XCTestCase {
         XCTAssertEqual(try store.message(id: "m")?.viewedAt, consumed.viewedAt)
         XCTAssertEqual(try store.message(id: "m")?.viewedBy, "first")
     }
+    func testClosedPollKeepsFrozenTallyAcrossLateOpenRowsInMemoryAndStorage() throws {
+        let closed = try row(["kind": "poll", "poll": ["id": "poll", "question": "Question", "closed": true, "totalVotes": 2]])
+        let open = try row(["kind": "poll", "content": "new unrelated text", "poll": ["id": "poll", "question": "Question", "closed": false, "totalVotes": 1]])
+        let merged = PulseMessageMerge.merge(closed, incoming: open)
+        XCTAssertEqual(merged.poll, closed.poll)
+        XCTAssertEqual(merged.content, open.content)
+        let store = try PulseStore()
+        try store.upsert(messages: [closed, open])
+        XCTAssertEqual(try store.message(id: closed.id)?.poll, closed.poll)
+        try store.upsert(messages: [open.deletedCopy()])
+        XCTAssertNil(try store.message(id: closed.id)?.poll)
+    }
+
 }

@@ -46,4 +46,15 @@ class MessageMergeTest {
         val newer = old.copy(body = "newest", editedAt = "2026-10-21T00:03:00Z")
         assertEquals(newer.body, mergeMessageState(merged, newer).body)
     }
+    @Test fun `closed poll keeps final tally across stale vote and unrelated edit snapshots`() {
+        val closed = app.pulse.domain.model.PollInfo("poll", "Question", closed = true, totalVotes = 2)
+        val current = row().copy(kind = Message.Kind.POLL, poll = closed)
+        val stale = current.copy(poll = closed.copy(closed = false, totalVotes = 1), body = "new unrelated text")
+        val merged = mergeMessageState(current, stale)
+        assertEquals(closed, merged.poll)
+        assertEquals(stale.body, merged.body)
+        assertEquals(closed, mergeMessageState(current, stale.copy(poll = null)).poll)
+        assertNull(mergeMessageState(current, stale.copy(deletedAt = "2026-10-22T00:00:00Z")).poll)
+    }
+
 }

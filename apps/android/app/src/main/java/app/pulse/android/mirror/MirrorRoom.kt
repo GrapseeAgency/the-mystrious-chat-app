@@ -1,12 +1,14 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.reconcileResumedRoom
+
+import app.pulse.domain.sync.messageReadStateRefreshes
+import app.pulse.domain.sync.visibleQuote
 import app.pulse.domain.sync.MessageHistoryCursor
 import kotlinx.coroutines.isActive
 
 import app.pulse.domain.sync.reconcileMessageSelection
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
@@ -134,7 +136,6 @@ import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.EffectPayloadDto
 import app.pulse.protocol.VoicePeerDto
 import app.pulse.protocol.WirePulsePrefs
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -144,6 +145,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -251,21 +253,10 @@ private fun buildRoomEntries(messages: List<Message>): List<RoomEntry> {
 /** Grouped reaction chips (emoji, count, iReacted) in first-seen order. */
 private data class ReactionChip(val emoji: String, val count: Int, val iReacted: Boolean)
 
-private fun groupReactions(message: Message, viewerId: String): List<ReactionChip> {
-    if (message.reactions.isEmpty()) return emptyList()
-    val order = mutableListOf<String>()
-    val counts = LinkedHashMap<String, Int>()
-    val mine = HashSet<String>()
-    for (r in message.reactions) {
-        if (!counts.containsKey(r.emoji)) {
-            order.add(r.emoji)
-            counts[r.emoji] = 0
-        }
-        counts[r.emoji] = counts[r.emoji]!! + 1
-        if (r.userId == viewerId) mine.add(r.emoji)
-    }
-    return order.map { e -> ReactionChip(e, counts[e] ?: 0, e in mine) }
-}
+private fun groupReactions(message: Message, viewerId: String): List<ReactionChip> = message.reactions
+    .distinctBy { app.pulse.protocol.reactionId(it.emoji) to it.userId }
+    .groupBy { app.pulse.protocol.reactionId(it.emoji) }
+    .map { (id, members) -> ReactionChip(id, members.size, members.any { it.userId == viewerId }) }
 
 /**
  * R74 - submit-time slash text transforms. Web parseSlashResult text cases
@@ -287,54 +278,21 @@ internal fun mirrorRollDice(spec: String): Pair<List<Int>, Int>? {
     return rolls to rolls.sum()
 }
 
-/** web durationToMs - s/m/h/d tokens for the relative reminder parser. */
-private fun mirrorDurationToMs(n: Int, token: String): Long? = when (token) {
-    "s" -> n * 1_000L
-    "m" -> n * 60_000L
-    "h" -> n * 3_600_000L
-    "d" -> n * 86_400_000L
-    else -> null
+/** Share overflow-safe calendar semantics with the reminder sheet. */
+internal fun mirrorParseRelativeReminder(arg: String, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): Pair<String, String>? {
+    val parsed = app.pulse.protocol.PulseWave7Logic.parseRelativeReminder(arg, now.toInstant().toEpochMilli(), now.zone) ?: return null
+    return parsed.note to java.time.Instant.ofEpochMilli(parsed.remindAtEpochMs).atZone(now.zone)
+        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
 }
 
-/**
- * web parseRelativeReminder (reminders-sheet.tsx L130): trailing
- * "in 30m" / "30m" / "next week" / "tomorrow" / "tonight" patterns;
- * tomorrow = 09:00 local, tonight = 20:00 local, next week = +7d.
- */
-internal fun mirrorParseRelativeReminder(arg: String, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): Pair<String, String>? {
-    val input = arg.trim().replace(Regex("\\s+"), " ")
-    if (input.isEmpty()) return null
-    data class Hit(val regex: Regex, val stripIn: Boolean, val at: (MatchResult) -> java.time.ZonedDateTime?)
-    val patterns = listOf(
-        Hit(Regex("\\s+in\\s+(\\d+)\\s*([smhd])$", RegexOption.IGNORE_CASE), false) { m ->
-            val ms = mirrorDurationToMs(m.groupValues[1].toInt(), m.groupValues[2].lowercase())
-            if (ms == null) null else now.plusSeconds(ms / 1000)
-        },
-        Hit(Regex("\\s+(\\d+)\\s*([smhd])$", RegexOption.IGNORE_CASE), true) { m ->
-            val ms = mirrorDurationToMs(m.groupValues[1].toInt(), m.groupValues[2].lowercase())
-            if (ms == null) null else now.plusSeconds(ms / 1000)
-        },
-        Hit(Regex("\\s+next\\s+week$", RegexOption.IGNORE_CASE), false) { now.plusSeconds(7L * 86_400) },
-        Hit(Regex("\\s+tomorrow$", RegexOption.IGNORE_CASE), false) {
-            now.plusDays(1).with(java.time.LocalTime.of(9, 0))
-        },
-        Hit(Regex("\\s+tonight$", RegexOption.IGNORE_CASE), false) {
-            now.with(java.time.LocalTime.of(20, 0))
-        },
-    )
-    for (hit in patterns) {
-        val m = hit.regex.find(input) ?: continue
-        val at = hit.at(m) ?: continue
-        var note = input.substring(0, m.range.first).trim()
-        if (hit.stripIn) note = note.replace(Regex("\\s+in$", RegexOption.IGNORE_CASE), "").trim()
-        if (note.isEmpty() || note.equals("in", ignoreCase = true)) return null
-        return note to at.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-    }
-    return null
-}
+/** Reject oversized input without silently deleting pasted text or splitting an emoji. */
+internal fun mirrorComposerAcceptsChange(previous: String, next: String): Boolean =
+    next.length <= 2000 || next.length < previous.length
 
 /** The slash text-command dispatch used by sendNow (web L445-540). */
 internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
+    fun sendBody(text: String): MirrorSlashBody = if (text.length <= 2000) MirrorSlashBody.Send(text)
+        else MirrorSlashBody.Error("The command result exceeds 2000 characters. Your draft is unchanged.")
     val input = inputRaw.trim()
     val m = Regex("^/(\\w+)(?:\\s+([\\s\\S]+))?$").find(input) ?: return null
     val word = m.groupValues[1].lowercase()
@@ -342,19 +300,19 @@ internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
     return when (word) {
         "me" -> {
             if (arg.isEmpty()) MirrorSlashBody.Error("Usage: /me waves hello")
-            else MirrorSlashBody.Send("_" + arg.take(1998) + "_")
+            else sendBody("_" + arg + "_")
         }
-        "shrug" -> MirrorSlashBody.Send("${arg}${if (arg.isNotEmpty()) " " else ""}¯\\_(ツ)_/¯")
-        "tableflip" -> MirrorSlashBody.Send("${arg}${if (arg.isNotEmpty()) " " else ""}(╯°□°）╯︵ ┻━┻")
-        "unflip" -> MirrorSlashBody.Send("┬┬ ノ( ゜-゜ノ${if (arg.isNotEmpty()) " $arg" else ""}")
+        "shrug" -> sendBody("${arg}${if (arg.isNotEmpty()) " " else ""}¯\\_(ツ)_/¯")
+        "tableflip" -> sendBody("${arg}${if (arg.isNotEmpty()) " " else ""}(╯°□°）╯︵ ┻━┻")
+        "unflip" -> sendBody("┬┬ ノ( ゜-゜ノ${if (arg.isNotEmpty()) " $arg" else ""}")
         "roll" -> {
             if (arg.isEmpty()) {
                 val roll = mirrorRollDice("1d6")
-                MirrorSlashBody.Send("Rolled **1d6**: *${roll?.second ?: "?"}*")
+                sendBody("Rolled **1d6**: *${roll?.second ?: "?"}*")
             } else {
                 val roll = mirrorRollDice(arg)
                 if (roll == null) MirrorSlashBody.Error("Usage: /roll AdM - e.g. /roll 2d6")
-                else MirrorSlashBody.Send("Rolled **${arg.lowercase()}**: ${roll.first.joinToString(" + ")} = *${roll.second}*")
+                else sendBody("Rolled **${arg.lowercase()}**: ${roll.first.joinToString(" + ")} = *${roll.second}*")
             }
         }
         "remind" -> {
@@ -366,9 +324,22 @@ internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
             }
         }
         // R21-a bot commands ride as a normal message - the server bot answers
-        "math", "flip", "8ball", "rps", "dice", "time", "wallet" -> MirrorSlashBody.Send(input)
+        "math", "flip", "8ball", "rps", "dice", "time", "wallet" -> sendBody(input)
         else -> MirrorSlashBody.Error("Unknown command \"/$word\" - try /help")
     }
+}
+
+internal data class MirrorMediaSelection(
+    val draft: app.pulse.domain.model.AttachmentDraft,
+    val sessionKey: String,
+    val draftRevision: Long? = null,
+    val submitted: app.pulse.domain.model.AttachmentDraft? = null,
+) {
+    fun freeze(caption: String): MirrorMediaSelection =
+        if (submitted != null) this else copy(submitted = draft.copy(caption = caption.trim()))
+
+    fun withViewOnce(enabled: Boolean): MirrorMediaSelection =
+        if (submitted != null || draft.kind != "image") this else copy(draft = draft.copy(viewOnce = enabled))
 }
 
 /**
@@ -402,12 +373,14 @@ internal fun MirrorRoom(
     members: List<ConversationMember>,
     phrases: List<QuickPhrase>,
     muted: Boolean,
-    ttlSeconds: Int,
+    ttlSeconds: Int?,
     isBroadcast: Boolean,
     /** stored group/channel photo (web renders it in the header avatar) */
     avatarPath: String? = null,
     /** R76 - web jumpToMessage (chat-room.tsx:1039): open anchored at one message. */
     jumpMessageId: String? = null,
+    jumpRequestId: String? = null,
+    onOpenReminder: (MirrorReminderTarget) -> Unit,
     onJumpConsumed: () -> Unit = {},
     onBack: () -> Unit,
     onAddPhrase: (String) -> Unit,
@@ -418,6 +391,7 @@ internal fun MirrorRoom(
     onManageGroup: () -> Unit,
     onMuteChoice: (String?) -> Unit,
     onTtlChoice: (Int) -> Unit,
+    roomSettingsBusy: Boolean = false,
     onUnpinMessage: suspend (String) -> Result<Unit>,
     fetchPinned: suspend () -> List<Message>,
     pipActive: Boolean,
@@ -470,8 +444,14 @@ internal fun MirrorRoom(
     var pollOpen by remember { mutableStateOf(false) }
     var stickerOpen by remember { mutableStateOf(false) }
     var locationOpen by remember { mutableStateOf(false) }
-    var captionFor by remember { mutableStateOf<Pair<String, String>?>(null) } // dataUrl, fileName
-    var uploadingImage by remember { mutableStateOf(false) }
+    val mediaSession = repository.attachmentSessionKey()
+    var captionFor by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<MirrorMediaSelection?>(null) }
+    var pendingPhoto by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<MirrorMediaSelection?>(null) }
+    var pendingDocument by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<MirrorMediaSelection?>(null) }
+    var uploadingImage by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf(false) }
+    var preparingAttachment by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf(false) }
+    var attachmentJob by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    DisposableEffect(repository, groupId, viewerId, mediaSession) { onDispose { attachmentJob?.cancel() } }
     // R73 - slow mode: server 429 retryAfter drives the countdown chip
     var slowModeUntil by remember { mutableStateOf(0L) }
     var slowModeSecondsLeft by remember { mutableStateOf(0) }
@@ -480,9 +460,16 @@ internal fun MirrorRoom(
     val outboxRows by repository.observeOutbox().collectAsStateWithLifecycle(initialValue = emptyList())
     val pendingOutbox = outboxRows.count { it.conversationId == groupId && it.failureReason == null }
     // R73 - scheduled sends chip above the composer (web scheduled chip)
-    var scheduledCount by remember { mutableStateOf(0) }
-    LaunchedEffect(groupId) {
-        scheduledCount = runCatching { repository.scheduledMessages(groupId).getOrDefault(emptyList()).size }.getOrDefault(0)
+    var scheduledCount by remember(repository, viewerId, groupId) { mutableStateOf(0) }
+    var scheduledRefresh by remember { mutableStateOf(0) }
+    LaunchedEffect(repository, viewerId, groupId, scheduledRefresh) {
+        try {
+            val page = repository.scheduledMessages(groupId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            scheduledCount = page.count { it.cancelledAtIso == null }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+            if (failure is app.pulse.domain.sync.PrivateScheduleUnavailableException) scheduledCount = 0
+        }
     }
     // R73 - composer draft persistence (web pulse-drafts): restore once,
     // debounced 600ms save, clear on send (web saveDraft cadence).
@@ -636,13 +623,7 @@ internal fun MirrorRoom(
     }
     LaunchedEffect(groupId, activeTopicId, readerLifecycle) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            var firstAttempt = true
-            repository.observeConnected().distinctUntilChanged().collectLatest { connected ->
-                if (connected || firstAttempt) {
-                    firstAttempt = false
-                    repository.refreshMessages(groupId, activeTopicId)
-                }
-            }
+            repository.reconcileResumedRoom(groupId, activeTopicId)
         }
     }
     val listState = rememberLazyListState()
@@ -662,35 +643,50 @@ internal fun MirrorRoom(
     val visibleMessages = remember(messages, activeTopicId, timelineNow) { visibleRoomMessages(messages, activeTopicId, timelineNow) }
     val entries = remember(visibleMessages) { buildRoomEntries(visibleMessages) }
     val latestEntries = androidx.compose.runtime.rememberUpdatedState(entries)
-    val readObscured = roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null ||
+    val nativeReadMenus = app.pulse.ui.rememberNativeReadMenus()
+    val nativeMenuRevision = nativeReadMenus.value.revision
+    val readObscured = nativeReadMenus.value.obscured || roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null ||
         menuOpen || trayOpen || roomSearchOpen || pinnedOpen || phraseManagerOpen || pollOpen || stickerOpen ||
         locationOpen || captionFor != null || remindersOpen || scheduledOpen || recapOpen || eventsOpen ||
         kanbanOpen || whiteboardOpen || tournamentOpen || redPacketOpen || trayEffectsOpen || slashHelpOpen ||
-        safetyOpen || scheduleOpen || viewOnceGrant != null
+        safetyOpen || scheduleOpen || viewOnceGrant != null || muteStripOpen || ttlStripOpen || activeEffect != null
+    val readWindow = androidx.compose.ui.platform.LocalWindowInfo.current
+    val windowFocused = readWindow.isWindowFocused
     val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
-    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, minimumReadPixels, readerLifecycle) {
+    val latestReadMembers = androidx.compose.runtime.rememberUpdatedState(members)
+    val readScope = remember(repository, viewerId, groupId) {
+        app.pulse.domain.sync.VisibleReadScope(repository, groupId) {
+            latestReadMembers.value.firstOrNull { it.id == viewerId }
+        }
+    }
+    val readIntents = remember(repository, viewerId, groupId) { mutableMapOf<String, app.pulse.domain.sync.VisibleReadIntent>() }
+    val readConnected by remember(repository) { repository.observeConnected() }
+        .collectAsStateWithLifecycle(initialValue = false)
+    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, readConnected, minimumReadPixels, readerLifecycle, windowFocused, nativeMenuRevision) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            if (!readingEnabled || readObscured) return@repeatOnLifecycle
-            app.pulse.android.notify.IncomingAttention.activeReadingRoom = groupId
+            if (!readingEnabled || readObscured || !readWindow.isWindowFocused) return@repeatOnLifecycle
+            val releaseAttention = app.pulse.android.notify.IncomingAttention.beginReading(groupId)
             try {
-                androidx.compose.runtime.snapshotFlow {
+                fun currentBoundary(): List<String> {
+                    if (!readWindow.isWindowFocused || nativeReadMenus.value.obscured || nativeReadMenus.value.revision != nativeMenuRevision) return emptyList()
                     val layout = listState.layoutInfo
                     val visible = layout.visibleItemsInfo.filter {
                         app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
                     }.map { it.key }.toSet()
-                    readRows.value.lastOrNull { it.id in visible && !it.isDeleted && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) }?.id
-                }.collectLatest { id ->
-                    if (id != null) {
-                        delay(600)
-                        repeat(3) { attempt ->
-                            if (repository.markReadThrough(groupId, id).isSuccess) return@collectLatest
-                            delay(1_500L * (attempt + 1))
-                        }
-                    }
+                    val now = System.currentTimeMillis()
+                    return readRows.value.filter { it.id in visible && !it.isDeleted &&
+                        !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) &&
+                        (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }.map { it.id }
+                }
+                kotlinx.coroutines.coroutineScope {
+                    val reads = app.pulse.domain.sync.VisibleReadJobs(this,
+                        isCurrent = { it in currentBoundary() },
+                        send = { id -> readIntents.getOrPut(id) { readScope.message(id) }.send() })
+                    androidx.compose.runtime.snapshotFlow { currentBoundary() }.collect { reads.update(it.toSet()) }
                 }
             } finally {
-                if (app.pulse.android.notify.IncomingAttention.activeReadingRoom == groupId) app.pulse.android.notify.IncomingAttention.activeReadingRoom = null
+                releaseAttention()
             }
         }
     }
@@ -715,10 +711,28 @@ internal fun MirrorRoom(
     viewOnceGrant?.let { granted ->
         app.pulse.feature.chat.ImageLightbox(message = granted, onDismiss = { viewOnceGrant = null })
     }
-    fun toggleReaction(messageId: String, emoji: String) {
+    fun voteOnPoll(pollId: String, optionId: String) {
+        val owner = repository.viewerId
+        val epoch = repository.attachmentSessionKey()
         historyScope.launch {
+            if (!roomActionsLive.get() || owner == null || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
             try {
-                repository.react(messageId, emoji).onFailure {
+                repository.votePoll(pollId, optionId).getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (roomActionsLive.get()) sendError = error.message ?: "Your vote was not confirmed."
+            }
+        }
+    }
+
+    fun toggleReaction(message: Message, emoji: String) {
+        val owner = repository.viewerId ?: return
+        val epoch = repository.attachmentSessionKey()
+        val reaction = app.pulse.protocol.reactionId(emoji)
+        val present = message.reactions.none { it.userId == owner && app.pulse.protocol.reactionId(it.emoji) == reaction }
+        historyScope.launch {
+            if (!roomActionsLive.get() || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
+            try {
+                repository.react(message.id, reaction, present).onFailure {
                     if (roomActionsLive.get()) sendError = it.message ?: "Couldn't update reaction"
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -771,7 +785,7 @@ internal fun MirrorRoom(
     // anchor the room this way.
     var jumpFlashId by remember { mutableStateOf<String?>(null) }
     val jumpActive = jumpMessageId != null
-    LaunchedEffect(jumpMessageId, groupId) {
+    LaunchedEffect(jumpMessageId, jumpRequestId, groupId) {
         val target = jumpMessageId ?: return@LaunchedEffect
         historyRequestEpoch.incrementAndGet() // supersede an earlier manual page request
         loadingHistory = false
@@ -810,7 +824,7 @@ internal fun MirrorRoom(
             if (parentId != null) {
                 // A cached parent is not current permission or proof that the
                 // selected reply still belongs to a live thread.
-                val (root, loadedReplies) = repository.loadThread(parentId)
+                val (root, loadedReplies) = app.pulse.domain.sync.resolveThreadJump(repository, groupId, parentId, target)
                 ensureActive()
                 if (!roomActionsLive.get()) return@LaunchedEffect
                 if (!app.pulse.domain.sync.threadRootAvailable(root, groupId, parentId) ||
@@ -972,6 +986,35 @@ internal fun MirrorRoom(
         val sendTopicId = activeTopicId
         if (broadcastLocked || sending) return
         if (rawText.isEmpty()) return
+        val actionRepository = repository.boundToCurrentAccount()
+        val actionEpoch = actionRepository.attachmentSessionKey()
+        if (actionEpoch == null || actionEpoch != repository.attachmentSessionKey()) {
+            sendError = "The account changed. Your draft was not sent."
+            return
+        }
+        editing?.let { editTarget ->
+            if (rawText.length > 2000) { sendError = "The edit exceeds 2000 characters. Your draft is unchanged."; return }
+            // Editing is not a new slash command, reminder, effect or outbox send.
+            val epoch = repository.attachmentSessionKey() ?: return
+            val owner = repository.viewerId ?: return
+            stopTyping()
+            sending = true
+            historyScope.launch {
+                try {
+                    if (!roomActionsLive.get() || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
+                    actionRepository.editMessage(editTarget.id, rawText).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!roomActionsLive.get() || repository.attachmentSessionKey() != epoch) return@launch
+                    if (editing?.id == editTarget.id && composerDraft.revision == submittedRevision) finishEditing()
+                    sendError = null
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                    if (roomActionsLive.get() && repository.attachmentSessionKey() == epoch) {
+                        sendError = error.message ?: "Couldn't update this message. Your edit is still here."
+                    }
+                } finally { sending = false }
+            }
+            return
+        }
         if (slowModeUntil > System.currentTimeMillis() && editing == null) return
         // R74 - submit-time slash text transforms (web parseSlashResult text
         // cases + bot pass-through): /me /shrug /tableflip /unflip /roll send
@@ -988,7 +1031,7 @@ internal fun MirrorRoom(
                 sending = true
                 CoroutineScope(Dispatchers.IO).launch {
                     val ok = runCatching {
-                        repository.createReminder(
+                        actionRepository.createReminder(
                             conversationId = groupId,
                             messageId = null,
                             note = parsed.note,
@@ -996,7 +1039,7 @@ internal fun MirrorRoom(
                         ).getOrThrow()
                     }.isSuccess
                     CoroutineScope(Dispatchers.Main).launch completion@ {
-                        if (!roomActionsLive.get()) return@completion
+                        if (!roomActionsLive.get() || repository.attachmentSessionKey() != actionEpoch) return@completion
                         sending = false
                         if (ok) composerDraft.clearIfUnchanged(submittedRevision)
                         sendError = if (ok) "Reminder set" else "Could not set the reminder"
@@ -1007,28 +1050,26 @@ internal fun MirrorRoom(
             is MirrorSlashBody.Send -> slash.content
             null -> rawText
         }
-        val draftToken = repository.captureDraftToken(groupId)
-        val editTarget = editing
+        if (text.length > 2000) { sendError = "The message exceeds 2000 characters. Your draft is unchanged."; return }
+        val draftToken = actionRepository.captureDraftToken(groupId)
         val replyTarget = replyTo
         // R74 - web consumes the armed effect at submit time (chat-room L3137:
         // "const armedEffect = pendingEffect; if (!== null) setPendingEffect(null)")
         val effectTarget = pendingEffect
         if (effectTarget != null) pendingEffect = null
-        val anonTarget = anonNext && isGroup && editTarget == null && effectTarget == null
+        val anonTarget = anonNext && isGroup && effectTarget == null
         stopTyping()
         sending = true
         CoroutineScope(Dispatchers.IO).launch {
             val outcome = runCatching {
-                if (editTarget != null) {
-                    repository.editMessage(editTarget.id, text).getOrThrow()
-                } else if (effectTarget != null) {
+                if (effectTarget != null) {
                     val payload = Json.encodeToString(
                         EffectPayloadDto.serializer(),
                         EffectPayloadDto(effect = effectTarget.wire),
                     )
-                    repository.sendRichMessage(
+                    actionRepository.sendRichMessage(
                         conversationId = groupId,
-                        body = text.take(2000),
+                        body = text,
                         kind = "text",
                         payload = payload,
                         topicId = sendTopicId,
@@ -1036,9 +1077,9 @@ internal fun MirrorRoom(
                         draftToken = draftToken,
                     ).getOrThrow()
                 } else if (anonTarget) {
-                    repository.sendRichMessage(
+                    actionRepository.sendRichMessage(
                         conversationId = groupId,
-                        body = text.take(2000),
+                        body = text,
                         replyToId = replyTarget?.id,
                         draftToken = draftToken,
                         topicId = sendTopicId,
@@ -1046,7 +1087,7 @@ internal fun MirrorRoom(
                         anonAliasPreview = mirrorAnonAliasPreview(viewerId, groupId),
                     ).getOrThrow()
                 } else {
-                    repository.sendMessage(
+                    actionRepository.sendMessage(
                         conversationId = groupId,
                         body = text,
                         replyToId = replyTarget?.id,
@@ -1056,15 +1097,11 @@ internal fun MirrorRoom(
                 }
             }
             CoroutineScope(Dispatchers.Main).launch completion@ {
-                if (!roomActionsLive.get()) return@completion
+                if (!roomActionsLive.get() || repository.attachmentSessionKey() != actionEpoch) return@completion
                 sending = false
                 outcome.onSuccess {
-                    if (editTarget != null) {
-                        if (editing?.id == editTarget.id && composerDraft.revision == submittedRevision) finishEditing()
-                    } else {
-                        composerDraft.clearIfUnchanged(submittedRevision, notify = false)
-                        if (replyTo?.id == replyTarget?.id) replyTo = null
-                    }
+                    composerDraft.clearIfUnchanged(submittedRevision, notify = false)
+                    if (replyTo?.id == replyTarget?.id) replyTo = null
                     sendError = null
                     // R74 - the effect arm is one-shot like the web pendingEffect
                     // (armed stays until a send consumes it - web L3103 keeps it
@@ -1349,55 +1386,84 @@ internal fun MirrorRoom(
         onDispose { stopTyping() }
     }
 
-    // R73 - photo pipeline in the room: pick - STAGED caption sheet (web
-    // caption-sheet flow) - upload - imagePath row with the caption body.
+    // Mounted room media uses the same bounded preparation and private-file
+    // journal as the other native entry points. Picker intent owns the account,
+    // topic, reply and anonymity; callback time must not choose a new owner.
+    fun ownsMedia(selection: MirrorMediaSelection): Boolean = roomActionsLive.get() &&
+        selection.sessionKey == mediaSession && repository.attachmentSessionKey() == selection.sessionKey
+    fun newMediaSelection(kind: String): MirrorMediaSelection? {
+        if (uploadingImage || preparingAttachment || pendingPhoto != null || pendingDocument != null || captionFor != null) return null
+        if (broadcastLocked || editing != null || recording || voiceBusy) {
+            sendError = "Finish the current action before adding an attachment."
+            return null
+        }
+        val epoch = mediaSession ?: return null
+        if (repository.attachmentSessionKey() != epoch) return null
+        if (replyTo?.id?.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) == true) {
+            sendError = "Wait for the original message to send before replying to it."
+            return null
+        }
+        return MirrorMediaSelection(app.pulse.domain.model.AttachmentDraft(
+            selectionId = java.util.UUID.randomUUID().toString(), conversationId = groupId, kind = kind, dataUrl = "",
+            caption = if (kind == "file") draftValue.text else "", topicId = activeTopicId,
+            replyToId = replyTo?.id, anon = isGroup && anonNext), epoch,
+            draftRevision = if (kind == "file") composerDraft.revision else null)
+    }
+    fun prepareMedia(uri: Uri?, selection: MirrorMediaSelection?) {
+        if (uri == null) return
+        if (uri.scheme != "content") {
+            sendError = "Choose an attachment through a content provider in the system picker."
+            return
+        }
+        if (selection == null || !ownsMedia(selection)) {
+            sendError = "Selection was interrupted. Choose the attachment again in this account."
+            return
+        }
+        preparingAttachment = true
+        attachmentJob = historyScope.launch {
+            try {
+                val prepared = if (selection.draft.kind == "image") {
+                    selection.draft.copy(dataUrl = app.pulse.feature.chat.MediaSupport.imageToDataUrl(context, uri).getOrThrow())
+                } else {
+                    val document = app.pulse.feature.chat.MediaSupport.documentToDataUrl(context, uri).getOrThrow()
+                    selection.draft.copy(dataUrl = document.dataUrl, fileName = document.fileName, fileSize = document.sizeBytes)
+                }
+                ensureActive()
+                if (ownsMedia(selection)) { captionFor = selection.copy(draft = prepared); sendError = null }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (ownsMedia(selection)) sendError = failure.message ?: "Could not prepare the attachment. Your text is kept."
+            } finally { if (ownsMedia(selection)) preparingAttachment = false }
+        }
+    }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val dataUrl = mirrorUriToDataUrl(context, uri)
-                if (dataUrl != null) {
-                    CoroutineScope(Dispatchers.Main).launch { captionFor = dataUrl to "" }
-                }
-            }
-        }
+        val selection = pendingPhoto; pendingPhoto = null
+        prepareMedia(uri, selection)
     }
-    fun sendStagedImage(dataUrl: String, caption: String) {
-        if (viewerId.isBlank()) return
-        uploadingImage = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val outcome = runCatching {
-                val path = repository.uploadMedia(dataUrl).getOrThrow()
-                repository.sendMediaMessage(groupId, caption, imagePath = path).getOrThrow()
-            }
-            CoroutineScope(Dispatchers.Main).launch {
-                uploadingImage = false
-                outcome.onSuccess { captionFor = null }.onFailure { sendError = "Photo failed to send" }
-            }
-        }
-    }
-    // R64 - attachments tray document pick - upload - kind "file" row; the
-    // composer draft rides as the caption when present (web R40 flow).
     val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            val caption = draftValue.text.trim()
-            val revision = composerDraft.revision
-            val topic = activeTopicId
-            historyScope.launch {
-                try {
-                    val doc = kotlinx.coroutines.withContext(Dispatchers.IO) { mirrorUriToDocumentDataUrl(context, uri) }
-                        ?: error("Could not open document")
-                    val path = repository.uploadMedia(doc.first).getOrThrow()
-                    ensureActive()
-                    repository.sendMediaMessage(groupId, caption.take(2000), filePath = path,
-                        fileName = doc.second, kind = "file", topicId = topic).getOrThrow()
-                    ensureActive()
-                    if (roomActionsLive.get()) composerDraft.clearIfUnchanged(revision)
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    if (roomActionsLive.get()) sendError = "Document could not be sent. Your current text is kept."
+        val selection = pendingDocument; pendingDocument = null
+        prepareMedia(uri, selection)
+    }
+    fun sendStagedAttachment(selection: MirrorMediaSelection, caption: String) {
+        if (uploadingImage || !ownsMedia(selection)) return
+        // Freeze on the first Send. A retry after an ambiguous local result must
+        // not silently change the envelope under the same client ID.
+        val frozen = selection.freeze(caption)
+        val submitted = checkNotNull(frozen.submitted)
+        captionFor = frozen
+        uploadingImage = true
+        attachmentJob = historyScope.launch {
+            try {
+                if (!ownsMedia(selection)) return@launch
+                repository.queuePreparedAttachment(submitted, selection.sessionKey).getOrThrow()
+                ensureActive()
+                if (ownsMedia(selection) && captionFor?.draft?.selectionId == submitted.selectionId) {
+                    selection.draftRevision?.let { composerDraft.clearIfUnchanged(it) }
+                    if (replyTo?.id == submitted.replyToId) replyTo = null
+                    captionFor = null; sendError = null
                 }
-            }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (ownsMedia(selection)) sendError = failure.message ?: "Could not confirm the saved attachment. Retry uses the same operation."
+            } finally { if (ownsMedia(selection)) uploadingImage = false }
         }
     }
 
@@ -1430,763 +1496,770 @@ internal fun MirrorRoom(
         else -> Color(0x0A14B8A6)
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            // R87 - the room canvas is OPAQUE (web art-scene absolute inset-0):
-            // without this base the shell tab content and the dock bleed
-            // through every surface of the room.
-            .background(MirrorArt.Bg)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding(),
-    ) {
-        // Header: min-h-14, bg #0d0906/70, hairline bottom, px-1.5, gap-0.5
-        Column(Modifier.background(Color(0xB30D0906))) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .padding(horizontal = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Back: size-11 ghost, ChevronLeft size-6, text-soft
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MirrorLucideIcon("LChevronLeft", tint = MirrorArt.TextSoft, modifier = Modifier.size(24.dp))
-                }
-                // ONE tap target: 40dp avatar + title + subtitle - room info
+    MirrorRoomContentBoundary {
+        Column(
+            Modifier
+                .fillMaxSize()
+                // R87 - the room canvas is OPAQUE (web art-scene absolute inset-0):
+                // without this base the shell tab content and the dock bleed
+                // through every surface of the room.
+                .background(MirrorArt.Bg)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding(),
+        ) {
+            // Header: min-h-14, bg #0d0906/70, hairline bottom, px-1.5, gap-0.5
+            Column(Modifier.background(Color(0xB30D0906))) {
                 Row(
                     Modifier
-                        .weight(1f)
-                        .clip(CircleShape)
-                        .clickable(onClick = onRoomInfo)
-                        .padding(vertical = 4.dp),
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .padding(horizontal = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    MirrorAvatar(
-                        name = title,
-                        color = color,
-                        isGroup = isGroup,
-                        groupId = groupId,
-                        online = false,
-                        showPresence = !isGroup,
-                        sizeDp = 40,
-                        cornerDp = 20,
-                        // R72 - the stored group/channel photo (DMs carry the
-                        // peer's avatar in Conversation.avatar)
-                        photo = avatarPath,
-                    )
-                    Column(Modifier.weight(1f)) {
-                        // web: title row carries the "Channel" broadcast pill
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                title,
-                                color = MirrorArt.Text,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = (-0.2).sp,
-                                lineHeight = 19.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                            if (isGroup && isBroadcast) {
-                                Row(
-                                    Modifier.clip(RoundedCornerShape(50))
-                                        .background(MirrorArt.Accent.copy(alpha = 0.15f))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    MirrorLucideIcon("LRadio", tint = MirrorArt.Accent2, modifier = Modifier.size(10.dp))
-                                    Text(
-                                        "Channel",
-                                        color = MirrorArt.Accent2,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
-                            }
-                        }
-                        // web: the typing label wins and renders italic accent-2
-                        Text(
-                            if (typerLabel.isNotEmpty()) typerLabel else subtitle,
-                            color = if (typerLabel.isNotEmpty()) MirrorArt.Accent2 else MirrorArt.Dim,
-                            fontSize = 11.sp,
-                            lineHeight = 13.sp,
-                            fontWeight = if (typerLabel.isNotEmpty()) FontWeight.Medium else FontWeight.Normal,
-                            fontStyle = if (typerLabel.isNotEmpty()) FontStyle.Italic else FontStyle.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                // EXACTLY three bare icons: video, audio, kebab (44dp ghosts, size-5)
-                MirrorRoomHeaderIcon("LVideo") { onCall(true) }
-                MirrorRoomHeaderIcon("LPhone") { onCall(false) }
-                MirrorRoomHeaderIcon("LKebab") { menuOpen = !menuOpen }
-            }
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(MirrorArt.Hairline),
-            )
-        }
-
-        // R69 - the web TopicBar (topic-bar.tsx): Zulip-style chip rail the
-        // kebab Topics row toggles. General is the implicit whole-room chip.
-        if (isGroup && topicsVisible) {
-            MirrorTopicRail(
-                topics = topics,
-                activeTopicId = activeTopicId,
-                onSelect = { topicId -> activeTopicId = topicId },
-                onCreate = { name, icon ->
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val created = runCatching { repository.createTopic(groupId, name, icon).getOrNull() }.getOrNull()
-                        if (created != null) {
-                            runCatching { repository.refreshTopics(groupId) }
-                            withContext(Dispatchers.Main) { activeTopicId = created.id }
-                        }
-                    }
-                },
-            )
-        }
-
-        // List viewport: px-3 pt-3 pb-2. The web paints the wallpaper veil on
-        // the scroll container (chat-room.tsx:4538): top + bottom soft glows
-        // and a 16px dot grid over the art-scene - the mirror draws the same
-        // three layers behind the bubbles.
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .drawBehind {
-                    val w = size.width
-                    val h = size.height
-                    // top glow: the themed color (R87) - default radial-gradient(ellipse 90% 34% at 50% -8%, rgba(245,158,11,0.055), transparent 62%)
-                    sceneGlow(
-                        core = glowTop,
-                        cx = w / 2f,
-                        cy = -0.08f * h,
-                        rx = 0.90f * w,
-                        ry = 0.34f * h,
-                        fadeStop = 0.62f,
-                    )
-                    // bottom glow: the themed color (R87) - default radial-gradient(ellipse 110% 40% at 50% 110%, rgba(20,184,166,0.04), transparent 62%)
-                    sceneGlow(
-                        core = glowBottom,
-                        cx = w / 2f,
-                        cy = 1.10f * h,
-                        rx = 1.10f * w,
-                        ry = 0.40f * h,
-                        fadeStop = 0.62f,
-                    )
-                    // dot grid: radial-gradient(circle, rgba(255,255,255,0.055) 1px, transparent 1px) @ 16px
-                    val step = 16.dp.toPx()
-                    var gx = step / 2f
-                    while (gx < w) {
-                        var gy = step / 2f
-                        while (gy < h) {
-                            drawCircle(color = Color(0x0EFFFFFF), radius = 1f, center = Offset(gx, gy))
-                            gy += step
-                        }
-                        gx += step
-                    }
-                },
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 12.dp,
-                top = 12.dp,
-                end = 12.dp,
-                bottom = 8.dp,
-            ),
-        ) {
-            item(key = "history-control") {
-                if (historyHasMore) {
-                    androidx.compose.material3.TextButton(onClick = { loadEarlierMessages() }, enabled = !loadingHistory) {
-                        Text(if (loadingHistory) "Loading earlier messages…" else "Load earlier messages")
-                    }
-                }
-            }
-            itemsIndexed(entries, key = { _, e ->
-                when (e) {
-                    is RoomEntry.DayLabel -> e.key
-                    is RoomEntry.Stamp -> e.key
-                    is RoomEntry.Msg -> e.message.id
-                }
-            }) { _, entry ->
-                when (entry) {
-                    is RoomEntry.DayLabel -> {
-                        // day chip: my-3 centered, 11px medium tracking-wide faint
-                        Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                            Text(
-                                entry.label,
-                                color = MirrorArt.Faint,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                letterSpacing = 0.3.sp,
-                            )
-                        }
-                    }
-                    is RoomEntry.Stamp -> {
-                        // R54-c: centered "08:16" above each cluster head, my-1
-                        Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
-                            Text(
-                                MirrorRoomTimeLabel(entry.iso),
-                                color = MirrorArt.Faint,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                            )
-                        }
-                    }
-                    is RoomEntry.Msg -> {
-                        val mine = entry.message.authorId == viewerId
-                        val lastOwnId = visibleMessages.lastOrNull { it.authorId == viewerId && it.deletedAt == null }?.id
-                        val showReadBy = mine && isGroup &&
-                            entry.message.id == lastOwnId && entry.message.deletedAt == null
-                        val created = MirrorRoomEpoch(entry.message.createdAt)
-                        val readers = members.filter {
-                            it.id != viewerId && (it.lastReadAt ?: 0L) >= created
-                        }
-                        // R73 - the web bubble entrance (chat-room.tsx:7510-7520):
-                        // the NEWEST row plays the Telegram squash & stretch on
-                        // arrival; history rows render settled.
-                        val isNewest = entry.message.id == visibleMessages.lastOrNull()?.id
-                        // R76 - the jump flash ring (web flashHighlight): an amber
-                        // border drawn OVER the row bounds - zero layout shift.
-                        val flashing = jumpFlashId == entry.message.id
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .then(
-                                    if (flashing) {
-                                        Modifier
-                                            .background(Color(0x1AF59E0B), RoundedCornerShape(16.dp))
-                                            .border(1.5.dp, Color(0x8CF59E0B), RoundedCornerShape(16.dp))
-                                    } else {
-                                        Modifier
-                                    },
-                                ),
-                        ) {
-                        MirrorBubbleRow(
-                            message = entry.message,
-                            mine = mine,
-                            head = entry.head,
-                            isGroup = isGroup,
-                            viewerId = viewerId,
-                            viewerName = viewerName,
-                            memberNames = memberNames,
-                            othersCount = members.count { it.id != viewerId },
-                            readers = readers,
-                            showReadBy = showReadBy,
-                            animateIn = isNewest && entry.message.deletedAt == null,
-                            onOpenMenu = { actionFor = entry.message },
-                            onViewOnce = { openViewOnce(entry.message) },
-                            onVote = { optionId ->
-                                entry.message.poll?.let { poll ->
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        runCatching { repository.votePoll(poll.id, optionId) }
-                                    }
-                                }
-                            },
-                            onToggleReaction = ::toggleReaction,
-                            // R74 - swipe-to-reply + effect origin registration
-                            onReply = {
-                                replyTo = if (entry.message.viewOnce) entry.message.copy(body = "View-once message", imagePath = null) else entry.message
-                            },
-                            registerRect = { rect -> bubbleRects[entry.message.id] = rect },
-                            repository = repository,
-                            onRematch = {
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    runCatching { repository.refreshMessages(groupId, activeTopicId) }
-                                }
-                            },
-                        )
-                        }
-                    }
-                }
-            }
-            // R64 - the web typing indicator: 24dp avatar + art-bubble-in pill
-            // whose borderRadius breathes 1.25rem - 0.875rem - 1.25rem (0.72s
-            // loop) around three squash-and-stretch dots. Shows ONLY when
-            // someone else is typing (web chat-room.tsx:4684).
-            if (typers.isNotEmpty()) {
-                item(key = "room-typing-bubble") {
-                    Row(
-                        Modifier.padding(top = 6.dp),
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        val typerName = typers.first()
-                        val typerColor = members.firstOrNull { it.name == typerName }?.color
-                        MirrorAvatar(
-                            name = typerName,
-                            color = typerColor,
-                            isGroup = false,
-                            groupId = "",
-                            online = false,
-                            showPresence = false,
-                            sizeDp = 24,
-                            cornerDp = 12,
-                        )
-                        val breathe = rememberInfiniteTransition(label = "bubbleBreathe")
-                        val radius by breathe.animateFloat(
-                            initialValue = 20f,
-                            targetValue = 20f,
-                            animationSpec = infiniteRepeatable(
-                                animation = keyframes {
-                                    durationMillis = 720
-                                    20f at 0
-                                    14f at 360
-                                    20f at 720
-                                },
-                            ),
-                            label = "bubbleRadius",
-                        )
-                        Box(
-                            Modifier
-                                .graphicsLayer { alpha = 1f }
-                                .clip(RoundedCornerShape(radius.dp))
-                                .background(MirrorArt.BubbleIn)
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                        ) {
-                            MirrorRoomTypingDots()
-                        }
-                    }
-                }
-            }
-        }
-
-        // R73 - composer chips stack (web AnimatePresence bars above the
-        // composer): offline pill, slow-mode countdown, scheduled chip, topic
-        // filing pill, reply bar, edit bar. One expand/fade for the stack.
-        val chipsVisible = pendingOutbox > 0 || slowModeSecondsLeft > 0 ||
-            scheduledCount > 0 || activeTopicId != null || replyTo != null ||
-            editing != null || sendError != null
-        AnimatedVisibility(
-            visible = chipsVisible && !broadcastLocked,
-            enter = expandVertically(MirrorMotion.snappy()) + fadeIn(),
-            exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut(),
-        ) {
-            Column(Modifier.padding(horizontal = 12.dp)) {
-                if (pendingOutbox > 0) {
-                    MirrorComposerBar(
-                        glyph = "LCloudOff",
-                        tint = MirrorArt.Dim,
-                        text = "Offline - messages you send will be queued ($pendingOutbox waiting)",
-                    )
-                }
-                if (slowModeSecondsLeft > 0) {
-                    MirrorComposerBar(
-                        glyph = "LTimer",
-                        tint = MirrorArt.Accent2,
-                        text = "Slow mode on - next message in ${slowModeSecondsLeft}s",
-                    )
-                }
-                if (scheduledCount > 0) {
-                    MirrorComposerBar(
-                        glyph = "LCalendarClock",
-                        tint = MirrorArt.Dim,
-                        text = "next - $scheduledCount pending - tap to manage",
-                        onClick = { scheduledOpen = true },
-                    )
-                }
-                if (activeTopicId != null) {
-                    val topicName = topics.firstOrNull { it.id == activeTopicId }?.name ?: "topic"
-                    MirrorComposerBar(
-                        glyph = "LMessagesSquare",
-                        tint = MirrorArt.Accent2,
-                        text = "Filing to #$topicName",
-                        onCancel = { activeTopicId = null },
-                    )
-                }
-                // R74 - incognito armed chip (web L5010-5031): pulsing mask,
-                // "next message hides your name", X disarms.
-                if (anonNext && isGroup) {
-                    MirrorComposerBar(
-                        glyph = "LVenetianMask",
-                        tint = MirrorArt.Accent2,
-                        text = "Incognito on - next message hides your name",
-                        onCancel = { anonNext = false },
-                    )
-                }
-                // R74 - armed effect chip (web toast L5213 + the armed state):
-                // the next send carries payload {effect}.
-                pendingEffect?.let { armed ->
-                    MirrorComposerBar(
-                        glyph = "LSparkles",
-                        tint = MirrorArt.Accent2,
-                        text = "${armed.wire} effect armed - type a message and send",
-                        onCancel = { pendingEffect = null },
-                    )
-                }
-                replyTo?.let { target ->
-                    MirrorComposerBar(
-                        glyph = "LCornerDownRight",
-                        tint = MirrorArt.Accent2,
-                        text = "Replying to ${target.authorName} - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
-                        onCancel = { replyTo = null },
-                    )
-                }
-                editing?.let { target ->
-                    MirrorComposerBar(
-                        glyph = "LPencilLine",
-                        tint = MirrorArt.Accent2,
-                        text = "Editing message - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
-                        onCancel = {
-                            finishEditing()
-                        },
-                    )
-                }
-                sendError?.let {
-                    MirrorComposerBar(glyph = "LTriangleAlert", tint = MirrorArt.Red, text = it, onCancel = { sendError = null })
-                }
-                if (!voiceBusy && !recording && recordFileRef.value != null && recordedDurationMs > 0L) {
-                    Row {
-                        androidx.compose.material3.TextButton(onClick = { sendRecording() }) { Text("Send voice note") }
-                        androidx.compose.material3.TextButton(onClick = { cancelRecording(); sendError = null }) { Text("Discard voice note") }
-                    }
-                }
-            }
-        }
-
-        // F-MS-29 quick phrases rail: glass chips ABOVE the composer; tap
-        // INSERTS into the draft; the 28dp pencil opens the manage sheet.
-        // R72: hidden while broadcast-locked (web hides phrases for viewers).
-        if (phrases.isNotEmpty() && !broadcastLocked) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                for (phrase in phrases) {
+                    // Back: size-11 ghost, ChevronLeft size-6, text-soft
                     Box(
                         Modifier
-                            .widthIn(max = 220.dp)
+                            .size(44.dp)
                             .clip(CircleShape)
-                            .background(MirrorArt.White7)
-                            .border(1.dp, MirrorArt.Hairline, CircleShape)
-                            .clickable {
-                                val base = draftValue.text
-                                draftValue = TextFieldValue(
-                                    if (base.isBlank()) phrase.text else "$base ${phrase.text}",
-                                    selection = androidx.compose.ui.text.TextRange(
-                                        (if (base.isBlank()) phrase.text else "$base ${phrase.text}").length,
-                                    ),
-                                )
-                            }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    ) {
-                        Text(
-                            phrase.text,
-                            color = MirrorArt.TextSoft,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Box(
-                    Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(MirrorArt.White7)
-                        .border(1.dp, MirrorArt.Hairline, CircleShape)
-                        .clickable { phraseManagerOpen = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MirrorPhosphorIcon("PEdit", tint = MirrorArt.Dim, modifier = Modifier.size(14.dp))
-                }
-            }
-        }
-
-        // R54-c/R73 composer row: ONE art-input-pill (paperclip / Type here /
-        // camera) with the 44dp dark-glass art-fab OUTSIDE on the right.
-        // R72: broadcast channels swap it for the locked pill (web 5230:
-        // glass-deep rounded-2xl Lock + "Only admins can post").
-        // R73: voice recording swaps the pill for the recorder UI (web
-        // in-pill recording view, chat-room.tsx:5460-5518); the mention
-        // autocomplete floats above the pill.
-        // R73 - @mention autocomplete (web L2923-2961): the token after the
-        // caret's last @ matched against the room roster, top-5.
-        val mentionSuggestion = run {
-            val text = draftValue.text
-            val caret = draftValue.selection.end.coerceIn(0, text.length)
-            val before = text.substring(0, caret)
-            val at = before.lastIndexOf('@')
-            val token = if (at >= 0) before.substring(at + 1) else ""
-            if (at >= 0 && token.length in 1..16 && !token.contains(' ')) {
-                memberNames.filter { it.contains(token, ignoreCase = true) && it != viewerName }.take(5)
-            } else {
-                emptyList()
-            }
-        }
-        fun insertMention(name: String) {
-            val text = draftValue.text
-            val caret = draftValue.selection.end.coerceIn(0, text.length)
-            val before = text.substring(0, caret)
-            val at = before.lastIndexOf('@')
-            if (at < 0) return
-            val newText = (before.substring(0, at) + "@$name ") + text.substring(caret)
-            val newCaret = at + name.length + 2
-            draftValue = TextFieldValue(newText, selection = androidx.compose.ui.text.TextRange(newCaret))
-        }
-        // R74 - the slash palette (web SlashPalette): anchored above the
-        // composer whenever the draft starts with '/', fuzzy filtered.
-        if (draftValue.text.startsWith("/")) {
-            MirrorSlashPalette(
-                query = draftValue.text,
-                onPick = { cmd -> runSlashCommand(cmd) },
-            )
-        }
-        if (broadcastLocked) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 12.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MirrorArt.White7)
-                    .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            ) {
-                MirrorLucideIcon("LLock", tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
-                Text(
-                    "Only admins can post",
-                    color = MirrorArt.Dim,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        } else if (recording) {
-            // R73 - the in-pill recorder (web chat-room.tsx:5460-5518): cancel,
-            // pulsing radar ring, live timer, send FAB
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .clip(CircleShape)
-                        .background(MirrorArt.White7)
-                        .border(1.dp, MirrorArt.Hairline, CircleShape)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Box(
-                        Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .mirrorPressClick(onClick = { cancelRecording() }),
+                            .clickable(onClick = onBack),
                         contentAlignment = Alignment.Center,
                     ) {
-                        MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
+                        MirrorLucideIcon("LChevronLeft", tint = MirrorArt.TextSoft, modifier = Modifier.size(24.dp))
                     }
-                    val radar = rememberInfiniteTransition(label = "radar")
-                    val radarAlpha by radar.animateFloat(
-                        initialValue = 0.25f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                        label = "radarAlpha",
-                    )
-                    Box(
+                    // ONE tap target: 40dp avatar + title + subtitle - room info
+                    Row(
                         Modifier
-                            .size(14.dp)
-                            .graphicsLayer { alpha = radarAlpha }
+                            .weight(1f)
                             .clip(CircleShape)
-                            .background(MirrorArt.Red),
-                    )
-                    Text(
-                        "Recording voice note - %02d:%02d".format(recordSeconds / 60, recordSeconds % 60),
-                        color = MirrorArt.TextSoft,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                            .clickable(onClick = onRoomInfo)
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        MirrorAvatar(
+                            name = title,
+                            color = color,
+                            isGroup = isGroup,
+                            groupId = groupId,
+                            online = false,
+                            showPresence = !isGroup,
+                            sizeDp = 40,
+                            cornerDp = 20,
+                            // R72 - the stored group/channel photo (DMs carry the
+                            // peer's avatar in Conversation.avatar)
+                            photo = avatarPath,
+                        )
+                        Column(Modifier.weight(1f)) {
+                            // web: title row carries the "Channel" broadcast pill
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    title,
+                                    color = MirrorArt.Text,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = (-0.2).sp,
+                                    lineHeight = 19.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                if (isGroup && isBroadcast) {
+                                    Row(
+                                        Modifier.clip(RoundedCornerShape(50))
+                                            .background(MirrorArt.Accent.copy(alpha = 0.15f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
+                                        MirrorLucideIcon("LRadio", tint = MirrorArt.Accent2, modifier = Modifier.size(10.dp))
+                                        Text(
+                                            "Channel",
+                                            color = MirrorArt.Accent2,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+                            }
+                            // web: the typing label wins and renders italic accent-2
+                            Text(
+                                if (typerLabel.isNotEmpty()) typerLabel else subtitle,
+                                color = if (typerLabel.isNotEmpty()) MirrorArt.Accent2 else MirrorArt.Dim,
+                                fontSize = 11.sp,
+                                lineHeight = 13.sp,
+                                fontWeight = if (typerLabel.isNotEmpty()) FontWeight.Medium else FontWeight.Normal,
+                                fontStyle = if (typerLabel.isNotEmpty()) FontStyle.Italic else FontStyle.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    // EXACTLY three bare icons: video, audio, kebab (44dp ghosts, size-5)
+                    MirrorRoomHeaderIcon("LVideo") { onCall(true) }
+                    MirrorRoomHeaderIcon("LPhone") { onCall(false) }
+                    MirrorRoomHeaderIcon("LKebab") { menuOpen = !menuOpen }
                 }
                 Box(
                     Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(MirrorArt.White7)
-                        .border(1.dp, MirrorArt.Hairline, CircleShape)
-                        .mirrorPressClick(onClick = { sendRecording() }),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
-                }
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MirrorArt.Hairline),
+                )
             }
-        } else
-        Column {
-            if (mentionSuggestion.isNotEmpty()) {
-                // web mention popup: listbox, first-row highlight, avatars
-                Column(
-                    Modifier
-                        .padding(horizontal = 12.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xF21C1610))
-                        .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
-                        .padding(6.dp),
-                ) {
-                    for ((index, name) in mentionSuggestion.withIndex()) {
+
+            // R69 - the web TopicBar (topic-bar.tsx): Zulip-style chip rail the
+            // kebab Topics row toggles. General is the implicit whole-room chip.
+            if (isGroup && topicsVisible) {
+                MirrorTopicRail(
+                    topics = topics,
+                    activeTopicId = activeTopicId,
+                    onSelect = { topicId -> activeTopicId = topicId },
+                    onCreate = { name, icon ->
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val created = runCatching { repository.createTopic(groupId, name, icon).getOrNull() }.getOrNull()
+                            if (created != null) {
+                                runCatching { repository.refreshTopics(groupId) }
+                                withContext(Dispatchers.Main) { activeTopicId = created.id }
+                            }
+                        }
+                    },
+                )
+            }
+
+            // List viewport: px-3 pt-3 pb-2. The web paints the wallpaper veil on
+            // the scroll container (chat-room.tsx:4538): top + bottom soft glows
+            // and a 16px dot grid over the art-scene - the mirror draws the same
+            // three layers behind the bubbles.
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .drawBehind {
+                        val w = size.width
+                        val h = size.height
+                        // top glow: the themed color (R87) - default radial-gradient(ellipse 90% 34% at 50% -8%, rgba(245,158,11,0.055), transparent 62%)
+                        sceneGlow(
+                            core = glowTop,
+                            cx = w / 2f,
+                            cy = -0.08f * h,
+                            rx = 0.90f * w,
+                            ry = 0.34f * h,
+                            fadeStop = 0.62f,
+                        )
+                        // bottom glow: the themed color (R87) - default radial-gradient(ellipse 110% 40% at 50% 110%, rgba(20,184,166,0.04), transparent 62%)
+                        sceneGlow(
+                            core = glowBottom,
+                            cx = w / 2f,
+                            cy = 1.10f * h,
+                            rx = 1.10f * w,
+                            ry = 0.40f * h,
+                            fadeStop = 0.62f,
+                        )
+                        // dot grid: radial-gradient(circle, rgba(255,255,255,0.055) 1px, transparent 1px) @ 16px
+                        val step = 16.dp.toPx()
+                        var gx = step / 2f
+                        while (gx < w) {
+                            var gy = step / 2f
+                            while (gy < h) {
+                                drawCircle(color = Color(0x0EFFFFFF), radius = 1f, center = Offset(gx, gy))
+                                gy += step
+                            }
+                            gx += step
+                        }
+                    },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 12.dp,
+                    top = 12.dp,
+                    end = 12.dp,
+                    bottom = 8.dp,
+                ),
+            ) {
+                item(key = "history-control") {
+                    if (historyHasMore) {
+                        androidx.compose.material3.TextButton(onClick = { loadEarlierMessages() }, enabled = !loadingHistory) {
+                            Text(if (loadingHistory) "Loading earlier messages…" else "Load earlier messages")
+                        }
+                    }
+                }
+                itemsIndexed(entries, key = { _, e ->
+                    when (e) {
+                        is RoomEntry.DayLabel -> e.key
+                        is RoomEntry.Stamp -> e.key
+                        is RoomEntry.Msg -> e.message.id
+                    }
+                }) { _, entry ->
+                    when (entry) {
+                        is RoomEntry.DayLabel -> {
+                            // day chip: my-3 centered, 11px medium tracking-wide faint
+                            Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    entry.label,
+                                    color = MirrorArt.Faint,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    letterSpacing = 0.3.sp,
+                                )
+                            }
+                        }
+                        is RoomEntry.Stamp -> {
+                            // R54-c: centered "08:16" above each cluster head, my-1
+                            Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    MirrorRoomTimeLabel(entry.iso),
+                                    color = MirrorArt.Faint,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                        is RoomEntry.Msg -> {
+                            val mine = entry.message.authorId == viewerId
+                            val lastOwnId = visibleMessages.lastOrNull { it.authorId == viewerId && it.deletedAt == null }?.id
+                            val showReadBy = mine && isGroup &&
+                                entry.message.id == lastOwnId && entry.message.deletedAt == null
+                            val created = MirrorRoomEpoch(entry.message.createdAt)
+                            val readers = app.pulse.domain.sync.confirmedReaders(members, viewerId, created, entry.message.readByMembershipIds)
+                            // R73 - the web bubble entrance (chat-room.tsx:7510-7520):
+                            // the NEWEST row plays the Telegram squash & stretch on
+                            // arrival; history rows render settled.
+                            val isNewest = entry.message.id == visibleMessages.lastOrNull()?.id
+                            // R76 - the jump flash ring (web flashHighlight): an amber
+                            // border drawn OVER the row bounds - zero layout shift.
+                            val flashing = jumpFlashId == entry.message.id
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .then(
+                                        if (flashing) {
+                                            Modifier
+                                                .background(Color(0x1AF59E0B), RoundedCornerShape(16.dp))
+                                                .border(1.5.dp, Color(0x8CF59E0B), RoundedCornerShape(16.dp))
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                            ) {
+                            MirrorBubbleRow(
+                                message = entry.message,
+                                mine = mine,
+                                head = entry.head,
+                                isGroup = isGroup,
+                                viewerId = viewerId,
+                                viewerName = viewerName,
+                                memberNames = memberNames,
+                                othersCount = members.count { it.id != viewerId },
+                                readers = readers,
+                                showReadBy = showReadBy,
+                                animateIn = isNewest && entry.message.deletedAt == null,
+                                onOpenMenu = { actionFor = entry.message },
+                                onViewOnce = { openViewOnce(entry.message) },
+                                onVote = { optionId ->
+                                    entry.message.poll?.let { poll ->
+                                        voteOnPoll(poll.id, optionId)
+                                    }
+                                },
+                                onToggleReaction = { messageId, emoji ->
+                                    if (messageId == entry.message.id) toggleReaction(entry.message, emoji)
+                                },
+                                // R74 - swipe-to-reply + effect origin registration
+                                onReply = {
+                                    replyTo = if (entry.message.viewOnce) entry.message.copy(body = "View-once message", imagePath = null) else entry.message
+                                },
+                                registerRect = { rect -> bubbleRects[entry.message.id] = rect },
+                                repository = repository,
+                                onRematch = {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        runCatching { repository.refreshMessages(groupId, activeTopicId) }
+                                    }
+                                },
+                            )
+                            }
+                        }
+                    }
+                }
+                // R64 - the web typing indicator: 24dp avatar + art-bubble-in pill
+                // whose borderRadius breathes 1.25rem - 0.875rem - 1.25rem (0.72s
+                // loop) around three squash-and-stretch dots. Shows ONLY when
+                // someone else is typing (web chat-room.tsx:4684).
+                if (typers.isNotEmpty()) {
+                    item(key = "room-typing-bubble") {
                         Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (index == 0) MirrorArt.ChipActive else Color.Transparent)
-                                .clickable { insertMention(name) }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            Modifier.padding(top = 6.dp),
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
+                            val typerName = typers.first()
+                            val typerColor = members.firstOrNull { it.name == typerName }?.color
                             MirrorAvatar(
-                                name = name,
-                                color = members.firstOrNull { it.name == name }?.color,
+                                name = typerName,
+                                color = typerColor,
                                 isGroup = false,
                                 groupId = "",
                                 online = false,
                                 showPresence = false,
-                                sizeDp = 20,
-                                cornerDp = 10,
+                                sizeDp = 24,
+                                cornerDp = 12,
                             )
-                            Text(name, color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            val breathe = rememberInfiniteTransition(label = "bubbleBreathe")
+                            val radius by breathe.animateFloat(
+                                initialValue = 20f,
+                                targetValue = 20f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = keyframes {
+                                        durationMillis = 720
+                                        20f at 0
+                                        14f at 360
+                                        20f at 720
+                                    },
+                                ),
+                                label = "bubbleRadius",
+                            )
+                            Box(
+                                Modifier
+                                    .graphicsLayer { alpha = 1f }
+                                    .clip(RoundedCornerShape(radius.dp))
+                                    .background(MirrorArt.BubbleIn)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            ) {
+                                MirrorRoomTypingDots()
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
             }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+
+            // R73 - composer chips stack (web AnimatePresence bars above the
+            // composer): offline pill, slow-mode countdown, scheduled chip, topic
+            // filing pill, reply bar, edit bar. One expand/fade for the stack.
+            val chipsVisible = pendingOutbox > 0 || slowModeSecondsLeft > 0 ||
+                scheduledCount > 0 || activeTopicId != null || replyTo != null ||
+                editing != null || sendError != null
+            AnimatedVisibility(
+                visible = chipsVisible && !broadcastLocked,
+                enter = expandVertically(MirrorMotion.snappy()) + fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut(),
             ) {
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .clip(CircleShape)
-                        .background(MirrorArt.White7)
-                        .border(1.dp, MirrorArt.Hairline, CircleShape)
-                        // web focus hairline: ring-2 ring-inset ring-accent/45 over
-                        // the WHOLE pill (R64 fix - the old drawCircle painted a
-                        // floating circle INSIDE the pill instead of the inset ring).
-                        .drawBehind {
-                            if (composerFocused) {
-                                drawRoundRect(
-                                    color = Color(0x73FF7A3D), // accent /45
-                                    cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
-                                    style = Stroke(width = 2.dp.toPx()),
-                                )
-                            }
-                        }
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    // paperclip: size-9 circle, size-5 dim glyph - toggles the tray
-                    Box(
-                        Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(if (trayOpen) MirrorArt.White10 else Color.Transparent)
-                            .clickable { trayOpen = !trayOpen },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        MirrorLucideIcon("LPaperclip", tint = if (trayOpen) MirrorArt.Text else MirrorArt.Dim, modifier = Modifier.size(20.dp))
-                    }
-                    Box(Modifier.weight(1f).padding(bottom = 8.dp)) {
-                        if (draftValue.text.isBlank()) {
-                            Text("Type here", color = MirrorArt.Faint, fontSize = 15.sp, lineHeight = 20.sp)
-                        }
-                        BasicTextField(
-                            value = draftValue,
-                            onValueChange = {
-                                // web maxLength 2000 (chat-room.tsx:5549)
-                                draftValue = if (it.text.length > 2000) it.copy(it.text.take(2000)) else it
-                                pumpTyping(it.text)
-                            },
-                            textStyle = TextStyle(
-                                color = MirrorArt.Text,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp,
-                            ),
-                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MirrorArt.Accent),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = { sendNow() }),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .onFocusChanged {
-                                    composerFocused = it.isFocused
-                                    if (!it.isFocused) stopTyping()
-                                },
-                            maxLines = 5,
+                Column(Modifier.padding(horizontal = 12.dp)) {
+                    if (pendingOutbox > 0) {
+                        MirrorComposerBar(
+                            glyph = "LCloudOff",
+                            tint = MirrorArt.Dim,
+                            text = "Offline - messages you send will be queued ($pendingOutbox waiting)",
                         )
                     }
-                    // camera: size-9 circle, size-5 dim glyph - the artboard photo button
-                    Box(
-                        Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable {
-                                pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    if (slowModeSecondsLeft > 0) {
+                        MirrorComposerBar(
+                            glyph = "LTimer",
+                            tint = MirrorArt.Accent2,
+                            text = "Slow mode on - next message in ${slowModeSecondsLeft}s",
+                        )
+                    }
+                    if (scheduledCount > 0) {
+                        MirrorComposerBar(
+                            glyph = "LCalendarClock",
+                            tint = MirrorArt.Dim,
+                            text = "next - $scheduledCount pending - tap to manage",
+                            onClick = { scheduledOpen = true },
+                        )
+                    }
+                    if (activeTopicId != null) {
+                        val topicName = topics.firstOrNull { it.id == activeTopicId }?.name ?: "topic"
+                        MirrorComposerBar(
+                            glyph = "LMessagesSquare",
+                            tint = MirrorArt.Accent2,
+                            text = "Filing to #$topicName",
+                            onCancel = { activeTopicId = null },
+                        )
+                    }
+                    // R74 - incognito armed chip (web L5010-5031): pulsing mask,
+                    // "next message hides your name", X disarms.
+                    if (anonNext && isGroup) {
+                        MirrorComposerBar(
+                            glyph = "LVenetianMask",
+                            tint = MirrorArt.Accent2,
+                            text = "Incognito on - next message hides your name",
+                            onCancel = { anonNext = false },
+                        )
+                    }
+                    // R74 - armed effect chip (web toast L5213 + the armed state):
+                    // the next send carries payload {effect}.
+                    pendingEffect?.let { armed ->
+                        MirrorComposerBar(
+                            glyph = "LSparkles",
+                            tint = MirrorArt.Accent2,
+                            text = "${armed.wire} effect armed - type a message and send",
+                            onCancel = { pendingEffect = null },
+                        )
+                    }
+                    replyTo?.let { target ->
+                        MirrorComposerBar(
+                            glyph = "LCornerDownRight",
+                            tint = MirrorArt.Accent2,
+                            text = "Replying to ${target.displayAuthorName} - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
+                            onCancel = { replyTo = null },
+                        )
+                    }
+                    editing?.let { target ->
+                        MirrorComposerBar(
+                            glyph = "LPencilLine",
+                            tint = MirrorArt.Accent2,
+                            text = "Editing message - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
+                            onCancel = {
+                                finishEditing()
                             },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        MirrorLucideIcon("LCamera", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                        )
+                    }
+                    sendError?.let {
+                        MirrorComposerBar(glyph = "LTriangleAlert", tint = MirrorArt.Red, text = it, onCancel = { sendError = null })
+                    }
+                    if (!voiceBusy && !recording && recordFileRef.value != null && recordedDurationMs > 0L) {
+                        Row {
+                            androidx.compose.material3.TextButton(onClick = { sendRecording() }) { Text("Send voice note") }
+                            androidx.compose.material3.TextButton(onClick = { cancelRecording(); sendError = null }) { Text("Discard voice note") }
+                        }
                     }
                 }
-                // art-fab: 44dp DARK GLASS always - plus (opens the tray) becomes
-                // the send plane the moment the draft holds text; the rotation
-                // ANIMATES with the web snappy spring (web L5609) and the plane
-                // shows a spinner while the send is in flight.
-                val hasText = draftValue.text.isNotBlank()
-                val fabRotation by animateFloatAsState(
-                    targetValue = if (!hasText && trayOpen) 45f else 0f,
-                    animationSpec = MirrorMotion.press(),
-                    label = "fabRotation",
-                )
-                Box(
+            }
+
+            // F-MS-29 quick phrases rail: glass chips ABOVE the composer; tap
+            // INSERTS into the draft; the 28dp pencil opens the manage sheet.
+            // R72: hidden while broadcast-locked (web hides phrases for viewers).
+            if (phrases.isNotEmpty() && !broadcastLocked) {
+                Row(
                     Modifier
-                        .size(44.dp)
-                        .graphicsLayer { rotationZ = fabRotation }
-                        .clip(CircleShape)
-                        .background(MirrorArt.White7)
-                        .border(1.dp, MirrorArt.Hairline, CircleShape)
-                        .mirrorPressClick(onClick = {
-                            if (hasText) {
-                                sendNow()
-                                trayOpen = false
-                            } else {
-                                trayOpen = !trayOpen
-                            }
-                        }),
-                    contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (sending || voiceBusy || uploadingImage) {
-                        MirrorLucideIcon("LLoaderCircle", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
-                    } else if (hasText) {
+                    for (phrase in phrases) {
+                        Box(
+                            Modifier
+                                .widthIn(max = 220.dp)
+                                .clip(CircleShape)
+                                .background(MirrorArt.White7)
+                                .border(1.dp, MirrorArt.Hairline, CircleShape)
+                                .clickable {
+                                    val base = draftValue.text
+                                    draftValue = TextFieldValue(
+                                        if (base.isBlank()) phrase.text else "$base ${phrase.text}",
+                                        selection = androidx.compose.ui.text.TextRange(
+                                            (if (base.isBlank()) phrase.text else "$base ${phrase.text}").length,
+                                        ),
+                                    )
+                                }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                phrase.text,
+                                color = MirrorArt.TextSoft,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Box(
+                        Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(MirrorArt.White7)
+                            .border(1.dp, MirrorArt.Hairline, CircleShape)
+                            .clickable { phraseManagerOpen = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MirrorPhosphorIcon("PEdit", tint = MirrorArt.Dim, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+
+            // R54-c/R73 composer row: ONE art-input-pill (paperclip / Type here /
+            // camera) with the 44dp dark-glass art-fab OUTSIDE on the right.
+            // R72: broadcast channels swap it for the locked pill (web 5230:
+            // glass-deep rounded-2xl Lock + "Only admins can post").
+            // R73: voice recording swaps the pill for the recorder UI (web
+            // in-pill recording view, chat-room.tsx:5460-5518); the mention
+            // autocomplete floats above the pill.
+            // R73 - @mention autocomplete (web L2923-2961): the token after the
+            // caret's last @ matched against the room roster, top-5.
+            val mentionSuggestion = run {
+                val text = draftValue.text
+                val caret = draftValue.selection.end.coerceIn(0, text.length)
+                val before = text.substring(0, caret)
+                val at = before.lastIndexOf('@')
+                val token = if (at >= 0) before.substring(at + 1) else ""
+                if (at >= 0 && token.length in 1..16 && !token.contains(' ')) {
+                    memberNames.filter { it.contains(token, ignoreCase = true) && it != viewerName }.take(5)
+                } else {
+                    emptyList()
+                }
+            }
+            fun insertMention(name: String) {
+                val text = draftValue.text
+                val caret = draftValue.selection.end.coerceIn(0, text.length)
+                val before = text.substring(0, caret)
+                val at = before.lastIndexOf('@')
+                if (at < 0) return
+                val newText = (before.substring(0, at) + "@$name ") + text.substring(caret)
+                val newCaret = at + name.length + 2
+                draftValue = TextFieldValue(newText, selection = androidx.compose.ui.text.TextRange(newCaret))
+            }
+            // R74 - the slash palette (web SlashPalette): anchored above the
+            // composer whenever the draft starts with '/', fuzzy filtered.
+            if (draftValue.text.startsWith("/")) {
+                MirrorSlashPalette(
+                    query = draftValue.text,
+                    onPick = { cmd -> runSlashCommand(cmd) },
+                )
+            }
+            if (broadcastLocked) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MirrorArt.White7)
+                        .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                ) {
+                    MirrorLucideIcon("LLock", tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
+                    Text(
+                        "Only admins can post",
+                        color = MirrorArt.Dim,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            } else if (recording) {
+                // R73 - the in-pill recorder (web chat-room.tsx:5460-5518): cancel,
+                // pulsing radar ring, live timer, send FAB
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clip(CircleShape)
+                            .background(MirrorArt.White7)
+                            .border(1.dp, MirrorArt.Hairline, CircleShape)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Box(
+                            Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .mirrorPressClick(onClick = { cancelRecording() }),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
+                        }
+                        val radar = rememberInfiniteTransition(label = "radar")
+                        val radarAlpha by radar.animateFloat(
+                            initialValue = 0.25f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                            label = "radarAlpha",
+                        )
+                        Box(
+                            Modifier
+                                .size(14.dp)
+                                .graphicsLayer { alpha = radarAlpha }
+                                .clip(CircleShape)
+                                .background(MirrorArt.Red),
+                        )
+                        Text(
+                            "Recording voice note - %02d:%02d".format(recordSeconds / 60, recordSeconds % 60),
+                            color = MirrorArt.TextSoft,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(MirrorArt.White7)
+                            .border(1.dp, MirrorArt.Hairline, CircleShape)
+                            .mirrorPressClick(onClick = { sendRecording() }),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
-                    } else {
-                        MirrorLucideIcon("LPlus", tint = MirrorArt.Text, modifier = Modifier.size(22.dp))
+                    }
+                }
+            } else
+            Column {
+                if (mentionSuggestion.isNotEmpty()) {
+                    // web mention popup: listbox, first-row highlight, avatars
+                    Column(
+                        Modifier
+                            .padding(horizontal = 12.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xF21C1610))
+                            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
+                            .padding(6.dp),
+                    ) {
+                        for ((index, name) in mentionSuggestion.withIndex()) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (index == 0) MirrorArt.ChipActive else Color.Transparent)
+                                    .clickable { insertMention(name) }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                MirrorAvatar(
+                                    name = name,
+                                    color = members.firstOrNull { it.name == name }?.color,
+                                    isGroup = false,
+                                    groupId = "",
+                                    online = false,
+                                    showPresence = false,
+                                    sizeDp = 20,
+                                    cornerDp = 10,
+                                )
+                                Text(name, color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clip(CircleShape)
+                            .background(MirrorArt.White7)
+                            .border(1.dp, MirrorArt.Hairline, CircleShape)
+                            // web focus hairline: ring-2 ring-inset ring-accent/45 over
+                            // the WHOLE pill (R64 fix - the old drawCircle painted a
+                            // floating circle INSIDE the pill instead of the inset ring).
+                            .drawBehind {
+                                if (composerFocused) {
+                                    drawRoundRect(
+                                        color = Color(0x73FF7A3D), // accent /45
+                                        cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
+                                        style = Stroke(width = 2.dp.toPx()),
+                                    )
+                                }
+                            }
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        // paperclip: size-9 circle, size-5 dim glyph - toggles the tray
+                        Box(
+                            Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (trayOpen) MirrorArt.White10 else Color.Transparent)
+                                .clickable { trayOpen = !trayOpen },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LPaperclip", tint = if (trayOpen) MirrorArt.Text else MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                        }
+                        Box(Modifier.weight(1f).padding(bottom = 8.dp)) {
+                            if (draftValue.text.isBlank()) {
+                                Text("Type here", color = MirrorArt.Faint, fontSize = 15.sp, lineHeight = 20.sp)
+                            }
+                            BasicTextField(
+                                value = draftValue,
+                                onValueChange = {
+                                    if (mirrorComposerAcceptsChange(draftValue.text, it.text)) {
+                                        draftValue = it
+                                        pumpTyping(it.text)
+                                    } else {
+                                        sendError = "This change wasn't inserted: the message limit is 2000 characters."
+                                    }
+                                },
+                                textStyle = TextStyle(
+                                    color = MirrorArt.Text,
+                                    fontSize = 15.sp,
+                                    lineHeight = 20.sp,
+                                ),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(MirrorArt.Accent),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                keyboardActions = KeyboardActions(onSend = { sendNow() }),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onFocusChanged {
+                                        composerFocused = it.isFocused
+                                        if (!it.isFocused) stopTyping()
+                                    },
+                                maxLines = 5,
+                            )
+                        }
+                        // camera: size-9 circle, size-5 dim glyph - the artboard photo button
+                        Box(
+                            Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    newMediaSelection("image")?.let { selection ->
+                                        pendingPhoto = selection
+                                        try { pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                                        catch (_: Exception) { pendingPhoto = null; sendError = "Photo picker is unavailable." }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LCamera", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    // art-fab: 44dp DARK GLASS always - plus (opens the tray) becomes
+                    // the send plane the moment the draft holds text; the rotation
+                    // ANIMATES with the web snappy spring (web L5609) and the plane
+                    // shows a spinner while the send is in flight.
+                    val hasText = draftValue.text.isNotBlank()
+                    val fabRotation by animateFloatAsState(
+                        targetValue = if (!hasText && trayOpen) 45f else 0f,
+                        animationSpec = MirrorMotion.press(),
+                        label = "fabRotation",
+                    )
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .graphicsLayer { rotationZ = fabRotation }
+                            .clip(CircleShape)
+                            .background(MirrorArt.White7)
+                            .border(1.dp, MirrorArt.Hairline, CircleShape)
+                            .mirrorPressClick(onClick = {
+                                if (hasText) {
+                                    sendNow()
+                                    trayOpen = false
+                                } else {
+                                    trayOpen = !trayOpen
+                                }
+                            }),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (sending || voiceBusy || uploadingImage || preparingAttachment) {
+                            MirrorLucideIcon("LLoaderCircle", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
+                        } else if (hasText) {
+                            MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
+                        } else {
+                            MirrorLucideIcon("LPlus", tint = MirrorArt.Text, modifier = Modifier.size(22.dp))
+                        }
                     }
                 }
             }
@@ -2204,186 +2277,192 @@ internal fun MirrorRoom(
     // must pad themselves) and the 80dp bottom clearance (72dp composer
     // row + 8dp web gap) keeps the composer visible under the tray.
     // Every tile opens a real mirror surface - zero dead tiles.
-    if (trayOpen && !broadcastLocked) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(onClick = { trayOpen = false }),
-        ) {
-            Column(
+    MirrorRoomContentBoundary {
+        if (trayOpen && !broadcastLocked) {
+            Box(
                 Modifier
-                    .align(Alignment.BottomCenter)
-                    .imePadding()
-                    .navigationBarsPadding()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 80.dp)
-                    // web: max-h-[min(58vh,440px)] overflow-y-auto rounded-3xl
-                    .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.58f, 440f).dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Color(0xCC1C1610)) // bg-[#1c1610]/80
-                    .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(24.dp))
-                    .verticalScroll(rememberScrollState())
-                    .padding(10.dp)
-                    .clickable(enabled = false) {},
+                    .fillMaxSize()
+                    .clickable(onClick = { trayOpen = false }),
             ) {
-                MirrorTrayGroup(
-                    "Create",
-                    listOf(
-                        MirrorTrayTileSpec("LFileText", "Document", "Share a PDF, TXT, CSV or ZIP", TrayToneOrange) {
-                            trayOpen = false
-                            pickDocument.launch("*/*")
-                        },
-                        MirrorTrayTileSpec("LMessageSquarePlus", "Quick phrase", "Save lines you send often", TrayToneSky) {
-                            trayOpen = false
-                            phraseManagerOpen = true
-                        },
-                        MirrorTrayTileSpec("LVote", "Poll", "Live votes in this chat", TrayToneViolet) {
-                            trayOpen = false
-                            pollOpen = true
-                        },
-                        MirrorTrayTileSpec("LCalendarClock", "Schedule", "Send this message later", TrayToneOrange) {
-                            trayOpen = false
-                            scheduleOpen = true
-                        },
-                        MirrorTrayTileSpec("LPresentation", "Whiteboard", "Sketch together on one canvas", TrayToneAmber) {
-                            trayOpen = false
-                            whiteboardOpen = true
-                        },
-                        MirrorTrayTileSpec("LGift", "Red packet", "Wrap coins as a gift", TrayToneRose) {
-                            trayOpen = false
-                            redPacketOpen = true
-                        },
-                    ),
-                )
-                Spacer(Modifier.height(12.dp))
-                MirrorTrayGroup(
-                    "Gather",
-                    listOf(
-                        MirrorTrayTileSpec("LCalendarDays", "Events", "Plan meetups with RSVP", TrayToneAmber) {
-                            trayOpen = false
-                            eventsOpen = true
-                        },
-                        MirrorTrayTileSpec("LPodcast", "Stage", "Live audio stage for the room", TrayToneOrange) {
-                            trayOpen = false
-                            onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE)
-                        },
-                        MirrorTrayTileSpec("LMap", "Space", "Hang out in a spatial room", TrayToneAmber) {
-                            trayOpen = false
-                            onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE)
-                        },
-                        MirrorTrayTileSpec("LGamepad2", "Game", "Start tic-tac-toe here", TrayToneViolet) {
-                            trayOpen = false
-                            startTicTacToe()
-                        },
-                        MirrorTrayTileSpec(
-                            "LTrophy",
-                            "Tournament",
-                            "Bracketed group competition",
-                            TrayToneRose,
-                            enabled = isGroup,
-                        ) {
-                            trayOpen = false
-                            tournamentOpen = true
-                        },
-                    ),
-                )
-                Spacer(Modifier.height(12.dp))
-                MirrorTrayGroup(
-                    "Organise",
-                    buildList {
-                        add(
-                            MirrorTrayTileSpec("LSquareKanban", "Kanban", "Group tasks on a board", TrayToneOrange) {
+                Column(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .imePadding()
+                        .navigationBarsPadding()
+                        .padding(start = 12.dp, end = 12.dp, bottom = 80.dp)
+                        // web: max-h-[min(58vh,440px)] overflow-y-auto rounded-3xl
+                        .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.58f, 440f).dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xCC1C1610)) // bg-[#1c1610]/80
+                        .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(24.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(10.dp)
+                        .clickable(enabled = false) {},
+                ) {
+                    MirrorTrayGroup(
+                        "Create",
+                        listOf(
+                            MirrorTrayTileSpec("LFileText", "Document", "Share a PDF, TXT, CSV or ZIP", TrayToneOrange) {
                                 trayOpen = false
-                                kanbanOpen = true
+                                newMediaSelection("file")?.let { selection ->
+                                    pendingDocument = selection
+                                    try { pickDocument.launch("*/*") }
+                                    catch (_: Exception) { pendingDocument = null; sendError = "Document picker is unavailable." }
+                                }
                             },
-                        )
-                        // web groupOnly filter (chat-room.tsx:2828): Topic hides in DMs
-                        if (isGroup) {
-                            add(
-                                MirrorTrayTileSpec("LMessagesSquare", "Topic", "File the chat under a topic", TrayToneAmber) {
-                                    trayOpen = false
-                                    topicsVisible = !topicsVisible
-                                },
-                            )
-                        }
-                    },
-                )
-                Spacer(Modifier.height(12.dp))
-                MirrorTrayGroup(
-                    "Express",
-                    buildList {
-                        add(
-                            MirrorTrayTileSpec("LMic", "Voice note", "Hold-free recording with a live timer", TrayToneAmber) {
+                            MirrorTrayTileSpec("LMessageSquarePlus", "Quick phrase", "Save lines you send often", TrayToneSky) {
                                 trayOpen = false
-                                permissionRequestRoom = groupId
-                                micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                                phraseManagerOpen = true
                             },
-                        )
-                        add(
-                            MirrorTrayTileSpec("LSticker", "Sticker", "Send a stamp from the packs", TrayToneAmber) {
+                            MirrorTrayTileSpec("LVote", "Poll", "Live votes in this chat", TrayToneViolet) {
                                 trayOpen = false
-                                stickerOpen = true
+                                pollOpen = true
                             },
-                        )
-                        add(
-                            MirrorTrayTileSpec("LSparkles", "Effects", "Confetti, lasers, echo, sparkles", TrayToneViolet) {
-                                trayEffectsOpen = !trayEffectsOpen
-                            },
-                        )
-                        add(
-                            MirrorTrayTileSpec("LDices", "Commands", "Every slash command", TrayToneOrange) {
+                            MirrorTrayTileSpec("LCalendarClock", "Schedule", "Send this message later", TrayToneOrange) {
                                 trayOpen = false
-                                draftValue = TextFieldValue("/")
+                                scheduleOpen = true
                             },
-                        )
-                        add(
-                            MirrorTrayTileSpec("LLocation", "Location", "Drop a live map pin", TrayToneOrange) {
+                            MirrorTrayTileSpec("LPresentation", "Whiteboard", "Sketch together on one canvas", TrayToneAmber) {
                                 trayOpen = false
-                                locationOpen = true
+                                whiteboardOpen = true
                             },
-                        )
-                        // web groupOnly filter: Incognito hides in DMs; armed
-                        // state rides the amber tint (chat-room.tsx:2804-2812)
-                        if (isGroup) {
-                            add(
-                                MirrorTrayTileSpec(
-                                    "LVenetianMask",
-                                    "Incognito",
-                                    if (anonNext) "Armed - next send is anonymous" else "Next send hides your name",
-                                    if (anonNext) TrayToneAmber else TrayToneZinc,
-                                ) {
-                                    anonNext = !anonNext
-                                    if (anonNext) trayOpen = false
-                                },
-                            )
-                        }
-                    },
-                )
-                // effects chooser pills (web 5218-5256): violet chips, arm on tap
-                if (trayEffectsOpen) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (effect in MirrorMessageEffect.entries) {
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .clip(CircleShape)
-                                    .background(Color(0x1A8B5CF6)) // violet-500/10
-                                    .border(1.dp, Color(0x408B5CF6), CircleShape) // violet-500/25
-                                    .clickable {
-                                        pendingEffect = effect
-                                        trayOpen = false
-                                        trayEffectsOpen = false
-                                        sendError = "${effect.wire} effect armed - type a message and send"
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                                contentAlignment = Alignment.Center,
+                            MirrorTrayTileSpec("LGift", "Red packet", "Wrap coins as a gift", TrayToneRose) {
+                                trayOpen = false
+                                redPacketOpen = true
+                            },
+                        ),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    MirrorTrayGroup(
+                        "Gather",
+                        listOf(
+                            MirrorTrayTileSpec("LCalendarDays", "Events", "Plan meetups with RSVP", TrayToneAmber) {
+                                trayOpen = false
+                                eventsOpen = true
+                            },
+                            MirrorTrayTileSpec("LPodcast", "Stage", "Live audio stage for the room", TrayToneOrange) {
+                                trayOpen = false
+                                onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE)
+                            },
+                            MirrorTrayTileSpec("LMap", "Space", "Hang out in a spatial room", TrayToneAmber) {
+                                trayOpen = false
+                                onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE)
+                            },
+                            MirrorTrayTileSpec("LGamepad2", "Game", "Start tic-tac-toe here", TrayToneViolet) {
+                                trayOpen = false
+                                startTicTacToe()
+                            },
+                            MirrorTrayTileSpec(
+                                "LTrophy",
+                                "Tournament",
+                                "Bracketed group competition",
+                                TrayToneRose,
+                                enabled = isGroup,
                             ) {
-                                Text(
-                                    effect.wire,
-                                    color = Color(0xFFC4B5FD), // violet-300
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
+                                trayOpen = false
+                                tournamentOpen = true
+                            },
+                        ),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    MirrorTrayGroup(
+                        "Organise",
+                        buildList {
+                            add(
+                                MirrorTrayTileSpec("LSquareKanban", "Kanban", "Group tasks on a board", TrayToneOrange) {
+                                    trayOpen = false
+                                    kanbanOpen = true
+                                },
+                            )
+                            // web groupOnly filter (chat-room.tsx:2828): Topic hides in DMs
+                            if (isGroup) {
+                                add(
+                                    MirrorTrayTileSpec("LMessagesSquare", "Topic", "File the chat under a topic", TrayToneAmber) {
+                                        trayOpen = false
+                                        topicsVisible = !topicsVisible
+                                    },
                                 )
+                            }
+                        },
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    MirrorTrayGroup(
+                        "Express",
+                        buildList {
+                            add(
+                                MirrorTrayTileSpec("LMic", "Voice note", "Hold-free recording with a live timer", TrayToneAmber) {
+                                    trayOpen = false
+                                    permissionRequestRoom = groupId
+                                    micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                                },
+                            )
+                            add(
+                                MirrorTrayTileSpec("LSticker", "Sticker", "Send a stamp from the packs", TrayToneAmber) {
+                                    trayOpen = false
+                                    stickerOpen = true
+                                },
+                            )
+                            add(
+                                MirrorTrayTileSpec("LSparkles", "Effects", "Confetti, lasers, echo, sparkles", TrayToneViolet) {
+                                    trayEffectsOpen = !trayEffectsOpen
+                                },
+                            )
+                            add(
+                                MirrorTrayTileSpec("LDices", "Commands", "Every slash command", TrayToneOrange) {
+                                    trayOpen = false
+                                    draftValue = TextFieldValue("/")
+                                },
+                            )
+                            add(
+                                MirrorTrayTileSpec("LLocation", "Location", "Drop a live map pin", TrayToneOrange) {
+                                    trayOpen = false
+                                    locationOpen = true
+                                },
+                            )
+                            // web groupOnly filter: Incognito hides in DMs; armed
+                            // state rides the amber tint (chat-room.tsx:2804-2812)
+                            if (isGroup) {
+                                add(
+                                    MirrorTrayTileSpec(
+                                        "LVenetianMask",
+                                        "Incognito",
+                                        if (anonNext) "Armed - next send is anonymous" else "Next send hides your name",
+                                        if (anonNext) TrayToneAmber else TrayToneZinc,
+                                    ) {
+                                        anonNext = !anonNext
+                                        if (anonNext) trayOpen = false
+                                    },
+                                )
+                            }
+                        },
+                    )
+                    // effects chooser pills (web 5218-5256): violet chips, arm on tap
+                    if (trayEffectsOpen) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for (effect in MirrorMessageEffect.entries) {
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .clip(CircleShape)
+                                        .background(Color(0x1A8B5CF6)) // violet-500/10
+                                        .border(1.dp, Color(0x408B5CF6), CircleShape) // violet-500/25
+                                        .clickable {
+                                            pendingEffect = effect
+                                            trayOpen = false
+                                            trayEffectsOpen = false
+                                            sendError = "${effect.wire} effect armed - type a message and send"
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        effect.wire,
+                                        color = Color(0xFFC4B5FD), // violet-300
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
                             }
                         }
                     }
@@ -2394,195 +2473,204 @@ internal fun MirrorRoom(
 
     // R64 - the room kebab: the web Conversation menu (chat-room.tsx R54-c)
     // with every row wired to a real action. Dark ember dropdown, scale-in.
-    if (menuOpen) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .clickable(onClick = { menuOpen = false }),
-        ) {
-            Column(
+    MirrorRoomContentBoundary {
+        if (menuOpen) {
+            Box(
                 Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(top = 60.dp, end = 8.dp)
-                    // web min-w-56 (224px) shrink-wraps to exactly 224px -
-                    // FIXED width, the weighted row labels must not stretch
-                    // the menu edge to edge.
-                    .width(224.dp)
-                    // web: max-h-[min(72vh,520px)] overflow-y-auto - 18 rows
-                    // must scroll, never clip
-                    .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.72f, 520f).dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xF21C1610))
-                    .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
-                    .verticalScroll(rememberScrollState())
-                    .padding(6.dp)
-                    .clickable(enabled = false) {},
+                    .fillMaxSize()
+                    .clickable(onClick = { menuOpen = false }),
             ) {
-                MirrorRoomMenuItem("LInfo", "Room info") {
-                    menuOpen = false
-                    onRoomInfo()
-                }
-                MirrorRoomMenuItem("LSearch", "Search in conversation") {
-                    menuOpen = false
-                    roomSearchOpen = true
-                }
-                // relocated header bell - upcoming count rides along
-                MirrorRoomMenuItem(
-                    "LBell",
-                    "Reminders",
-                    pillText = if (upcomingReminders > 0) (if (upcomingReminders > 9) "9+" else upcomingReminders.toString()) else "",
-                    pillStyle = "accent",
+                Column(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(top = 60.dp, end = 8.dp)
+                        // web min-w-56 (224px) shrink-wraps to exactly 224px -
+                        // FIXED width, the weighted row labels must not stretch
+                        // the menu edge to edge.
+                        .width(224.dp)
+                        // web: max-h-[min(72vh,520px)] overflow-y-auto - 18 rows
+                        // must scroll, never clip
+                        .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.72f, 520f).dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xF21C1610))
+                        .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(6.dp)
+                        .clickable(enabled = false) {},
                 ) {
-                    menuOpen = false
-                    remindersOpen = true
-                }
-                MirrorRoomMenuItem(
-                    "LPin",
-                    "Pinned messages",
-                    iconRotate = 45f,
-                    pillText = if (pinnedCount > 0) pinnedCount.toString() else "",
-                    pillStyle = "neutral",
-                ) {
-                    menuOpen = false
-                    pinnedOpen = true
-                }
-                // relocated header mic - the live voice room
-                MirrorRoomMenuItem(
-                    "LMic",
-                    "Voice room",
-                    labelColor = if (voiceInRoom) MirrorArt.Accent2 else MirrorArt.Text,
-                    pillText = if (voiceInRoom) "${voiceRoster.size} live" else "",
-                    pillStyle = "accentSoft",
-                ) {
-                    menuOpen = false
-                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.VOICE)
-                }
-                // relocated header PiP - mini chat window
-                MirrorRoomMenuItem("LPictureInPicture2", if (pipActive) "Close mini chat window" else "Mini chat window") {
-                    menuOpen = false
-                    onTogglePip()
-                }
-                if (isGroup) {
-                    MirrorRoomMenuItem(
-                        "LMessagesSquare",
-                        "Topics",
-                        pillText = if (topicsVisible) "Shown" else "Hidden",
-                        pillStyle = if (topicsVisible) "accentSoft" else "neutral",
-                    ) {
-                        topicsVisible = !topicsVisible
+                    MirrorRoomMenuItem("LInfo", "Room info") {
+                        menuOpen = false
+                        onRoomInfo()
                     }
-                }
-                MirrorRoomMenuItem("LCalendarClock", "Scheduled sends") {
-                    menuOpen = false
-                    scheduledOpen = true
-                }
-                // R72 - DM-only safety number row (web ShieldCheck item,
-                // chat-room.tsx:4232): label + tint flip when verified
-                if (!isGroup && dmPeerId != null) {
+                    MirrorRoomMenuItem("LSearch", "Search in conversation") {
+                        menuOpen = false
+                        roomSearchOpen = true
+                    }
+                    // relocated header bell - upcoming count rides along
                     MirrorRoomMenuItem(
-                        "LShieldCheck",
-                        if (safetyVerified == true) "Verified safety number" else "Verify safety number",
+                        "LBell",
+                        "Reminders",
+                        pillText = if (upcomingReminders > 0) (if (upcomingReminders > 9) "9+" else upcomingReminders.toString()) else "",
+                        pillStyle = "accent",
                     ) {
                         menuOpen = false
-                        safetyOpen = true
+                        remindersOpen = true
                     }
-                }
-                if (muteStripOpen) {
-                    MirrorMenuStrip("Mute for", listOf("8h", "1w", "Always")) { choice ->
-                        muteStripOpen = false
-                        menuOpen = false
-                        onMuteChoice(when (choice) {
-                            "8h" -> "8h"
-                            "1w" -> "1w"
-                            else -> "always"
-                        })
-                    }
-                } else {
                     MirrorRoomMenuItem(
-                        if (muted) "LVolumeX" else "LBellOff",
-                        if (muted) "Unmute notifications" else "Mute notifications",
+                        "LPin",
+                        "Pinned messages",
+                        iconRotate = 45f,
+                        pillText = if (pinnedCount > 0) pinnedCount.toString() else "",
+                        pillStyle = "neutral",
                     ) {
-                        if (muted) {
-                            menuOpen = false
-                            onMuteChoice(null)
-                        } else {
-                            muteStripOpen = true
+                        menuOpen = false
+                        pinnedOpen = true
+                    }
+                    // relocated header mic - the live voice room
+                    MirrorRoomMenuItem(
+                        "LMic",
+                        "Voice room",
+                        labelColor = if (voiceInRoom) MirrorArt.Accent2 else MirrorArt.Text,
+                        pillText = if (voiceInRoom) "${voiceRoster.size} live" else "",
+                        pillStyle = "accentSoft",
+                    ) {
+                        menuOpen = false
+                        onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.VOICE)
+                    }
+                    // relocated header PiP - mini chat window
+                    MirrorRoomMenuItem("LPictureInPicture2", if (pipActive) "Close mini chat window" else "Mini chat window") {
+                        menuOpen = false
+                        onTogglePip()
+                    }
+                    if (isGroup) {
+                        MirrorRoomMenuItem(
+                            "LMessagesSquare",
+                            "Topics",
+                            pillText = if (topicsVisible) "Shown" else "Hidden",
+                            pillStyle = if (topicsVisible) "accentSoft" else "neutral",
+                        ) {
+                            topicsVisible = !topicsVisible
                         }
                     }
-                }
-                if (ttlStripOpen) {
-                    MirrorMenuStrip("New messages vanish after", listOf("Off", "24h", "7d", "30d")) { choice ->
-                        ttlStripOpen = false
+                    MirrorRoomMenuItem("LCalendarClock", "Scheduled sends") {
                         menuOpen = false
-                        onTtlChoice(when (choice) {
-                            "24h" -> 86_400
-                            "7d" -> 604_800
-                            "30d" -> 2_592_000
-                            else -> 0
-                        })
+                        scheduledOpen = true
                     }
-                } else {
+                    // R72 - DM-only safety number row (web ShieldCheck item,
+                    // chat-room.tsx:4232): label + tint flip when verified
+                    if (!isGroup && dmPeerId != null) {
+                        MirrorRoomMenuItem(
+                            "LShieldCheck",
+                            if (safetyVerified == true) "Verified safety number" else "Verify safety number",
+                        ) {
+                            menuOpen = false
+                            safetyOpen = true
+                        }
+                    }
+                    if (muteStripOpen) {
+                        MirrorMenuStrip("Mute for", listOf("8h", "1w", "Always")) { choice ->
+                            muteStripOpen = false
+                            menuOpen = false
+                            onMuteChoice(when (choice) {
+                                "8h" -> "8h"
+                                "1w" -> "1w"
+                                else -> "always"
+                            })
+                        }
+                    } else {
+                        MirrorRoomMenuItem(
+                            if (muted) "LVolumeX" else "LBellOff",
+                            if (muted) "Unmute notifications" else "Mute notifications",
+                            enabled = !roomSettingsBusy,
+                            pillText = if (roomSettingsBusy) "Updating…" else "",
+                        ) {
+                            if (muted) {
+                                menuOpen = false
+                                onMuteChoice(null)
+                            } else {
+                                muteStripOpen = true
+                            }
+                        }
+                    }
+                    if (ttlStripOpen) {
+                        MirrorMenuStrip("New messages vanish after", listOf("Off", "24h", "7d", "30d")) { choice ->
+                            ttlStripOpen = false
+                            menuOpen = false
+                            onTtlChoice(when (choice) {
+                                "24h" -> 86_400
+                                "7d" -> 604_800
+                                "30d" -> 2_592_000
+                                else -> 0
+                            })
+                        }
+                    } else {
+                        MirrorRoomMenuItem(
+                            "LTimer",
+                            "Disappearing messages",
+                            enabled = !roomSettingsBusy,
+                            iconColor = if ((ttlSeconds ?: 0) > 0) MirrorArt.Accent2 else MirrorArt.Dim,
+                            pillText = when {
+                                roomSettingsBusy -> "Updating…"
+                                ttlSeconds == null -> "Not loaded"
+                                ttlSeconds > 0 -> when (ttlSeconds) { 86_400 -> "24h"; 604_800 -> "7d"; else -> "30d" }
+                                else -> ""
+                            },
+                            pillStyle = if (ttlSeconds == null) "neutral" else "accentUp",
+                        ) {
+                            ttlStripOpen = true
+                        }
+                    }
+                    // R34-b: AI recap - real LLM summary of the recent chat
+                    MirrorRoomMenuItem("LSparkles", "Recap with AI") {
+                        menuOpen = false
+                        recapOpen = true
+                    }
+                    MirrorRoomMenuItem("LUserPlus", if (isGroup) "Manage group" else "Manage chat") {
+                        menuOpen = false
+                        // web parity: groups open the classic manager (webhooks,
+                        // leaderboard, roles); DMs ride the info page
+                        if (isGroup) onManageGroup() else onRoomInfo()
+                    }
+                    // room tools - the same surfaces the composer tray opens on the web
+                    MirrorRoomMenuLabel("Tools")
+                    MirrorRoomMenuItem("LCalendarDays", "Events") {
+                        menuOpen = false
+                        eventsOpen = true
+                    }
+                    MirrorRoomMenuItem("LPresentation", "Whiteboard") {
+                        menuOpen = false
+                        whiteboardOpen = true
+                    }
+                    MirrorRoomMenuItem("LSquareKanban", "Kanban") {
+                        menuOpen = false
+                        kanbanOpen = true
+                    }
+                    MirrorRoomMenuItem("LPodcast", "Stage") {
+                        menuOpen = false
+                        onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE)
+                    }
+                    MirrorRoomMenuItem("LMap", "Space") {
+                        menuOpen = false
+                        onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE)
+                    }
                     MirrorRoomMenuItem(
-                        "LTimer",
-                        "Disappearing messages",
-                        iconColor = if (ttlSeconds > 0) MirrorArt.Accent2 else MirrorArt.Dim,
-                        pillText = if (ttlSeconds > 0) {
-                            when (ttlSeconds) { 86_400 -> "24h"; 604_800 -> "7d"; else -> "30d" }
-                        } else "",
-                        pillStyle = "accentUp",
+                        "LTrophy",
+                        "Tournament",
+                        enabled = isGroup,
                     ) {
-                        ttlStripOpen = true
-                    }
-                }
-                // R34-b: AI recap - real LLM summary of the recent chat
-                MirrorRoomMenuItem("LSparkles", "Recap with AI") {
-                    menuOpen = false
-                    recapOpen = true
-                }
-                MirrorRoomMenuItem("LUserPlus", if (isGroup) "Manage group" else "Manage chat") {
-                    menuOpen = false
-                    // web parity: groups open the classic manager (webhooks,
-                    // leaderboard, roles); DMs ride the info page
-                    if (isGroup) onManageGroup() else onRoomInfo()
-                }
-                // room tools - the same surfaces the composer tray opens on the web
-                MirrorRoomMenuLabel("Tools")
-                MirrorRoomMenuItem("LCalendarDays", "Events") {
-                    menuOpen = false
-                    eventsOpen = true
-                }
-                MirrorRoomMenuItem("LPresentation", "Whiteboard") {
-                    menuOpen = false
-                    whiteboardOpen = true
-                }
-                MirrorRoomMenuItem("LSquareKanban", "Kanban") {
-                    menuOpen = false
-                    kanbanOpen = true
-                }
-                MirrorRoomMenuItem("LPodcast", "Stage") {
-                    menuOpen = false
-                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE)
-                }
-                MirrorRoomMenuItem("LMap", "Space") {
-                    menuOpen = false
-                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE)
-                }
-                MirrorRoomMenuItem(
-                    "LTrophy",
-                    "Tournament",
-                    enabled = isGroup,
-                ) {
-                    if (isGroup) {
-                        menuOpen = false
-                        tournamentOpen = true
+                        if (isGroup) {
+                            menuOpen = false
+                            tournamentOpen = true
+                        }
                     }
                 }
             }
         }
+
+        // R64 - search in conversation: real filter over the cached room messages.
     }
 
-    // R64 - search in conversation: real filter over the cached room messages.
     if (roomSearchOpen) {
         MirrorRoomSearchSheet(messages = messages, onDismiss = { roomSearchOpen = false })
     }
@@ -2598,10 +2686,16 @@ internal fun MirrorRoom(
 
     // R69 - the Conversation menu surfaces: the same real sheets the web opens
     if (remindersOpen) {
-        MirrorRemindersSheet(repository, viewerId, groupId) { remindersOpen = false }
+        MirrorRemindersSheet(repository, viewerId, groupId,
+            onOpen = { target ->
+                if (roomActionsLive.get() && repository.viewerId == viewerId) {
+                    remindersOpen = false
+                    onOpenReminder(target)
+                }
+            }, onDismiss = { remindersOpen = false })
     }
     if (scheduledOpen) {
-        MirrorScheduledSheet(repository, groupId) { scheduledOpen = false }
+        MirrorScheduledSheet(repository, groupId) { scheduledOpen = false; scheduledRefresh++ }
     }
     // R72 - DM safety number sheet (verify/unverify on the real contract)
     if (safetyOpen && dmPeerId != null) {
@@ -2614,7 +2708,7 @@ internal fun MirrorRoom(
             repository = repository,
             conversationId = groupId,
             initialDraft = draftValue.text,
-            onConsumedDraft = { if (roomActionsLive.get()) composerDraft.clearIfUnchanged(scheduledRevision) },
+            onConsumedDraft = { if (roomActionsLive.get()) { composerDraft.clearIfUnchanged(scheduledRevision); scheduledRefresh++ } },
             onDismiss = { scheduleOpen = false },
         )
     }
@@ -2651,7 +2745,7 @@ internal fun MirrorRoom(
             viewerId = viewerId,
             members = members,
             repository = repository,
-            onReaction = { emoji -> toggleReaction(target.id, emoji) },
+            onReaction = { emoji -> toggleReaction(target, emoji) },
             onReply = { replyTo = if (target.viewOnce) target.copy(body = "View-once message", imagePath = null) else target },
             onEdit = {
                 if (editing == null) {
@@ -2675,7 +2769,7 @@ internal fun MirrorRoom(
             repository = repository,
             source = target,
             onDismiss = { forwardFor = null },
-            onForwarded = { name -> sendError = "Forwarded to $name" },
+            onForwarded = { name -> sendError = "Forward queued for $name" },
         )
     }
     threadFor?.let { root ->
@@ -2686,7 +2780,9 @@ internal fun MirrorRoom(
                 viewerId = viewerId,
                 viewerName = viewerName,
                 memberNames = memberNames,
+                members = members,
                 jumpMessageId = threadJumpId,
+                readingEnabled = readingEnabled && !roomPanelOpen,
                 onDismiss = { threadFor = null; threadJumpId = null },
             )
         }
@@ -2743,18 +2839,32 @@ internal fun MirrorRoom(
         )
     }
     infoFor?.let { target ->
-        MirrorMessageInfoPanel(
-            message = target,
+        LaunchedEffect(target.id, readerLifecycle, repository, viewerId) {
+            readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                repository.messageReadStateRefreshes(groupId, target.id).collect { available ->
+                    if (!available && infoFor?.id == target.id) infoFor = null
+                }
+            }
+        }
+        val current = messages.firstOrNull { it.id == target.id }
+        if (current == null) {
+            LaunchedEffect(target.id) { infoFor = null }
+        } else MirrorMessageInfoPanel(
+            message = current,
             members = members,
+            viewerId = viewerId,
             onDismiss = { infoFor = null },
         )
     }
     captionFor?.let { staged ->
         MirrorCaptionSheet(
-            imagePath = staged.first,
+            selection = staged,
+            destination = if (isGroup) "$title · ${staged.draft.topicId?.let { id -> topics.firstOrNull { it.id == id }?.name ?: "Original topic" } ?: "General"}" else title,
             busy = uploadingImage,
+            error = sendError,
+            onViewOnce = { value -> if (!uploadingImage && staged.submitted == null) captionFor = staged.withViewOnce(value) },
             onDismiss = { if (!uploadingImage) captionFor = null },
-            onSend = { caption -> sendStagedImage(staged.first, caption) },
+            onSend = { caption -> sendStagedAttachment(staged, caption) },
         )
     }
 
@@ -2821,6 +2931,14 @@ internal fun MirrorRoom(
             onDone = { handleEffectDone() },
         )
     }
+}
+
+/** Non-inline bytecode boundary: Compose's inline Column/Row content otherwise
+ * grows MirrorRoom beyond the JVM's 64 KiB method limit. This adds no layout
+ * node, moves no remember/effect ownership, and preserves section ordering. */
+@Composable
+private fun MirrorRoomContentBoundary(content: @Composable () -> Unit) {
+    content()
 }
 
 /** Web tray tone palette (chat-room.tsx trayGroups) - the dark-mode 400 stops. */
@@ -3502,7 +3620,7 @@ private fun MirrorBubbleRow(
             if (head) {
                 Box(Modifier.padding(start = 0.dp, end = 6.dp, bottom = 20.dp)) {
                     MirrorAvatar(
-                        name = message.authorName,
+                        name = message.displayAuthorName,
                         color = message.senderColor,
                         isGroup = false,
                         groupId = "",
@@ -3673,7 +3791,10 @@ private fun MirrorBubbleRow(
                     } else {
                         // R54-c: sender name is the FIRST LINE INSIDE the
                         // incoming group bubble
-                        if (!mine && isGroup && head) {
+                        if (message.integrationLabel != null) {
+                            Text(message.integrationLabel.orEmpty(), color = MirrorArt.Accent2, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(bottom = 2.dp))
+                        } else if (!mine && isGroup && head) {
                             Text(
                                 message.authorName,
                                 color = MirrorArt.TextSoft,
@@ -3683,10 +3804,10 @@ private fun MirrorBubbleRow(
                                 modifier = Modifier.padding(bottom = 2.dp),
                             )
                         }
-                        if (message.replyToBody != null || message.replyToAuthor != null) {
+                        if (message.visibleQuote()?.content != null || message.visibleQuote()?.senderName != null) {
                             MirrorReplyQuote(
-                                author = message.replyToAuthor.orEmpty().ifBlank { "Unknown" },
-                                body = message.replyToBody.orEmpty().replace(Regex("\\s+"), " ").take(120),
+                                author = message.visibleQuote()?.senderName.orEmpty().ifBlank { "Unknown" },
+                                body = message.visibleQuote()?.content.orEmpty().replace(Regex("\\s+"), " ").take(120),
                                 mine = mine,
                                 modifier = Modifier.padding(bottom = 4.dp),
                             )
@@ -3903,7 +4024,10 @@ private fun MirrorBubbleRow(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                Text(chip.emoji, fontSize = 12.sp, lineHeight = 14.sp)
+                                val glyph = MirrorReactions.glyphOf(chip.emoji)
+                                val tint = if (chip.iReacted) MirrorArt.Accent2 else MirrorArt.TextSoft
+                                if (glyph.startsWith("P")) MirrorPhosphorIcon(glyph, tint, Modifier.size(12.dp))
+                                else MirrorLucideIcon(glyph, tint, Modifier.size(12.dp))
                                 if (chip.count > 1) {
                                     Text(
                                         chip.count.toString(),
@@ -4185,53 +4309,6 @@ private fun AnnotatedString.Builder.appendPlainWithLinks(text: String, mine: Boo
 }
 
 /** Pick - downscale (max 1280px) - JPEG 82 - data URL (web compressImageToDataUrl parity). */
-private suspend fun mirrorUriToDataUrl(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
-    runCatching {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        var sample = 1
-        val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
-        while (maxSide / (sample * 2) >= 1280) sample *= 2
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bitmap = context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, opts)
-        } ?: return@runCatching null
-        val scaled = if (maxOf(bitmap.width, bitmap.height) > 1280) {
-            val scale = 1280f / maxOf(bitmap.width, bitmap.height)
-            Bitmap.createScaledBitmap(
-                bitmap,
-                (bitmap.width * scale).toInt().coerceAtLeast(1),
-                (bitmap.height * scale).toInt().coerceAtLeast(1),
-                true,
-            )
-        } else {
-            bitmap
-        }
-        val bytes = ByteArrayOutputStream().use { out ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, 82, out)
-            out.toByteArray()
-        }
-        "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-    }.getOrNull()
-}
-
-/**
- * R64 - document pick - base64 data URL + display name (attachments tray
- * Document tile). Reads ANY file the picker returns; the upload route is
- * mime-agnostic so PDF/TXT/CSV/ZIP all ride the same POST /api/uploads.
- */
-private suspend fun mirrorUriToDocumentDataUrl(context: Context, uri: Uri): Pair<String, String>? =
-    withContext(Dispatchers.IO) {
-        runCatching {
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: return@runCatching null
-            if (bytes.isEmpty() || bytes.size > 12 * 1024 * 1024) return@runCatching null
-            val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-            val name = uri.lastPathSegment?.substringAfterLast('/')?.take(120) ?: "document"
-            "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP) to name
-        }.getOrNull()
-    }
-
 /** HH:mm cluster stamp (en-US h23 parity - "08:16"). */
 internal fun MirrorRoomTimeLabel(iso: String): String {
     val parsed = MirrorRoomInstant(iso) ?: return ""
@@ -4281,7 +4358,7 @@ private fun MirrorTopicRail(
             )
             for (topic in topics) {
                 MirrorTopicChip(
-                    label = topic.name,
+                    label = topic.unreadCount?.takeIf { it > 0 }?.let { "${topic.name} · $it unread" } ?: topic.name,
                     count = topic.messageCount,
                     active = topic.id == activeTopicId,
                     glyph = topicGlyphName(topic.emoji),
@@ -4456,33 +4533,49 @@ private fun MirrorRoomSafetySheet(
     peerId: String,
     onDismiss: () -> Unit,
 ) {
-    var state by remember { mutableStateOf<app.pulse.domain.model.SafetyState?>(null) }
-    var failed by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var reloadKey by remember { mutableStateOf(0) }
+    val epoch = repository.attachmentSessionKey()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var state by remember(repository, peerId, epoch) { mutableStateOf<app.pulse.domain.model.SafetyState?>(null) }
+    var failed by remember(repository, peerId, epoch) { mutableStateOf(false) }
+    var busy by remember(repository, peerId, epoch) { mutableStateOf(false) }
+    var errorText by remember(repository, peerId, epoch) { mutableStateOf<String?>(null) }
+    var reloadKey by remember(repository, peerId, epoch) { mutableStateOf(0) }
 
-    LaunchedEffect(reloadKey) {
-        failed = false
-        state = runCatching { repository.safetyState(peerId).getOrThrow() }.getOrNull()
-        if (state == null) failed = true
+    LaunchedEffect(repository, peerId, epoch, reloadKey) {
+        if (epoch == null) return@LaunchedEffect
+        val owned = repository.boundToCurrentAccount()
+        busy = true
+        try {
+            val fresh = owned.safetyState(peerId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
+            state = fresh; failed = false; errorText = null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) { if (repository.attachmentSessionKey() == epoch) failed = true }
+        finally { if (repository.attachmentSessionKey() == epoch) busy = false }
     }
 
     fun toggle(verify: Boolean) {
-        if (busy) return
-        busy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val next = runCatching {
-                if (verify) repository.verifyPeer(peerId).getOrThrow() else repository.unverifyPeer(peerId).getOrThrow()
-            }.getOrNull()
-            withContext(Dispatchers.Main) {
-                busy = false
-                if (next != null) state = next
-            }
+        if (busy || state == null || epoch == null || repository.attachmentSessionKey() != epoch) return
+        val owned = repository.boundToCurrentAccount()
+        busy = true; errorText = null
+        actionScope.launch {
+            try {
+                val next = (if (verify) owned.verifyPeer(peerId) else owned.unverifyPeer(peerId)).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() == epoch) state = next
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (repository.attachmentSessionKey() == epoch) errorText = error.message ?: "Comparison change was not confirmed"
+            } finally { if (repository.attachmentSessionKey() == epoch) busy = false }
         }
     }
 
     MirrorSheet(title = "Safety number", onDismiss = onDismiss) {
         MirrorSheetScroll {
+            errorText?.let { Text(it, color = MirrorArt.Red, fontSize = 12.sp) }
             when {
                 failed -> Text(
                     "Could not load the safety number",
@@ -4499,7 +4592,7 @@ private fun MirrorRoomSafetySheet(
                 else -> {
                     val loaded = state!!
                     Text(
-                        "Verify this account's safety number to confirm the end-to-end encryption identity.",
+                        "This code compares public account IDs, not device encryption keys. A matching code or checkmark does not prove end-to-end encryption.",
                         color = MirrorArt.Dim, fontSize = 12.sp, lineHeight = 17.sp,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     )
@@ -4563,52 +4656,74 @@ private fun MirrorScheduleComposerSheet(
     onConsumedDraft: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, repository.attachmentSessionKey(), conversationId) {
+        MirrorOwnedScheduleComposerSheet(repository, conversationId, initialDraft, onConsumedDraft, onDismiss)
+    }
+}
+
+@Composable
+private fun MirrorOwnedScheduleComposerSheet(
+    repository: PulseRepository, conversationId: String, initialDraft: String,
+    onConsumedDraft: () -> Unit, onDismiss: () -> Unit,
+) {
     var body by remember { mutableStateOf(initialDraft) }
     var customWhen by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var done by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val epoch = repository.attachmentSessionKey()
+    var attempted by remember { mutableStateOf<app.pulse.domain.sync.ScheduleTimes.Attempt?>(null) }
+    val zone = remember { java.time.ZoneId.systemDefault() }
+    val presets = remember {
+        val now = java.time.Instant.now()
+        listOf("In 1 hour" to app.pulse.domain.sync.ScheduleTimes.Preset.HOUR,
+            "Tonight 20:00" to app.pulse.domain.sync.ScheduleTimes.Preset.TONIGHT,
+            "Tomorrow 09:00" to app.pulse.domain.sync.ScheduleTimes.Preset.TOMORROW_MORNING)
+            .map { (label, preset) -> label to app.pulse.domain.sync.ScheduleTimes.resolve(preset, now, zone) }
+    }
 
     fun parseWhen(iso: String): java.time.Instant? = runCatching {
-        java.time.LocalDateTime.parse(iso).atZone(java.time.ZoneId.systemDefault()).toInstant()
+        java.time.LocalDateTime.parse(iso.trim().replace(' ', 'T')).atZone(zone).toInstant()
     }.getOrNull()
 
-    fun scheduleAt(whenIso: String?) {
+    fun scheduleAt(preset: java.time.Instant?) {
         if (busy) return
         val text = body.trim()
         if (text.isEmpty()) {
             error = "Write the message first"
             return
         }
-        val instant = if (whenIso != null) {
-            parseWhen(whenIso)
-        } else {
-            parseWhen(customWhen.trim())
+        if (text.length > 2000) {
+            error = "Message must be at most 2000 characters"
+            return
         }
+        val instant = preset ?: parseWhen(customWhen.trim())
         if (instant == null) {
             error = "Use the YYYY-MM-DD HH:MM format"
             return
         }
-        if (!instant.isAfter(java.time.Instant.now())) {
-            error = "Pick a time in the future"
+        val now = java.time.Instant.now()
+        if (!app.pulse.domain.sync.ScheduleTimes.canSubmit(text, instant, now, attempted)) {
+            error = "Choose a time between 30 seconds and 30 days from now"
             return
         }
+        attempted = app.pulse.domain.sync.ScheduleTimes.Attempt(text, instant)
         error = null
         busy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val ok = runCatching {
-                repository.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
-            }.isSuccess
-            withContext(Dispatchers.Main) {
-                busy = false
-                if (ok) {
-                    done = true
-                    onConsumedDraft()
-                    onDismiss()
-                } else {
-                    error = "Could not schedule - try again"
-                }
-            }
+        scope.launch {
+            try {
+                if (epoch == null || repository.attachmentSessionKey() != epoch) return@launch
+                val item = repository.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() != epoch) return@launch
+                onConsumedDraft()
+                repository.acknowledgeScheduledCreation(item).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() != epoch) return@launch
+                onDismiss()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (repository.attachmentSessionKey() == epoch) error = failure.message ?: "Could not schedule. Your draft is kept."
+            } finally { if (repository.attachmentSessionKey() == epoch) busy = false }
         }
     }
 
@@ -4616,7 +4731,7 @@ private fun MirrorScheduleComposerSheet(
         MirrorSheetScroll {
             BasicTextField(
                 value = body,
-                onValueChange = { body = it },
+                onValueChange = { if (!busy) body = it },
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp, lineHeight = 18.sp),
                 cursorBrush = SolidColor(MirrorArt.Accent2),
                 modifier = Modifier
@@ -4637,7 +4752,7 @@ private fun MirrorScheduleComposerSheet(
                 modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (preset in listOf("In 1 hour" to java.time.LocalDateTime.now().plusHours(1).withSecond(0).withNano(0), "Tonight 20:00" to java.time.LocalDate.now().atTime(20, 0), "Tomorrow 09:00" to java.time.LocalDate.now().plusDays(1).atTime(9, 0))) {
+                for (preset in presets) {
                     Text(
                         preset.first,
                         color = MirrorArt.TextSoft, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold,
@@ -4645,7 +4760,7 @@ private fun MirrorScheduleComposerSheet(
                             .clip(RoundedCornerShape(50))
                             .background(MirrorArt.White7)
                             .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(50))
-                            .clickable { scheduleAt(preset.second.toString()) }
+                            .clickable(enabled = !busy) { scheduleAt(preset.second) }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                 }
@@ -4657,7 +4772,7 @@ private fun MirrorScheduleComposerSheet(
             )
             BasicTextField(
                 value = customWhen,
-                onValueChange = { customWhen = it },
+                onValueChange = { if (!busy) customWhen = it },
                 singleLine = true,
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                 cursorBrush = SolidColor(MirrorArt.Accent2),
@@ -4760,12 +4875,22 @@ private fun MirrorComposerBar(
 
 /** R73 - the photo caption sheet (web caption-sheet chat-room.tsx:5868-5945). */
 @Composable
-private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -> Unit, onSend: (String) -> Unit) {
-    var caption by remember { mutableStateOf("") }
+private fun MirrorCaptionSheet(selection: MirrorMediaSelection, destination: String, busy: Boolean, error: String?, onViewOnce: (Boolean) -> Unit, onDismiss: () -> Unit, onSend: (String) -> Unit) {
+    val draft = selection.draft
+    val locked = selection.submitted != null
+    var caption by remember(draft.selectionId) { mutableStateOf(draft.caption) }
+    val preview = remember(draft.selectionId) {
+        if (draft.kind == "image") runCatching { Base64.decode(draft.dataUrl.substringAfter(','), Base64.NO_WRAP) }.getOrNull() else null
+    }
     MirrorSheet(title = "Add a caption", onDismiss = onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            AsyncImage(
-                model = imagePath,
+            Text(destination, color = MirrorArt.Dim, fontSize = 12.sp)
+            if (draft.replyToId != null) Text("Replying to the selected message", color = MirrorArt.Dim, fontSize = 12.sp)
+            if (draft.kind == "file") {
+                Text(draft.fileName ?: "Document", color = MirrorArt.Text, fontWeight = FontWeight.SemiBold)
+                Text("${draft.fileSize ?: 0} bytes · review before sending", color = MirrorArt.Dim, fontSize = 12.sp)
+            } else AsyncImage(
+                model = preview,
                 contentDescription = "Staged photo",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -4773,6 +4898,16 @@ private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -
                     .heightIn(max = 220.dp)
                     .clip(RoundedCornerShape(14.dp)),
             )
+            if (draft.kind == "image") {
+                Row(Modifier.fillMaxWidth().clickable(enabled = !busy && !locked) { onViewOnce(!draft.viewOnce) }.padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("View once", color = MirrorArt.Text, fontSize = 13.sp)
+                    Text(if (draft.viewOnce) "On" else "Off", color = MirrorArt.Accent, fontSize = 13.sp)
+                }
+            }
+            if (draft.anon) Text("Sending anonymously", color = MirrorArt.Accent2, fontSize = 12.sp)
+            if (locked) Text("Send was attempted. This attachment may already be queued; retries use the same operation.", color = MirrorArt.Dim, fontSize = 12.sp)
+            error?.let { Text(it, color = MirrorArt.Accent2, fontSize = 12.sp) }
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -4787,15 +4922,16 @@ private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -
                     }
                     BasicTextField(
                         value = caption,
-                        onValueChange = { if (it.length <= 500) caption = it },
+                        onValueChange = { if (!busy && !locked) caption = it },
+                        readOnly = busy || locked,
                         textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                         cursorBrush = SolidColor(MirrorArt.Accent),
                         maxLines = 2,
                     )
                 }
-                if (caption.length > 450) {
+                if (caption.length > 1900) {
                     Text(
-                        "${500 - caption.length}",
+                        "${2000 - caption.trim().length}",
                         color = MirrorArt.Accent2,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -4809,17 +4945,17 @@ private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -
                         .clickable(enabled = !busy, onClick = onDismiss)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    Text("Cancel", color = MirrorArt.Dim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (locked) "Close" else "Cancel", color = MirrorArt.Dim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Box(
                     Modifier
                         .clip(CircleShape)
                         .background(MirrorArt.Accent)
-                        .clickable(enabled = !busy, onClick = { onSend(caption.trim()) })
+                        .clickable(enabled = !busy && caption.trim().length <= 2000, onClick = { onSend(caption.trim()) })
                         .padding(horizontal = 18.dp, vertical = 8.dp),
                 ) {
                     Text(
-                        if (busy) "Sending..." else "Send",
+                        if (busy) "Saving..." else if (locked) "Retry" else "Send",
                         color = Color(0xFF20150C),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,

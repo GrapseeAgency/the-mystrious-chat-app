@@ -1,7 +1,13 @@
 name: Pulse iOS CI
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Standard hosted runner (Intel fallback when the arm64 pool cannot acquire jobs)'
+        type: choice
+        default: macos-15
+        options: [macos-15, macos-15-intel]
   push:
     branches: [main]
     tags: ['v*']
@@ -11,7 +17,9 @@ on:
 
 jobs:
   build-test:
-    runs-on: macos-15
+    # PR validation uses the standard Intel pool while arm64 allocations are
+    # failing before checkout. Main/tag validation retains the arm64 default.
+    runs-on: ${{ inputs.runner || (github.event_name == 'pull_request' && 'macos-15-intel') || 'macos-15' }}
     defaults:
       run:
         working-directory: apps/ios
@@ -141,7 +149,9 @@ jobs:
   # Wave 0: a valid iOS archive through macOS CI (unsigned — no Apple
   # Developer Program yet; TestFlight lane lands when credentials exist).
   archive:
-    runs-on: macos-15
+    # PR validation uses the standard Intel pool while arm64 allocations are
+    # failing before checkout. Main/tag validation retains the arm64 default.
+    runs-on: ${{ inputs.runner || (github.event_name == 'pull_request' && 'macos-15-intel') || 'macos-15' }}
     defaults:
       run:
         working-directory: apps/ios

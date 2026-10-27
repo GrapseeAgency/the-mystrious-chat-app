@@ -293,8 +293,10 @@ internal fun MirrorSpotlightOverlay(
 
     var msgHits by remember { mutableStateOf<List<MessageHit>?>(null) }
     var msgSearching by remember { mutableStateOf(false) }
+    var msgError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(query, repository) {
         msgHits = null
+        msgError = null
         val term = query.trim()
         if (term.length < 2) {
             msgHits = null
@@ -302,8 +304,10 @@ internal fun MirrorSpotlightOverlay(
             return@LaunchedEffect
         }
         msgSearching = true
+        val account = repository.boundToCurrentAccount()
         delay(250)
-        repository.observeMessageSearch(term).collect {
+        account.observeMessageSearch(term).collect {
+            msgError = it.exceptionOrNull()?.message
             msgHits = it.getOrNull()
             msgSearching = false
         }
@@ -399,7 +403,7 @@ internal fun MirrorSpotlightOverlay(
         }
     }
     val flat = sections.flatMap { it.second }
-    val nothingFound = q.isNotEmpty() && flat.isEmpty() && !msgSearching
+    val nothingFound = q.isNotEmpty() && flat.isEmpty() && !msgSearching && msgError == null
     val serverPending = q.length >= 2 && msgSearching && msgHits == null
 
     Box(
@@ -573,6 +577,9 @@ internal fun MirrorSpotlightOverlay(
                                         }
                                     }
                                 }
+                            }
+                            if (msgError != null) {
+                                Text(msgError.orEmpty(), color = SubPageInk.Rose400, modifier = Modifier.padding(16.dp))
                             }
                             if (serverPending) {
                                 Row(

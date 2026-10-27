@@ -95,7 +95,8 @@ class PulseSocketClient(
          * wire event name, [dto] the authoritative (already decoded) row.
          */
         data class MessageEnvelope(val event: String, val conversationId: String, val dto: ChatMessageDto?) : Signal
-        data class Read(val conversationId: String, val userId: String, val lastReadAt: String?) : Signal
+        data class Read(val conversationId: String, val userId: String, val lastReadAt: String?,
+            val messageIds: List<String> = emptyList(), val readerMembershipId: String? = null, val all: Boolean = false) : Signal
         data class ConversationUpdated(val conversationId: String) : Signal
         data class Typing(val conversationId: String, val userId: String, val userName: String, val isTyping: Boolean) : Signal
         data class VoiceRoster(val conversationId: String, val roster: List<VoicePeerDto>) : Signal
@@ -282,7 +283,7 @@ class PulseSocketClient(
         }
         sock.on(SocketEvents.MESSAGE_READ) { args ->
             decode<ReadEventPayload>(args)?.let {
-                _signals.tryEmit(Signal.Read(it.conversationId, it.userId, it.lastReadAt))
+                _signals.tryEmit(Signal.Read(it.conversationId, it.userId, it.lastReadAt, it.messageIds, it.readerMembershipId, it.all))
             }
         }
         sock.on(SocketEvents.CONVERSATION_UPDATED) { args ->
@@ -428,7 +429,14 @@ class PulseSocketClient(
 
     private fun emitCall(event: String, payload: kotlinx.serialization.json.JsonObject) {
         val sock = socket ?: return
-        sock.emit(event, JSONObject(payload.toString()))
+        // Java Socket.IO otherwise buffers disconnected emits: a canceled offer
+        // could unexpectedly ring the peer on reconnect. Check on its event queue.
+        io.socket.thread.EventThread.exec {
+            activeSocketEvent(sock) {
+                if (isJoined) runCatching { sock.emit(event, JSONObject(payload.toString())) }
+                    .onFailure { Log.w(TAG, "emit $event failed", it) }
+            }
+        }
     }
 
     // R8 Task 3-c - group call (mesh) emission
@@ -436,28 +444,28 @@ class PulseSocketClient(
     // engine tears down honestly on disconnect instead).
 
     /** gcall:join - creates/joins the conversation's ONE live group call. */
-    fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto) {
-        emitRoomEvent(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user))
+    fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto, expectedCallId: String? = null, joinAttemptId: String? = null) {
+        emitCall(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user, expectedCallId, joinAttemptId))
     }
 
     /** gcall:offer - joiner → existing member (targeted relay). */
     fun emitGroupCallOffer(payload: GroupCallOfferDto) {
-        emitRoomEvent(GroupCallEvents.OFFER, payload.toJsonObject())
+        emitCall(GroupCallEvents.OFFER, payload.toJsonObject())
     }
 
     /** gcall:answer - the targeted peer answers. */
     fun emitGroupCallAnswer(payload: GroupCallAnswerDto) {
-        emitRoomEvent(GroupCallEvents.ANSWER, payload.toJsonObject())
+        emitCall(GroupCallEvents.ANSWER, payload.toJsonObject())
     }
 
     /** gcall:ice - flat candidate triple, targeted relay. */
     fun emitGroupCallIce(payload: GroupCallIceDto) {
-        emitRoomEvent(GroupCallEvents.ICE, payload.toJsonObject())
+        emitCall(GroupCallEvents.ICE, payload.toJsonObject())
     }
 
     /** gcall:leave - explicit exit (roster rebroadcast; last member ends the call). */
-    fun emitGroupCallLeave(conversationId: String, from: String) {
-        emitRoomEvent(GroupCallEvents.LEAVE, groupCallLeavePayload(conversationId, from))
+    fun emitGroupCallLeave(conversationId: String, from: String, callId: String? = null, joinAttemptId: String? = null) {
+        emitCall(GroupCallEvents.LEAVE, groupCallLeavePayload(conversationId, from, callId, joinAttemptId))
     }
 
     // Wave-5 voice/stage/space emission (wire-perfect payloads)
@@ -465,9 +473,9 @@ class PulseSocketClient(
     // engines re-join on the next connect), never a throw.
 
     private fun emitRoomEvent(event: String, payload: kotlinx.serialization.json.JsonObject) {
-        val sock = socket ?: return
-        runCatching { sock.emit(event, JSONObject(payload.toString())) }
-            .onFailure { Log.w(TAG, "emit $event failed", it) }
+        // Voice PCM/captions and stage/space actions are ephemeral too. Raw
+        // SDK emit would put them in sendBuffer during a disconnect race.
+        emitCall(event, payload)
     }
 
     /** voice:join - registers this socket's seat; re-emitted on reconnect (VR-8). */

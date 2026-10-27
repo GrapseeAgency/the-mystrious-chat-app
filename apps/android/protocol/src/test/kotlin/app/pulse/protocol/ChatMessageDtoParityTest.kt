@@ -39,8 +39,8 @@ class ChatMessageDtoParityTest {
           "createdAt": "2026-02-14T10:00:00.000Z",
           "parentId": "m0",
           "replyTo": {
-            "id": "m1", "conversationId": "c1", "senderId": "u2",
-            "content": "the quoted", "createdAt": "2026-02-14T09:59:00.000Z"
+            "id": "m1", "content": "the quoted", "senderName": "Quiet Raven",
+            "deleted": false, "quoteVersion": 1, "expiresAt": null, "viewOnce": false
           },
           "imagePath": "9c1f...e7.jpg",
           "audioPath": null,
@@ -63,6 +63,8 @@ class ChatMessageDtoParityTest {
         assertEquals("m0", row.parentId)
         // quote axis - SEPARATE from parentId, never merged
         assertEquals("m1", row.replyTo?.id)
+        assertEquals("Quiet Raven", row.replyTo?.senderName)
+        assertEquals(kotlinx.serialization.json.JsonNull, row.replyTo?.expiresAt)
         // media
         assertEquals("9c1f...e7.jpg", row.imagePath)
         assertNull(row.audioPath)

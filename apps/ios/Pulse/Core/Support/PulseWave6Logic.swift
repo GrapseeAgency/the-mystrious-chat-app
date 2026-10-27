@@ -127,6 +127,15 @@ func pulseValidHandle(_ handle: String) -> Bool {
 // the subscribed/discover partition, unread-flag counting, subscriber-count
 // copy and the row blurb fallback) without SwiftUI/transport involved.
 public enum PulseChannelDirectory {
+    /// Directory responses historically have only id; it is already the room ID.
+    public static func roomId(_ channel: WireChannelSummary) -> String? {
+        let id = channel.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return nil }
+        if let alias = channel.conversationId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !alias.isEmpty, alias != id { return nil }
+        return id
+    }
+
     /// The "Subscribed" section - isSubscribed == true ONLY.
     public static func subscribed(_ channels: [WireChannelSummary]) -> [WireChannelSummary] {
         channels.filter { $0.isSubscribed == true }
@@ -159,5 +168,15 @@ public enum PulseChannelDirectory {
             return description
         }
         return channel.preview ?? "No description yet"
+    }
+}
+
+
+/// A network/permission/server failure is not proof that an invite was revoked.
+public enum PulseInviteRules {
+    public static func isInvalidPreview(_ error: Error) -> Bool {
+        guard let failure = error as? PulseAPIClient.Failure else { return false }
+        if let status = failure.status { return [400, 404, 410].contains(status) }
+        return failure.kind == .notFound
     }
 }

@@ -407,6 +407,9 @@ model ConversationParticipant {
   @@unique([userId, conversationId])
   @@index([conversationId])
   @@index([userId])
+  readIntentState ReadIntentState?
+  readObservations MessageReadObservation[]
+
 }
 
 model Message {
@@ -454,6 +457,7 @@ model Message {
   translations   MessageTranslation[]
   linkPreview    LinkPreview?         @relation(fields: [linkUrl], references: [url])
   savedBy        SavedMessage[]
+  readObservations MessageReadObservation[]
 
   @@index([conversationId, createdAt])
   @@index([replyToId])
@@ -796,6 +800,8 @@ model PushToken {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  readStateCapability PushReadStateCapability?
+
 }
 
 // Durable delivery receipt, intentionally retained after the message is deleted.
@@ -827,4 +833,55 @@ model WalletOperation {
   result      String
 
   @@id([userId, clientId])
+}
+
+// Durable group/channel creation identity, retained after removal/departure.
+model ConversationCreationOperation {
+  userId         String
+  clientId       String
+  requestHash    String
+  conversationId String
+
+  @@id([userId, clientId])
+}
+
+// Scheduled-send creation receipt, retained after cancellation/delivery/room removal.
+model ScheduledCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  scheduledId String
+
+  @@id([userId, clientId])
+}
+
+// Independent of message timestamps: a new manual action retires old read intent.
+model ReadIntentState {
+  participantId String @id
+  revision String
+  participant ConversationParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+}
+
+// Exact, membership-owned observations; timestamps are informational, not cursors.
+model MessageReadObservation {
+  participantId String
+  messageId String
+  observedAt DateTime @default(now())
+  source String @default("visible")
+  participant ConversationParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  @@id([participantId, messageId])
+  @@index([messageId])
+}
+
+model ReadLedgerMigration {
+  id String @id
+}
+
+// Explicit native protocol opt-in; old Android clients must never render an
+// unfamiliar background invalidation as a visible generic notification.
+model PushReadStateCapability {
+  tokenId String @id
+  token PushToken @relation(fields: [tokenId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  version Int @default(1)
 }

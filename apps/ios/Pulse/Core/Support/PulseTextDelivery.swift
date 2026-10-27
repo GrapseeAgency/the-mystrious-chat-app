@@ -124,8 +124,13 @@ enum TempMessages {
             WireReplySnippet(
                 id: source.id,
                 content: source.content,
-                senderName: source.sender?.name ?? "",
+                senderName: source.displayAuthorName,
                 deleted: source.deletedAt != nil,
+                // A thread quote also needs its root's lifetime; wait for the
+                // server snippet rather than inventing an unbounded local witness.
+                quoteVersion: source.conversationId == conversationId && source.parentId == nil &&
+                    !source.id.hasPrefix("local_") && source.viewOnce != nil && source.anon != nil ? 1 : nil,
+                expiresAt: source.expiresAt, viewOnce: source.viewOnce == true,
             )
         }
         return WireChatMessage(

@@ -40,7 +40,7 @@ final class AttachmentDeliveryTests: XCTestCase {
         XCTAssertThrowsError(try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer,
             conversationId: "room", content: "", dataUrl: "data:audio/mp4;base64,aGVsbG8=",
             envelope: PulseOutboxForward(kind: "audio", durationMs: 600_100)))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testRemotePreviewNamesCannotAddressParentOrSharedPath() {

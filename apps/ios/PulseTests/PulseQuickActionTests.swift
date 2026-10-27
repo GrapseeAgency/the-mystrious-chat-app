@@ -46,4 +46,24 @@ final class PulseQuickActionTests: XCTestCase {
         XCTAssertEqual(PulseQuickReply.categoryId, "PULSE_MSG")
         XCTAssertEqual(PulseQuickReply.replyActionId, "PULSE_REPLY_ACTION")
     }
+    func testRemoteReplyOwnershipIsExplicitAndLegacyOrForeignPayloadsRefuse() {
+        let owned: [AnyHashable: Any] = ["kind":"message","recipientUserId":"owner"]
+        XCTAssertTrue(PulseQuickReply.ownsNotification(owned,userId:"owner",ownerKey:"gateway-owner"))
+        XCTAssertFalse(PulseQuickReply.ownsNotification(owned,userId:"other",ownerKey:"gateway-other"))
+        let invalid: [[AnyHashable: Any]] = [[:],["kind":"message"],["kind":"call","recipientUserId":"owner"],
+                                           ["kind":"message","recipientUserId":42]]
+        for info in invalid {
+            XCTAssertFalse(PulseQuickReply.ownsNotification(info,userId:"owner",ownerKey:"gateway-owner"))
+        }
+        XCTAssertFalse(PulseQuickReply.ownsNotification(owned,userId:"",ownerKey:""))
+    }
+
+    func testLocalReminderReplyRequiresExactGatewayAndAccountOwnerKey() {
+        let info = PulseReminderNotifications.userInfo(reminderId:"r",conversationId:"c",ownerId:"gateway-owner")
+        XCTAssertTrue(PulseQuickReply.ownsNotification(info,userId:"owner",ownerKey:"gateway-owner"))
+        XCTAssertFalse(PulseQuickReply.ownsNotification(info,userId:"owner",ownerKey:"other-gateway-owner"))
+        XCTAssertFalse(PulseQuickReply.ownsNotification(info,userId:"other",ownerKey:"gateway-other"))
+        XCTAssertFalse(PulseQuickReply.ownsNotification(["reminderId":"old","conversationId":"c"],userId:"owner",ownerKey:"gateway-owner"))
+    }
+
 }

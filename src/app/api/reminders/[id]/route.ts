@@ -2,6 +2,7 @@
 // PATCH marks the row fired (the client due-loop calls this after
 // showing the nudge); DELETE cancels it outright. Owner-only, both.
 import { NextResponse } from 'next/server'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { db } from '@/lib/db'
 import { resolveReminder, deleteReminder, ReminderContractError } from '@/lib/reminder-contract'
 import { safeJson, strField } from '@/lib/serializers'
@@ -25,7 +26,9 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  try { return NextResponse.json(await resolveReminder(db, id, userId)) }
+  const denied = await requireActionOwner(req, userId, 'reminder')
+  if (denied) return denied
+  try { return NextResponse.json(await resolveReminder(db, id, userId), { headers: { 'Cache-Control': 'private, no-store' } }) }
   catch (error) {
     if (error instanceof ReminderContractError) return NextResponse.json({ error: error.message }, { status: error.status })
     throw error
@@ -42,7 +45,9 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  try { return NextResponse.json(await deleteReminder(db, id, userId)) }
+  const denied = await requireActionOwner(req, userId, 'reminder')
+  if (denied) return denied
+  try { return NextResponse.json(await deleteReminder(db, id, userId), { headers: { 'Cache-Control': 'private, no-store' } }) }
   catch (error) {
     if (error instanceof ReminderContractError) return NextResponse.json({ error: error.message }, { status: error.status })
     throw error

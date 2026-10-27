@@ -7,6 +7,7 @@
 //       avatar, color, blockedAt }> } | 400 | 403 | 404
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +30,8 @@ export async function GET(req: Request, { params }: RouteCtx) {
     )
   }
 
+  const denied = await requireActionOwner(req, ownerId, 'blocked accounts')
+  if (denied) return denied
   const owner = await db.user.findUnique({ where: { id: ownerId }, select: { id: true } })
   if (!owner) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
@@ -36,7 +39,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
 
   const rows = await db.userBlock.findMany({
     where: { blockerId: ownerId },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
     select: {
       id: true,
       createdAt: true,
@@ -47,6 +50,8 @@ export async function GET(req: Request, { params }: RouteCtx) {
   })
 
   return NextResponse.json({
+    blockListVersion: 1,
+    userId: ownerId,
     blocks: rows.map((row) => ({
       id: row.blocked.id,
       name: row.blocked.name,
@@ -55,5 +60,5 @@ export async function GET(req: Request, { params }: RouteCtx) {
       color: row.blocked.color,
       blockedAt: row.createdAt.toISOString(),
     })),
-  })
+  }, { headers: { 'Cache-Control': 'private, no-store' } })
 }

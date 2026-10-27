@@ -33,9 +33,9 @@ data class Reaction(
 )
 
 /**
- * One conversation participant with the read watermark (wire members[]).
- * Powers the double-tick read receipts (member.lastReadAt >= message createdAt) and the
- * message-info "seen by" sheet. Serialized into the Room `membersJson` cache.
+ * Current conversation membership and receipt privacy metadata (wire members[]).
+ * Message.readByMembershipIds supplies exact Seen evidence; lastReadAt alone
+ * cannot prove reading. Serialized into the Room `membersJson` cache.
  */
 @Serializable
 data class ConversationMember(
@@ -46,10 +46,22 @@ data class ConversationMember(
     val lastReadAt: Long? = null,
     /** Wire role - "admin" | "member". */
     val role: String? = null,
+    val readMembershipId: String? = null,
+    val readIntent: String? = null,
 )
 
 @Serializable
 data class UnreadExpiration(val expiresAtEpochMs: Long, val count: Int)
+
+/** Authoritative whole-scope count; never inferred from a loaded page. */
+@Serializable
+data class ReadScopeState(val unreadCount: Int, val firstUnreadMessageId: String? = null,
+    val unreadExpirations: List<UnreadExpiration> = emptyList()) {
+    fun unreadAt(nowMillis: Long): Int = unreadExpirations.filter { it.expiresAtEpochMs <= nowMillis }
+        .fold(unreadCount.coerceAtLeast(0)) { remaining, bucket ->
+            remaining - bucket.count.coerceIn(0, remaining)
+        }
+}
 
 /** A conversation in the chats list - mirrors web `ConversationSummary`. */
 @Serializable
@@ -63,6 +75,7 @@ data class Conversation(
     val lastMessageKind: String? = null,
     val lastActivityAt: String? = null,
     val unreadCount: Int = 0,
+    val firstUnreadMessageId: String? = null,
     val isPinned: Boolean = false,
     val isMuted: Boolean = false,
     val isArchived: Boolean = false,
@@ -99,6 +112,8 @@ data class Conversation(
 ) {
     enum class Kind { DM, GROUP, CHANNEL, SPACE, VOICE, STAGE }
 
+    /** Manual-only reminders contribute one; message counts are never inflated. */
+    val badgeUnreadCount: Int get() = maxOf(unreadCount, if (myManualUnread) 1 else 0)
     val isGroupish: Boolean get() = kind != Kind.DM
 }
 
@@ -188,7 +203,15 @@ data class Topic(
     val emoji: String = app.pulse.protocol.TOPIC_ICON_DEFAULT,
     val lastMessageAt: Long? = null,
     val messageCount: Int = 0,
-)
+    val unreadCount: Int? = null,
+    val firstUnreadMessageId: String? = null,
+    val unreadExpirations: List<UnreadExpiration> = emptyList(),
+) {
+    fun removingExpiredUnread(now: Long): Topic = if (unreadCount == null) this else copy(
+        unreadCount = ReadScopeState(unreadCount, firstUnreadMessageId, unreadExpirations).unreadAt(now),
+        unreadExpirations = unreadExpirations.filter { it.expiresAtEpochMs > now },
+    )
+}
 
 /** Outcome of POST /api/messages/{id}/transcribe (cached: server ASR cache hit). */
 @Serializable
@@ -277,7 +300,12 @@ data class MentionItem(
     val authorName: String = "",
     val snippet: String = "",
     val createdAt: String = "",
-)
+    val expiresAt: String? = null,
+) {
+    fun isVisible(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        messageId.isNotBlank() && conversationId.isNotBlank() && (expiresAt == null ||
+            runCatching { java.time.Instant.parse(expiresAt).toEpochMilli() > nowMillis }.getOrDefault(false))
+}
 
 // Wave 6 - social graph & discovery domain models
 
@@ -422,6 +450,7 @@ data class ScheduledItem(
     val scheduledAtIso: String,
     val cancelledAtIso: String? = null,
     val cancelledReason: String? = null,
+    val creationClientId: String? = null,
 )
 
 /**
@@ -485,6 +514,15 @@ class PulseApiException(
     val retryAfter: Int? = null,
 ) : IllegalStateException(message ?: "Request failed")
 
+/** Stored separately from caller-writable rich payloads. */
+@Serializable
+data class QuoteBounds(
+    val version: Int = 0,
+    val expiresAtEpochMs: Long? = null,
+    val deleted: Boolean = false,
+    val viewOnce: Boolean = false,
+)
+
 /** A message - mirrors web `MessageDTO`. */
 @Serializable
 data class Message(
@@ -501,10 +539,12 @@ data class Message(
     val threadRootId: String? = null,
     val pinnedAt: String? = null,
     val viewedOnce: Boolean = false,
+    val readByMembershipIds: List<String> = emptyList(),
     val reactions: List<Reaction> = emptyList(),
     /** Denormalized for rendering without a join. */
     val replyToBody: String? = null,
     val replyToAuthor: String? = null,
+    val quoteBounds: QuoteBounds? = null,
     val senderColor: String? = null,
     val viaAutomation: Boolean = false,
     val durationMs: Long? = null,
@@ -544,6 +584,10 @@ data class Message(
     enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, STICKER, LOCATION, SYSTEM }
 
     val isDeleted: Boolean get() = deletedAt != null
+    /** Attention/unread classification, never an ownership/permission check. */
+    fun isOutgoingFor(viewerId: String?): Boolean = !viewerId.isNullOrBlank() && authorId == viewerId && !viaAutomation
+    val displayAuthorName: String get() = if (anon) anonAlias?.takeIf { it.isNotBlank() } ?: "Anonymous" else integrationLabel ?: authorName
+    val integrationLabel: String? get() = app.pulse.domain.sync.MessageOrigin.label(payload, viaAutomation, isDeleted)
 }
 
 /**

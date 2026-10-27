@@ -93,27 +93,27 @@ fun ContactsScreen(
     var filter by remember { mutableStateOf("") }
     var safetyTarget by remember { mutableStateOf<User?>(null) }
     var reportTarget by remember { mutableStateOf<User?>(null) }
+    var reportOwner by remember { mutableStateOf<String?>(null) }
     // Wave 3 - outgoing calls start here. RECORD_AUDIO must be live before
     // the engine touches the mic; denial keeps the call unstarted (honest).
-    var callTarget by remember { mutableStateOf<User?>(null) }
+    val callPermission = remember { OutgoingCallPermissionGate<Pair<User, Boolean>>() }
+    androidx.compose.runtime.DisposableEffect(callPermission) {
+        onDispose { callPermission.cancel() }
+    }
+    fun finishCallPermission(granted: Boolean) {
+        val request = callPermission.complete(granted, viewModel.callPermissionOwnerKey()) ?: return
+        if (request.second) onVideoCallUser(request.first) else onCallUser(request.first)
+    }
     val micLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        val target = callTarget
-        callTarget = null
-        if (granted && target != null) onCallUser(target)
-    }
-    // Wave R1-W2D - outgoing VIDEO calls: mic AND camera in one prompt
-    // (camera denial is handled honestly by the engine's audio-only fallback).
-    var videoCallTarget by remember { mutableStateOf<User?>(null) }
+    ) { granted -> finishCallPermission(granted) }
     val videoLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { grants ->
-        val target = videoCallTarget
-        videoCallTarget = null
-        if (grants[android.Manifest.permission.RECORD_AUDIO] == true && target != null) {
-            onVideoCallUser(target)
-        }
+    ) { grants -> finishCallPermission(grants[android.Manifest.permission.RECORD_AUDIO] == true) }
+    fun requestCall(user: User, video: Boolean) {
+        if (!callPermission.begin(viewModel.callPermissionOwnerKey(), user to video)) return
+        if (video) videoLauncher.launch(arrayOf(android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.CAMERA))
+        else micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
     }
 
     LaunchedEffect(dmResult) {
@@ -157,6 +157,11 @@ fun ContactsScreen(
             }
         }
 
+        if (users.isNotEmpty()) state.error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+            TextButton(onClick = viewModel::refresh) { Text("Retry contacts") }
+        }
+        state.safetyError?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
         when {
             state.error != null && users.isEmpty() -> Text(
                 state.error ?: "",
@@ -217,16 +222,8 @@ fun ContactsScreen(
                                     user = user,
                                     online = presence.contains(user.id),
                                     onMessage = { viewModel.openDm(user) },
-                                    onCall = { callTarget = user; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
-                                    onVideoCall = {
-                                        videoCallTarget = user
-                                        videoLauncher.launch(
-                                            arrayOf(
-                                                android.Manifest.permission.RECORD_AUDIO,
-                                                android.Manifest.permission.CAMERA,
-                                            ),
-                                        )
-                                    },
+                                    onCall = { requestCall(user, false) },
+                                    onVideoCall = { requestCall(user, true) },
                                     onSafety = { safetyTarget = user },
                                     onOpenProfile = { onOpenUser(user.id) },
                                 )
@@ -241,16 +238,8 @@ fun ContactsScreen(
                                         user = user,
                                         online = presence.contains(user.id),
                                         onMessage = { viewModel.openDm(user) },
-                                        onCall = { callTarget = user; micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
-                                        onVideoCall = {
-                                            videoCallTarget = user
-                                            videoLauncher.launch(
-                                                arrayOf(
-                                                    android.Manifest.permission.RECORD_AUDIO,
-                                                    android.Manifest.permission.CAMERA,
-                                                ),
-                                            )
-                                        },
+                                        onCall = { requestCall(user, false) },
+                                        onVideoCall = { requestCall(user, true) },
                                         onSafety = { safetyTarget = user },
                                         onOpenProfile = { onOpenUser(user.id) },
                                     )
@@ -296,6 +285,7 @@ fun ContactsScreen(
             }
             SheetRow(icon = PulseIcons.Flag, label = "Report", tint = EmberPalette.Signal) {
                 safetyTarget = null
+                reportOwner = viewModel.safetyOwnerKey()
                 reportTarget = target
             }
             Spacer(Modifier.height(30.dp))
@@ -307,11 +297,11 @@ fun ContactsScreen(
         ReportPanel(
             firstName = target.name.trim().split(" ").first(),
             priorReasons = emptyList(),
-            busy = false,
+            busy = target.id in state.safetyPending,
+            errorText = state.safetyError,
             onDismiss = { reportTarget = null },
             onSubmit = { reason, details ->
-                viewModel.report(target, reason, details.ifBlank { null })
-                reportTarget = null
+                viewModel.report(target, reason, details, reportOwner) { reportTarget = null }
             },
         )
     }

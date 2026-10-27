@@ -57,7 +57,7 @@ class SendMessageUseCaseTest {
         }
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
         override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {}
-        override suspend fun react(messageId: String, emoji: String) = Result.success(Unit)
+        override suspend fun react(messageId: String, emoji: String, present: Boolean) = Result.success(Unit)
         override suspend fun users(query: String) = Result.success(emptyList<app.pulse.domain.model.User>())
         override suspend fun checkHandle(handle: String) =
             Result.success(app.pulse.domain.model.HandleCheck(available = true))
@@ -150,9 +150,9 @@ class SendMessageUseCaseTest {
         // Wave 1 messaging surface (stubs - the send path is the subject here)
         override suspend fun editMessage(messageId: String, content: String) =
             Result.failure<Message>(UnsupportedOperationException())
-        override suspend fun toggleMessagePin(messageId: String) =
+        override suspend fun pinMessage(messageId: String) =
             Result.failure<Message>(UnsupportedOperationException())
-        override suspend fun toggleMessageSave(messageId: String) =
+        override suspend fun setMessageSaved(messageId: String, saved: Boolean) =
             Result.failure<Boolean>(UnsupportedOperationException())
         override suspend fun pinnedMessages(conversationId: String) = emptyList<Message>()
         override suspend fun loadThread(rootId: String) =
@@ -301,7 +301,7 @@ class SendMessageUseCaseTest {
         override suspend fun emitCall(signal: app.pulse.domain.model.CallSignalOut) {}
         // R8 Task 3-c - group calls + push registration (unused here).
         override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {}
-        override suspend fun postGroupCallRing(conversationId: String, kind: app.pulse.domain.model.CallKind): Result<Unit> =
+        override suspend fun postGroupCallRing(conversationId: String, kind: app.pulse.domain.model.CallKind, callId: String): Result<Unit> =
             Result.failure(IllegalStateException("unavailable in fake"))
         override suspend fun probeGroupCallState(conversationId: String): Result<app.pulse.domain.model.GroupCallProbe?> =
             Result.success(null)
@@ -387,6 +387,13 @@ class SendMessageUseCaseTest {
         assertTrue(result.isSuccess)
         assertEquals("hello pulse", result.getOrNull()?.message?.body)
         assertEquals(1, repo.sent.size)
+    }
+
+    @Test fun `repositories without a bound reply implementation never fall back to ordinary send`() = runTest {
+        val repo = FakeRepo()
+        val result = repo.sendNotificationReply("c1", "reply", app.pulse.domain.sync.NotificationReplyOwner("a", "epoch"))
+        assertTrue(result.isFailure)
+        assertTrue(repo.sent.isEmpty())
     }
 
     @Test

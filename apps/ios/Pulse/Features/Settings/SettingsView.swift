@@ -37,6 +37,7 @@ struct SettingsView: View {
     @State private var editProfileOpen = false
     @State private var draftCount = 0
     @State private var queuedCount = 0
+    @State private var localStorageError: String?
     @State private var copiedUserId = false
     @State private var footprintBytes: Int64?
     // R5-A Item 4 - "Your footprint" live stats (web settings-screen.tsx
@@ -45,6 +46,14 @@ struct SettingsView: View {
     @State private var footprintStats: WireUserStats?
     @State private var footprintLoading = false
     @State private var footprintFailed = false
+    @State private var footprintGate = ProfileMutationGate()
+    @State private var footprintTask: Task<Void, Never>?
+
+    private var footprintOwner: ProfileMutationGate.Owner? {
+        guard let id = session.viewer?.id, prefs.viewer?.id == id,
+              PulseWalletOperations.gatewayKey(session.api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL) else { return nil }
+        return .init(userId: id, session: session.sessionGeneration)
+    }
 
     private enum ProbeResult: Equatable {
         case ok(String)
@@ -122,9 +131,17 @@ struct SettingsView: View {
         }
         .onAppear {
             refreshLocalCounts()
-            Task { await loadFootprintStats() }
+            loadFootprintStats()
         }
-        .onDisappear { appLockConfirmation = UUID() }
+        .onDisappear {
+            appLockConfirmation = UUID()
+            footprintTask?.cancel(); footprintTask = nil
+            footprintGate.invalidate(); footprintLoading = false
+        }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            refreshLocalCounts()
+            loadFootprintStats()
+        }
         .onChange(of: draftsOutboxOpen) { _, open in
             if !open { refreshLocalCounts() }
         }
@@ -921,15 +938,32 @@ struct SettingsView: View {
     /// R5-A Item 4 - the viewer's live footprint (web StatTile row parity:
     /// messages / photos / voice notes / chats / groups / days active).
     /// Signed-out renders the honest notice; a failed fetch shows Try again.
-    private func loadFootprintStats() async {
-        guard let viewerId = session.viewer?.id ?? prefs.viewer?.id else { return }
+    private func loadFootprintStats() {
+        footprintTask?.cancel()
+        footprintGate.invalidate()
+        footprintStats = nil; footprintLoading = false; footprintFailed = false
+        guard let owner = footprintOwner else { return }
+        footprintGate.bind(owner)
+        guard let ticket = footprintGate.begin(current: owner) else { return }
+        let api = session.api
         footprintLoading = true
-        footprintFailed = false
-        defer { footprintLoading = false }
-        do {
-            footprintStats = try await session.api.userStats(viewerId)
-        } catch {
-            footprintFailed = true
+        footprintTask = Task {
+            defer {
+                if footprintGate.active == ticket {
+                    footprintGate.finish(ticket)
+                    footprintLoading = false
+                    footprintTask = nil
+                }
+            }
+            guard !Task.isCancelled, footprintGate.accepts(ticket, current: footprintOwner) else { return }
+            do {
+                let stats = try await api.userStats(owner.userId)
+                guard !Task.isCancelled, footprintGate.accepts(ticket, current: footprintOwner) else { return }
+                footprintStats = stats
+            } catch {
+                guard !Task.isCancelled, footprintGate.accepts(ticket, current: footprintOwner) else { return }
+                footprintFailed = true
+            }
         }
     }
 
@@ -973,7 +1007,7 @@ struct SettingsView: View {
             Spacer()
             Button {
                 PulseHaptics.tap()
-                Task { await loadFootprintStats() }
+                loadFootprintStats()
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 13, weight: .semibold))
@@ -1008,7 +1042,7 @@ struct SettingsView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Color.white.opacity(0.55))
                 Button {
-                    Task { await loadFootprintStats() }
+                    loadFootprintStats()
                 } label: {
                     Label("Try again", systemImage: "arrow.clockwise")
                         .font(.system(size: 12.5, weight: .semibold))
@@ -1047,23 +1081,24 @@ struct SettingsView: View {
 
             Divider().padding(.vertical, 4)
 
+            if let localStorageError { Text(localStorageError).font(.footnote).foregroundStyle(PulseTheme.emberGlowTop) }
             Button {
                 PulseHaptics.tap()
-                clearAllDrafts()
+                draftsOutboxOpen = true
             } label: {
-                actionRow(icon: "doc.text", title: "Clear drafts", caption: draftCount > 0 ? "\(draftCount) saved on this device - clearing frees their storage." : "Empty - nothing to clear.", actionLabel: "Clear", disabled: draftCount == 0)
+                actionRow(icon: "doc.text", title: "Clear drafts", caption: localStorageError != nil ? "Open the manager to retry loading drafts." : (draftCount > 0 ? "\(draftCount) saved on this device - review before clearing." : "Empty - nothing to clear."), actionLabel: "Review", disabled: draftCount == 0 && localStorageError == nil)
             }
             .buttonStyle(.plain)
-            .disabled(draftCount == 0)
+            .disabled(draftCount == 0 && localStorageError == nil)
 
             Button {
                 PulseHaptics.tap()
-                clearOutbox()
+                draftsOutboxOpen = true
             } label: {
-                actionRow(icon: "cloud.slash", title: "Discard offline queue", caption: queuedCount > 0 ? "\(queuedCount) waiting - discarding drops them without sending." : "Empty - nothing queued right now.", actionLabel: "Discard", disabled: queuedCount == 0)
+                actionRow(icon: "cloud.slash", title: "Discard offline queue", caption: localStorageError != nil ? "Open the manager to retry loading saved sends." : (queuedCount > 0 ? "\(queuedCount) retained - review before discarding. An in-flight send may still arrive." : "Empty - nothing queued right now."), actionLabel: "Review", disabled: queuedCount == 0 && localStorageError == nil)
             }
             .buttonStyle(.plain)
-            .disabled(queuedCount == 0)
+            .disabled(queuedCount == 0 && localStorageError == nil)
 
             settingsRow(icon: "arrow.triangle.2.circlepath", label: "Updates", value: "App Store pipeline")
             Text("iOS updates ship through the App Store pipeline - in-place live updates are the Android build's superpower. This screen always shows the exact installed version below.")
@@ -1219,7 +1254,10 @@ struct SettingsView: View {
             // when the PATCH can't reach the server (server value wins on
             // the next successful fetch instead).
             if let note = prefs.lastSyncNote {
-                Label(note, systemImage: "icloud.slash")
+                Button { prefs.retryPendingSettings() } label: {
+                    Label(note, systemImage: "icloud.slash")
+                }
+                .accessibilityLabel("Retry unconfirmed settings")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(PulseTheme.emberOnline)
                     .padding(.top, 2)
@@ -1356,48 +1394,34 @@ struct SettingsView: View {
     // ── actions ──────────────────────────────────────────────
 
     private func refreshLocalCounts() {
-        guard let store = session.store else { return }
-        draftCount = (try? store.allDraftRows())?.count ?? 0
-        queuedCount = store.countOutbox()
-        footprintBytes = Self.databaseFootprint()
+        guard let store = session.store else {
+            draftCount = 0; queuedCount = 0; footprintBytes = nil
+            localStorageError = "Local storage is unavailable for this session."
+            return
+        }
+        do {
+            let drafts = try store.allDraftRows().count
+            let queue = try store.countOutbox()
+            draftCount = drafts
+            queuedCount = queue
+            localStorageError = nil
+        } catch { localStorageError = "Local storage couldn't be read. The queue is not known to be empty." }
+        footprintBytes = Self.databaseFootprint(path: store.storageIdentity)
     }
 
-    /// Wave 8 - the REAL GRDB footprint: pulse.sqlite plus its -wal/-shm
-    /// siblings, straight from FileManager.
-    static func databaseFootprint() -> Int64? {
-        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+    /// The active account/gateway database and its WAL/SHM, not the retired
+    /// Documents/pulse.sqlite that belonged to the pre-isolation cache.
+    static func databaseFootprint(path: String) -> Int64? {
+        guard !path.hasPrefix("memory:") else { return nil }
         var total: Int64 = 0
         var found = false
         for suffix in ["", "-wal", "-shm"] {
-            let path = docs.appendingPathComponent("pulse.sqlite\(suffix)").path
-            guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: path + suffix),
                   let size = attrs[.size] as? Int64 else { continue }
             found = true
             total += size
         }
         return found ? total : nil
-    }
-
-    private func clearAllDrafts() {
-        guard let store = session.store else { return }
-        let rows = (try? store.allDraftRows()) ?? []
-        guard !rows.isEmpty else { return }
-        PulseHaptics.warning()
-        for row in rows {
-            try? store.deleteDraft(conversationId: row.conversationId)
-        }
-        refreshLocalCounts()
-    }
-
-    private func clearOutbox() {
-        guard let store = session.store else { return }
-        let rows = (try? store.outboxAll()) ?? []
-        guard !rows.isEmpty else { return }
-        PulseHaptics.warning()
-        for row in rows {
-            session.discardOutbox(clientId: row.clientId, conversationId: row.conversationId)
-        }
-        refreshLocalCounts()
     }
 
     private func probe(hostOverride: String? = nil) {

@@ -6,8 +6,9 @@
 // writes (~600ms) and mirrors every local store mutation through this
 // route, so all existing clear/save paths sync with zero call-site churn.
 // Self-service - a viewer may only write their OWN row (userId IS the
-// requester by construction; mirrors mark-unread/screenPrivacy gating).
+// requester only after checking the existing session credential).
 import { NextResponse } from 'next/server'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
 
@@ -36,6 +37,8 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'draft')
+  if (denied) return denied
 
   const [conv, participant] = await Promise.all([
     db.conversation.findUnique({ where: { id }, select: { id: true } }),
@@ -54,7 +57,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     )
   }
 
-  return NextResponse.json({ draft: participant.draft ?? null })
+  return NextResponse.json({ draft: participant.draft ?? null }, { headers: { 'Cache-Control': 'private, no-store' } })
 }
 
 /**
@@ -70,32 +73,35 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'draft')
+  if (denied) return denied
   if (typeof body.draft !== 'string') {
     return NextResponse.json({ error: 'draft must be a string.' }, { status: 400 })
   }
-  const draft = body.draft.slice(0, MAX_DRAFT)
-
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id }, select: { id: true } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: id } },
-      select: { id: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  if (body.draft.length > MAX_DRAFT) {
+    return NextResponse.json({ error: `Draft must be ${MAX_DRAFT} UTF-16 units or fewer. The saved draft was not changed.` }, { status: 400 })
   }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
+  const draft = body.draft
+
+  try {
+    return await db.$transaction(async tx => {
+      if (!await tx.conversation.findUnique({ where: { id }, select: { id: true } })) {
+        return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+      }
+      const participant = await tx.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId, conversationId: id } }, select: { id: true },
+      })
+      if (!participant) return NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 })
+      const saved = await tx.conversationParticipant.update({
+        where: { id: participant.id }, data: { draft: draft.length > 0 ? draft : null }, select: { draft: true },
+      })
+      return NextResponse.json({ ok: true, draftReceiptVersion: 1, conversationId: id, userId, draft: saved.draft ?? '' },
+        { headers: { 'Cache-Control': 'private, no-store' } })
+    }, { isolationLevel: 'Serializable' })
+  } catch (error) {
+    if (['P1008', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? '')) {
+      return NextResponse.json({ error: 'Draft storage is busy. Your draft was not confirmed.' }, { status: 409 })
+    }
+    throw error
   }
-
-  await db.conversationParticipant.update({
-    where: { id: participant.id },
-    data: { draft: draft.length > 0 ? draft : null },
-  })
-
-  return NextResponse.json({ ok: true, draft })
 }

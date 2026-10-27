@@ -54,7 +54,7 @@ class Wave6SocialApiTest {
     @Test
     fun `block posts the actor in the body`() = runTest {
         configured()
-        response = """{"ok":true,"blocked":true}"""
+        response = """{"ok":true,"blockReceiptVersion":1,"actorId":"viewer1","targetId":"target1","blocked":true}"""
         val r = api().blockUser("target1", "viewer1")
         assertTrue(r is PulseResult.Success)
         assertTrue((r as PulseResult.Success).value.blocked)
@@ -66,7 +66,7 @@ class Wave6SocialApiTest {
     @Test
     fun `unblock is DELETE block with the actor as a query param - route fix`() = runTest {
         configured()
-        response = """{"ok":true,"blocked":false}"""
+        response = """{"ok":true,"blockReceiptVersion":1,"actorId":"viewer1","targetId":"target1","blocked":false}"""
         val r = api().unblockUser("target1", "viewer1")
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Delete, lastMethod)
@@ -76,7 +76,7 @@ class Wave6SocialApiTest {
     @Test
     fun `report carries the reporter, reason and details`() = runTest {
         configured()
-        response = """{"reported":true}"""
+        response = """{"ok":true,"reportReceiptVersion":1,"reporterId":"me1","reportedId":"bad1","reason":"spam","details":"detail text","reported":true,"updated":false,"reportedAt":"2026-01-01T00:00:00.000Z"}"""
         val r = api().reportUser("bad1", "me1", "spam", "detail text")
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Post, lastMethod)
@@ -85,8 +85,9 @@ class Wave6SocialApiTest {
     }
 
     @Test
-    fun `report omits blank details`() = runTest {
+    fun `report omits null details`() = runTest {
         configured()
+        response = """{"ok":true,"reportReceiptVersion":1,"reporterId":"me1","reportedId":"bad1","reason":"other","details":"","reported":true,"updated":false,"reportedAt":"2026-01-01T00:00:00.000Z"}"""
         val r = api().reportUser("bad1", "me1", "other", null)
         assertTrue(r is PulseResult.Success)
         assertEquals("""{"userId":"me1","reason":"other"}""", lastBody)
@@ -125,12 +126,12 @@ class Wave6SocialApiTest {
     @Test
     fun `safety state get and unverify ride the userId query`() = runTest {
         configured()
-        response = """{"peerId":"p1","safetyNumber":"0 1 2","verified":false,"verifiedAt":null}"""
+        response = """{"ok":true,"safetyReceiptVersion":1,"ownerId":"me1","peerId":"p1","safetyNumber":"00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000","verified":false,"verifiedAt":null}"""
         val r = api().safetyState("p1", "me1")
         assertTrue(r is PulseResult.Success)
         assertEquals("https://gw.example/api/users/p1/safety?userId=me1", lastUrl)
 
-        response = """{"verified":false}"""
+        response = """{"ok":true,"safetyReceiptVersion":1,"ownerId":"me1","peerId":"p1","safetyNumber":"00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000","verified":false,"verifiedAt":null}"""
         val un = api().safetyUnverify("p1", "me1")
         assertTrue(un is PulseResult.Success)
         assertEquals(HttpMethod.Delete, lastMethod)
@@ -140,7 +141,7 @@ class Wave6SocialApiTest {
     @Test
     fun `safety verify posts the viewer`() = runTest {
         configured()
-        response = """{"verified":true,"verifiedAt":"2025-05-05T10:00:00.000Z"}"""
+        response = """{"ok":true,"safetyReceiptVersion":1,"ownerId":"me1","peerId":"p1","safetyNumber":"00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000","verified":true,"verifiedAt":"2025-05-05T10:00:00.000Z"}"""
         val r = api().safetyVerify("p1", "me1")
         assertTrue(r is PulseResult.Success)
         assertTrue((r as PulseResult.Success).value.verified)
@@ -151,7 +152,7 @@ class Wave6SocialApiTest {
     @Test
     fun `blocked accounts list uses the owner as the actor`() = runTest {
         configured()
-        response = """{"blocks":[]}"""
+        response = """{"blockListVersion":1,"userId":"me1","blocks":[]}"""
         val r = api().blockedAccounts("me1")
         assertTrue(r is PulseResult.Success)
         assertEquals("https://gw.example/api/users/me1/blocks?userId=me1", lastUrl)
@@ -191,8 +192,8 @@ class Wave6SocialApiTest {
     @Test
     fun `folder membership full replace is a PUT with the ordered array`() = runTest {
         configured()
-        response = """{"ok":true}"""
-        val r = api().setFolderConversations("f1", listOf("c2", "c1"))
+        response = """{"folderVersion":1,"userId":"me","folder":{"id":"f1","name":"Work","emoji":"folder","position":0,"conversationIds":["c2","c1"]}}"""
+        val r = api().setFolderConversations("f1", listOf("c2", "c1"), "me")
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Put, lastMethod)
         assertEquals("https://gw.example/api/folders/f1/conversations", lastUrl)

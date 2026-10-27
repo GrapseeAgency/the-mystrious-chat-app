@@ -131,8 +131,11 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -241,7 +244,7 @@ class PulseApi(
                 failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
-            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+            PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "The gateway did not confirm the change; refresh before retrying")
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
@@ -269,9 +272,18 @@ class PulseApi(
         var suggestion: String? = null
         var retryAfter: Int? = null
         var receiptClientId: String? = null
+        var readRetirement: app.pulse.core.result.ReadRetirement? = null
         try {
             val json = PulseJson.parseToJsonElement(body)
             if (json is JsonObject) {
+                val retirement = json["readRetirement"] as? JsonObject
+                val keys = listOf("userId", "conversationId", "messageId", "readIntent")
+                if (retirement != null && retirement["version"] == JsonPrimitive(1) && keys.all {
+                    (retirement[it] as? JsonPrimitive)?.isString == true
+                }) {
+                    val values = keys.map { (retirement[it] as JsonPrimitive).content }
+                    readRetirement = app.pulse.core.result.ReadRetirement(1, values[0], values[1], values[2], values[3])
+                }
                 (json["error"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
                     if (it.isString) message = it.content
                 }
@@ -299,7 +311,7 @@ class PulseApi(
         if (status == 401) onAuthInvalid(message)
         retryAfter = listOfNotNull(retryAfter?.takeIf { it > 0 }, retryAfterSeconds(retryHeader, serverDate)).maxOrNull()
         val base = PulseResult.fromHttp(status, message)
-        return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter, receiptClientId = receiptClientId)
+        return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter, receiptClientId = receiptClientId, readRetirement = readRetirement)
     }
 
     // conversations
@@ -391,27 +403,181 @@ class PulseApi(
         ) { app.pulse.protocol.decodeMessageSend(it) }
 
     /** POST /api/conversations { creatorId, memberIds, isGroup } → tolerant conversation. */
-    suspend fun createConversation(creatorId: String, memberIds: List<String>, isGroup: Boolean, name: String?): PulseResult<ConversationSummaryDto> =
+    suspend fun createConversation(creatorId: String, memberIds: List<String>, isGroup: Boolean, name: String?, clientId: String? = null): PulseResult<ConversationSummaryDto> =
         post(
-            "/api/conversations",
+            if (clientId == null) "/api/conversations" else "/api/conversations/create-v2",
             buildJsonObject {
                 put("creatorId", creatorId)
+                if (clientId != null) put("clientId", clientId)
                 put("memberIds", kotlinx.serialization.json.JsonArray(memberIds.map { kotlinx.serialization.json.JsonPrimitive(it) }))
                 put("isGroup", isGroup)
                 if (name != null) put("name", name)
             },
-        ) { PulseJson.decodeFromString(ConversationSummaryDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString()) }
+        ) { raw ->
+            val root = PulseJson.parseToJsonElement(raw)
+            val row = PulseJson.decodeFromString(ConversationSummaryDto.serializer(), root.unwrapOrRoot("conversation").toString())
+            if (clientId != null) {
+                val envelope = requireNotNull(root as? JsonObject)
+                require(envelope["clientId"] == JsonPrimitive(clientId) && envelope["replayed"] in listOf(JsonPrimitive(true), JsonPrimitive(false))) { "Creation receipt was not confirmed; keep the same retry identity" }
+                require(row.id.isNotBlank() && row.isGroup && row.isSelf != true && row.broadcastMode != true && row.members.any { it.id == creatorId }) { "Creation returned an unrelated room" }
+                if (envelope["replayed"] != JsonPrimitive(true)) {
+                    val expected = (memberIds + creatorId).toSet()
+                    require(row.members.size == expected.size && row.members.map { it.id }.toSet() == expected) { "Creation members were not confirmed" }
+                }
+            }
+            row
+        }
+
+    private inline fun requireReadContract(valid: Boolean, message: () -> String = { "Read state was not confirmed" }) {
+        if (!valid) throw kotlinx.serialization.SerializationException(message())
+    }
+
+    suspend fun readStateSnapshot(conversationId: String, userId: String, threadId: String? = null, topicId: String? = null): PulseResult<Int> =
+        when (val result = readScopeState(conversationId, userId, threadId, topicId)) {
+            is PulseResult.Success -> PulseResult.Success(result.value.unreadCount)
+            is PulseResult.Failure -> result
+        }
+
+    suspend fun readScopeState(conversationId: String, userId: String, threadId: String? = null, topicId: String? = null): PulseResult<app.pulse.protocol.ReadStateSnapshotDto> {
+        fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
+        val query = "userId=${q(userId)}" + (threadId?.let { "&threadId=${q(it)}" } ?: "") + (topicId?.let { "&topicId=${q(it)}" } ?: "")
+        return get("/api/conversations/${q(conversationId)}/read-state?$query") { raw ->
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.ReadStateSnapshotDto.serializer(), raw)
+            requireReadContract(receipt.readStateVersion == 1 && receipt.conversationId == conversationId && receipt.userId == userId &&
+                receipt.threadId == threadId && receipt.topicId == topicId && receipt.unreadCount >= 0 &&
+                receipt.unreadExpirations.all { it.count >= 0 && runCatching { java.time.Instant.parse(it.expiresAt) }.isSuccess } &&
+                receipt.unreadExpirations.sumOf { it.count.toLong() } <= receipt.unreadCount.toLong())
+            receipt
+        }
+    }
+
+    data class MessageReadStateSnapshot(val available: Boolean, val memberships: List<String>)
+
+    suspend fun messageReadState(conversationId: String, userId: String, messageId: String): PulseResult<MessageReadStateSnapshot> {
+        fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
+        return get("/api/messages/${q(messageId)}/read-state?userId=${q(userId)}&conversationId=${q(conversationId)}") { raw ->
+            val fields = PulseJson.parseToJsonElement(raw) as? JsonObject
+            requireReadContract(fields?.get("messageReadStateVersion") == JsonPrimitive(1) &&
+                fields?.get("conversationId") == JsonPrimitive(conversationId) && fields?.get("userId") == JsonPrimitive(userId) &&
+                fields?.get("messageId") == JsonPrimitive(messageId) &&
+                fields?.get("messageAvailable") in listOf(JsonPrimitive(true), JsonPrimitive(false)))
+            val ids = fields?.get("readByMembershipIds") as? kotlinx.serialization.json.JsonArray
+            requireReadContract(ids != null && ids.all { it is JsonPrimitive && it.isString && it.content.isNotBlank() })
+            val proof = checkNotNull(ids).map { (it as JsonPrimitive).content }
+            val available = fields?.get("messageAvailable") == JsonPrimitive(true)
+            requireReadContract(proof.distinct().size == proof.size && (available || proof.isEmpty()))
+            MessageReadStateSnapshot(available, proof)
+        }
+    }
+
+    /** Only a bound, explicit negative proof may retire a delivered notification. */
+    suspend fun notificationMessageUnread(conversationId: String, userId: String, messageId: String): PulseResult<Boolean> {
+        fun q(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
+        return get("/api/conversations/${q(conversationId)}/read-state?userId=${q(userId)}&messageId=${q(messageId)}") { raw ->
+            val fields = PulseJson.parseToJsonElement(raw) as? JsonObject
+            requireReadContract(fields?.get("notificationStateVersion") == JsonPrimitive(1) &&
+                fields?.get("conversationId") == JsonPrimitive(conversationId) && fields?.get("userId") == JsonPrimitive(userId) &&
+                fields?.get("messageId") == JsonPrimitive(messageId) &&
+                fields?.get("messageUnread") in listOf(JsonPrimitive(true), JsonPrimitive(false)))
+            fields?.get("messageUnread") == JsonPrimitive(true)
+        }
+    }
+
+    suspend fun captureReadIntent(conversationId: String, userId: String): PulseResult<String> =
+        get("/api/conversations/${java.net.URLEncoder.encode(conversationId, "UTF-8")}/read-intent?userId=${java.net.URLEncoder.encode(userId, "UTF-8")}") { raw ->
+            val strict = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            val fields = strict.parseToJsonElement(raw) as? JsonObject
+            requireReadContract(fields?.get("readIntentVersion") == JsonPrimitive(2) &&
+                listOf("conversationId", "userId", "readIntent").all { (fields?.get(it) as? JsonPrimitive)?.isString == true }) { "Read intent identity or version is missing" }
+            val receipt = strict.decodeFromString(app.pulse.protocol.ReadIntentDto.serializer(), raw)
+            requireReadContract(receipt.readIntentVersion == 2 && receipt.conversationId == conversationId && receipt.userId == userId &&
+                receipt.readIntent.isNotBlank() && receipt.readIntent.length <= 128) { "Read intent was not confirmed" }
+            receipt.readIntent
+        }
+
+    /** Exact owner/room/desired-state receipt before changing a cached badge. */
+    suspend fun markUnread(conversationId: String, userId: String, on: Boolean, readIntent: String? = null): PulseResult<Unit> {
+        val intent = readIntent ?: when (val captured = captureReadIntent(conversationId, userId)) {
+            is PulseResult.Success -> captured.value
+            is PulseResult.Failure -> return captured
+        }
+        return patch("/api/conversations/$conversationId/mark-unread", jsonOf("userId" to userId, "on" to on, "readIntent" to intent)) { raw ->
+            // Even the strict decoder accepts quoted booleans. Check JSON token
+            // types before deserialization: a string is not a committed boolean.
+            val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            val fields = json.parseToJsonElement(raw) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Unread receipt must be an object")
+            for (key in listOf("ok", "manualUnread")) {
+                val value = fields[key] as? JsonPrimitive
+                if (value == null || value.isString || value.content !in listOf("true", "false")) {
+                    throw kotlinx.serialization.SerializationException("Unread receipt requires boolean $key")
+                }
+            }
+            val version = fields["unreadReceiptVersion"] as? JsonPrimitive
+            if (version == null || version.isString || version.content != "2" ||
+                listOf("conversationId", "userId").any { (fields[it] as? JsonPrimitive)?.isString != true }) {
+                throw kotlinx.serialization.SerializationException("Unread receipt identity or version is invalid")
+            }
+            val receipt = json.decodeFromString(app.pulse.protocol.ManualUnreadReceiptDto.serializer(), raw)
+            if (!receipt.ok || receipt.unreadReceiptVersion != 2 || receipt.readIntent != intent || receipt.conversationId != conversationId ||
+                receipt.userId != userId || receipt.manualUnread != on) {
+                throw kotlinx.serialization.SerializationException("Unread state was not confirmed. Refresh before retrying.")
+            }
+            Unit
+        }
+
+    }
+
+    /** Visible attention and manual mark-all are separate, versioned intents. */
+    suspend fun markRead(conversationId: String, userId: String, messageId: String? = null,
+        minimumReadAt: String? = null, readIntent: String? = null): PulseResult<Unit> {
+        val intent = readIntent ?: when (val captured = captureReadIntent(conversationId, userId)) {
+            is PulseResult.Success -> captured.value
+            is PulseResult.Failure -> return captured
+        }
+        return post("/api/conversations/$conversationId/read-state", jsonOf("userId" to userId,
+            "mode" to if (messageId == null) "all" else "visible", "messageId" to messageId, "readIntent" to intent)) { raw ->
+            val strict = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            val fields = strict.parseToJsonElement(raw) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Read receipt is not an object")
+            requireReadContract(fields["readReceiptVersion"] == JsonPrimitive(3) && fields["ok"] == JsonPrimitive(true) &&
+                fields["readIntent"] == JsonPrimitive(intent)) { "Read receipt tokens are invalid" }
+            val receipt = strict.decodeFromString(app.pulse.protocol.ReadReceiptDto.serializer(), raw)
+            requireReadContract(receipt.ok && receipt.readReceiptVersion == 3 && receipt.readIntent == intent && receipt.conversationId == conversationId &&
+                receipt.userId == userId && receipt.messageId == messageId &&
+                receipt.mode == if (messageId == null) "all" else "visible") { "Read state was not confirmed." }
+            val acknowledged = runCatching { java.time.Instant.parse(receipt.lastReadAt) }.getOrElse {
+                throw kotlinx.serialization.SerializationException("Read receipt date is invalid", it)
+            }
+            requireReadContract(minimumReadAt == null || !acknowledged.isBefore(java.time.Instant.parse(minimumReadAt))) {
+                "The displayed read boundary was not confirmed."
+            }
+            Unit
+        }
+
+    }
 
     // reactions
-    /** POST /api/messages/{id}/react { userId, emoji } - server toggles. */
-    suspend fun react(messageId: String, userId: String, emoji: String): PulseResult<ChatMessageDto> =
+    /** Explicit state: no legacy toggle fallback after an uncertain reply. */
+    suspend fun react(messageId: String, userId: String, emoji: String, present: Boolean): PulseResult<ChatMessageDto> =
         post(
-            "/api/messages/$messageId/react",
+            "/api/messages/$messageId/react-state",
             buildJsonObject {
                 put("userId", userId)
                 put("emoji", emoji)
+                put("present", present)
             },
-        ) { messageOf(it) }
+        ) { raw ->
+            val envelope = requireNotNull(PulseJson.parseToJsonElement(raw) as? JsonObject) { "Reaction response is missing" }
+            val receipt = requireNotNull(envelope["reaction"] as? JsonObject) { "Reaction state was not confirmed" }
+            require(receipt["messageId"] == JsonPrimitive(messageId) && receipt["emoji"] == JsonPrimitive(emoji) &&
+                receipt["present"] == JsonPrimitive(present)) { "Reaction state acknowledgement did not match" }
+            messageOf(raw).also { row ->
+                require(row.id == messageId) { "Reaction returned another message" }
+                val confirmed = row.reactions.any { it.emoji == emoji && (it.userId == userId || it.userIds?.contains(userId) == true) }
+                require(confirmed == present) { "Returned message did not contain the confirmed reaction state" }
+            }
+        }
 
     // users / identity
     /** GET /api/users → { users: [...] } (identity picker + contacts). */
@@ -475,14 +641,9 @@ class PulseApi(
      * reads the same server-backed rows the web renders (F-MS-29).
      */
     suspend fun quickPhrases(userId: String): PulseResult<List<Pair<String, String>>> =
-        get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases") { body ->
-            val arr = (PulseJson.parseToJsonElement(body) as? JsonObject)?.get("phrases") as? JsonArray
-            arr.orEmpty().mapNotNull { el ->
-                val o = el as? JsonObject ?: return@mapNotNull null
-                val id = (o["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
-                val text = (o["text"] as? JsonPrimitive)?.content ?: return@mapNotNull null
-                id to text
-            }
+        when (val result = phrases(userId)) {
+            is PulseResult.Success -> PulseResult.Success(result.value.phrases.map { it.id to it.text })
+            is PulseResult.Failure -> result
         }
 
     /** PATCH /api/settings { userId, preferences: Partial } → { preferences } (shallow-merged + clamped server-side). */
@@ -511,6 +672,46 @@ class PulseApi(
     suspend fun patchAction(path: String, body: JsonObject? = null): PulseResult<Unit> =
         patch(path, body)
 
+    data class ConversationPreferenceAcknowledgement(val timestamp: String?, val epochMillis: Long?)
+
+    private fun preferenceReceipt(text: String, room: String, owner: String, field: String,
+        expected: kotlinx.serialization.json.JsonElement, timestampField: String, enabled: Boolean): ConversationPreferenceAcknowledgement {
+        val body = PulseJson.parseToJsonElement(text) as? JsonObject
+            ?: throw kotlinx.serialization.SerializationException("Conversation setting receipt is missing")
+        if (body["ok"] != JsonPrimitive(true) || body["conversationPreferenceVersion"] != JsonPrimitive(1) ||
+            body["conversationId"] != JsonPrimitive(room) || body["userId"] != JsonPrimitive(owner) || body[field] != expected)
+            throw kotlinx.serialization.SerializationException("Conversation setting owner or value was not confirmed")
+        val raw = body[timestampField]
+        if (!enabled) {
+            if (raw != JsonNull) throw kotlinx.serialization.SerializationException("Cleared setting was not confirmed")
+            return ConversationPreferenceAcknowledgement(null, null)
+        }
+        val stamp = (raw as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw kotlinx.serialization.SerializationException("Setting timestamp was not confirmed")
+        val millis = runCatching { java.time.Instant.parse(stamp).toEpochMilli() }.getOrNull()
+            ?: throw kotlinx.serialization.SerializationException("Setting timestamp is invalid")
+        return ConversationPreferenceAcknowledgement(stamp, millis)
+    }
+    private fun preferencePath(room: String, action: String) = "/api/conversations/" +
+        java.net.URLEncoder.encode(room, "UTF-8").replace("+", "%20") + "/" + action
+
+    suspend fun setConversationPinned(room: String, owner: String, pinned: Boolean): PulseResult<ConversationPreferenceAcknowledgement> =
+        patch(preferencePath(room, "pin"), jsonOf("userId" to owner, "pinned" to pinned)) {
+            preferenceReceipt(it, room, owner, "pinned", JsonPrimitive(pinned), "pinnedAt", pinned)
+        }
+    suspend fun setConversationArchived(room: String, owner: String, archived: Boolean): PulseResult<ConversationPreferenceAcknowledgement> =
+        patch(preferencePath(room, "archive"), jsonOf("userId" to owner, "archived" to archived)) {
+            preferenceReceipt(it, room, owner, "archived", JsonPrimitive(archived), "archivedAt", archived)
+        }
+    suspend fun setConversationMuted(room: String, owner: String, until: String?): PulseResult<ConversationPreferenceAcknowledgement> {
+        if (until !in listOf(null, "8h", "1w", "always"))
+            return PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "Unknown mute duration")
+        val preset = until?.let { JsonPrimitive(it) } ?: JsonNull
+        return patch(preferencePath(room, "mute"), buildJsonObject { put("userId", owner); put("until", preset) }) {
+            preferenceReceipt(it, room, owner, "mutePreset", preset, "mutedUntil", until != null)
+        }
+    }
+
     // Wave 1 messaging surface (spec §1.1)
 
     /** `{message: ChatMessage}` unwrap shared by the edit/pin actions. */
@@ -524,9 +725,18 @@ class PulseApi(
     suspend fun editMessage(messageId: String, userId: String, content: String): PulseResult<ChatMessageDto> =
         patch("/api/messages/$messageId", jsonOf("userId" to userId, "content" to content)) { messageOf(it) }
 
-    /** POST /api/messages/{id}/pin { userId } → { message } (toggle; relays message:pinned). */
-    suspend fun toggleMessagePin(messageId: String, userId: String): PulseResult<ChatMessageDto> =
-        post("/api/messages/$messageId/pin", jsonOf("userId" to userId)) { messageOf(it) }
+    /** Explicit addition; no legacy toggle fallback on an uncertain response. */
+    suspend fun pinMessage(messageId: String, userId: String): PulseResult<ChatMessageDto> =
+        post("/api/messages/$messageId/pin-state", jsonOf("userId" to userId, "pinned" to true)) { raw ->
+            val envelope = requireNotNull(PulseJson.parseToJsonElement(raw) as? JsonObject) { "Pin response is missing" }
+            val receipt = requireNotNull(envelope["pin"] as? JsonObject) { "Pin state was not confirmed" }
+            require(receipt["messageId"] == JsonPrimitive(messageId) && receipt["pinned"] == JsonPrimitive(true)) {
+                "Pin state acknowledgement did not match"
+            }
+            messageOf(raw).also { row ->
+                require(row.id == messageId && row.deletedAt == null && row.viewOnce != true && row.pinnedAt != null) { "The pin update was not confirmed" }
+            }
+        }
 
     suspend fun unpinMessage(messageId: String, userId: String): PulseResult<Unit> =
         deleteWithBody("/api/messages/$messageId/pin", userId) {
@@ -535,16 +745,17 @@ class PulseApi(
             Unit
         }
 
-    /** POST /api/messages/{id}/save { userId } → { saved } (per-user toggle). */
-    suspend fun toggleMessageSave(messageId: String, userId: String): PulseResult<SavedToggleDto> =
-        post("/api/messages/$messageId/save", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
-        }
-
-    /** Explicit Unsave: retrying a lost response cannot recreate the bookmark. */
-    suspend fun unsaveMessage(messageId: String, userId: String): PulseResult<SavedToggleDto> =
-        deleteWithBody("/api/messages/$messageId/save", userId) {
-            PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
+    /** Explicit state only; never fall back to a toggle after response loss. */
+    suspend fun setMessageSaved(messageId: String, userId: String, saved: Boolean): PulseResult<app.pulse.protocol.SavedStateReceiptDto> =
+        post("/api/messages/$messageId/save-state", jsonOf("userId" to userId, "saved" to saved)) { raw ->
+            PulseJson.decodeFromString(app.pulse.protocol.SavedStateReceiptDto.serializer(), raw).also { receipt ->
+                require(receipt.savedReceiptVersion == 1 && receipt.userId == userId && receipt.messageId == messageId && receipt.saved == saved) {
+                    "Saved state was not confirmed."
+                }
+                val stamp = receipt.savedAt
+                if (saved) java.time.Instant.parse(requireNotNull(stamp) { "Saved timestamp was not confirmed." })
+                else require(stamp == null) { "Removal returned a saved timestamp." }
+            }
         }
 
     /** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt asc). */
@@ -553,11 +764,30 @@ class PulseApi(
             PulseJson.decodeFromString(PinnedPageDto.serializer(), it)
         }
 
-    /** GET /api/messages/{id}/thread?userId= → { parent, replies } (replies asc). */
-    suspend fun thread(rootId: String, userId: String): PulseResult<ThreadPageDto> =
-        get("/api/messages/$rootId/thread?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(ThreadPageDto.serializer(), it)
-        }
+    private class ThreadPageFailure(val failure: PulseResult.Failure) : Exception(failure.message)
+
+    /** Complete native thread assembled from bounded, reauthorized server pages. */
+    suspend fun thread(rootId: String, userId: String): PulseResult<ThreadPageDto> = try {
+        PulseResult.Success(CompleteThread.load(rootId) { cursor ->
+            val path = "/api/messages/$rootId/thread-page?limit=100&userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
+                (cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+            when (val result = get(path) { PulseJson.decodeFromString(app.pulse.protocol.ThreadSliceDto.serializer(), it) }) {
+                is PulseResult.Success -> result.value
+                is PulseResult.Failure -> {
+                    // A missing route or credential/proxy refusal is NOT proof
+                    // of revoked thread access; do not poison the denial ledger.
+                    val expected = when (result.status) { 403 -> "thread_access"; 404 -> "thread_missing"; 410 -> "thread_gone"; else -> null }
+                    throw ThreadPageFailure(if (expected != null && result.code != expected)
+                        result.copy(kind = PulseResult.Failure.Kind.VALIDATION, status = 409,
+                            message = "The gateway could not verify this thread. Update it and try again.") else result)
+                }
+            }
+        })
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: ThreadPageFailure) {
+        error.failure
+    } catch (error: Exception) {
+        PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, error.message ?: "Complete thread history was not confirmed.")
+    }
 
     /** GET /api/conversations/{id}/messages?limit=100&q= - in-conversation search
      *  (case-insensitive substring on content + fileName, asc, hasMore:false). */
@@ -595,43 +825,77 @@ class PulseApi(
     }
 
     /** PATCH /api/conversations/{id}/draft { userId, draft } → { ok, draft } ('' clears). */
-    suspend fun setDraft(conversationId: String, userId: String, draft: String): PulseResult<Unit> =
-        patch("/api/conversations/$conversationId/draft", jsonOf("userId" to userId, "draft" to draft))
+    suspend fun setDraft(conversationId: String, userId: String, draft: String): PulseResult<Unit> {
+        if (conversationId.isBlank() || userId.isBlank() || draft.length > 2000) {
+            return PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "Draft cannot be mirrored; complete local text is kept.")
+        }
+        val room = java.net.URLEncoder.encode(conversationId, "UTF-8").replace("+", "%20")
+        return patch("/api/conversations/$room/draft", jsonOf("userId" to userId, "draft" to draft)) { text ->
+            val receipt = PulseJson.parseToJsonElement(text) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Draft receipt is missing")
+            if (receipt["ok"] != JsonPrimitive(true) || receipt["draftReceiptVersion"] != JsonPrimitive(1) ||
+                receipt["conversationId"] != JsonPrimitive(conversationId) || receipt["userId"] != JsonPrimitive(userId) ||
+                receipt["draft"] != JsonPrimitive(draft)) {
+                throw kotlinx.serialization.SerializationException("Draft mirror was not confirmed")
+            }
+            Unit
+        }
+    }
 
     /** GET /api/conversations/{id}?userId= → { conversation } (detail incl. members with lastReadAt). */
     suspend fun conversationDetail(conversationId: String, userId: String): PulseResult<ConversationSummaryDto> =
-        get("/api/conversations/$conversationId?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+        get("/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8").replace("+", "%20") + "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
                 PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+            ).also { detail ->
+                if (detail.id != conversationId || userId.isBlank() || detail.members.none { member -> member.id == userId })
+                    throw kotlinx.serialization.SerializationException("Room detail did not confirm your membership")
+            }
         }
 
     /** POST /api/conversations/self {userId} - the viewer's Note to Self chat. */
     suspend fun createSelfChat(userId: String): PulseResult<ConversationSummaryDto> =
-        post(
-            "/api/conversations/self",
-            buildJsonObject { put("userId", userId) },
-        ) {
-            PulseJson.decodeFromString(
-                ConversationSummaryDto.serializer(),
-                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+        post("/api/conversations/self", buildJsonObject { put("userId", userId) }) {
+            val raw = PulseJson.parseToJsonElement(it) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Notebook receipt is missing")
+            if (userId.isBlank() || raw["notebookReceiptVersion"] != JsonPrimitive(1) ||
+                raw["userId"] != JsonPrimitive(userId) || raw["conversation"] !is JsonObject)
+                throw kotlinx.serialization.SerializationException("Notebook owner was not confirmed")
+            val row = PulseJson.decodeFromString(ConversationSummaryDto.serializer(), raw.getValue("conversation").toString())
+            if (row.id.isBlank() || row.isGroup || row.isSelf != true || row.members.size != 1 || row.members.single().id != userId)
+                throw kotlinx.serialization.SerializationException("The returned notebook is not private to this account")
+            row
         }
 
     /** GET /api/search?userId=&q= - server message search (≥2 chars upstream). */
-    suspend fun search(userId: String, query: String): PulseResult<SearchPageDto> =
-        get(
+    suspend fun search(userId: String, query: String): PulseResult<SearchPageDto> {
+        if (query.trim().length > 64) return PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "Search text must be 64 UTF-16 units or fewer.")
+        return get(
             "/api/search?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
                 "&q=" + java.net.URLEncoder.encode(query, "UTF-8"),
         ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            if (root?.get("messages") !is kotlinx.serialization.json.JsonArray)
+                throw kotlinx.serialization.SerializationException("Search results are missing")
             PulseJson.decodeFromString(SearchPageDto.serializer(), it)
         }
+    }
 
     /** GET /api/stories?requesterId= - 24h status rail (tolerant subset). */
     suspend fun stories(requesterId: String): PulseResult<StoriesPageDto> =
         get("/api/stories?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")) {
-            PulseJson.decodeFromString(StoriesPageDto.serializer(), it)
+            val root = PulseJson.parseToJsonElement(it).jsonObject
+            if (root["groups"] !is kotlinx.serialization.json.JsonArray) throw kotlinx.serialization.SerializationException("Story feed missing")
+            if ((root["groups"] as kotlinx.serialization.json.JsonArray).any { group -> group.jsonObject["stories"] !is kotlinx.serialization.json.JsonArray })
+                throw kotlinx.serialization.SerializationException("Story rows missing")
+            val page = PulseJson.decodeFromString(StoriesPageDto.serializer(), it)
+            val rows = page.groups.flatMap { group -> group.stories }
+            if (page.groups.any { group -> group.user?.id.isNullOrBlank() } ||
+                page.groups.map { group -> group.user?.id }.distinct().size != page.groups.size ||
+                rows.any { row -> row.id.isBlank() } || rows.map { row -> row.id }.distinct().size != rows.size)
+                throw kotlinx.serialization.SerializationException("Invalid story identities")
+            page
         }
 
     // Wave 4 stories - full native status surface (REST only, no sockets)
@@ -666,6 +930,9 @@ class PulseApi(
             "/api/stories/$storyId/view",
             jsonOf("requesterId" to requesterId),
         ) {
+            val raw = PulseJson.parseToJsonElement(it).jsonObject["viewCount"] as? kotlinx.serialization.json.JsonPrimitive
+            if (raw == null || raw.isString || raw.content.toIntOrNull()?.let { count -> count >= 0 } != true)
+                throw kotlinx.serialization.SerializationException("View acknowledgement missing")
             PulseJson.decodeFromString(StoryViewAckDto.serializer(), it)
         }
 
@@ -674,35 +941,34 @@ class PulseApi(
         get(
             "/api/stories/$storyId/view?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(StoryViewersDto.serializer(), it)
+            val root = PulseJson.parseToJsonElement(it).jsonObject
+            if (root["viewers"] !is kotlinx.serialization.json.JsonArray) throw kotlinx.serialization.SerializationException("Viewers list missing")
+            val page = PulseJson.decodeFromString(StoryViewersDto.serializer(), it)
+            if (page.viewers.any { row -> row.userId.isBlank() } || page.viewers.map { row -> row.userId }.distinct().size != page.viewers.size)
+                throw kotlinx.serialization.SerializationException("Invalid viewers list")
+            page
         }
 
     /** DELETE /api/stories/{id}?requesterId= → { ok: true } (owner-only 403, unknown 404). */
-    suspend fun deleteStory(storyId: String, requesterId: String): PulseResult<OkDto> {
-        if (gateway().isBlank()) return offlineFailure
-        return try {
-            val res = http.delete(
-                url("/api/stories/$storyId?requesterId=" +
-                    java.net.URLEncoder.encode(requesterId, "UTF-8")),
-            )
-            val text = res.bodyAsText()
-            if (res.status.isSuccess()) {
-                PulseResult.Success(
-                    runCatching { PulseJson.decodeFromString(OkDto.serializer(), text) }.getOrDefault(OkDto(ok = true)),
-                )
-            } else {
-                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
-            }
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
+    suspend fun deleteStory(storyId: String, requesterId: String): PulseResult<OkDto> =
+        deleteAt("/api/stories/$storyId?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")) { text ->
+            val receipt = PulseJson.parseToJsonElement(text).jsonObject
+            if (receipt["ok"] != JsonPrimitive(true)) throw kotlinx.serialization.SerializationException("Story deletion was not confirmed")
+            OkDto(ok = true)
         }
-    }
 
     /** GET /api/folders?userId= - Signal-style folder rail. */
     suspend fun folders(userId: String): PulseResult<FoldersPageDto> =
         get("/api/folders?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(FoldersPageDto.serializer(), it)
+            val root = requireFolderScope(it, userId)
+            require(root["folders"] is kotlinx.serialization.json.JsonArray) { "Folder list was not confirmed." }
+            (root["folders"] as kotlinx.serialization.json.JsonArray).forEach { row ->
+                require(row is kotlinx.serialization.json.JsonObject && row["conversationIds"] is kotlinx.serialization.json.JsonArray) { "Folder membership is missing." }
+            }
+            val page = PulseJson.decodeFromString(FoldersPageDto.serializer(), it)
+            page.folders.forEach { folder -> requireFolderRow(folder) }
+            require(page.folders.map { folder -> folder.id }.distinct().size == page.folders.size) { "Duplicate folders." }
+            page
         }
 
     /** GET /api/mentions?userId=&limit=50 - @mention feed (count consumer). */
@@ -710,6 +976,9 @@ class PulseApi(
         get(
             "/api/mentions?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=50",
         ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            if (root?.get("items") !is kotlinx.serialization.json.JsonArray)
+                throw kotlinx.serialization.SerializationException("Mention feed is missing")
             PulseJson.decodeFromString(MentionsPageDto.serializer(), it)
         }
 
@@ -925,24 +1194,48 @@ class PulseApi(
         conversationId: String,
         userId: String,
         kind: String,
+        callId: String,
     ): PulseResult<Unit> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/calls/ring",
             buildJsonObject {
                 put("userId", userId)
                 put("kind", kind)
+                put("callId", callId)
             },
         )
 
     /**
      * GET /api/group-call-state?conversationId= - probe for an ONGOING group
-     * call (late room open). Response = { callId, kind, startedAt, members }
-     * or the honest empty { members: [] } - GroupCallStatePayload defaults
-     * tolerate both shapes.
+     * call (late room open). A versioned viewer/room receipt distinguishes
+     * a verified empty roster from an unavailable or mismatched response.
      */
-    suspend fun groupCallState(conversationId: String): PulseResult<GroupCallStatePayload> =
-        get("/api/group-call-state?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8")) {
-            PulseJson.decodeFromString(GroupCallStatePayload.serializer(), it)
+    suspend fun groupCallState(conversationId: String, userId: String): PulseResult<GroupCallStatePayload> =
+        get("/api/group-call-state?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+            "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) { raw ->
+            val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            val fields = json.parseToJsonElement(raw) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Call state must be an object")
+            val version = fields["callStateVersion"] as? JsonPrimitive
+            if (version == null || version.isString || version.content != "1") {
+                throw kotlinx.serialization.SerializationException("Call state version is not supported")
+            }
+            for ((key, expected) in listOf("conversationId" to conversationId, "userId" to userId)) {
+                val value = fields[key] as? JsonPrimitive
+                if (value == null || !value.isString || value.content != expected) {
+                    throw kotlinx.serialization.SerializationException("Call state identity did not match")
+                }
+            }
+            val receipt = json.decodeFromString(app.pulse.protocol.GroupCallProbeReceiptDto.serializer(), raw)
+            if (receipt.conversationId != conversationId || receipt.userId != userId ||
+                receipt.kind !in listOf("voice", "video") || receipt.members.size > 8 ||
+                receipt.members.any { it.id.isBlank() } || receipt.members.map { it.id }.distinct().size != receipt.members.size ||
+                (receipt.members.isEmpty() != receipt.callId.isEmpty()) ||
+                (receipt.members.isNotEmpty() && (receipt.callId.isBlank() || (receipt.startedAt ?: -1L) < 0))) {
+                throw kotlinx.serialization.SerializationException("Call state did not match this viewer and conversation")
+            }
+            GroupCallStatePayload(callId = receipt.callId, conversationId = conversationId, kind = receipt.kind,
+                startedAt = receipt.startedAt, members = receipt.members)
         }
 
     /** POST /api/push/register { userId, platform: 'android', token } - upsert the FCM token. */
@@ -952,6 +1245,7 @@ class PulseApi(
             buildJsonObject {
                 put("userId", userId)
                 put("platform", "android")
+                put("readStateHints", 1)
                 put("token", token)
             },
         )
@@ -1073,7 +1367,7 @@ class PulseApi(
                 failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
-            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+            PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "The gateway did not confirm the change; refresh before retrying")
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
@@ -1097,7 +1391,7 @@ class PulseApi(
                 failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
-            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+            PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "The gateway did not confirm the change; refresh before retrying")
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
@@ -1122,13 +1416,26 @@ class PulseApi(
             PulseJson.decodeFromString(StatsEnvelopeDto.serializer(), it).stats ?: UserStatsDto()
         }
 
+    private fun safetyReceipt(text: String, owner: String, peer: String, desired: Boolean? = null): SafetyStateDto {
+        val raw = PulseJson.parseToJsonElement(text) as? JsonObject
+            ?: throw kotlinx.serialization.SerializationException("Comparison receipt is missing")
+        val state = PulseJson.decodeFromString(SafetyStateDto.serializer(), text)
+        if (raw["ok"] != JsonPrimitive(true) || raw["safetyReceiptVersion"] != JsonPrimitive(1) ||
+            raw["ownerId"] != JsonPrimitive(owner) || raw["peerId"] != JsonPrimitive(peer) ||
+            raw["verified"] != JsonPrimitive(state.verified) || (desired != null && state.verified != desired) ||
+            !Regex("[0-9]{5}( [0-9]{5}){11}").matches(state.safetyNumber) ||
+            (if (state.verified) runCatching { java.time.Instant.parse(state.verifiedAt) }.isFailure else raw["verifiedAt"] != JsonNull))
+            throw kotlinx.serialization.SerializationException("Account comparison state was not confirmed")
+        return state
+    }
+
     /** GET /api/users/{id}/safety?userId= → 12×5 digits + this viewer's verify stamp. */
     suspend fun safetyState(peerId: String, viewerId: String): PulseResult<SafetyStateDto> =
         get(
             "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety?userId=" +
                 java.net.URLEncoder.encode(viewerId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(SafetyStateDto.serializer(), it)
+            safetyReceipt(it, viewerId, peerId)
         }
 
     /** POST /api/users/{id}/safety { userId } → upsert verification. */
@@ -1136,22 +1443,32 @@ class PulseApi(
         post(
             "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety",
             jsonOf("userId" to viewerId),
-        ) { PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
+        ) { safetyReceipt(it, viewerId, peerId, true); PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
 
     /** DELETE /api/users/{id}/safety?userId= → reset verification (idempotent). */
     suspend fun safetyUnverify(peerId: String, viewerId: String): PulseResult<VerifyAckDto> =
         deleteWithQuery(
             "/api/users/" + java.net.URLEncoder.encode(peerId, "UTF-8") + "/safety",
             viewerId,
-        ) { PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
+        ) { safetyReceipt(it, viewerId, peerId, false); PulseJson.decodeFromString(VerifyAckDto.serializer(), it) }
 
     /** GET /api/users/{id}/block?userId= → pair state (drives Block/Unblock label). */
+    private fun blockReceipt(text: String, actor: String, target: String, desired: Boolean? = null): BlockStateDto {
+        val raw = PulseJson.parseToJsonElement(text) as? JsonObject
+            ?: throw kotlinx.serialization.SerializationException("Block receipt is missing")
+        val state = PulseJson.decodeFromString(BlockStateDto.serializer(), text)
+        if (raw["ok"] != JsonPrimitive(true) || raw["blockReceiptVersion"] != JsonPrimitive(1) ||
+            raw["actorId"] != JsonPrimitive(actor) || raw["targetId"] != JsonPrimitive(target) ||
+            raw["blocked"] != JsonPrimitive(state.blocked) || (desired != null && state.blocked != desired))
+            throw kotlinx.serialization.SerializationException("The requested block state was not confirmed")
+        return state
+    }
     suspend fun blockState(targetId: String, actorId: String): PulseResult<BlockStateDto> =
         get(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block?userId=" +
                 java.net.URLEncoder.encode(actorId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(BlockStateDto.serializer(), it)
+            blockReceipt(it, actorId, targetId)
         }
 
     /** POST /api/users/{id}/block { userId } - idempotent (actor in the BODY). */
@@ -1159,14 +1476,14 @@ class PulseApi(
         post(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
             jsonOf("userId" to actorId),
-        ) { PulseJson.decodeFromString(BlockStateDto.serializer(), it) }
+        ) { blockReceipt(it, actorId, targetId, true) }
 
     /** DELETE /api/users/{id}/block?userId= - idempotent unblock (POST /unblock does NOT exist). */
     suspend fun unblockUser(targetId: String, actorId: String): PulseResult<BlockStateDto> =
         deleteWithQuery(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
             actorId,
-        ) { PulseJson.decodeFromString(BlockStateDto.serializer(), it) }
+        ) { blockReceipt(it, actorId, targetId, false) }
 
     /** GET /api/users/{id}/blocks?userId= - self-service list (403 otherwise). */
     suspend fun blockedAccounts(ownerId: String): PulseResult<BlockedPageDto> =
@@ -1174,7 +1491,15 @@ class PulseApi(
             "/api/users/" + java.net.URLEncoder.encode(ownerId, "UTF-8") + "/blocks?userId=" +
                 java.net.URLEncoder.encode(ownerId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(BlockedPageDto.serializer(), it)
+            val raw = PulseJson.parseToJsonElement(it) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Blocked accounts envelope is missing")
+            val page = PulseJson.decodeFromString(BlockedPageDto.serializer(), it)
+            if (raw["blockListVersion"] != JsonPrimitive(1) || raw["userId"] != JsonPrimitive(ownerId) ||
+                raw["blocks"] !is JsonArray || page.blocks.any { row -> row.id.isBlank() || row.id == ownerId ||
+                    runCatching { java.time.Instant.parse(row.blockedAt) }.isFailure } ||
+                page.blocks.map { row -> row.id }.distinct().size != page.blocks.size)
+                throw kotlinx.serialization.SerializationException("Blocked accounts were not confirmed for this owner")
+            page
         }
 
     /** POST /api/users/{id}/report { userId, reason, details? } → 201/200 { reported }. */
@@ -1184,9 +1509,20 @@ class PulseApi(
             buildJsonObject {
                 put("userId", reporterId)
                 put("reason", reason)
-                if (!details.isNullOrBlank()) put("details", details)
+                if (details != null) put("details", details)
             },
-        ) { PulseJson.decodeFromString(ReportAckDto.serializer(), it) }
+        ) {
+            val raw = PulseJson.parseToJsonElement(it) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Report receipt is missing")
+            val receipt = PulseJson.decodeFromString(ReportAckDto.serializer(), it)
+            if (raw["ok"] != JsonPrimitive(true) || raw["reported"] != JsonPrimitive(true) ||
+                raw["reportReceiptVersion"] != JsonPrimitive(1) || raw["reporterId"] != JsonPrimitive(reporterId) ||
+                raw["reportedId"] != JsonPrimitive(targetId) || raw["reason"] != JsonPrimitive(reason) ||
+                raw["details"] != JsonPrimitive(details.orEmpty()) || raw["updated"] != JsonPrimitive(receipt.updated) ||
+                runCatching { java.time.Instant.parse(raw["reportedAt"]?.jsonPrimitive?.content) }.isFailure)
+                throw kotlinx.serialization.SerializationException("The report was not confirmed for this account and content")
+            receipt
+        }
 
     /** GET /api/users/{id}/report?userId= - the reporter's OWN prior reasons (hint). */
     suspend fun reportReasons(targetId: String, reporterId: String): PulseResult<ReportReasonsPageDto> =
@@ -1194,7 +1530,16 @@ class PulseApi(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/report?userId=" +
                 java.net.URLEncoder.encode(reporterId, "UTF-8"),
         ) {
-            PulseJson.decodeFromString(ReportReasonsPageDto.serializer(), it)
+            val raw = PulseJson.parseToJsonElement(it) as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Report history is missing")
+            val page = PulseJson.decodeFromString(ReportReasonsPageDto.serializer(), it)
+            if (raw["reportHistoryVersion"] != JsonPrimitive(1) || raw["reporterId"] != JsonPrimitive(reporterId) ||
+                raw["reportedId"] != JsonPrimitive(targetId) || raw["reasons"] !is JsonArray ||
+                page.reasons.map { row -> row.reason }.distinct().size != page.reasons.size ||
+                page.reasons.any { row -> row.reason !in setOf("spam", "harassment", "impersonation", "inappropriate", "scam", "other") ||
+                    runCatching { java.time.Instant.parse(row.at) }.isFailure })
+                throw kotlinx.serialization.SerializationException("Report history was not confirmed for this account")
+            page
         }
 
     /** GET /api/invite/[code]?userId= → public preview (404 unknown code). */
@@ -1223,30 +1568,60 @@ class PulseApi(
         }
 
     /** POST /api/channels { userId, name, description?, photo? } → 201 { channel }. */
-    suspend fun createChannel(userId: String, name: String, description: String?, photo: String?): PulseResult<ChannelCreatedDto> =
+    suspend fun createChannel(userId: String, name: String, description: String?, photo: String?, clientId: String? = null): PulseResult<ChannelCreatedDto> =
         post(
-            "/api/channels",
+            if (clientId == null) "/api/channels" else "/api/channels/create-v2",
             buildJsonObject {
                 put("userId", userId)
+                if (clientId != null) put("clientId", clientId)
                 put("name", name)
                 if (!description.isNullOrBlank()) put("description", description)
                 if (!photo.isNullOrBlank()) put("photo", photo)
             },
-        ) { PulseJson.decodeFromString(ChannelCreatedDto.serializer(), it) }
+        ) { raw ->
+            val result = PulseJson.decodeFromString(ChannelCreatedDto.serializer(), raw)
+            if (clientId != null) {
+                val root = requireNotNull(PulseJson.parseToJsonElement(raw) as? JsonObject)
+                require(root["clientId"] == JsonPrimitive(clientId) && root["replayed"] in listOf(JsonPrimitive(true), JsonPrimitive(false))) { "Channel creation receipt was not confirmed" }
+                val room = result.conversation
+                val channel = result.channel
+                require(room != null && channel != null && room.id.isNotBlank() && channel.id == room.id &&
+                    (root["channel"] as? JsonObject)?.get("conversationId") == JsonPrimitive(room.id) &&
+                    room.isGroup && room.isSelf != true && room.broadcastMode == true && room.members.any { it.id == userId } &&
+                    channel.isSubscribed && channel.memberCount > 0) { "Channel creation returned an unrelated room" }
+            }
+            result
+        }
 
     /** POST /api/channels/[id]/subscribe { userId } → { already, memberCount }. */
     suspend fun subscribeChannel(channelId: String, userId: String): PulseResult<SubscribeAckDto> =
         post(
             "/api/channels/" + java.net.URLEncoder.encode(channelId, "UTF-8") + "/subscribe",
             jsonOf("userId" to userId),
-        ) { PulseJson.decodeFromString(SubscribeAckDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(SubscribeAckDto.serializer(), it)
+            if (body == null || body["already"] != JsonPrimitive(result.already) ||
+                body["memberCount"] != JsonPrimitive(result.memberCount) || result.memberCount < 1) {
+                throw kotlinx.serialization.SerializationException("Channel membership was not confirmed")
+            }
+            result
+        }
 
     /** DELETE /api/channels/[id]/subscribe { userId } → last-admin leave is a 403. */
     suspend fun unsubscribeChannel(channelId: String, userId: String): PulseResult<UnsubscribeAckDto> =
         deleteWithBody(
             "/api/channels/" + java.net.URLEncoder.encode(channelId, "UTF-8") + "/subscribe",
             userId,
-        ) { PulseJson.decodeFromString(UnsubscribeAckDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(UnsubscribeAckDto.serializer(), it)
+            if (body == null || body["ok"] != JsonPrimitive(true) ||
+                body["memberCount"] != JsonPrimitive(result.memberCount) || result.memberCount < 0) {
+                throw kotlinx.serialization.SerializationException("Leaving the channel was not confirmed")
+            }
+            result
+        }
 
     /** POST /api/folders { userId, name, emoji? } → 201 { folder }. */
     suspend fun createFolder(userId: String, name: String, emoji: String): PulseResult<FolderDto> =
@@ -1258,11 +1633,13 @@ class PulseApi(
                 if (emoji.isNotBlank()) put("emoji", emoji)
             },
         ) {
-            PulseJson.decodeFromString(FolderDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("folder").toString())
+            folderOf(it, userId).also { folder ->
+                require(folder.name == name.trim() && folder.emoji == app.pulse.protocol.folderIconId(emoji)) { "Folder creation was not confirmed." }
+            }
         }
 
     /** PATCH /api/folders/[id] { name?, emoji?, position? } → { folder }. */
-    suspend fun patchFolder(folderId: String, name: String?, emoji: String?, position: Int?): PulseResult<FolderDto> =
+    suspend fun patchFolder(folderId: String, name: String?, emoji: String?, position: Int?, userId: String): PulseResult<FolderDto> =
         patch(
             "/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8"),
             buildJsonObject {
@@ -1271,17 +1648,24 @@ class PulseApi(
                 if (position != null) put("position", position)
             },
         ) {
-            PulseJson.decodeFromString(FolderDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("folder").toString())
+            folderOf(it, userId, folderId).also { folder ->
+                require((name == null || folder.name == name.trim()) &&
+                    (emoji == null || folder.emoji == app.pulse.protocol.folderIconId(emoji)) &&
+                    (position == null || folder.position == position)) { "Folder changes were not confirmed." }
+            }
         }
 
     /** DELETE /api/folders/[id] → { ok } - membership rows cascade, chats stay. */
-    suspend fun deleteFolder(folderId: String): PulseResult<OkDto> =
+    suspend fun deleteFolder(folderId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8"), "") {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val root = requireFolderScope(it, userId)
+            require((root["folderId"] as? kotlinx.serialization.json.JsonPrimitive)?.content == folderId &&
+                root["deleted"]?.toString() == "true" && root["ok"]?.toString() == "true") { "Folder deletion was not confirmed." }
+            OkDto(ok = true)
         }
 
     /** PUT /api/folders/[id]/conversations { conversationIds[] } - FULL ordered replace. */
-    suspend fun setFolderConversations(folderId: String, conversationIds: List<String>): PulseResult<OkDto> =
+    suspend fun setFolderConversations(folderId: String, conversationIds: List<String>, userId: String): PulseResult<OkDto> =
         put(
             "/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8") + "/conversations",
             buildJsonObject {
@@ -1291,8 +1675,37 @@ class PulseApi(
                 )
             },
         ) {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val folder = folderOf(it, userId, folderId)
+            require(conversationIds.all { id -> id.isNotBlank() } &&
+                folder.conversationIds == conversationIds.map { id -> id.trim() }.distinct()) { "Folder chats were not confirmed." }
+            OkDto(ok = true)
         }
+
+    private fun requireFolderScope(text: String, userId: String): kotlinx.serialization.json.JsonObject {
+        val root = PulseJson.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject
+            ?: error("Folder response is missing.")
+        val owner = root["userId"] as? kotlinx.serialization.json.JsonPrimitive
+        require(userId.isNotBlank() && root["folderVersion"]?.toString() == "1" && owner?.isString == true && owner.content == userId) {
+            "Folder ownership was not confirmed."
+        }
+        return root
+    }
+
+    private fun requireFolderRow(folder: FolderDto) {
+        require(folder.id.isNotBlank() && folder.name.isNotBlank() && folder.emoji.isNotBlank() &&
+            (folder.position ?: -1) >= 0 && folder.conversationIds.all { it.isNotBlank() } &&
+            folder.conversationIds.distinct().size == folder.conversationIds.size) { "Invalid folder snapshot." }
+    }
+
+    private fun folderOf(text: String, userId: String, folderId: String? = null): FolderDto {
+        val root = requireFolderScope(text, userId)
+        val row = root["folder"] as? kotlinx.serialization.json.JsonObject ?: error("Folder was not confirmed.")
+        require(row["conversationIds"] is kotlinx.serialization.json.JsonArray) { "Folder membership was not confirmed." }
+        return PulseJson.decodeFromString(FolderDto.serializer(), row.toString()).also { folder ->
+            requireFolderRow(folder)
+            require(folderId == null || folder.id == folderId) { "Wrong folder returned." }
+        }
+    }
 
     // Wave 7 - collaboration & hub (red packets / whiteboard / kanban / events / reminders / games / tournaments / leaderboard / hub economy)
 
@@ -1302,11 +1715,19 @@ class PulseApi(
             PulseJson.parseToJsonElement(json).unwrapOrRoot("packet").toString(),
         )
 
-    private fun cardOf(json: String): KanbanCardDto =
-        PulseJson.decodeFromString(
-            KanbanCardDto.serializer(),
-            PulseJson.parseToJsonElement(json).unwrapOrRoot("card").toString(),
-        )
+    private fun cardOf(json: String, userId: String, room: String? = null): KanbanCardDto {
+        val receipt = PulseJson.decodeFromString(app.pulse.protocol.KanbanCardReceiptDto.serializer(), json)
+        require(receipt.boardReceiptVersion == 1 && receipt.userId == userId && receipt.conversationId.isNotBlank() &&
+            (room == null || receipt.conversationId == room)) { "Board action owner was not confirmed." }
+        return receipt.card.also { requireBoardCard(it, receipt.conversationId) }
+    }
+
+    private fun requireBoardCard(card: KanbanCardDto, room: String) {
+        require(card.id.isNotBlank() && card.conversationId == room && card.title.isNotBlank() && card.title.length <= 120 &&
+            card.column in listOf("todo", "doing", "done") && card.position in 0..2_147_483_647L) { "Board card was not confirmed." }
+        java.time.Instant.parse(requireNotNull(card.createdAt))
+        java.time.Instant.parse(requireNotNull(card.updatedAt))
+    }
 
     private fun eventOf(json: String): GroupEventDto =
         PulseJson.decodeFromString(
@@ -1314,17 +1735,38 @@ class PulseApi(
             PulseJson.parseToJsonElement(json).unwrapOrRoot("event").toString(),
         )
 
-    private fun taskOf(json: String): HubTaskDto =
-        PulseJson.decodeFromString(
-            HubTaskDto.serializer(),
-            PulseJson.parseToJsonElement(json).unwrapOrRoot("task").toString(),
-        )
+    private fun taskOf(json: String, userId: String): HubTaskDto =
+        PulseJson.decodeFromString(HubTaskDto.serializer(), PulseJson.parseToJsonElement(json).unwrapOrRoot("task").toString())
+            .also { requireHubTask(it, userId) }
 
-    private fun listingOf(json: String): MarketListingDto =
-        PulseJson.decodeFromString(
-            MarketListingDto.serializer(),
-            PulseJson.parseToJsonElement(json).unwrapOrRoot("listing").toString(),
-        )
+    private fun requireHubTask(task: HubTaskDto, userId: String) {
+        require(task.ownerId == userId && task.id.isNotBlank() && task.title.isNotBlank() && task.title.length <= 120 &&
+            task.status in listOf("todo", "doing", "done")) { "Personal task was not confirmed." }
+        java.time.Instant.parse(requireNotNull(task.createdAt)); java.time.Instant.parse(requireNotNull(task.updatedAt))
+    }
+
+    private fun requireMarketListing(listing: MarketListingDto, owner: String) {
+        require(listing.id.isNotBlank() && listing.title.isNotBlank() && listing.title.length <= 80 &&
+            listing.price in 1..100_000 && listing.asset == "PC" && listing.seller.id.isNotBlank() &&
+            listing.mine == (listing.seller.id == owner)) { "Market listing could not be verified." }
+        java.time.Instant.parse(listing.createdAt)
+        val buyer = listing.buyer // local capture permits safe cross-module null checking
+        require(if (listing.status == "open") buyer == null else listing.status == "sold" &&
+            listing.mine && (buyer == null || (buyer.id.isNotBlank() && buyer.id != listing.seller.id))) {
+            "Market listing state could not be verified."
+        }
+    }
+
+    private fun requireGameRead(json: String, owner: String, expectedRoom: String? = null): String {
+        val fields = PulseJson.parseToJsonElement(json) as? JsonObject
+        val roomField = fields?.get("conversationId") as? JsonPrimitive
+        val ownerField = fields?.get("userId") as? JsonPrimitive
+        val room = roomField?.content
+        require(fields?.get("gameReadVersion")?.toString() == "1" && ownerField?.isString == true &&
+            ownerField.content == owner && roomField?.isString == true && !room.isNullOrBlank() &&
+            (expectedRoom == null || room == expectedRoom)) { "Private game state could not be verified. Update the gateway before retrying." }
+        return requireNotNull(room)
+    }
 
     private fun matchOf(json: String, id: String): GameDetailDto {
         val fields = (PulseJson.parseToJsonElement(json) as? JsonObject)?.get("match") as? JsonObject
@@ -1439,7 +1881,11 @@ class PulseApi(
     /** GET /api/conversations/{id}/kanban?userId= → { cards } ordered column → position → createdAt. */
     suspend fun kanbanBoard(conversationId: String, userId: String): PulseResult<KanbanPageDto> =
         get("/api/conversations/$conversationId/kanban?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(KanbanPageDto.serializer(), it)
+            PulseJson.decodeFromString(KanbanPageDto.serializer(), it).also { page ->
+                require(page.boardReceiptVersion == 1 && page.userId == userId && page.conversationId == conversationId &&
+                    page.cards.size <= 500 && page.cards.map { card -> card.id }.distinct().size == page.cards.size) { "Complete board was not confirmed." }
+                page.cards.forEach { card -> requireBoardCard(card, conversationId) }
+            }
         }
 
     /** POST /api/conversations/{id}/kanban { userId, title?, column?, assigneeId?, messageId? }. */
@@ -1460,7 +1906,13 @@ class PulseApi(
                 if (!assigneeId.isNullOrBlank()) put("assigneeId", assigneeId)
                 if (!messageId.isNullOrBlank()) put("messageId", messageId)
             },
-        ) { cardOf(it) }
+        ) { raw ->
+            cardOf(raw, userId, conversationId).also { card ->
+                require(card.createdById == userId && card.column == column?.takeIf { it.isNotBlank() }.orEmpty().ifEmpty { "todo" } &&
+                    card.assigneeId == assigneeId?.takeIf { it.isNotBlank() } && card.sourceMessageId == messageId?.takeIf { it.isNotBlank() } &&
+                    ((title.isNullOrBlank() && !messageId.isNullOrBlank()) || card.title == title?.trim())) { "Task creation was not confirmed." }
+            }
+        }
 
     /** PATCH /api/kanban/{cardId} { userId, title?, column?, assigneeId?, position? }. */
     suspend fun updateKanbanCard(
@@ -1482,12 +1934,23 @@ class PulseApi(
                 else if (!assigneeId.isNullOrBlank()) put("assigneeId", assigneeId)
                 if (position != null) put("position", position)
             },
-        ) { cardOf(it) }
+        ) { raw ->
+            cardOf(raw, userId).also { card ->
+                require(card.id == cardId && (title == null || card.title == title.trim()) &&
+                    (column == null || card.column == column) && (position == null || card.position == position) &&
+                    (if (clearAssignee) card.assigneeId == null else assigneeId.isNullOrBlank() || card.assigneeId == assigneeId)) {
+                    "Task update was not confirmed."
+                }
+            }
+        }
 
     /** DELETE /api/kanban/{cardId}?userId= - creator OR group admin (403 copy verbatim). */
     suspend fun deleteKanbanCard(cardId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/kanban/" + java.net.URLEncoder.encode(cardId, "UTF-8"), userId) {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.KanbanDeleteReceiptDto.serializer(), it)
+            require(receipt.boardReceiptVersion == 1 && receipt.userId == userId && receipt.cardId == cardId &&
+                receipt.conversationId.isNotBlank() && receipt.ok) { "Task deletion was not confirmed." }
+            OkDto(ok = true)
         }
 
     /** GET /api/conversations/{id}/events?userId= - upcoming asc then past desc, merged ≤50. */
@@ -1514,24 +1977,50 @@ class PulseApi(
                 if (!description.isNullOrBlank()) put("description", description)
                 if (!location.isNullOrBlank()) put("location", location)
             },
-        ) { eventOf(it) }
+        ) { raw ->
+            eventOf(raw).also { event ->
+                require(event.id.isNotBlank() && event.title == title.trim() && event.createdById == userId &&
+                    java.time.Instant.parse(event.startsAt) == java.time.Instant.parse(startsAtIso)) {
+                    "Event creation was not confirmed."
+                }
+            }
+        }
 
     /** DELETE /api/events/{id}?userId= - creator OR group admin. */
     suspend fun deleteEvent(eventId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8"), userId) {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.EventDeleteReceiptDto.serializer(), it)
+            require(receipt.eventReceiptVersion == 1 && receipt.eventId == eventId && receipt.userId == userId && receipt.ok) {
+                "Event deletion was not confirmed."
+            }
+            OkDto(ok = true)
         }
 
     /** POST /api/events/{id}/rsvp { userId, status: going|maybe|no } → { rsvp, counts }. */
     suspend fun rsvpEvent(eventId: String, userId: String, status: String): PulseResult<RsvpResultDto> =
         post("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8") + "/rsvp", jsonOf("userId" to userId, "status" to status)) {
-            PulseJson.decodeFromString(RsvpResultDto.serializer(), it)
+            PulseJson.decodeFromString(RsvpResultDto.serializer(), it).also { receipt ->
+                val rsvp = receipt.rsvp
+                require(receipt.eventReceiptVersion == 1 && receipt.eventId == eventId && receipt.userId == userId &&
+                    rsvp != null && !rsvp.id.isNullOrBlank() && rsvp.eventId == eventId && rsvp.userId == userId && rsvp.status == status && status in listOf("going", "maybe", "no") &&
+                    receipt.counts.going >= 0 && receipt.counts.maybe >= 0 && receipt.counts.no >= 0 &&
+                    (when (status) { "going" -> receipt.counts.going; "maybe" -> receipt.counts.maybe; else -> receipt.counts.no }) > 0) {
+                    "Your RSVP was not confirmed."
+                }
+            }
         }
 
     /** POST /api/events/{id}/checkin { userId } - window +15 XP; 409 outside window is a real failure. */
     suspend fun checkinEvent(eventId: String, userId: String): PulseResult<CheckinResultDto> =
         post("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8") + "/checkin", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(CheckinResultDto.serializer(), it)
+            PulseJson.decodeFromString(CheckinResultDto.serializer(), it).also { receipt ->
+                val stamp = receipt.checkIn
+                require(receipt.eventReceiptVersion == 1 && receipt.eventId == eventId && receipt.userId == userId &&
+                    stamp != null && stamp.id.isNotBlank() && stamp.eventId == eventId && stamp.userId == userId &&
+                    stamp.status in listOf("going", "maybe", "no") && receipt.checkedInCount > 0 &&
+                    receipt.xpAwarded != receipt.alreadyCheckedIn) { "Your attendance was not confirmed." }
+                java.time.Instant.parse(requireNotNull(stamp?.checkedInAt))
+            }
         }
 
     /** GET /api/reminders?userId=[&due=1] - due = remindAt ≤ now && firedAt null. */
@@ -1598,28 +2087,37 @@ class PulseApi(
     /** GET /api/users/{id}/phrases → { phrases: [{id,text,position}] } (position asc). */
     suspend fun phrases(userId: String): PulseResult<PhrasesPageDto> =
         get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases") {
-            PulseJson.decodeFromString(PhrasesPageDto.serializer(), it)
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            require(root?.get("phrases") is JsonArray) { "Quick phrases were not confirmed." }
+            PulseJson.decodeFromString(PhrasesPageDto.serializer(), it).also { page ->
+                require(page.phrases.all { row -> row.id.isNotBlank() && row.text.isNotBlank() && row.position >= 0 } &&
+                    page.phrases.map { row -> row.id }.distinct().size == page.phrases.size) { "Invalid quick-phrase list." }
+            }
         }
 
-    /** POST /api/users/{id}/phrases { text } → 201 { phrase } (server caps 12 rows × 120 chars). */
     suspend fun createPhrase(userId: String, text: String): PulseResult<PhraseEnvelopeDto> =
-        post(
-            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases",
-            jsonOf("text" to text),
-        ) {
-            PulseJson.decodeFromString(
-                PhraseEnvelopeDto.serializer(),
-                PulseJson.parseToJsonElement(it).unwrapOrRoot("phrase").toString(),
-            )
+        post("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases", jsonOf("text" to text)) {
+            // Decode the envelope once. Unwrapping first silently decoded a null
+            // phrase, which the repository used to turn into a blank-ID success.
+            PulseJson.decodeFromString(PhraseEnvelopeDto.serializer(), it).also { receipt ->
+                val phrase = requireNotNull(receipt.phrase) { "Phrase creation was not confirmed." }
+                require(phrase.id.isNotBlank() && phrase.text == text.trim() && phrase.text.isNotBlank() && phrase.position >= 0) {
+                    "Phrase creation was not confirmed."
+                }
+            }
         }
 
-    /** DELETE /api/users/{id}/phrases?phraseId=X → { ok } (owner-guarded server-side). */
     suspend fun deletePhrase(userId: String, phraseId: String): PulseResult<OkDto> =
         deleteWithJson(
-            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases?phraseId=" +
-                java.net.URLEncoder.encode(phraseId, "UTF-8"),
+            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases?phraseId=" + java.net.URLEncoder.encode(phraseId, "UTF-8"),
             buildJsonObject { },
-        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+        ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject ?: error("Phrase receipt is missing.")
+            require(root["ok"]?.toString() == "true" && root["deleted"]?.toString() == "true" &&
+                (root["userId"] as? JsonPrimitive)?.content == userId &&
+                (root["phraseId"] as? JsonPrimitive)?.content == phraseId) { "Phrase deletion was not confirmed." }
+            OkDto(ok = true)
+        }
 
     /** POST /api/games { userId, conversationId, game?='tictactoe', opponentId? } → { match, message }. */
     suspend fun createGame(userId: String, conversationId: String, opponentId: String?, clientId: String? = null): PulseResult<GameMatchCreateResultDto> =
@@ -1648,14 +2146,22 @@ class PulseApi(
         }
 
     /** GET /api/games?conversationId= → { matches } newest 25 (list page for the room games view). */
-    suspend fun games(conversationId: String): PulseResult<GamesPageDto> =
-        get("/api/games?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8")) {
-            PulseJson.decodeFromString(GamesPageDto.serializer(), it)
+    suspend fun games(conversationId: String, userId: String): PulseResult<GamesPageDto> =
+        get("/api/games?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            requireGameRead(it, userId, conversationId)
+            require(PulseJson.parseToJsonElement(it).jsonObject["matches"] is JsonArray)
+            PulseJson.decodeFromString(GamesPageDto.serializer(), it).also { page ->
+                require(page.matches.map { row -> row.id }.distinct().size == page.matches.size)
+                page.matches.forEach { row -> require(row.id.isNotBlank() && row.conversationId == conversationId) }
+            }
         }
 
     /** GET /api/games/{id} → { match, playerX, playerO }. */
-    suspend fun game(matchId: String): PulseResult<GameDetailDto> =
-        get("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8")) { matchOf(it, matchId) }
+    suspend fun game(matchId: String, userId: String): PulseResult<GameDetailDto> =
+        get("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8") + "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            val room = requireGameRead(it, userId)
+            matchOf(it, matchId).also { row -> require(row.match.conversationId == room) }
+        }
 
     /** POST /api/games/{id}/move { userId, cell 0..8 } - 409s for turn/occupied/race surface verbatim. */
     suspend fun gameMove(matchId: String, userId: String, cell: Int): PulseResult<GameDetailDto> =
@@ -1690,22 +2196,30 @@ class PulseApi(
         }
 
     /** GET /api/tournaments?conversationId= → { tournaments } newest 5 with playerCount. */
-    suspend fun tournaments(conversationId: String, userId: String? = null): PulseResult<TournamentsPageDto> =
+    suspend fun tournaments(conversationId: String, userId: String): PulseResult<TournamentsPageDto> =
         get("/api/tournaments?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
-            (userId?.let { "&userId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")) {
+            "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            requireGameRead(it, userId, conversationId)
             if ((PulseJson.parseToJsonElement(it) as? JsonObject)?.get("tournaments") !is kotlinx.serialization.json.JsonArray) {
                 throw kotlinx.serialization.SerializationException("Tournament list was not returned")
             }
             val result = PulseJson.decodeFromString(TournamentsPageDto.serializer(), it)
-            if (result.tournaments.any { season -> season.id.isBlank() || season.status !in listOf("running", "finished") }) {
+            if (result.tournaments.map { row -> row.id }.distinct().size != result.tournaments.size || result.tournaments.any { season -> season.id.isBlank() || season.conversationId != conversationId || season.joined == null || season.status !in listOf("running", "finished") }) {
                 throw kotlinx.serialization.SerializationException("Invalid tournament list")
             }
             result
         }
 
     /** GET /api/tournaments/{id} → { tournament } standings (points → wins → joinedAt). */
-    suspend fun tournament(tournamentId: String): PulseResult<TournamentSummaryDto> =
-        get("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8")) { tournamentOf(it) }
+    suspend fun tournament(tournamentId: String, userId: String): PulseResult<TournamentSummaryDto> =
+        get("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8") + "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            val room = requireGameRead(it, userId)
+            val season = PulseJson.parseToJsonElement(it).jsonObject["tournament"] as? JsonObject
+            require(season?.get("entries") is JsonArray)
+            tournamentOf(it).also { row ->
+                require(row.id == tournamentId && row.conversationId == room && row.status in listOf("running", "finished"))
+            }
+        }
 
     /** PATCH /api/tournaments/{id} { userId, status:'finished' } - creator/admin, idempotent. */
     suspend fun finishTournament(tournamentId: String, userId: String): PulseResult<TournamentSummaryDto> =
@@ -1738,6 +2252,8 @@ class PulseApi(
     /** GET /api/hub/wallet?userId=[&ledger=30] - upserts a zero wallet; ledger desc. */
     suspend fun wallet(userId: String, ledger: Int = 30): PulseResult<WalletPageDto> =
         get("/api/hub/wallet?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&ledger=$ledger") {
+            requireWalletAck(it, userId)
+            require((PulseJson.parseToJsonElement(it) as? JsonObject)?.get("ledger") is kotlinx.serialization.json.JsonArray) { "Wallet history was not confirmed." }
             PulseJson.decodeFromString(WalletPageDto.serializer(), it)
         }
 
@@ -1800,13 +2316,16 @@ class PulseApi(
     /** GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done. */
     suspend fun hubTasks(userId: String): PulseResult<HubTasksPageDto> =
         get("/api/hub/tasks?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(HubTasksPageDto.serializer(), it)
+            PulseJson.decodeFromString(HubTasksPageDto.serializer(), it).also { page ->
+                require(page.userId == userId && page.tasks.map { task -> task.id }.distinct().size == page.tasks.size) { "Task history owner was not confirmed." }
+                page.tasks.forEach { task -> requireHubTask(task, userId) }
+            }
         }
 
     /** POST /api/hub/tasks { userId, title 1..120, status? } → { task }. */
     suspend fun createHubTask(userId: String, title: String, status: String? = null): PulseResult<HubTaskDto> =
         post("/api/hub/tasks", jsonOf("userId" to userId, "title" to title, "status" to (status ?: "todo"))) {
-            taskOf(it)
+            taskOf(it, userId).also { task -> require(task.title == title.trim() && task.status == (status ?: "todo")) { "Task creation was not confirmed." } }
         }
 
     /** PATCH /api/hub/tasks/{id} { userId, title?, status? } - owner-only. */
@@ -1818,18 +2337,25 @@ class PulseApi(
                 if (title != null) put("title", title)
                 if (status != null) put("status", status)
             },
-        ) { taskOf(it) }
+        ) { taskOf(it, userId).also { task -> require(task.id == taskId && (title == null || task.title == title.trim()) && (status == null || task.status == status)) { "Task update was not confirmed." } } }
 
     /** DELETE /api/hub/tasks/{id}?userId= - owner-only. */
     suspend fun deleteHubTask(taskId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/hub/tasks/" + java.net.URLEncoder.encode(taskId, "UTF-8"), userId) {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val row = PulseJson.parseToJsonElement(it).jsonObject
+            require(row["ok"] == JsonPrimitive(true) && row["taskId"] == JsonPrimitive(taskId) && row["userId"] == JsonPrimitive(userId)) { "Task deletion was not confirmed." }
+            OkDto(ok = true)
         }
 
     /** GET /api/hub/market?userId= - open listings + viewer's own (any status), ≤60. */
     suspend fun market(userId: String): PulseResult<MarketPageDto> =
         get("/api/hub/market?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(MarketPageDto.serializer(), it)
+            PulseJson.decodeFromString(MarketPageDto.serializer(), it).also { page ->
+                require(page.marketVersion == 1 && page.userId == userId && page.listings.map { row -> row.id }.distinct().size == page.listings.size) {
+                    "Market ownership could not be verified. Update the gateway before retrying."
+                }
+                page.listings.forEach { row -> requireMarketListing(row, userId) }
+            }
         }
 
     /** POST /api/hub/market { userId, title 1..80, description?, price 1..100000 } → { listing }. */
@@ -1842,52 +2368,99 @@ class PulseApi(
                 if (!description.isNullOrBlank()) put("description", description)
                 put("price", price)
             },
-        ) { listingOf(it) }
+        ) {
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.MarketListingEnvelopeDto.serializer(), it)
+            require(receipt.marketVersion == 1 && receipt.userId == userId) { "Listing ownership was not confirmed." }
+            receipt.listing.also { row ->
+                requireMarketListing(row, userId)
+                require(row.mine && row.status == "open" && row.title == title.trim() && row.price == price) { "Listing details were not confirmed." }
+            }
+        }
 
     /** POST /api/hub/market/{id}/buy { userId } → { ok, wallet } (atomic escrow-less debit/credit). */
     suspend fun buyListing(listingId: String, userId: String): PulseResult<MarketBuyResultDto> =
         post("/api/hub/market/" + java.net.URLEncoder.encode(listingId, "UTF-8") + "/buy", jsonOf("userId" to userId)) {
             requireWalletAck(it, userId)
             val result = PulseJson.decodeFromString(MarketBuyResultDto.serializer(), it)
-            if (!result.ok) throw kotlinx.serialization.SerializationException("Purchase was not confirmed; refresh the market before retrying")
+            if (result.marketVersion != 1 || result.userId != userId || result.listingId != listingId || !result.ok) throw kotlinx.serialization.SerializationException("Purchase was not confirmed; refresh the market before retrying")
             result
         }
 
     /** GET /api/hub/logs?limit=&kind= → { logs } desc; `meta` stays a raw JSON string. */
-    suspend fun hubLogs(limit: Int = 60, kind: String? = null): PulseResult<HubLogsPageDto> {
-        val q = StringBuilder("?limit=$limit")
+    suspend fun hubLogs(userId: String, limit: Int = 60, kind: String? = null): PulseResult<HubLogsPageDto> {
+        val q = StringBuilder("?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=$limit")
         if (!kind.isNullOrBlank()) q.append("&kind=").append(java.net.URLEncoder.encode(kind, "UTF-8"))
-        return get("/api/hub/logs$q") { PulseJson.decodeFromString(HubLogsPageDto.serializer(), it) }
+        return get("/api/hub/logs$q") {
+            PulseJson.decodeFromString(HubLogsPageDto.serializer(), it).also { page ->
+                require(page.activityVersion == 1 && page.userId == userId && page.logs.all { row -> row.user?.id == userId }) {
+                    "Private activity could not be verified. Update the gateway before retrying."
+                }
+            }
+        }
+    }
+
+    private fun requireAppIdentity(version: Int, app: String, owner: String, expectedApp: String, expectedOwner: String) {
+        require(version == 1 && app == expectedApp && owner == expectedOwner) { "App response was not confirmed for this account. Update the gateway before retrying." }
+    }
+    private fun requireInstallState(installed: Boolean, status: String?, count: Int) {
+        require(count >= 0 && if (installed) status == "connected" && count > 0 else status == null) { "Connection state was not confirmed." }
+    }
+    private fun requireAppCommunity(row: AppCommunityDto, appId: String, userId: String) {
+        requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
+        val room = row.conversation
+        require(row.memberCount >= 0)
+        if (room == null) { require(!row.joined && row.memberCount == 0L); return }
+        require(room.id.isNotBlank() && room.isGroup && room.myDraft == null && room.inviteCode == null)
+        require(room.members.all { it.id.isNotBlank() } && room.members.map { it.id }.distinct().size == room.members.size)
+        require(if (row.joined) room.members.size.toLong() == row.memberCount && room.members.any { it.id == userId } else room.members.isEmpty()) {
+            "Community membership was not confirmed."
+        }
     }
 
     /** GET /api/hub/apps/{appId}/install?userId= - appId is the numeric matrix id as a string. */
     suspend fun appInstallState(appId: String, userId: String): PulseResult<AppInstallStateDto> =
         get("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(AppInstallStateDto.serializer(), it)
+            PulseJson.decodeFromString(AppInstallStateDto.serializer(), it).also { row ->
+                requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
+                requireInstallState(row.installed, row.status, row.installs)
+                if (row.installed) java.time.Instant.parse(requireNotNull(row.installedAt))
+                require(row.installers.size <= 6 && row.installers.size <= row.installs && row.installers.all { person -> person.id.isNotBlank() } && row.installers.map { person -> person.id }.distinct().size == row.installers.size)
+            }
         }
 
     /** POST /api/hub/apps/{appId}/install { userId } - idempotent connect. */
     suspend fun installApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
         post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it)
+            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it).also { row ->
+                requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
+                requireInstallState(row.installed, row.status, row.installs)
+                require(row.installed == true) { "Connection change was not confirmed." }
+            }
         }
 
     /** DELETE /api/hub/apps/{appId}/install { userId } - hard remove. */
     suspend fun uninstallApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
         deleteWithBody("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", userId) {
-            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it)
+            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it).also { row ->
+                requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
+                requireInstallState(row.installed, row.status, row.installs)
+                require(row.installed == false) { "Connection change was not confirmed." }
+            }
         }
 
     /** GET /api/hub/apps/{appId}/community?userId= → { conversation|null, memberCount, joined }. */
     suspend fun appCommunity(appId: String, userId: String): PulseResult<AppCommunityDto> =
         get("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/community?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
+            PulseJson.decodeFromString(AppCommunityDto.serializer(), it).also { row -> requireAppCommunity(row, appId, userId) }
         }
 
     /** POST /api/hub/apps/{appId}/community { userId } - auto-provisions the group; founder = admin. */
     suspend fun joinAppCommunity(appId: String, userId: String): PulseResult<AppCommunityDto> =
         post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/community", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
+            PulseJson.decodeFromString(AppCommunityDto.serializer(), it).also { row ->
+                requireAppCommunity(row, appId, userId)
+                require(row.joined && row.conversation != null) { "Community membership was not confirmed." }
+            }
         }
 
     // REM-A group governance (web group-info-sheet parity)
@@ -1915,10 +2488,22 @@ class PulseApi(
                 if (screenPrivacy != null) put("screenPrivacy", screenPrivacy)
             },
         ) {
+            val fields = PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation") as? JsonObject
+                ?: throw kotlinx.serialization.SerializationException("Room settings detail is missing")
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
-                PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+                fields.toString(),
+            ).also { result ->
+                if (result.id != conversationId || result.members.none { member -> member.id == requesterId } ||
+                    ((name != null || photo != null || broadcast != null) && !result.isGroup) ||
+                    (name != null && ((fields["name"] as? JsonPrimitive)?.isString != true || result.name.isNullOrBlank())) ||
+                    (photo != null && (!fields.containsKey("photo") ||
+                        (fields["photo"] != JsonNull && (fields["photo"] as? JsonPrimitive)?.isString != true))) ||
+                    (broadcast != null && result.broadcastMode == null) ||
+                    (screenPrivacy != null && result.screenPrivacy == null)) {
+                    throw kotlinx.serialization.SerializationException("Room settings were not confirmed")
+                }
+            }
         }
 
     /** POST /api/conversations/{id}/members { requesterId, userIds[] } - admin-only add. */
@@ -1929,7 +2514,15 @@ class PulseApi(
                 put("requesterId", requesterId)
                 put("userIds", kotlinx.serialization.json.JsonArray(userIds.map { kotlinx.serialization.json.JsonPrimitive(it) }))
             },
-        ) { PulseJson.decodeFromString(MembersAddedDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(MembersAddedDto.serializer(), it)
+            if (body?.get("added") !is JsonArray || result.added.distinct().size != result.added.size ||
+                result.added.any { id -> id !in userIds }) {
+                throw kotlinx.serialization.SerializationException("Member additions were not confirmed")
+            }
+            result
+        }
 
     /** PATCH /api/conversations/{id}/members { requesterId, userId, role } - promote/demote (admin-only). */
     suspend fun setMemberRole(conversationId: String, requesterId: String, userId: String, role: String): PulseResult<Unit> =
@@ -1952,7 +2545,9 @@ class PulseApi(
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
                 PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+            ).also { result ->
+                if (result.id != conversationId) throw kotlinx.serialization.SerializationException("Role response belongs to another room")
+            }
         }
 
     /** DELETE /api/conversations/{id}/members/{userId} { requesterId } - kick a NON-admin member. */
@@ -1961,7 +2556,11 @@ class PulseApi(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members/" +
                 java.net.URLEncoder.encode(userId, "UTF-8"),
             jsonOf("requesterId" to requesterId),
-        ) { PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it) }
+        ) {
+            PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it).also { result ->
+                if (!result.ok) throw kotlinx.serialization.SerializationException("Membership change was not confirmed")
+            }
+        }
 
     /**
      * DELETE /api/conversations/{id}/members { requesterId } - LEAVE group.
@@ -1972,14 +2571,24 @@ class PulseApi(
         deleteWithJson(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members",
             jsonOf("requesterId" to requesterId),
-        ) { PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it) }
+        ) {
+            PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it).also { result ->
+                if (!result.ok) throw kotlinx.serialization.SerializationException("Membership change was not confirmed")
+            }
+        }
 
     /** POST /api/conversations/{id}/invite { requesterId, regenerate? } - admin-only lazy create/regenerate. */
     suspend fun createInvite(conversationId: String, requesterId: String, regenerate: Boolean): PulseResult<InviteCodeDto> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/invite",
             jsonOf("requesterId" to requesterId, "regenerate" to regenerate),
-        ) { PulseJson.decodeFromString(InviteCodeDto.serializer(), it) }
+        ) {
+            val result = PulseJson.decodeFromString(InviteCodeDto.serializer(), it)
+            val code = app.pulse.core.link.PulseDeepLink.inviteCode(result.inviteCode)
+                ?.takeIf { normalized -> result.inviteCode.trim().equals(normalized, ignoreCase = true) }
+                ?: throw kotlinx.serialization.SerializationException("Invite link was not confirmed")
+            result.copy(inviteCode = code)
+        }
 
     /** PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } - any participant; presets 0/1d/7d/30d. */
     suspend fun setDisappearingTtl(conversationId: String, userId: String, ttlSeconds: Int): PulseResult<ConversationSummaryDto> =
@@ -1990,7 +2599,12 @@ class PulseApi(
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
                 PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+            ).also { result ->
+                val applied = result.ttlSeconds
+                if (result.id != conversationId || result.members.none { member -> member.id == userId } || applied == null || applied !in listOf(0, 86_400, 604_800, 2_592_000)) {
+                    throw kotlinx.serialization.SerializationException("Disappearing-message setting was not confirmed")
+                }
+            }
         }
 
     /** PATCH /api/conversations/{id}/slow-mode { userId, seconds } - admin-only; presets 0/5/10/30/60/300. */
@@ -1998,30 +2612,97 @@ class PulseApi(
         patch(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/slow-mode",
             jsonOf("userId" to userId, "seconds" to seconds),
-        ) { PulseJson.decodeFromString(SlowModeAckDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(SlowModeAckDto.serializer(), it)
+            if (!result.ok || body?.get("slowModeSeconds") != JsonPrimitive(seconds)) {
+                throw kotlinx.serialization.SerializationException("Slow-mode setting was not confirmed")
+            }
+            result
+        }
 
     // REM-A scheduled sends (F-MS-18)
 
-    /** GET /api/conversations/{id}/scheduled?userId= - the caller's OWN pending rows, soonest first. */
-    suspend fun scheduledMessages(conversationId: String, userId: String): PulseResult<ScheduledPageDto> =
-        get(
-            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
-                "/scheduled?userId=" + java.net.URLEncoder.encode(userId, "UTF-8"),
-        ) { PulseJson.decodeFromString(ScheduledPageDto.serializer(), it) }
+    private fun scheduledScope(text: String, owner: String, room: String? = null): JsonObject {
+        val root = PulseJson.parseToJsonElement(text) as? JsonObject ?: error("Scheduled response is missing.")
+        val user = root["userId"] as? JsonPrimitive
+        val conversation = root["conversationId"] as? JsonPrimitive
+        require(root["scheduleVersion"]?.toString() == "1" && owner.isNotBlank() && user?.isString == true && user.content == owner &&
+            conversation?.isString == true && conversation.content.isNotBlank() && (room == null || conversation.content == room)) {
+            "Scheduled-message ownership was not confirmed."
+        }
+        return root
+    }
+    private fun validateScheduled(row: ScheduledItemDto, room: String) {
+        require(row.id.isNotBlank() && row.conversationId == room && row.content.isNotBlank() && row.sentAt == null &&
+            runCatching { java.time.Instant.parse(row.scheduledAt) }.isSuccess &&
+            (row.cancelledAt == null || runCatching { java.time.Instant.parse(row.cancelledAt) }.isSuccess)) { "Invalid scheduled message." }
+    }
+    /** Complete-or-error scan; never publish the old endpoint's silently truncated first 50 rows. */
+    suspend fun scheduledMessages(conversationId: String, userId: String): PulseResult<ScheduledPageDto> {
+        val rows = mutableListOf<ScheduledItemDto>()
+        val ids = mutableSetOf<String>(); val cursors = mutableSetOf<String>()
+        var cursor: String? = null
+        var characters = 0
+        repeat(100) {
+            val path = "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+                "/scheduled?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
+                (cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+            when (val result = get(path) { text ->
+                characters += text.length
+                require(characters <= 4 * 1024 * 1024) { "Scheduled list is too large to confirm safely." }
+                val root = scheduledScope(text, userId, conversationId)
+                require(root["items"] is JsonArray && root["hasMore"]?.toString() in setOf("true", "false")) { "Scheduled list is incomplete." }
+                val page = PulseJson.decodeFromString(ScheduledPageDto.serializer(), text)
+                require(page.items.size <= 50) { "Scheduled page exceeded its limit." }
+                page.items.forEach { validateScheduled(it, conversationId) }
+                val more = root["hasMore"]?.toString() == "true"
+                val next = root["nextCursor"] as? JsonPrimitive
+                require(if (more) next?.isString == true && next.content.isNotBlank() && page.items.isNotEmpty() else root["nextCursor"] == kotlinx.serialization.json.JsonNull) {
+                    "Scheduled list cursor was not confirmed."
+                }
+                page.items to if (more) next?.content else null
+            }) {
+                is PulseResult.Failure -> return result
+                is PulseResult.Success -> {
+                    val (page, next) = result.value
+                    if (page.any { !ids.add(it.id) } || (next != null && !cursors.add(next))) {
+                        return PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "Scheduled list changed while loading. Retry.")
+                    }
+                    rows.addAll(page)
+                    if (next == null) return PulseResult.Success(ScheduledPageDto(items = rows))
+                    cursor = next
+                }
+            }
+        }
+        return PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "Scheduled list exceeded the safe page limit. No partial list was applied.")
+    }
 
-    /** POST /api/conversations/{id}/scheduled { senderId, content, scheduledAt } → 201 { item }. */
-    suspend fun scheduleMessage(conversationId: String, senderId: String, content: String, scheduledAtIso: String): PulseResult<ScheduledItemDto> =
-        post(
-            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/scheduled",
-            jsonOf("senderId" to senderId, "content" to content, "scheduledAt" to scheduledAtIso),
-        ) { PulseJson.decodeFromString(ScheduledItemDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("item").toString()) }
+    suspend fun scheduleMessage(conversationId: String, senderId: String, content: String, scheduledAtIso: String, clientId: String): PulseResult<ScheduledItemDto> =
+        post("/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/scheduled/create-v2",
+            jsonOf("senderId" to senderId, "content" to content, "scheduledAt" to scheduledAtIso, "clientId" to clientId)) {
+            val root = scheduledScope(it, senderId, conversationId)
+            val echoed = root["clientId"] as? JsonPrimitive
+            require(echoed?.isString == true && echoed.content == clientId && root["replayed"]?.toString() in setOf("true", "false")) {
+                "Scheduled request identity was not confirmed. Retry the same details."
+            }
+            val item = root["item"] as? JsonObject ?: error("Scheduled message was not confirmed.")
+            PulseJson.decodeFromString(ScheduledItemDto.serializer(), item.toString()).also { row ->
+                validateScheduled(row, conversationId)
+                require(row.content == content.trim() && row.cancelledAt == null && row.cancelledReason == null &&
+                    java.time.Instant.parse(row.scheduledAt).toEpochMilli() == java.time.Instant.parse(scheduledAtIso).toEpochMilli()) {
+                    "The requested scheduled message was not confirmed."
+                }
+            }
+        }
 
-    /** DELETE /api/scheduled/{id} { requesterId } → { ok: true } - cancel a pending delayed send. */
     suspend fun cancelScheduled(scheduledId: String, requesterId: String): PulseResult<OkDto> =
-        deleteWithJson(
-            "/api/scheduled/" + java.net.URLEncoder.encode(scheduledId, "UTF-8"),
-            jsonOf("requesterId" to requesterId),
-        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+        deleteWithJson("/api/scheduled/" + java.net.URLEncoder.encode(scheduledId, "UTF-8"), jsonOf("requesterId" to requesterId)) {
+            val root = scheduledScope(it, requesterId)
+            require(root["ok"]?.toString() == "true" && root["cancelled"]?.toString() == "true" &&
+                (root["scheduledId"] as? JsonPrimitive)?.content == scheduledId) { "Scheduled cancellation was not confirmed." }
+            OkDto(ok = true)
+        }
 
     // R2-A round-2 parity (automations · webhooks · AI recap · per-viewer privacy)
 
@@ -2030,14 +2711,29 @@ class PulseApi(
         get(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
                 "/automations?userId=" + java.net.URLEncoder.encode(userId, "UTF-8"),
-        ) { PulseJson.decodeFromString(AutomationsPageDto.serializer(), it) }
+        ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject ?: error("Automation list is missing.")
+            require(root["automations"] is JsonArray) { "Automation list was not confirmed." }
+            (root["automations"] as JsonArray).forEach { row ->
+                require((row as? JsonObject)?.get("enabled")?.toString() in setOf("true", "false")) { "Automation state was not confirmed." }
+            }
+            PulseJson.decodeFromString(AutomationsPageDto.serializer(), it).also { page ->
+                require(page.automations.map { it.id }.distinct().size == page.automations.size)
+                page.automations.forEach { row -> requireAutomation(row); require(row.conversationId == conversationId) }
+            }
+        }
 
     /** POST /api/conversations/{id}/automations { userId, trigger, reply } - admin-only → 201 { automation }. */
     suspend fun createAutomation(conversationId: String, userId: String, trigger: String, reply: String): PulseResult<AutomationEnvelopeDto> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/automations",
             jsonOf("userId" to userId, "trigger" to trigger, "reply" to reply),
-        ) { PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), it) }
+        ) {
+            confirmedAutomation(it).also { receipt ->
+                val row = receipt.automation
+                require(row.conversationId == conversationId && row.trigger == trigger.trim() && row.reply == reply.trim() && row.enabled) { "Automation creation was not confirmed." }
+            }
+        }
 
     /** PATCH /api/automations/{id} { userId, enabled?/trigger? } - admin-only → { automation }. */
     suspend fun patchAutomation(automationId: String, userId: String, enabled: Boolean?, trigger: String?): PulseResult<AutomationEnvelopeDto> =
@@ -2048,35 +2744,74 @@ class PulseApi(
                 if (enabled != null) put("enabled", enabled)
                 if (trigger != null) put("trigger", trigger)
             },
-        ) { PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), it) }
+        ) {
+            confirmedAutomation(it).also { receipt ->
+                val row = receipt.automation
+                require(row.id == automationId && (enabled == null || row.enabled == enabled) && (trigger == null || row.trigger == trigger.trim())) { "Automation changes were not confirmed." }
+            }
+        }
 
     /** DELETE /api/automations/{id} { userId } - admin-only → { ok: true }. */
     suspend fun deleteAutomation(automationId: String, userId: String): PulseResult<OkDto> =
         deleteWithJson(
             "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
             jsonOf("userId" to userId),
-        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+        ) { confirmedControlDeletion(it, userId, "automationId", automationId) }
 
-    /** GET /api/webhooks?conversationId=&requesterId= → { webhooks[] } - everyone may read. */
+    /** GET /api/webhooks?conversationId=&requesterId= → { webhooks[] } - admins only; contains posting credentials. */
     suspend fun webhooks(conversationId: String, requesterId: String): PulseResult<WebhooksPageDto> =
         get(
             "/api/webhooks?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
                 "&requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
-        ) { PulseJson.decodeFromString(WebhooksPageDto.serializer(), it) }
+        ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            require(root?.get("webhooks") is JsonArray) { "Webhook list was not confirmed." }
+            PulseJson.decodeFromString(WebhooksPageDto.serializer(), it).also { page ->
+                page.webhooks.forEach { row -> requireWebhook(row) }
+                require(page.webhooks.map { it.id }.distinct().size == page.webhooks.size)
+            }
+        }
 
     /** POST /api/webhooks { conversationId, name, requesterId } - admin-only → 201 WebhookDTO. */
     suspend fun createWebhook(conversationId: String, name: String, requesterId: String): PulseResult<WebhookDto> =
         post(
             "/api/webhooks",
             jsonOf("conversationId" to conversationId, "name" to name, "requesterId" to requesterId),
-        ) { PulseJson.decodeFromString(WebhookDto.serializer(), it) }
+        ) {
+            PulseJson.decodeFromString(WebhookDto.serializer(), it).also { row ->
+                requireWebhook(row)
+                require(row.name == name.trim() && row.createdBy == requesterId) { "Webhook creation was not confirmed." }
+            }
+        }
 
     /** DELETE /api/webhooks/{token}?requesterId= - admin-only → { ok: true }. */
     suspend fun deleteWebhook(token: String, requesterId: String): PulseResult<OkDto> =
         deleteAt(
             "/api/webhooks/" + java.net.URLEncoder.encode(token, "UTF-8") +
                 "?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
-        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+        ) { confirmedControlDeletion(it, requesterId, "token", token) }
+
+    private fun requireAutomation(row: app.pulse.protocol.AutomationDto) {
+        require(row.id.isNotBlank() && row.conversationId.isNotBlank() && row.trigger.length in 2..40 && row.reply.length in 1..500 && row.hits >= 0) {
+            "Invalid automation response."
+        }
+    }
+    private fun confirmedAutomation(text: String): AutomationEnvelopeDto {
+        val row = (PulseJson.parseToJsonElement(text) as? JsonObject)?.get("automation") as? JsonObject
+        require(row != null && row["enabled"]?.toString() in setOf("true", "false")) { "Automation state was not confirmed." }
+        return PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), text).also { requireAutomation(it.automation) }
+    }
+    private fun requireWebhook(row: WebhookDto) {
+        require(row.id.isNotBlank() && row.name.isNotBlank() && row.token.isNotBlank() && row.createdBy.isNotBlank() && row.url == "/api/webhooks/${row.token}") {
+            "Invalid webhook response."
+        }
+    }
+    private fun confirmedControlDeletion(text: String, owner: String, field: String, target: String): OkDto {
+        val root = PulseJson.parseToJsonElement(text) as? JsonObject ?: error("Deletion receipt is missing.")
+        require(root["ok"]?.toString() == "true" && root["deleted"]?.toString() == "true" &&
+            root["userId"] == JsonPrimitive(owner) && root[field] == JsonPrimitive(target)) { "Deletion was not confirmed." }
+        return OkDto(ok = true)
+    }
 
     /** POST /api/ai/recap { userId, conversationId } - LLM summary of the last ~30 messages. */
     suspend fun aiRecap(userId: String, conversationId: String): PulseResult<AiRecapDto> =
@@ -2094,7 +2829,14 @@ class PulseApi(
         patch(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/screen-privacy",
             jsonOf("userId" to userId, "on" to on),
-        ) { PulseJson.decodeFromString(ScreenPrivacyAckDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(ScreenPrivacyAckDto.serializer(), it)
+            if (!result.ok || body?.get("screenPrivacy") != JsonPrimitive(on)) {
+                throw kotlinx.serialization.SerializationException("Personal screen privacy was not confirmed")
+            }
+            result
+        }
 
     companion object {
         /** Per-request cap for the slow voice-caption ASR round-trip. */

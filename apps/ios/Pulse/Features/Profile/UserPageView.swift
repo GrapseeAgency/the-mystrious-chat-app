@@ -19,7 +19,10 @@ struct UserPageView: View {
     let initial: WireUser?
     let userId: String
     @ObservedObject var session: PulseSession
+    var onOpenRoom: (WireConversationSummary) -> Void
 
+    @State private var messageTask: Task<Void, Never>?
+    @State private var blockTask: Task<Void, Never>?
     @StateObject private var model = UserPageModel()
 
     var body: some View {
@@ -34,8 +37,12 @@ struct UserPageView: View {
         }
         .navigationTitle(model.user?.name ?? initial?.name ?? "Profile")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { model.configure(session: session, userId: userId) }
-        .task { await model.load() }
+        .task(id: "\(session.sessionGeneration)-\(userId)") {
+            model.configure(session: session, userId: userId)
+            await model.load()
+        }
+        .onDisappear { messageTask?.cancel(); blockTask?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in messageTask?.cancel(); blockTask?.cancel() }
     }
 
     @ViewBuilder
@@ -233,7 +240,8 @@ struct UserPageView: View {
                 ForEach(Array(model.sharedRooms.prefix(3)), id: \.id) { room in
                     Button {
                         PulseHaptics.tap()
-                        model.openRoom(room)
+                        messageTask?.cancel()
+                        onOpenRoom(room)
                     } label: {
                         HStack(spacing: 10) {
                             RowAvatar(name: room.name ?? "Group", colorName: nil, photoPath: room.photo, size: 32)
@@ -286,7 +294,17 @@ struct UserPageView: View {
         return VStack(spacing: 8) {
             if !isViewer {
                 Button {
-                    Task { await model.message() }
+                    guard messageTask == nil, blockTask == nil else { return }
+                    session.noteRoomNavigationIntent()
+                    let epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration
+                    messageTask = Task { @MainActor in
+                        defer { messageTask = nil }
+                        guard session.roomNavigationGeneration == navigation else { return }
+                        if let conversation = await model.message(), !Task.isCancelled,
+                           session.sessionGeneration == epoch, session.roomNavigationGeneration == navigation {
+                            onOpenRoom(conversation)
+                        }
+                    }
                 } label: {
                     Group {
                         if model.messaging {
@@ -304,13 +322,19 @@ struct UserPageView: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        Task { await model.toggleBlock() }
+                        guard blockTask == nil else { return }
+                        session.noteRoomNavigationIntent()
+                        messageTask?.cancel()
+                        blockTask = Task { @MainActor in
+                            defer { blockTask = nil }
+                            await model.toggleBlock()
+                        }
                     } label: {
                         Group {
                             if model.blockBusy {
                                 ProgressView()
                             } else {
-                                Text(model.blocked ? "Unblock" : "Block")
+                                Text(!model.blockKnown ? "Retry block status" : model.blocked ? "Unblock" : "Block")
                                     .font(.system(size: 13, weight: .semibold))
                             }
                         }
@@ -320,6 +344,8 @@ struct UserPageView: View {
                     .tint(PulseTheme.rose500)
 
                     Button {
+                        session.noteRoomNavigationIntent()
+                        messageTask?.cancel()
                         PulseHaptics.tap()
                         withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { model.reportOpen.toggle() }
                     } label: {
@@ -347,6 +373,7 @@ final class UserPageModel: ObservableObject {
     @Published private(set) var stats: WireUserStats?
     @Published private(set) var statsFailed = false
     @Published private(set) var blocked = false
+    @Published private(set) var blockKnown = false
     @Published private(set) var sharedRooms: [WireConversationSummary] = []
     @Published private(set) var messaging = false
     @Published private(set) var blockBusy = false
@@ -355,76 +382,115 @@ final class UserPageModel: ObservableObject {
 
     private weak var session: PulseSession?
     private var userId = ""
-    private var configured = false
+    private var configuredEpoch: UUID?
+    private var blockRevision: UInt = 0
+    private var profileRevision = UUID()
 
     func configure(session: PulseSession, userId: String) {
-        guard !configured || self.userId != userId else { return }
-        configured = true
+        guard configuredEpoch != session.sessionGeneration || self.userId != userId else { return }
+        configuredEpoch = session.sessionGeneration
+        profileRevision = UUID()
+        blockRevision &+= 1
         self.session = session
         self.userId = userId
+        user = nil; stats = nil; statsFailed = false; sharedRooms = []; errorText = nil
+        blocked = false; blockKnown = false; blockBusy = false
     }
 
     func load() async {
-        guard let session else { return }
-        if user == nil, let fresh = try? await session.api.user(userId) {
-            user = fresh
+        guard let session, configuredEpoch == session.sessionGeneration else { return }
+        let api = session.api, epoch = session.sessionGeneration, target = userId, blockTicket = blockRevision
+        let profileTicket = profileRevision
+        func isCurrent() -> Bool {
+            !Task.isCancelled && session.sessionGeneration == epoch && userId == target && profileRevision == profileTicket
+        }
+        if user == nil {
+            do {
+                let fresh = try await api.user(target)
+                guard isCurrent() else { return }
+                user = fresh
+                errorText = nil
+            } catch {
+                guard isCurrent() else { return }
+                errorText = ChatsViewModel.describe(error)
+            }
         }
         if stats == nil {
             do {
-                stats = try await session.api.userStats(userId)
+                let fresh = try await api.userStats(target)
+                guard isCurrent() else { return }
+                stats = fresh
                 statsFailed = false
             } catch {
-                statsFailed = true // honest empty - "Stats unavailable right now."
+                guard isCurrent() else { return }
+                statsFailed = true
             }
         }
-        blocked = (try? await session.api.blockState(target: userId)) ?? false
-        if sharedRooms.isEmpty {
-            let mine = (try? await session.api.conversations()) ?? []
-            sharedRooms = mine.filter { conv in
-                conv.isGroup && conv.members.contains(where: { $0.id == userId })
-            }
+        guard isCurrent() else { return }
+        if let state = try? await api.blockState(target: target) {
+            guard isCurrent() else { return }
+            if blockTicket == blockRevision { blocked = state; blockKnown = true }
+        }
+        guard isCurrent() else { return }
+        if sharedRooms.isEmpty, let mine = try? await api.conversations() {
+            guard isCurrent() else { return }
+            sharedRooms = mine.filter { $0.isGroup && $0.members.contains(where: { $0.id == target }) }
         }
     }
 
-    /// Message {firstName} - create-or-dedupe DM, then open via the session
-    /// handoff (Chats tab pushes the room - same path the dock compose uses).
-    func message() async {
-        guard let session, !messaging else { return }
+    /// Return the confirmed DM to the owning view; it knows which tab must open.
+    func message() async -> WireConversationSummary? {
+        guard let session, !messaging, let viewer = session.viewer else { return nil }
+        let api = session.api, epoch = session.sessionGeneration, target = userId
         messaging = true
         defer { messaging = false }
         do {
-            let conv = try await session.api.createConversation(memberIds: [userId], isGroup: false)
+            let conv = try await PulseConversationNavigation.create(viewerId: viewer.id,
+                memberIds: [target], isGroup: false) {
+                try await api.createConversation(memberIds: [target], isGroup: false)
+            }
+            guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target else { return nil }
             PulseHaptics.success()
             session.noteInboxChanged()
-            session.requestOpenRoom(conv)
+            return conv
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target else { return nil }
             session.toasts.show(ChatsViewModel.describe(error))
+            return nil
         }
     }
 
     /// Block/unblock with the honest toasts - the pair state refetches
     /// afterwards (server truth, no optimistic lies).
     func toggleBlock() async {
-        guard let session, !blockBusy else { return }
+        guard let session, configuredEpoch == session.sessionGeneration, !blockBusy else { return }
+        let api = session.api, epoch = session.sessionGeneration, target = userId, wasBlocked = blocked
         blockBusy = true
-        defer { blockBusy = false }
+        blockRevision &+= 1
+        let ticket = blockRevision
+        defer {
+            if configuredEpoch == epoch, userId == target, blockRevision == ticket { blockBusy = false }
+        }
         do {
-            if blocked {
-                try await session.api.unblock(userId: userId)
-                PulseHaptics.success()
-                session.toasts.show("Unblocked \(user?.name ?? "account")")
-            } else {
-                try await session.api.block(userId: userId)
-                PulseHaptics.success()
-                session.toasts.show("Blocked \(user?.name ?? "account")")
+            if !blockKnown {
+                let state = try await api.blockState(target: target)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
+                blocked = state; blockKnown = true
+                return
             }
-            blocked = (try? await session.api.blockState(target: userId)) ?? blocked
+            if wasBlocked { try await api.unblock(userId: target) }
+            else { try await api.block(userId: target) }
+            guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
+            blocked = !wasBlocked
+            PulseHaptics.success()
+            session.toasts.show("\(wasBlocked ? "Unblocked" : "Blocked") \(user?.name ?? "account")")
+            if let fresh = try? await api.blockState(target: target) {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
+                blocked = fresh
+            }
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
             session.toasts.show(ChatsViewModel.describe(error))
         }
-    }
-
-    func openRoom(_ conv: WireConversationSummary) {
-        session?.requestOpenRoom(conv)
     }
 }

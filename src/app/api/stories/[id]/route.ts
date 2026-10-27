@@ -1,43 +1,26 @@
-// /api/stories/[id] - delete my own status story (cascades views)
-//
-// Raw SQL instead of the typed delegate: the StatusStory table was pushed
-// after the running dev server cached its Prisma client (see /api/stories).
-import { NextResponse } from 'next/server'
+// Owner-only, atomic story + viewer removal.
 import { Prisma } from '../../../../../prisma/generated-client'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { privateStoryResponse, storyJson } from '@/lib/story-access'
 
 export const dynamic = 'force-dynamic'
+interface RouteCtx { params: Promise<{ id: string }> }
 
-interface RouteCtx {
-  params: Promise<{ id: string }>
-}
-
-/**
- * DELETE /api/stories/[id]?requesterId=
- * Owner-only removal - StoryView rows are removed explicitly (schema also
- * cascades). → { ok: true } | 400 missing requesterId | 404 unknown | 403 not owner
- */
 export async function DELETE(req: Request, { params }: RouteCtx) {
   const { id } = await params
-
-  const url = new URL(req.url)
-  const requesterId = url.searchParams.get('requesterId')?.trim() ?? ''
-  if (!requesterId) {
-    return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
-  }
-
-  const rows = await db.$queryRaw<Array<{ id: string; userId: string }>>(
-    Prisma.sql`SELECT id, userId FROM StatusStory WHERE id = ${id} LIMIT 1`,
-  )
-  const story = rows[0]
-  if (!story) {
-    return NextResponse.json({ error: 'Story not found.' }, { status: 404 })
-  }
-  if (story.userId !== requesterId) {
-    return NextResponse.json({ error: 'Only the owner can delete this status.' }, { status: 403 })
-  }
-
-  await db.$executeRaw(Prisma.sql`DELETE FROM StoryView WHERE storyId = ${id}`)
-  await db.$executeRaw(Prisma.sql`DELETE FROM StatusStory WHERE id = ${id}`)
-  return NextResponse.json({ ok: true })
+  const requesterId = new URL(req.url).searchParams.get('requesterId')?.trim() ?? ''
+  if (!requesterId) return storyJson({ error: 'requesterId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, requesterId, 'story')
+  if (denied) return privateStoryResponse(denied)
+  return db.$transaction(async tx => {
+    const rows = await tx.$queryRaw<Array<{ userId: string }>>(
+      Prisma.sql`SELECT userId FROM StatusStory WHERE id = ${id} LIMIT 1`,
+    )
+    if (!rows[0]) return storyJson({ error: 'Story not found.' }, { status: 404 })
+    if (rows[0].userId !== requesterId) return storyJson({ error: 'Only the owner can delete this status.' }, { status: 403 })
+    await tx.$executeRaw(Prisma.sql`DELETE FROM StoryView WHERE storyId = ${id}`)
+    await tx.$executeRaw(Prisma.sql`DELETE FROM StatusStory WHERE id = ${id}`)
+    return storyJson({ ok: true })
+  }, { isolationLevel: 'Serializable' })
 }

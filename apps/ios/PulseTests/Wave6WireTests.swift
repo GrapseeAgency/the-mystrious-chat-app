@@ -176,7 +176,7 @@ final class Wave6WireTests: XCTestCase {
         XCTAssertEqual(page.items?.count, 1)
         XCTAssertEqual(page.items?.first?.author?.name, "Ada")
         XCTAssertEqual(page.items?.first?.snippet, "ping @Cara hello")
-        // Missing items key → nil → the client degrades to [].
+        // Decoder keeps a missing key nil; the API rejects it rather than claiming an empty feed.
         let empty = try decode(WireMentionEntriesPage.self, #"{"ok":true}"#)
         XCTAssertNil(empty.items)
     }

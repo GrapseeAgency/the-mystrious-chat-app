@@ -77,9 +77,15 @@ public enum PulseRemediationLogic {
     /// Rows with a non-nil expiresAt in the past never render (web parity:
     /// the TTL sweep deletes server-side, the client hides until then).
     public static func isAlive(_ expiresAtIso: String?, now: Date = Date()) -> Bool {
-        guard let iso = expiresAtIso, !iso.isEmpty else { return true }
-        guard let expires = PulseFormat.date(iso) else { return true }
-        return expires > now
+        guard let deadline = expiryEpoch(expiresAtIso) else { return true }
+        return deadline > now.timeIntervalSince1970
+    }
+
+    /// SQL and UI share the same policy: malformed is already unavailable.
+    /// Use a finite sentinel so SQLite can bind it without NaN/infinity rules.
+    static func expiryEpoch(_ raw: String?) -> TimeInterval? {
+        guard let raw else { return nil }
+        return PulseFormat.date(raw)?.timeIntervalSince1970 ?? -Double.greatestFiniteMagnitude
     }
 
     public static func threadRootAvailable(_ root: WireChatMessage, roomId: String, rootId: String, now: Date = Date()) -> Bool {
@@ -237,33 +243,37 @@ public enum PulseRemediationLogic {
     /// leading token that is not a \w+ word (like the web's `^\/(\w+)…`
     /// regex) also falls through to `.send`.
     public static func applySlash(_ rawInput: String) -> SlashOutcome {
+        func sendBody(_ text: String) -> SlashOutcome {
+            guard text.utf16.count <= 2000 else { return .error("The command result exceeds 2000 characters. Your draft is unchanged.") }
+            return .send(text)
+        }
         let input = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard input.hasPrefix("/") else { return .send(input) }
+        guard input.hasPrefix("/") else { return sendBody(input) }
         let body = String(input.dropFirst())
         let parts = body.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
         let word = parts.first.map(String.init)?.lowercased() ?? ""
         guard !word.isEmpty, word.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else {
-            return .send(input)
+            return sendBody(input)
         }
         let rest = parts.count > 1 ? String(parts[1]) : ""
         let arg = rest.trimmingCharacters(in: .whitespacesAndNewlines)
         switch word {
         case "me":
             if arg.isEmpty { return .error("Usage: /me waves hello") }
-            return .send("_\(String(arg.prefix(1998)))_")
+            return sendBody("_\(arg)_")
         case "shrug":
-            return .send(arg.isEmpty ? "¯\\_(ツ)_/¯" : "\(arg) ¯\\_(ツ)_/¯")
+            return sendBody(arg.isEmpty ? "¯\\_(ツ)_/¯" : "\(arg) ¯\\_(ツ)_/¯")
         case "tableflip":
-            return .send(arg.isEmpty ? "(╯°□°）╯︵ ┻━┻" : "\(arg) (╯°□°）╯︵ ┻━┻")
+            return sendBody(arg.isEmpty ? "(╯°□°）╯︵ ┻━┻" : "\(arg) (╯°□°）╯︵ ┻━┻")
         case "unflip":
-            return .send(arg.isEmpty ? "┬─┬ ノ( ゜-゜ノ" : "┬─┬ ノ( ゜-゜ノ \(arg)")
+            return sendBody(arg.isEmpty ? "┬─┬ ノ( ゜-゜ノ" : "┬─┬ ノ( ゜-゜ノ \(arg)")
         case "roll":
             if arg.isEmpty {
                 let total = Int.random(in: 1...6)
-                return .send("Rolled **1d6**: *\(total)*")
+                return sendBody("Rolled **1d6**: *\(total)*")
             }
             guard let roll = rollDice(arg) else { return .error("Usage: /roll AdM - e.g. /roll 2d6") }
-            return .send("Rolled **\(arg.lowercased())**: \(roll.rolls.joined(separator: " + ")) = *\(roll.total)*")
+            return sendBody("Rolled **\(arg.lowercased())**: \(roll.rolls.joined(separator: " + ")) = *\(roll.total)*")
         case "poll": return .sheet("poll")
         case "schedule": return .sheet("schedule")
         case "remind": return .remind(rest)
@@ -285,7 +295,7 @@ public enum PulseRemediationLogic {
             return .effect(name: effectWord, content: text)
         case "help": return .help
         default:
-            if botCommands.contains(word) { return .send(input) }
+            if botCommands.contains(word) { return sendBody(input) }
             return .error("Unknown command \"/\(word)\" - try /help")
         }
     }

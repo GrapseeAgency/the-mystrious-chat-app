@@ -219,6 +219,7 @@ fun ChatsScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
     val searchRunning by viewModel.searching.collectAsStateWithLifecycle()
+    val searchError by viewModel.searchError.collectAsStateWithLifecycle()
     // R2-C item 7 - recent searches for the search bar (last 5).
     val spotlightRecents by viewModel.spotlightRecents.collectAsStateWithLifecycle()
     // R14 gap 14 - the spotlight check-in flight flag (Actions block).
@@ -230,6 +231,12 @@ fun ChatsScreen(
     var focused by remember { mutableStateOf(false) }
     var selectMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(emptySet<String>()) }
+    var selectionEpoch by remember { mutableStateOf(0L) }
+    fun finishSelection(attempted: Set<String>, failed: List<String>, epoch: Long) {
+        if (selectionEpoch != epoch) return
+        selectedIds = remainingBatchSelection(selectedIds, attempted, failed)
+        if (selectedIds.isEmpty()) selectMode = false
+    }
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
     var activeFolderId by remember { mutableStateOf<String?>(null) }
     var foldersSheet by remember { mutableStateOf(false) }
@@ -253,7 +260,7 @@ fun ChatsScreen(
         val obs = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> viewModel.startPolling()
-                Lifecycle.Event.ON_STOP -> viewModel.stopPolling()
+                Lifecycle.Event.ON_STOP -> { viewModel.cancelSelfOpening(); viewModel.stopPolling() }
                 else -> {}
             }
         }
@@ -261,6 +268,7 @@ fun ChatsScreen(
         viewModel.startPolling()
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(obs)
+            viewModel.cancelSelfOpening()
             viewModel.stopPolling()
         }
     }
@@ -302,6 +310,7 @@ fun ChatsScreen(
     }
     LaunchedEffect(search, selectMode) {
         if (search && selectMode) {
+            selectionEpoch++
             selectMode = false
             selectedIds = emptySet()
         }
@@ -314,7 +323,7 @@ fun ChatsScreen(
     val all = chats
     val activeRows = all.filter { !it.isArchived && !it.isSelf }
     val archivedRows = all.filter { it.isArchived }
-    val archivedUnread = archivedRows.sumOf { it.unreadCount }
+    val archivedUnread = archivedRows.sumOf { it.badgeUnreadCount }
 
     val q = query.trim().lowercase()
     val locallyFiltered = if (q.isEmpty()) activeRows else activeRows.filter { c ->
@@ -452,6 +461,7 @@ fun ChatsScreen(
                         query = query,
                         hits = searchHits,
                         searching = searchRunning,
+                        error = searchError,
                         typing = typing,
                         presence = presence,
                         // R2-C item 7 - recent-search suggestions + push-on-open.
@@ -463,7 +473,7 @@ fun ChatsScreen(
                         onClearRecents = { viewModel.clearSpotlightRecents() },
                         onPress = { conv ->
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
-                            openConversation(viewModel, conv, onOpenRoom)
+                            openConversation(conv, onOpenRoom)
                         },
                         onOpenHit = { hit ->
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
@@ -518,9 +528,10 @@ ConversationRowItem(
                                         selected = conv.id in selectedIds,
                                         entranceIndex = null,
                                         inArchived = false,
-                                        onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                        onPress = { openConversation(conv, onOpenRoom) },
                                         onLongPress = {
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            selectionEpoch++
                                             selectMode = true
                                             selectedIds = setOf(conv.id)
                                         },
@@ -545,9 +556,10 @@ ConversationRowItem(
                                     selected = conv.id in selectedIds,
                                     entranceIndex = null,
                                     inArchived = false,
-                                    onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                    onPress = { openConversation(conv, onOpenRoom) },
                                     onLongPress = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        selectionEpoch++
                                         selectMode = true
                                         selectedIds = setOf(conv.id)
                                     },
@@ -603,22 +615,19 @@ ConversationRowItem(
                 count = selectedIds.size,
                 dark = dark,
                 onArchive = {
-                    viewModel.batchArchive(selectedIds.toList(), archived = true)
-                    selectMode = false
-                    selectedIds = emptySet()
+                    val attempted = selectedIds; val epoch = selectionEpoch
+                    viewModel.batchArchive(attempted.toList(), archived = true) { failed -> finishSelection(attempted, failed, epoch) }
                 },
-                onMute8h = { viewModel.batchMute8h(selectedIds.toList()) },
+                onMute8h = {
+                    val attempted = selectedIds; val epoch = selectionEpoch
+                    viewModel.batchMute8h(attempted.toList()) { failed -> finishSelection(attempted, failed, epoch) }
+                },
                 onMarkRead = {
-                    viewModel.batchMarkRead(selectedIds.toList()) { failed ->
-                        if (failed.isEmpty()) {
-                            selectMode = false
-                            selectedIds = emptySet()
-                        } else {
-                            selectedIds = selectedIds - failed.toSet()
-                        }
-                    }
+                    val attempted = selectedIds; val epoch = selectionEpoch
+                    viewModel.batchMarkRead(attempted.toList()) { failed -> finishSelection(attempted, failed, epoch) }
                 },
                 onExit = {
+                    selectionEpoch++
                     selectMode = false
                     selectedIds = emptySet()
                 },
@@ -654,6 +663,10 @@ ConversationRowItem(
                 viewModel.markUnread(target.id, !target.myManualUnread)
                 actionTarget = null
             },
+            onMarkRead = {
+                viewModel.markRead(target.id)
+                actionTarget = null
+            },
             onMute = { until ->
                 viewModel.setMutedUntil(target.id, until)
                 actionTarget = null
@@ -670,9 +683,8 @@ ConversationRowItem(
     }
 }
 
-/** Freeze "where was I" semantics live in the room; the list just marks read + opens. */
-private fun openConversation(viewModel: ChatsViewModel, conv: Conversation, onOpenRoom: (String, String?) -> Unit) {
-    viewModel.markRead(conv.id)
+/** Navigation is not attention. Only the room's visible viewport may acknowledge Seen. */
+private fun openConversation(conv: Conversation, onOpenRoom: (String, String?) -> Unit) {
     onOpenRoom(conv.id, null)
 }
 
@@ -713,7 +725,7 @@ fun ArchivedScreen(
         val obs = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> viewModel.startPolling()
-                Lifecycle.Event.ON_STOP -> viewModel.stopPolling()
+                Lifecycle.Event.ON_STOP -> { viewModel.cancelSelfOpening(); viewModel.stopPolling() }
                 else -> {}
             }
         }
@@ -721,6 +733,7 @@ fun ArchivedScreen(
         viewModel.startPolling()
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(obs)
+            viewModel.cancelSelfOpening()
             viewModel.stopPolling()
         }
     }
@@ -801,7 +814,7 @@ ConversationRowItem(
                                     selected = false,
                                     entranceIndex = null,
                                     inArchived = true,
-                                    onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                    onPress = { openConversation(conv, onOpenRoom) },
                                     onLongPress = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         actionTarget = conv
@@ -843,6 +856,10 @@ ConversationRowItem(
             },
             onMarkUnread = {
                 viewModel.markUnread(target.id, !target.myManualUnread)
+                actionTarget = null
+            },
+            onMarkRead = {
+                viewModel.markRead(target.id)
                 actionTarget = null
             },
             onMute = { until ->
@@ -2006,6 +2023,7 @@ private fun ConversationActionSheet(
     onPin: () -> Unit,
     onArchive: () -> Unit,
     onMarkUnread: () -> Unit,
+    onMarkRead: () -> Unit,
     onMute: (String?) -> Unit,
     onExport: () -> Unit,
     onClear: () -> Unit,
@@ -2034,7 +2052,8 @@ private fun ConversationActionSheet(
             if (conversation.isArchived) "Unarchive" else "Archive",
             onArchive,
         )
-        SheetAction(PulseIcons.Checks, if (conversation.myManualUnread) "Mark as read" else "Mark as unread", onMarkUnread)
+        SheetAction(PulseIcons.Checks, if (conversation.myManualUnread) "Clear unread reminder" else "Mark as unread", onMarkUnread)
+        SheetAction(PulseIcons.Checks, "Mark as read", onMarkRead)
         SheetAction(PulseIcons.BellOff, "Mute for 8 hours") { onMute("8h") }
         SheetAction(PulseIcons.BellOff, "Mute for 1 week") { onMute("1w") }
         SheetAction(PulseIcons.BellOff, "Mute always") { onMute("always") }
@@ -2068,6 +2087,7 @@ private fun SearchResults(
     query: String,
     hits: List<MessageHit>,
     searching: Boolean,
+    error: String?,
     typing: Map<String, ChatsViewModel.TypingState>,
     presence: Set<String>,
     onPress: (Conversation) -> Unit,
@@ -2181,6 +2201,7 @@ private fun SearchResults(
                 Spacer(Modifier.width(8.dp))
                 Text("Searching messages…", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Zinc400)
             }
+            q.length >= 2 && error != null -> Text(error, color = Zinc400, modifier = Modifier.padding(16.dp))
             q.length >= 2 && hits.isNotEmpty() -> {
                 SearchSectionHeader("Messages", hits.size)
                 hits.forEach { hit -> SearchHitRow(hit = hit, query = q, onOpen = { onOpenHit(hit) }) }
@@ -2193,7 +2214,7 @@ private fun SearchResults(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
-        if (rows.isEmpty() && (q.length < 2 || (!searching && hits.isEmpty()))) {
+        if (rows.isEmpty() && (q.length < 2 || (!searching && error == null && hits.isEmpty()))) {
             Column(
                 Modifier.fillMaxWidth().padding(top = 96.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

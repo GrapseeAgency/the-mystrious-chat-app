@@ -20,7 +20,7 @@ class SavedMessageVisibilityTest {
     private fun item(message: Message) = SavedItem(savedAt = 1L, conversationId = "room", conversationName = "Room", isGroup = true, message = message)
 
     @Test fun `saved rows disappear at deadline offline and deletion tombstones never render`() = runTest {
-        val source = MutableStateFlow(listOf(item(message("expiry", 1000)), item(message("keep")), item(message("deleted").copy(deletedAt = "now"))))
+        val source = MutableStateFlow(listOf(item(message("expiry", 1000)), item(message("keep")), item(message("deleted").copy(deletedAt = "now")), item(message("once").copy(viewOnce = true))))
         var rows = emptyList<SavedItem>()
         val observer = backgroundScope.launch { source.withSavedMessageExpiry { testScheduler.currentTime }.collect { rows = it } }
         runCurrent()

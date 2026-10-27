@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/hub/wallet - wallet + ledger (Hub → Wallet panel)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -31,44 +32,55 @@ export async function GET(req: Request) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'wallet')
+  if (denied) return denied
 
-  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
-  if (!user) {
-    return NextResponse.json({ error: 'User not found.' }, { status: 404 })
+  try {
+    return await db.$transaction(async tx => {
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true } })
+      if (!user) {
+        return NextResponse.json({ error: 'User not found.' }, { status: 404 })
+      }
+
+      const limitRaw = Number.parseInt(url.searchParams.get('ledger') ?? '30', 10)
+      const ledgerLimit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 30
+
+      const wallet = await tx.userWallet.upsert({
+        where: { userId },
+        create: { userId },
+        update: {},
+      })
+
+      const ledger = await tx.walletLedger.findMany({
+        where: { userId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: ledgerLimit,
+      })
+
+      return NextResponse.json({
+        wallet: {
+          userId: wallet.userId,
+          coins: wallet.coins,
+          gems: wallet.gems,
+          streak: wallet.streak,
+          lastCheckIn: wallet.lastCheckIn ? wallet.lastCheckIn.toISOString() : null,
+          checkedInToday: wallet.lastCheckIn ? dayKey(wallet.lastCheckIn) >= dayKey(new Date()) : false,
+        },
+        ledger: ledger.map((row) => ({
+          id: row.id,
+          kind: row.kind,
+          asset: row.asset,
+          amount: row.amount,
+          note: row.note,
+          counterpartyId: row.counterpartyId ?? null,
+          createdAt: row.createdAt.toISOString(),
+        })),
+      }, { headers: { 'Cache-Control': 'private, no-store', Vary: 'Authorization' } })
+    }, { isolationLevel: 'Serializable' })
+  } catch (error) {
+    if (['P1008', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? '')) {
+      return NextResponse.json({ error: 'Wallet changed or is busy. Refresh and try again.' }, { status: 409 })
+    }
+    throw error
   }
-
-  const limitRaw = Number.parseInt(url.searchParams.get('ledger') ?? '30', 10)
-  const ledgerLimit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 30
-
-  const wallet = await db.userWallet.upsert({
-    where: { userId },
-    create: { userId },
-    update: {},
-  })
-
-  const ledger = await db.walletLedger.findMany({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
-    take: ledgerLimit,
-  })
-
-  return NextResponse.json({
-    wallet: {
-      userId: wallet.userId,
-      coins: wallet.coins,
-      gems: wallet.gems,
-      streak: wallet.streak,
-      lastCheckIn: wallet.lastCheckIn ? wallet.lastCheckIn.toISOString() : null,
-      checkedInToday: wallet.lastCheckIn ? dayKey(wallet.lastCheckIn) >= dayKey(new Date()) : false,
-    },
-    ledger: ledger.map((row) => ({
-      id: row.id,
-      kind: row.kind,
-      asset: row.asset,
-      amount: row.amount,
-      note: row.note,
-      counterpartyId: row.counterpartyId ?? null,
-      createdAt: row.createdAt.toISOString(),
-    })),
-  })
 }

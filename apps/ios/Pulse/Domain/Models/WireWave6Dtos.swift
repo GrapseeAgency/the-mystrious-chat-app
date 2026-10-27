@@ -80,6 +80,8 @@ public struct WireReportHistory: Codable, Sendable {
 /// GET /api/channels - one broadcast-channel directory row
 /// (ChannelSummary on the wire; name falls back to "Channel" server-side).
 public struct WireChannelSummary: Codable, Hashable, Sendable, Identifiable {
+    public var creationClientId: String? = nil
+    public var creationConversation: WireConversationSummary? = nil
     public let id: String
     public let conversationId: String?
     public let name: String?
@@ -98,6 +100,7 @@ public struct WireChannelsPage: Codable, Sendable {
 
 /// 201 POST /api/channels response - { channel } (+ conversationId sibling).
 public struct WireChannelCreated: Codable, Sendable {
+    public var conversation: WireConversationSummary? = nil
     public let channel: WireChannelSummary?
 }
 
@@ -154,8 +157,16 @@ public struct WireMentionEntry: Codable, Hashable, Sendable, Identifiable {
     public let snippet: String?
     public let createdAt: String?
 
+    public let expiresAt: String?
+
+    public func isVisible(now: Date = Date()) -> Bool {
+        !(messageId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !(conversationId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        PulseRemediationLogic.isAlive(expiresAt, now: now)
+    }
+
     /// Identifiable over the message id (the feed dedupes on it).
-    public var id: String { messageId ?? UUID().uuidString }
+    public var id: String { messageId ?? "" }
 }
 
 public struct WireMentionEntriesPage: Codable, Sendable {

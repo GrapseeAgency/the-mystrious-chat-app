@@ -33,7 +33,7 @@ public enum PulseRoomParityLogic {
     ) -> Int? {
         guard let anchorMs, let viewerId else { return nil }
         for (index, message) in messages.enumerated() {
-            guard message.senderId != viewerId else { continue }
+            guard !message.isOutgoingFor(viewerId) else { continue }
             guard message.deletedAt == nil else { continue }
             guard let created = PulseFormat.date(message.createdAt) else { continue }
             if created.timeIntervalSince1970 * 1000 > anchorMs { return index }
@@ -106,42 +106,48 @@ public enum PulseRoomParityLogic {
     public struct ReceiptMember: Equatable, Sendable {
         public let id: String
         public let lastReadAtIso: String?
+        public let readMembershipId: String?
 
-        public init(id: String, lastReadAtIso: String?) {
+        public init(id: String, lastReadAtIso: String?, readMembershipId: String? = nil) {
             self.id = id
+            self.readMembershipId = readMembershipId
             self.lastReadAtIso = lastReadAtIso
         }
     }
 
     /// The seen/delivered split behind the message-info sheet (web
     /// chat-room.tsx:5893-5960 + Android MessageSheets.kt:379-424 parity):
-    ///   • the viewer is never a recipient (excluded first);
-    ///   • "Seen by" = members whose lastReadAt >= the message's createdAt;
+    ///   • the sender is not a recipient (the viewer for own-message callers);
+    ///   • "Seen by" requires this message's exact current-membership proof;
     ///   • the rest have no read confirmation (privacy/offline/unread unknown).
     /// `deliveredTo` retains its legacy API name, but is NOT a device-delivery
     /// receipt. The native sheets must label it as unconfirmed.
     public struct ReceiptSplit: Equatable, Sendable {
         public let seenBy: [ReceiptMember]
         public let deliveredTo: [ReceiptMember]
+        public var allConfirmed: Bool { !seenBy.isEmpty && deliveredTo.isEmpty }
     }
 
     public static func receiptSplit(
         members: [ReceiptMember],
         viewerId: String?,
         createdAtIso: String,
+        readByMembershipIds: [String] = [],
+        senderId: String? = nil,
     ) -> ReceiptSplit {
+        let excludedSender = senderId ?? viewerId
         let others = members.filter { member in
-            guard let viewerId, !viewerId.isEmpty else { return true }
-            return member.id != viewerId
+            guard let excludedSender, !excludedSender.isEmpty else { return true }
+            return member.id != excludedSender
         }
-        guard let createdAt = PulseFormat.date(createdAtIso) else {
+        guard let viewerId, !viewerId.isEmpty, PulseFormat.date(createdAtIso) != nil else {
             return ReceiptSplit(seenBy: [], deliveredTo: others)
         }
         var seen: [ReceiptMember] = []
         var delivered: [ReceiptMember] = []
         for member in others {
             if let stamp = member.lastReadAtIso, let readAt = PulseFormat.date(stamp),
-               readAt >= createdAt {
+               readAt.timeIntervalSince1970 > 0, let membership = member.readMembershipId, readByMembershipIds.contains(membership) {
                 seen.append(member)
             } else {
                 delivered.append(member)
@@ -151,9 +157,13 @@ public enum PulseRoomParityLogic {
     }
 
     /// Own-device reads and malformed message dates never prove another person read.
-    public static func peerReadCount(watermarks: [String: Date], viewerId: String?, createdAtIso: String) -> Int {
-        guard let viewerId, !viewerId.isEmpty, let created = PulseFormat.date(createdAtIso) else { return 0 }
-        return watermarks.filter { $0.key != viewerId && $0.value >= created }.count
+    public static func peerReadCount(watermarks: [String: Date], viewerId: String?, createdAtIso: String,
+                                     memberships: [String: String] = [:], readByMembershipIds: [String] = []) -> Int {
+        guard let viewerId, !viewerId.isEmpty, PulseFormat.date(createdAtIso) != nil else { return 0 }
+        return watermarks.filter { user, date in
+            user != viewerId && date.timeIntervalSince1970 > 0 &&
+                memberships[user].map { readByMembershipIds.contains($0) } == true
+        }.count
     }
 
     // R7 - message clustering lives in PulseCluster (file scope below)

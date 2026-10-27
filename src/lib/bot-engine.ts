@@ -1,3 +1,4 @@
+import { clipUtf16 } from '@/lib/text-limits'
 // Pulse bot engine - REAL deterministic command bot (server-only).
 // The bot is a genuine User row (username "pulseai" - the same row
 // the LLM companion uses) that joins conversations like anyone else.
@@ -7,11 +8,10 @@
 // server-side or read from Prisma - zero external APIs, zero mocks.
 // Never throws: callers can safely await it inside the send pipeline.
 import { db } from '@/lib/db'
+import { botReplyContext, createBotReply, type BotTrigger, type BotReply } from '@/lib/bot-delivery'
 import {
   mapMessage,
   memberIdsOf,
-  MESSAGE_FULL_INCLUDE,
-  MESSAGE_MAX,
   notifySocket,
 } from '@/lib/serializers'
 
@@ -301,66 +301,12 @@ function formatMathResult(v: number): string {
 
 // Bot message insertion (mirrors the real send pipeline) 
 
-interface BotMessageData {
-  content: string
-  payload?: string
-  poll?: { question: string; options: string[] }
-}
-
-async function insertBotMessage(
-  conversationId: string,
-  botId: string,
-  data: BotMessageData,
-): Promise<void> {
-  const now = new Date()
-  const conv = await db.conversation.findUnique({
-    where: { id: conversationId },
-    select: { ttlSeconds: true },
-  })
-  const expiresAt =
-    conv && conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
-
-  const created = await db.$transaction(async (tx) => {
-    const msg = await tx.message.create({
-      data: {
-        conversationId,
-        senderId: botId,
-        content: data.content.slice(0, MESSAGE_MAX),
-        kind: 'text',
-        ...(data.payload ? { payload: data.payload } : {}),
-        ...(expiresAt ? { expiresAt } : {}),
-        ...(data.poll
-          ? {
-              poll: {
-                create: {
-                  question: data.poll.question,
-                  options: {
-                    createMany: {
-                      data: data.poll.options.map((text, position) => ({ text, position })),
-                    },
-                  },
-                },
-              },
-            }
-          : {}),
-      },
-      include: MESSAGE_FULL_INCLUDE,
-    })
-    // Bump list ordering (@updatedAt) + pull the chat out of other members' archives.
-    await tx.conversation.update({ where: { id: conversationId }, data: { updatedAt: now } })
-    await tx.conversationParticipant.updateMany({
-      where: { conversationId, userId: { not: botId }, archivedAt: { not: null } },
-      data: { archivedAt: null },
-    })
-    return msg
-  })
-
-  const recipients = (await memberIdsOf(conversationId)).filter((id) => id !== botId)
+async function insertBotMessage(conversationId: string, botId: string, trigger: BotTrigger, data: BotReply): Promise<void> {
+  const created = await db.$transaction(tx => createBotReply(tx, conversationId, botId, trigger, data), { isolationLevel: 'Serializable' })
+  if (!created) return
+  const recipients = await memberIdsOf(conversationId)
   await notifySocket('message:new', recipients, {
-    type: 'message:new',
-    message: mapMessage(created),
-    recipientIds: recipients,
-    conversationId,
+    type: 'message:new', message: mapMessage(created), recipientIds: recipients, conversationId,
   })
 }
 
@@ -432,6 +378,8 @@ export async function maybeBotReply(
     if (!botMember) return
     const botId = botMember.userId
     if (userMessage.senderId === botId) return
+    const allowed = await db.$transaction(tx => botReplyContext(tx, conversationId, botId, userMessage), { isolationLevel: 'Serializable' })
+    if (!allowed) return
 
     const caller = await db.user.findUnique({
       where: { id: userMessage.senderId },
@@ -440,7 +388,7 @@ export async function maybeBotReply(
     if (!caller) return
     const callerHandle = caller.username ? `@${caller.username}` : caller.name
     const send = (content: string) =>
-      insertBotMessage(conversationId, botId, { content, payload: BOT_PAYLOAD })
+      insertBotMessage(conversationId, botId, userMessage, { content, payload: BOT_PAYLOAD })
 
     switch (trigger.cmd) {
       case 'help':
@@ -504,11 +452,7 @@ export async function maybeBotReply(
 
       case 'wallet': {
         // Real balances for the CALLER - zeros when they never checked in.
-        const wallet = await db.userWallet.upsert({
-          where: { userId: caller.id },
-          create: { userId: caller.id },
-          update: {},
-        })
+        const wallet = await db.userWallet.findUnique({ where: { userId: caller.id } }) ?? { coins: 0, gems: 0, streak: 0 }
         await send(
           `${callerHandle}, your Pulse wallet\nPC ${wallet.coins} · GEM ${wallet.gems}\nCheck-in streak: ${wallet.streak} day(s)`,
         )
@@ -520,24 +464,15 @@ export async function maybeBotReply(
           .split('|')
           .map((p) => p.trim())
           .filter((p) => p.length > 0)
-        const question = (parts[0] ?? '').slice(0, POLL_QUESTION_MAX)
-        const options = parts.slice(1, 7).map((p) => p.slice(0, POLL_OPTION_MAX))
+        const question = clipUtf16(parts[0] ?? '', POLL_QUESTION_MAX)
+        const options = parts.slice(1, 7).map((p) => clipUtf16(p, POLL_OPTION_MAX))
         if (question.length === 0 || options.length < 2) {
           await send(POLL_USAGE)
           return
         }
-        // Announcement mode gates the bot like any other poster.
-        const conv = await db.conversation.findUnique({
-          where: { id: conversationId },
-          select: { isGroup: true, broadcastMode: true },
-        })
-        if (conv?.isGroup && conv.broadcastMode && botMember.role !== 'admin') {
-          await send("I can't post a poll while announcement mode is on.")
-          return
-        }
         // Real Poll + PollOptions attached to a bot-authored message -
         // the exact creation pattern used by POST /api/conversations/[id]/poll.
-        await insertBotMessage(conversationId, botId, {
+        await insertBotMessage(conversationId, botId, userMessage, {
           content: '',
           payload: BOT_PAYLOAD,
           poll: { question, options },

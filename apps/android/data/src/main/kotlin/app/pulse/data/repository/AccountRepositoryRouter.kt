@@ -38,6 +38,12 @@ internal class AccountRepositoryRouter(
             "hashCode" -> System.identityHashCode(proxy)
             "toString" -> "AccountScopedPulseRepository"
             "start" -> synchronized(transitionLock) { active.value = startAccount(args!![0] as String); null }
+            "startBackgroundIfIdle" -> synchronized(transitionLock) {
+                val owner = args!![0] as String
+                val selected = active.value.viewerId
+                if (selected == null) { active.value = startAccount(owner); true }
+                else selected == owner
+            }
             "stop" -> synchronized(transitionLock) { active.value = stopAccount(); null }
             else -> if (method.returnType == Flow::class.java) {
                 flow {
@@ -48,13 +54,16 @@ internal class AccountRepositoryRouter(
                             // not a synthetic null that would erase restored drafts.
                             if (!initial) when (method.name) {
                                 "events" -> Unit
-                                "observeConnected" -> emit(false)
+                                "observeConnected", "observePendingSettings", "observePendingReads" -> emit(false)
                                 "observeThreadAccessDenied" -> emit(true)
+                                "observeReadStateRevision" -> emit(0L)
+                                "observePersonalScreenPrivacy" -> emit(app.pulse.domain.model.PersonalScreenPrivacy())
                                 "observePresence" -> emit(emptySet<String>())
                                 "observeDraft" -> emit(null)
+                                "observeMessageSearch" -> emit(Result.success(emptyList<app.pulse.domain.model.MessageHit>()))
                                 "observeThreadDraft" -> emit(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
                                 "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
-                                "getPulsePrefs" -> emit(PulseWave8Logic.mergePrefs(null as String?))
+                                "getPulsePrefs" -> emit(PulseWave8Logic.PRIVATE_DEFAULTS)
                                 else -> emit(emptyList<Any>())
                             }
                             initial = false

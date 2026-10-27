@@ -86,4 +86,22 @@ class ComposerStateTest {
         assertEquals("2d", storyRelativeTime(now - 2L * 24 * 60 * 60_000L, now))
         assertEquals("", storyRelativeTime(0L, now))
     }
+    @Test fun `caption limit counts wire units without cutting an emoji in half`() {
+        assertEquals("😀".repeat(140), ComposerState().withCaption("😀".repeat(280)).caption)
+        assertEquals("a".repeat(279), ComposerState().withCaption("a".repeat(279) + "😀").caption)
+        assertEquals("a".repeat(278) + "😀", ComposerState().withCaption("a".repeat(278) + "😀").caption)
+        assertFalse(ComposerState(caption = "😀".repeat(141)).canPost)
+    }
+
+    @Test fun `failed replacement preserves the confirmed photo and caption`() {
+        val original = ComposerState().withCaption("sunset").withImage("confirmed.jpg")
+        val uploading = original.withUploading(true)
+        assertFalse(uploading.canPost)
+        val failed = uploading.withUploading(false).withError("Upload failed")
+        assertEquals("confirmed.jpg", failed.imagePath)
+        assertEquals("sunset", failed.caption)
+        assertTrue(failed.canPost)
+        assertFalse(ComposerState().withImage("   ").canPost)
+        assertEquals("confirmed.jpg", failed.withMode(ComposerState.Mode.TEXT).imagePath)
+    }
 }

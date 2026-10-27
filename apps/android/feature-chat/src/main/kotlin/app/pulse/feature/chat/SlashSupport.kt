@@ -95,26 +95,28 @@ object PulseSlash {
      * token that is not a \w+ word also falls through to `.send`.
      */
     fun applySlash(rawInput: String): Outcome {
+        fun sendBody(text: String): Outcome = if (text.length <= 2000) Outcome.Send(text)
+            else Outcome.Error("The command result exceeds 2000 characters. Your draft is unchanged.")
         val input = rawInput.trim()
-        if (!input.startsWith("/")) return Outcome.Send(input)
+        if (!input.startsWith("/")) return sendBody(input)
         val body = input.drop(1)
         val spaceIndex = body.indexOf(' ')
         val word = (if (spaceIndex < 0) body else body.take(spaceIndex)).lowercase()
         val rest = if (spaceIndex < 0) "" else body.substring(spaceIndex + 1)
         val arg = rest.trim()
-        if (word.isEmpty() || !word.all { it.isLetterOrDigit() || it == '_' }) return Outcome.Send(input)
+        if (word.isEmpty() || !word.all { it.isLetterOrDigit() || it == '_' }) return sendBody(input)
         return when (word) {
-            "me" -> if (arg.isEmpty()) Outcome.Error("Usage: /me waves hello") else Outcome.Send("_" + arg.take(1998) + "_")
-            "shrug" -> Outcome.Send((if (arg.isEmpty()) "" else "$arg ") + "¯\\_(ツ)_/¯")
-            "tableflip" -> Outcome.Send((if (arg.isEmpty()) "" else "$arg ") + "(╯°□°）╯︵ ┻━┻")
-            "unflip" -> Outcome.Send("┬─┬ ノ( ゜-゜ノ" + (if (arg.isEmpty()) "" else " $arg"))
+            "me" -> if (arg.isEmpty()) Outcome.Error("Usage: /me waves hello") else sendBody("_" + arg + "_")
+            "shrug" -> sendBody((if (arg.isEmpty()) "" else "$arg ") + "¯\\_(ツ)_/¯")
+            "tableflip" -> sendBody((if (arg.isEmpty()) "" else "$arg ") + "(╯°□°）╯︵ ┻━┻")
+            "unflip" -> sendBody("┬─┬ ノ( ゜-゜ノ" + (if (arg.isEmpty()) "" else " $arg"))
             "roll" -> {
                 if (arg.isEmpty()) {
-                    Outcome.Send("Rolled **1d6**: *" + rollDice("1d6")?.total.let { it ?: "?" } + "*")
+                    sendBody("Rolled **1d6**: *" + rollDice("1d6")?.total.let { it ?: "?" } + "*")
                 } else {
                     val roll = rollDice(arg)
                         ?: return Outcome.Error("Usage: /roll AdM - e.g. /roll 2d6")
-                    Outcome.Send(
+                    sendBody(
                         "Rolled **" + arg.lowercase() + "**: " + roll.rolls.joinToString(" + ") +
                             " = *" + roll.total + "*",
                     )
@@ -141,7 +143,7 @@ object PulseSlash {
             }
             "help" -> Outcome.Help
             else -> {
-                if (word in BOT_COMMANDS) Outcome.Send(input)
+                if (word in BOT_COMMANDS) sendBody(input)
                 else Outcome.Error("Unknown command \"/$word\" - try /help")
             }
         }

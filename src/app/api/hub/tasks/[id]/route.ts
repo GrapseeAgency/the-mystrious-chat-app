@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/hub/tasks/[id] - move / rename / delete one kanban task
 // Owner-guarded: only the task's creator can touch it.
 import { NextResponse } from 'next/server'
@@ -18,6 +19,8 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'personal tasks')
+  if (denied) return denied
 
   const task = await db.hubTask.findUnique({ where: { id } })
   if (!task) {
@@ -43,11 +46,12 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     data.status = status
   }
 
-  const updated = await db.hubTask.update({ where: { id }, data })
+  const updated = await db.hubTask.update({ where: { id, ownerId: userId }, data })
 
   return NextResponse.json({
     task: {
       id: updated.id,
+      ownerId: updated.ownerId,
       title: updated.title,
       status: updated.status,
       createdAt: updated.createdAt.toISOString(),
@@ -64,6 +68,8 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'personal tasks')
+  if (denied) return denied
 
   const task = await db.hubTask.findUnique({ where: { id } })
   if (!task) {
@@ -73,6 +79,6 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Only the owner can delete this task.' }, { status: 403 })
   }
 
-  await db.hubTask.delete({ where: { id } })
-  return NextResponse.json({ ok: true })
+  await db.hubTask.delete({ where: { id, ownerId: userId } })
+  return NextResponse.json({ ok: true, userId, taskId: id })
 }

@@ -88,6 +88,15 @@ class CallStateMachine(
         if (meId == null) meId = viewerId
     }
 
+    /** Engine must terminate/release the previous owner before changing identity. */
+    fun resetViewer(viewerId: String?) {
+        check(_snapshot.value.state == CallState.IDLE || _snapshot.value.state == CallState.ENDED)
+        meId = null
+        resetSession()
+        _snapshot.value = CallSnapshot.IDLE
+        viewerId?.takeIf { it.isNotBlank() }?.let { bind(it) }
+    }
+
     // session bookkeeping
     private var callId: String? = null
     private var conversationId: String? = null
@@ -147,6 +156,9 @@ class CallStateMachine(
 
         /** Mic denied / device failure - honest terminal, no fake UI. */
         data class MediaFailed(val reason: String) : CallEvent
+
+        /** SDP/transport setup failed, distinct from microphone permission denial. */
+        data class PreparationFailed(val reason: String) : CallEvent
 
         /** Engine produced the local answer SDP. */
         data class AnswerReady(val sdp: String) : CallEvent
@@ -277,12 +289,13 @@ class CallStateMachine(
     /** Reduces one event; returns the effects to perform, in order. */
     fun dispatch(event: CallEvent): List<CallEffect> {
         if (meId == null) return emptyList()
+        val previous = _snapshot.value.state
         val effects = reduce(event)
         // Any dispatch is a liveness proof - but only ringing/connecting can
         // go stale (a healthy connected call must not die from quietness).
         if (_snapshot.value.state in RINGING_OR_CONNECTING) staleDeadline = clock.nowMs() + STALE_TIMEOUT_MS
         push()
-        return effects
+        return withTerminalRelease(previous, effects)
     }
 
     /**
@@ -292,6 +305,7 @@ class CallStateMachine(
     fun poll(): List<CallEffect> {
         if (meId == null) return emptyList()
         val now = clock.nowMs()
+        val previous = _snapshot.value.state
         val effects = mutableListOf<CallEffect>()
 
         // Live duration while connected - the UI ticker reads the snapshot.
@@ -300,7 +314,9 @@ class CallStateMachine(
         when (_snapshot.value.state) {
             CallState.OUTGOING_RINGING, CallState.INCOMING_RINGING ->
                 if (ringDeadline in 1..now) {
-                    effects += endUnanswered(
+                    effects += if (direction == CallDirection.OUTGOING && !offerSent) {
+                        terminate(outcome = null, summary = "Call not started", error = "Call setup timed out. Try again.")
+                    } else endUnanswered(
                         summary = if (direction == CallDirection.OUTGOING) "No answer" else "Missed call",
                         logStatus = if (direction == CallDirection.OUTGOING) CallStatus.MISSED else null,
                     )
@@ -333,8 +349,12 @@ class CallStateMachine(
             }
         }
         if (effects.isNotEmpty()) push()
-        return effects
+        return withTerminalRelease(previous, effects)
     }
+
+    private fun withTerminalRelease(previous: CallState, effects: List<CallEffect>): List<CallEffect> =
+        if (previous != CallState.ENDED && _snapshot.value.state == CallState.ENDED && CallEffect.ReleaseMedia !in effects)
+            effects + CallEffect.ReleaseMedia else effects
 
     // reducer
     private fun reduce(event: CallEvent): List<CallEffect> {
@@ -460,8 +480,8 @@ class CallStateMachine(
 
             is CallEvent.MediaFailed -> when {
                 state == CallState.OUTGOING_RINGING -> {
-                    // Honest error card; the attempt still counts as an
-                    // unanswered outgoing call (web dismissError parity).
+                    if (!offerSent) return terminate(outcome = null, summary = "Call not started", error = MIC_DENIED_MESSAGE)
+                    // Only an already-dispatched attempt counts as an unanswered call.
                     val cancel = callId?.takeIf { offerSent }?.let { id ->
                         listOf(
                             CallEffect.SendCancel(
@@ -495,6 +515,24 @@ class CallStateMachine(
                         summary = null,
                         error = MIC_DENIED_MESSAGE,
                     )
+                }
+                else -> emptyList()
+            }
+
+            is CallEvent.PreparationFailed -> when (state) {
+                CallState.OUTGOING_RINGING -> {
+                    if (offerSent) {
+                        listOf(CallEffect.SendCancel(checkNotNull(callId), checkNotNull(conversationId), me,
+                            checkNotNull(peer).id, kind)) + endUnanswered("Call failed", error = event.reason)
+                    } else terminate(outcome = null, summary = "Call not started", error = event.reason)
+                }
+                CallState.INCOMING_RINGING -> listOf(CallEffect.SendReject(checkNotNull(callId),
+                    checkNotNull(conversationId), me, checkNotNull(peer).id, kind)) +
+                    terminate(outcome = null, summary = "Call failed", error = event.reason)
+                CallState.CONNECTING, CallState.CONNECTED -> {
+                    val effects = reduce(CallEvent.Hangup)
+                    _snapshot.value = _snapshot.value.copy(error = event.reason)
+                    effects
                 }
                 else -> emptyList()
             }
@@ -542,6 +580,7 @@ class CallStateMachine(
 
             CallEvent.Cancel -> {
                 if (state != CallState.OUTGOING_RINGING) return emptyList()
+                if (!offerSent) return terminate(outcome = null, summary = "Call canceled")
                 val effects = mutableListOf<CallEffect>()
                 callId?.let {
                     effects += CallEffect.SendCancel(

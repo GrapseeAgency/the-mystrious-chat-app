@@ -27,7 +27,24 @@ struct ThreadView: View {
     @State private var initialJumpResolved = false
     @State private var highlightedReplyId: String?
     @State private var nearTail = true
+    @State private var visibleReadIDs: Set<String> = []
+    @State private var scopeUnread: Int?
+    @State private var scopeSnapshot: WireReadScopeState?
+    @State private var firstUnreadMessageId: String?
+    @State private var scopeAnchorCaptured = false
+    @State private var scopeReadRevision = 0
+    @State private var scopeRefresh = PulseCoalescedRefresh()
+    @State private var scopeVisible = false
+    @State private var readOwner: PulseReadSurfaces.Owner?
+    let readAuthority: PulseReadAuthority
+    @Environment(\.scenePhase) private var readScenePhase
     @State private var tailScrollRevision = 0
+    @State private var cachedCursor: PulseCachedThreadCursor?
+    @State private var hasEarlierCachedReplies = false
+    @State private var showingCachedHistory = true
+    @State private var loadingCachedReplies = false
+    @State private var cachedPrependAnchor: String?
+    @State private var cachedPrependRevision = 0
 
     @State private var errorText: String?
     @State private var failedReplies: [OutboxRow] = []
@@ -38,13 +55,36 @@ struct ThreadView: View {
     @State private var lightbox: MediaLightboxTarget?
     @State private var lightboxMessageId: String?
     @State private var viewOnceTask: Task<Void, Never>?
-    @FocusState private var composerFocused: Bool
+    @State private var composerFocused = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var viewerId: String { session.viewer?.id ?? "" }
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rootUnavailable &&
         draftJournal?.isCurrentOwner == true && draftSession == session.sessionGeneration }
+
+    private var readCandidate: [String] {
+        guard phase == .loaded, !rootUnavailable, lightbox == nil, discardReply == nil,
+              readScenePhase == .active, !session.threadAccessDenied(rootId: root.id),
+              PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return [] }
+        let currentRoot: WireChatMessage = parent ?? root
+        let candidates: [WireChatMessage] = [currentRoot] + replies
+        var result: [String] = []
+        for message in candidates {
+            guard visibleReadIDs.contains(message.id) else { continue }
+            guard message.conversationId == conversation.id else { continue }
+            guard message.id == root.id || message.parentId == root.id else { continue }
+            guard !message.id.hasPrefix("local_"), message.deletedAt == nil else { continue }
+            guard PulseRemediationLogic.isAlive(message.expiresAt) else { continue }
+            result.append(message.id)
+        }
+        return result
+    }
+
+    private func updateReadBoundary() {
+        guard let readOwner else { return }
+        session.setVisibleReadBoundaries(owner: readOwner, messageIds: readCandidate)
+    }
 
     var body: some View {
         NavigationStack {
@@ -65,6 +105,10 @@ struct ThreadView: View {
                             .padding(.vertical, 10)
                         }
                         .coordinateSpace(name: "thread-viewport")
+                        .onPreferenceChange(PulseRoomViewportKey.self) { layout in
+                            visibleReadIDs = PulseReadViewport.visibleIDs(layout.messages, height: viewport.size.height)
+                            updateReadBoundary()
+                        }
                         .defaultScrollAnchor(.bottom)
                         .onPreferenceChange(ThreadTailPositionKey.self) { tailY in
                             nearTail = tailY >= 0 && tailY <= viewport.size.height + 80
@@ -84,6 +128,12 @@ struct ThreadView: View {
                                 proxy.scrollTo("thread-tail", anchor: .bottom)
                             }
                         }
+                        .task(id: cachedPrependRevision) {
+                            guard let id = cachedPrependAnchor, !rootUnavailable else { return }
+                            await Task.yield()
+                            guard !Task.isCancelled, !rootUnavailable, replies.contains(where: { $0.id == id }) else { return }
+                            proxy.scrollTo(id, anchor: .top)
+                        }
                         .onChange(of: tailScrollRevision) { _, _ in proxy.scrollTo("thread-tail", anchor: .bottom) }
                     }
                 }
@@ -95,7 +145,7 @@ struct ThreadView: View {
                 } else { composer }
             }
             .background(PulseTheme.pageWash.ignoresSafeArea())
-            .navigationTitle("Thread")
+            .navigationTitle(scopeUnread.map { $0 > 0 ? "Thread · \($0) unread" : "Thread" } ?? "Thread")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
@@ -104,22 +154,45 @@ struct ThreadView: View {
                 }
             }
         }
+        .background {
+            if let readOwner { PulseReadPresentationAnchor(session: session, owner: readOwner.id) }
+        }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .fullScreenCover(item: $lightbox) { target in
             MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt, singleUse: target.singleUse)
         }
-        .task(id: ThreadLoadKey(connected: session.connected, target: initialJumpMessageId)) { await load() }
+        .onAppear {
+            scopeVisible = true
+            requestScopeRefresh()
+            readOwner = session.beginReadSurface(conversationId: conversation.id, rootId: root.id, authority: readAuthority)
+            updateReadBoundary()
+        }
+        .onChange(of: readCandidate, initial: true) { _, _ in updateReadBoundary() }
+        .task(id: ThreadLoadKey(connected: session.connected, foreground: session.isForeground, target: initialJumpMessageId)) {
+            if session.isForeground { await load() }
+        }
         .onChange(of: initialJumpMessageId) { _, _ in
             initialJumpResolved = false
             highlightedReplyId = nil
         }
         .onReceive(session.signals) { handle(signal: $0) }
-        .onReceive(session.messageVisibilityClock) { now in pruneExpired(now: now) }
+        .onChange(of: scopeReadRevision) { _, _ in requestScopeRefresh() }
+        .onChange(of: session.readStateRevision(conversation.id)) { _, _ in requestScopeRefresh() }
+        .onChange(of: session.connected) { _, connected in if connected { requestScopeRefresh() } }
+        .onChange(of: session.isForeground) { _, foreground in
+            if foreground { requestScopeRefresh() } else { scopeRefresh.cancel() }
+        }
+        .onReceive(session.messageVisibilityClock) { now in
+            scopeUnread = scopeSnapshot?.unread(at: now)
+            pruneExpired(now: now)
+            updateReadBoundary()
+        }
         .onReceive(session.outboxEvents) { event in
             switch event {
             case .delivered(let message, let room, let clientId):
                 guard room == conversation.id else { return }
+                scopeReadRevision &+= 1
                 replies.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
                 if message.parentId == root.id { appendReply(message) }
             case .dropped(let clientId, let room):
@@ -149,10 +222,35 @@ struct ThreadView: View {
             }
         } message: { Text("This removes the saved outgoing reply from this device. It does not erase your current draft.") }
         .onDisappear {
+            scopeVisible = false
+            scopeRefresh.cancel()
+            if let readOwner { session.endReadSurface(readOwner) }
+            readOwner = nil
+            // Keep measured geometry while a temporary cover hides this same
+            // thread; its authority and viewport resume with fresh dwell.
             viewOnceTask?.cancel()
             loadGeneration = UUID()
             recoveryObservation?.cancel()
             recoveryObservation = nil
+        }
+    }
+
+    private func requestScopeRefresh() {
+        guard scopeVisible, session.ready, session.isForeground else { return }
+        let epoch = session.sessionGeneration
+        scopeRefresh.request {
+            guard scopeVisible, session.ready, session.isForeground, session.sessionGeneration == epoch else { return }
+            do {
+                let snapshot = try await session.api.readScopeState(conversationId: conversation.id, threadId: root.id)
+                guard !Task.isCancelled, scopeVisible, session.isForeground, session.sessionGeneration == epoch else { return }
+                scopeSnapshot = snapshot; scopeUnread = snapshot.unread()
+                if !scopeAnchorCaptured { scopeAnchorCaptured = true; firstUnreadMessageId = snapshot.firstUnreadMessageId }
+            } catch {
+                guard !Task.isCancelled, scopeVisible, session.isForeground, session.sessionGeneration == epoch else { return }
+                if [400, 403, 404, 410].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                    scopeSnapshot = nil; scopeUnread = nil
+                }
+            }
         }
     }
 
@@ -202,9 +300,22 @@ struct ThreadView: View {
                     memberNames: conversation.members.map(\.name),
                 )
                 .padding(.bottom, 4)
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: PulseRoomViewportKey.self,
+                        value: PulseRoomViewport(messages: [parentMessage.id: geometry.frame(in: .named("thread-viewport"))]))
+                })
             }
             if !rootUnavailable {
+                if showingCachedHistory && hasEarlierCachedReplies {
+                    Button(loadingCachedReplies ? "Loading saved replies…" : "Load earlier saved replies") {
+                        loadEarlierCachedReplies(preserveAnchor: true)
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .disabled(loadingCachedReplies)
+                    .padding(.vertical, 8)
+                }
                 ForEach(Array(replies.enumerated()), id: \.element.id) { index, reply in
+                    if reply.id == firstUnreadMessageId { UnreadDividerRow() }
                     // Day chip when the calendar day changes between rows - the
                     // first reply compares against the parent's day.
                     let previous = index == 0 ? parentMessage : replies[index - 1]
@@ -225,6 +336,10 @@ struct ThreadView: View {
                         memberNames: conversation.members.map(\.name),
                     )
                     .id(reply.id)
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: PulseRoomViewportKey.self,
+                            value: PulseRoomViewport(messages: [reply.id: geometry.frame(in: .named("thread-viewport"))]))
+                    })
                     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(
                         highlightedReplyId == reply.id ? PulseTheme.color(named: "orange") : Color.clear, lineWidth: 2))
                 }
@@ -263,19 +378,24 @@ struct ThreadView: View {
         rootUnavailable = session.threadAccessDenied(rootId: root.id)
         // The sheet's input is a snapshot; a cached tombstone/edit is newer.
         if let cachedRoot = try? store?.message(id: root.id, now: .distantPast) { parent = cachedRoot }
-        if let cached = try? store?.messages(threadRootId: root.id) {
-            replies = PulseTextDelivery.timeline(replies, pending: cached)
+        if let page = try? store?.cachedThreadPage(roomId: conversation.id, rootId: root.id, limit: 300) {
+            replies = PulseTextDelivery.timeline(replies, pending: page.messages)
+            // Reconnect refresh must not rewind pages already expanded offline.
+            if cachedCursor == nil {
+                cachedCursor = page.cursor
+                hasEarlierCachedReplies = page.hasMore
+            }
         }
         phase = .loaded
         pruneExpired()
         guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return }
-        let revision = session.messageRevision
         do {
             let page = try await session.validatedThread(rootId: root.id, roomId: conversation.id)
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
-            // A slower HTTP snapshot must not undo a newer edit/deletion relay.
-            let eligible = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
-            let fresh = try store?.mergeMessages(eligible) ?? eligible
+            // Validation already committed this page. Resolve current rows again,
+            // rather than re-applying its response after an actor suspension.
+            let rows = [page.parent] + page.replies
+            let fresh = try store?.currentMessageSnapshot(rows) ?? rows
             parent = fresh.first(where: { $0.id == root.id }) ?? (try? store?.message(id: root.id, now: .distantPast)) ?? parent
             guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else {
                 pruneExpired()
@@ -284,6 +404,7 @@ struct ThreadView: View {
             replies = PulseTextDelivery.timeline(replies, pending: fresh.filter { $0.parentId == root.id })
             phase = .loaded
             errorText = nil
+            showingCachedHistory = false // current wire endpoint returns the complete thread
             rootUnavailable = false
             pruneExpired()
             if let target = initialJumpMessageId, !initialJumpResolved,
@@ -296,10 +417,56 @@ struct ThreadView: View {
             if let failure = error as? PulseAPIClient.Failure, [403, 404, 410].contains(failure.status ?? 0) {
                 rootUnavailable = true
                 replies = []
+                cachedCursor = nil
+                hasEarlierCachedReplies = false
                 lightbox = nil
             }
             phase = .loaded
+            showingCachedHistory = true
             errorText = RoomViewModel.describe(error)
+            // A cached deep-link target is not "missing" just because it fell
+            // outside the first window. Yield between pages and honor cancellation.
+            while !rootUnavailable, let target = initialJumpMessageId, !initialJumpResolved,
+                  !replies.contains(where: { $0.id == target }), hasEarlierCachedReplies {
+                guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
+                guard loadEarlierCachedReplies(preserveAnchor: false) else { break }
+                await Task.yield()
+            }
+            guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
+            if !rootUnavailable, let target = initialJumpMessageId, !initialJumpResolved,
+               PulseThreadNavigation.target(in: replies, roomId: conversation.id, rootId: root.id, targetId: target) == nil {
+                if replies.contains(where: { $0.id == target && $0.deletedAt != nil }) {
+                    errorText = "That reply was deleted."
+                    initialJumpResolved = true
+                } else if !hasEarlierCachedReplies {
+                    // Cache absence is not proof of deletion. Keep the jump pending for reconnect.
+                    errorText = "That reply isn't saved offline. Reconnect to load it."
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func loadEarlierCachedReplies(preserveAnchor: Bool) -> Bool {
+        guard !loadingCachedReplies, !rootUnavailable, hasEarlierCachedReplies,
+              draftSession == session.sessionGeneration, let cursor = cachedCursor,
+              let store = session.store, !session.threadAccessDenied(rootId: root.id) else { return false }
+        loadingCachedReplies = true
+        defer { loadingCachedReplies = false }
+        do {
+            let page = try store.cachedThreadPage(roomId: conversation.id, rootId: root.id, before: cursor)
+            let anchor = replies.first?.id
+            replies = PulseTextDelivery.timeline(replies, pending: page.messages)
+            cachedCursor = page.cursor ?? cursor
+            hasEarlierCachedReplies = page.hasMore
+            if preserveAnchor, let anchor {
+                cachedPrependAnchor = anchor
+                cachedPrependRevision += 1
+            }
+            return true
+        } catch {
+            errorText = "Couldn't read earlier saved replies. They have not been removed. Try again."
+            return false
         }
     }
 
@@ -309,6 +476,8 @@ struct ThreadView: View {
         if session.threadAccessDenied(rootId: root.id) || !PulseRemediationLogic.threadRootAvailable(parentMessage, roomId: conversation.id, rootId: root.id, now: now) {
             rootUnavailable = true
             replies = []
+            cachedCursor = nil
+            hasEarlierCachedReplies = false
             lightbox = nil
         } else {
             if let selected = lightboxMessageId {
@@ -330,6 +499,12 @@ struct ThreadView: View {
         let room: String
         let message: WireChatMessage
         switch signal {
+        case .messageRead(let id, _, _, _, _, _):
+            if id == conversation.id { scopeReadRevision &+= 1 }
+            return
+        case .connectionState:
+            scopeReadRevision &+= 1
+            return
         case .messageNew(let id, let raw), .messageReact(let id, let raw), .messageEnvelope(_, let id, let raw):
             guard let decoded = PulseSession.decodeMessage(from: raw) else { return }
             room = id; message = decoded
@@ -338,11 +513,17 @@ struct ThreadView: View {
             room = id; message = decoded.deletedCopy()
         default: return
         }
-        guard room == conversation.id, message.id == root.id || message.parentId == root.id else { return }
-        let committed = try? session.store?.mergeMessages([message])
-        let canonical = committed?.first ?? message
+        guard room == conversation.id else { return }
+        scopeReadRevision &+= 1
+        let cached = try? session.store?.message(id: message.id, now: .distantPast)
+        let canonical = PulseMessageMerge.merge(cached, incoming: message)
         if canonical.id == root.id { parent = PulseMessageMerge.merge(parent, incoming: canonical) }
-        else { appendReply(canonical) }
+        else if canonical.parentId == root.id { appendReply(canonical) }
+        // An unrelated source can still be quoted INSIDE this thread.
+        let local = PulseQuotePrivacy.project([parent ?? root] + replies, known: [canonical])
+        let projected = (try? session.store?.projectCachedQuotes(local)) ?? local
+        parent = projected.first
+        replies = Array(projected.dropFirst())
         pruneExpired()
     }
 
@@ -437,12 +618,12 @@ struct ThreadView: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Reply in thread", text: Binding(get: { draft }, set: editDraft), axis: .vertical)
-                .lineLimit(1...5)
+            PulseComposerInput(text: Binding(get: { draft }, set: editDraft),
+                focused: Binding(get: { composerFocused }, set: { composerFocused = $0 }),
+                placeholder: "Reply in thread", session: session)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
                 .background(Capsule().fill(Color(.secondarySystemBackground)))
-                .focused($composerFocused)
                 .disabled(draftJournal == nil || draftSession != session.sessionGeneration)
 
             Button {
@@ -505,5 +686,6 @@ private struct ThreadTailPositionKey: PreferenceKey {
 
 private struct ThreadLoadKey: Hashable {
     let connected: Bool
+    let foreground: Bool
     let target: String?
 }
