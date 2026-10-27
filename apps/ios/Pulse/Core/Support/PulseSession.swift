@@ -193,13 +193,15 @@ public final class PulseSession: ObservableObject {
                     do {
                         try await client.markRead(conversationId: read.room, messageId: read.message,
                             minimumReadAt: read.minimumReadAt, readIntent: read.intent)
-                        guard self.generation == epoch else { return }
+                        guard self.generation == epoch, self.viewer?.id == owner, !Task.isCancelled else { return }
                         settledRooms.insert(read.room)
                         if try store.recordConfirmedRead(read) { self.publishConfirmedRead(read) }
                         try store.acknowledgeRead(read)
                         failures = 0
                     } catch {
-                        if [400, 403, 404, 410, 422].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                        guard self.generation == epoch, self.viewer?.id == owner, !Task.isCancelled else { return }
+                        if (error as? PulseAPIClient.Failure)?.retiresRead(owner: read.owner, room: read.room,
+                            message: read.message, intent: read.intent) == true {
                             settledRooms.insert(read.room)
                             do { try store.acknowledgeRead(read) } catch { return }
                         } else {

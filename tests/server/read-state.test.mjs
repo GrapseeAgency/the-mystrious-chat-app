@@ -141,3 +141,17 @@ test('only authenticated permanent observation refusals issue identity-bound ret
   const invalid = await fixture()
   assert.equal((await (await invalid.request({ mode: 'visible' })).json()).readRetirement, undefined)
 })
+
+
+test('every native journal failure-retirement caller uses the bound refusal policy', async () => {
+  const session = await readFile(new URL('../../apps/ios/Pulse/Core/Support/PulseSession.swift', import.meta.url), 'utf8')
+  const foreground = session.slice(session.indexOf('private func replayReadJournal()'), session.indexOf('/// Wave 8 - weak handoff'))
+  const background = await readFile(new URL('../../apps/ios/Pulse/Core/Support/PulseReadReceiptGate.swift', import.meta.url), 'utf8')
+  const android = await readFile(new URL('../../apps/android/data/src/main/kotlin/app/pulse/data/repository/PulseRepositoryImpl.kt', import.meta.url), 'utf8')
+  const replay = android.slice(android.indexOf('private suspend fun flushReadJournal()'), android.indexOf('override suspend fun markReadThrough'))
+  for (const source of [foreground, background, replay]) {
+    assert.ok(source.includes('retiresRead('), 'The journal must use the tested identity-bound retirement classifier')
+    assert.ok(!source.includes('400, 403, 404, 410, 422'), 'A bare HTTP status cannot discard an original observation')
+  }
+  assert.ok(foreground.includes('self.viewer?.id == owner, !Task.isCancelled'))
+})
