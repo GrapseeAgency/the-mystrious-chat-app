@@ -730,9 +730,17 @@ class PulseRepositoryImpl constructor(
     // Read-only page commits are not socket mutations. Still fence an older
     // exact-proof GET, including when the committed proof did not change.
     private val messageSnapshotVersions = mutableMapOf<String, Long>() // messageCacheMutex
-    private fun noteMessageSnapshots(rows: List<Message>) {
+    private val messageSnapshotRequests = mutableMapOf<String, Long>() // messageCacheMutex
+    private val messageSnapshotClock = java.util.concurrent.atomic.AtomicLong()
+    private data class MessageFetchFence(val event: Long, val request: Long, val owner: String, val epoch: String)
+    private fun messageFetchFence() = MessageFetchFence(messageEventClock.get(), messageSnapshotClock.incrementAndGet(),
+        viewerId ?: throw kotlinx.coroutines.CancellationException("No active account"), attachmentSession)
+    private fun acceptsMessageSnapshot(id: String, fence: MessageFetchFence) =
+        (messageEventRevisions[id] ?: 0L) <= fence.event && (messageSnapshotRequests[id] ?: 0L) <= fence.request
+    private fun noteMessageSnapshots(rows: List<Message>, fence: MessageFetchFence) {
         rows.map { it.id }.distinct().forEach { id ->
             messageSnapshotVersions[id] = (messageSnapshotVersions[id] ?: 0L) + 1L
+            messageSnapshotRequests[id] = fence.request
         }
     }
 
@@ -764,18 +772,26 @@ class PulseRepositoryImpl constructor(
         scheduleConversationsRefresh()
     }
 
-    /** A late GET must not undo a socket edit/delete, including in its return value. */
-    private suspend fun cacheFetchedMessages(rows: List<Message>, watermark: Long): List<Message> =
-        messageCacheMutex.withLock { cacheFetchedMessagesLocked(rows, watermark) }
-
-    /** Caller holds messageCacheMutex; saved snapshot replacement also wraps this in a transaction. */
-    private suspend fun cacheFetchedMessagesLocked(rows: List<Message>, watermark: Long): List<Message> {
-        val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
-        messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        noteMessageSnapshots(fresh)
-        val stored = rows.map { it.id }.distinct().chunked(400).flatMap { messageDao.byIds(it) }.associateBy { it.id }
-        return rows.mapNotNull { stored[it.id]?.toDomain() }
+    /** Request-start order is separate from mutation order: a page cannot
+     * retire an edit/send ACK, but an older overlapping page cannot undo it. */
+    private suspend fun cacheFetchedMessages(rows: List<Message>, watermark: MessageFetchFence): List<Message> {
+        val stored = messageCacheMutex.withLock { cacheFetchedMessagesLocked(rows, watermark) }
+        requireConversationOwner(watermark.owner, watermark.epoch)
+        return stored
     }
+
+    /** Caller holds messageCacheMutex; nested Room transactions remain atomic. */
+    private suspend fun cacheFetchedMessagesLocked(rows: List<Message>, watermark: MessageFetchFence): List<Message> =
+        database.withTransaction {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            requireConversationOwner(watermark.owner, watermark.epoch)
+            val fresh = rows.filter { acceptsMessageSnapshot(it.id, watermark) }
+            messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+            val stored = rows.map { it.id }.distinct().chunked(400).flatMap { messageDao.byIds(it) }.associateBy { it.id }
+            requireConversationOwner(watermark.owner, watermark.epoch)
+            noteMessageSnapshots(fresh, watermark)
+            rows.mapNotNull { stored[it.id]?.toDomain() }
+        }
 
     private val refreshScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -968,7 +984,7 @@ class PulseRepositoryImpl constructor(
             var cursor: String? = null
             val seenCursors = mutableSetOf<String>()
             do {
-                val watermark = messageEventClock.get()
+                val watermark = messageFetchFence()
                 val result = api.messages(conversationId, limit = limit,
                     topicId = if (from == null) topicId else null,
                     syncFrom = if (cursor == null) from else null, syncCursor = cursor)
@@ -983,9 +999,7 @@ class PulseRepositoryImpl constructor(
                     database.withTransaction {
                         kotlin.coroutines.coroutineContext.ensureActive()
                         requireConversationOwner(owner, epoch)
-                        val fresh = page.messages.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }.map { it.toDomain() }
-                        messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-                        noteMessageSnapshots(fresh)
+                        cacheFetchedMessagesLocked(page.messages.map { it.toDomain() }, watermark)
                         requireConversationOwner(owner, epoch)
                     }
                 }
@@ -1881,7 +1895,7 @@ class PulseRepositoryImpl constructor(
     private val pinRefreshLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
     override suspend fun pinnedMessages(conversationId: String): List<Message> =
         pinRefreshLocks.getOrPut(conversationId) { Mutex() }.withLock {
-            val watermark = messageEventClock.get()
+            val watermark = messageFetchFence()
             val page = when (val r = api.pinnedMessages(conversationId, viewerId ?: "")) {
                 is PulseResult.Success -> r.value
                 is PulseResult.Failure -> throw apiExceptionOf(r)
@@ -1891,7 +1905,7 @@ class PulseRepositoryImpl constructor(
                     val ids = page.messages.map { it.id }.toSet()
                     // A full empty list must retire stale cached pin flags too.
                     val missing = messageDao.pinned(conversationId).filter {
-                        it.id !in ids && (messageEventRevisions[it.id] ?: 0L) <= watermark
+                        it.id !in ids && acceptsMessageSnapshot(it.id, watermark)
                     }
                     messageDao.upsertAll(missing.map { it.copy(pinnedAt = null) })
                     cacheFetchedMessagesLocked(page.messages.map { it.toDomain() }, watermark)
@@ -2010,7 +2024,7 @@ class PulseRepositoryImpl constructor(
         val owner = viewerId ?: throw kotlinx.coroutines.CancellationException("No active account")
         val epoch = attachmentSession
         val ticket = messageCacheMutex.withLock { requireConversationOwner(owner, epoch); threadValidationFence.begin(rootId) }
-        val watermark = messageEventClock.get()
+        val watermark = messageFetchFence()
         try {
             requireConversationOwner(owner, epoch)
             val page = when (val r = api.thread(rootId, owner)) {
@@ -2085,7 +2099,7 @@ class PulseRepositoryImpl constructor(
     }
 
     private suspend fun fetchHistoryPage(conversationId: String, before: String?, beforeId: String?, limit: Int): app.pulse.domain.sync.MessageHistoryPage {
-        val watermark = messageEventClock.get()
+        val watermark = messageFetchFence()
         val page = when (val r = api.messages(conversationId, limit, before, beforeId = beforeId)) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw apiExceptionOf(r)
@@ -2095,7 +2109,7 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun searchInConversation(conversationId: String, query: String): List<Message> {
-        val watermark = messageEventClock.get()
+        val watermark = messageFetchFence()
         if (query.isBlank()) return emptyList()
         val page = when (val r = api.searchInConversation(conversationId, query)) {
             is PulseResult.Success -> r.value
@@ -3601,7 +3615,7 @@ class PulseRepositoryImpl constructor(
             savedOperations.withLock {
                 requireConversationOwner(owner, epoch)
                 kotlin.coroutines.coroutineContext.ensureActive()
-                val watermark = messageEventClock.get()
+                val watermark = messageFetchFence()
                 val response = api.savedList(owner)
                 requireConversationOwner(owner, epoch)
                 when (response) {

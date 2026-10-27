@@ -4343,6 +4343,7 @@ final class RoomViewModel: ObservableObject {
                 // Revisit the cached range to heal edits/deletions as well as
                 // drain arbitrarily many new pages after a disconnection.
                 let watermark = session.messageRevision
+                let snapshotRequest = session.store?.beginMessageSnapshot()
                 let page = try await client.messages(conversationId: conversationId,
                     syncFrom: cursor == nil ? from : nil, syncCursor: cursor)
                 try Task.checkCancellation()
@@ -4351,7 +4352,7 @@ final class RoomViewModel: ObservableObject {
                     throw PulseAPIClient.Failure(kind: .server, message: "Gateway needs the paged message-sync update")
                 }
                 let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-                let fresh = try store?.mergeMessages(eligible) ?? eligible
+                let fresh = try store?.mergeMessages(eligible, snapshotRequest: snapshotRequest) ?? eligible
                 if from != nil, let catchUpBoundary, arrivalScope == missedScopeRevision, historyTopic == activeTopicId {
                     missedMessages.receive(fresh, roomId: conversationId, viewerId: session.viewer?.id,
                         topicId: activeTopicId, after: catchUpBoundary)
@@ -4455,6 +4456,7 @@ final class RoomViewModel: ObservableObject {
                 for _ in 0..<5 {
                     try Task.checkCancellation()
                     let watermark = session.messageRevision
+                    let snapshotRequest = session.store?.beginMessageSnapshot()
                     let page = try await client.messages(conversationId: self.conversationId,
                         limit: 40, before: cursor.createdAt, query: nil, topicId: topic, beforeId: cursor.id)
                     try Task.checkCancellation()
@@ -4469,7 +4471,7 @@ final class RoomViewModel: ObservableObject {
                         return
                     }
                     let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-                    let fresh = try store?.mergeMessages(eligible) ?? eligible
+                    let fresh = try store?.mergeMessages(eligible, snapshotRequest: snapshotRequest) ?? eligible
                     let previousIDs = Set(self.messages.map(\.id))
                     self.messages = PulseTimelineMerge.merge(self.messages, incoming: fresh, topicId: topic)
                     self.historyWindow.record(cursor: next, hasMore: page.hasMore)
@@ -4524,12 +4526,12 @@ final class RoomViewModel: ObservableObject {
             scrollAndFlash(target.id)
             return
         }
-        let ticket = historyGeneration, epoch = session.sessionGeneration, revision = session.messageRevision
+        let ticket = historyGeneration, epoch = session.sessionGeneration
         do {
             let page = try await session.validatedThread(rootId: rootId, roomId: conversationId)
             guard !Task.isCancelled, ticket == historyGeneration, epoch == session.sessionGeneration else { return }
-            let fresh = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
-            try session.store?.upsert(messages: fresh)
+            let rows = [page.parent] + page.replies
+            let fresh = try session.store?.currentMessageSnapshot(rows) ?? rows
             let root = fresh.first(where: { $0.id == rootId }) ?? (try? session.store?.message(id: rootId))
             guard let root, root.conversationId == conversationId, root.parentId == nil,
                   root.deletedAt == nil, PulseRemediationLogic.isAlive(root.expiresAt) else {
@@ -4569,6 +4571,7 @@ final class RoomViewModel: ObservableObject {
         let client = session.api, store = session.store
         let topic = activeTopicId
         let watermark = session.messageRevision
+        let snapshotRequest = session.store?.beginMessageSnapshot()
         guard rounds < 14 else {
             session.toasts.show("Couldn't reach that message in this chat's history")
             return
@@ -4595,7 +4598,7 @@ final class RoomViewModel: ObservableObject {
                 }
             }
             let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-            let fresh = try store?.mergeMessages(eligible) ?? eligible
+            let fresh = try store?.mergeMessages(eligible, snapshotRequest: snapshotRequest) ?? eligible
             messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: topic)
             historyWindow.record(cursor: next ?? oldest, hasMore: page.hasMore && next != nil)
             if page.messages.contains(where: { $0.id == messageId }) {
@@ -4838,6 +4841,7 @@ final class RoomViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 220_000_000)
             guard let self, !Task.isCancelled else { return }
             let watermark = session.messageRevision
+            let snapshotRequest = session.store?.beginMessageSnapshot()
             var hits: [WireChatMessage] = []
             if let page = try? await session.api.messages(conversationId: self.conversationId, limit: 100, before: nil, query: trimmed) {
                 hits = page.messages
@@ -4845,8 +4849,8 @@ final class RoomViewModel: ObservableObject {
             if Task.isCancelled || epoch != session.sessionGeneration { return }
             // Refresh existing window rows before it is used to reconcile
             // detached search selections on the visibility clock.
-            let accepted = hits.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-            try? session.store?.upsert(messages: accepted)
+            let eligible = hits.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            let accepted = (try? session.store?.mergeMessages(eligible, snapshotRequest: snapshotRequest)) ?? []
             let byId = Dictionary(accepted.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
             self.messages = self.messages.map { byId[$0.id] ?? $0 }
             // Merge the live loaded window (covers rows newer than the
@@ -4854,11 +4858,9 @@ final class RoomViewModel: ObservableObject {
             let local = self.messages.filter { $0.content.lowercased().contains(trimmed.lowercased()) }
             var seenIds = Set<String>()
             var merged: [WireChatMessage] = []
-            for candidate in hits + local {
-                let row: WireChatMessage?
-                if session.acceptsSyncMessage(candidate.id, startedAt: watermark) { row = candidate }
-                else { row = try? session.store?.message(id: candidate.id) }
-                guard let row, row.deletedAt == nil, PulseRemediationLogic.isAlive(row.expiresAt),
+            let current = (try? session.store?.currentMessageSnapshot(hits + local)) ?? local
+            for row in current {
+                guard row.deletedAt == nil, PulseRemediationLogic.isAlive(row.expiresAt),
                       row.content.localizedCaseInsensitiveContains(trimmed) else { continue }
                 if seenIds.insert(row.id).inserted { merged.append(row) }
             }
@@ -5324,19 +5326,19 @@ final class RoomViewModel: ObservableObject {
     func loadPins(session: PulseSession) {
         guard let viewer = session.viewer else { return }
         let ticket = UUID(), epoch = session.sessionGeneration, watermark = session.messageRevision
+        let snapshotRequest = session.store?.beginMessageSnapshot()
         pinsGeneration = ticket
         Task { [weak self] in
             guard let self else { return }
             do {
                 let fresh = try await session.api.pinnedMessages(conversationId: self.conversationId, userId: viewer.id)
                 guard pinsGeneration == ticket, session.sessionGeneration == epoch else { return }
-                let accepted = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-                try session.store?.upsert(messages: accepted)
+                let eligible = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                let accepted = try session.store?.mergeMessages(eligible, snapshotRequest: snapshotRequest) ?? eligible
                 let byId = Dictionary(accepted.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
                 messages = messages.map { byId[$0.id] ?? $0 }
-                pins = fresh.compactMap { row in
-                    session.acceptsSyncMessage(row.id, startedAt: watermark) ? row : (try? session.store?.message(id: row.id))
-                }.filter { $0.pinnedAt != nil && PulseRemediationLogic.isVisiblePreview($0) }
+                pins = (try session.store?.currentMessageSnapshot(fresh) ?? accepted)
+                    .filter { $0.pinnedAt != nil && PulseRemediationLogic.isVisiblePreview($0) }
             } catch {
                 guard pinsGeneration == ticket, session.sessionGeneration == epoch else { return }
                 session.toasts.show("Couldn't refresh pinned messages")
@@ -5966,12 +5968,13 @@ final class RoomViewModel: ObservableObject {
         let client = session.api, store = session.store
         let topic = activeTopicId
         let watermark = session.messageRevision
+        let snapshotRequest = session.store?.beginMessageSnapshot()
         do {
             let page = try await client.messages(conversationId: conversationId, topicId: topic)
             try Task.checkCancellation()
             guard session.sessionGeneration == epoch, activeTopicId == topic else { return }
             let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-            let fresh = try store?.mergeMessages(eligible) ?? eligible
+            let fresh = try store?.mergeMessages(eligible, snapshotRequest: snapshotRequest) ?? eligible
             let cached = (try? store?.messages(conversationId: conversationId)) ?? messages
             let retained = PulseTimelineMerge.merge(messages, incoming: cached, topicId: topic)
             messages = PulseTimelineMerge.merge(retained, incoming: fresh, topicId: topic)

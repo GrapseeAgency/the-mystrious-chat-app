@@ -2002,11 +2002,15 @@ struct MirrorRoomView: View {
         guard let ticket = roomOperations.beginRead() else { return false }
         let api = session.api
         let generation = session.sessionGeneration
+        let watermark = session.messageRevision
+        let snapshotRequest = session.store?.beginMessageSnapshot()
         do {
             let page = try await api.messages(conversationId: row.id)
             guard roomOperations.accepts(ticket), generation == session.sessionGeneration else { return false }
             let pending = try session.store.map { try PulseTextDelivery.pendingMessages(store: $0, conversationId: row.id) } ?? []
-            let committed = try session.store?.mergeMessages(page.messages) ?? page.messages
+            let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            _ = try session.store?.mergeMessages(eligible, snapshotRequest: snapshotRequest)
+            let committed = try session.store?.currentMessageSnapshot(page.messages) ?? eligible
             let next = PulseTextDelivery.timeline(committed, pending: pending)
             messages = try session.store?.projectCachedQuotes(next) ?? next
             loadError = nil
@@ -2826,17 +2830,16 @@ struct MirrorRoomSheetView: View {
     private func loadPins() async {
         guard !pinBusy else { return }
         let ticket = UUID(), epoch = session.sessionGeneration, watermark = session.messageRevision
+        let snapshotRequest = session.store?.beginMessageSnapshot()
         pinRequest = ticket
         pinEpoch = epoch
         pinError = nil
         do {
             let fresh = try await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)
             guard !Task.isCancelled, pinRequest == ticket, session.sessionGeneration == epoch else { return }
-            let accepted = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-            try session.store?.upsert(messages: accepted)
-            pinned = fresh.compactMap { message in
-                session.acceptsSyncMessage(message.id, startedAt: watermark) ? message : (try? session.store?.message(id: message.id))
-            }
+            let eligible = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            let accepted = try session.store?.mergeMessages(eligible, snapshotRequest: snapshotRequest) ?? eligible
+            pinned = try session.store?.currentMessageSnapshot(fresh) ?? accepted
             reconcilePins()
         } catch {
             guard !Task.isCancelled, pinRequest == ticket, session.sessionGeneration == epoch else { return }

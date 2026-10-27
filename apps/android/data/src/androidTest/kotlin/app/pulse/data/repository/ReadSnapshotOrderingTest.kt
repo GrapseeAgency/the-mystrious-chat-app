@@ -45,8 +45,25 @@ class ReadSnapshotOrderingTest {
         negativeProofWins(cached = true, infoFirst = true, unchangedPage = true)
     }
 
+    @Test fun olderOverlappingPageCannotResurrectSeenOrOverwriteCurrentContent() = runBlocking {
+        negativeProofWins(cached = true, overlappingPages = true)
+    }
+
+    @Test fun newerPageStillAppliesWhenTheEarlierPageCommitsFirst() = runBlocking {
+        negativeProofWins(cached = true, overlappingPages = true, olderCommitsFirst = true)
+    }
+
+    @Test fun retiredSearchCannotCommitAnInflightPage() = runBlocking {
+        negativeProofWins(cached = true, overlappingPages = true, retire = true)
+    }
+
+    @Test fun unrelatedPageDoesNotRetireAnExactInfoResponse() = runBlocking {
+        negativeProofWins(cached = true, infoFirst = true, unchangedPage = true, unrelatedOnly = true)
+    }
+
     private suspend fun negativeProofWins(cached: Boolean, retire: Boolean = false,
-        infoFirst: Boolean = false, unchangedPage: Boolean = false) = withTimeout(30_000) {
+        infoFirst: Boolean = false, unchangedPage: Boolean = false,
+        overlappingPages: Boolean = false, olderCommitsFirst: Boolean = false, unrelatedOnly: Boolean = false) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
         val prefsJob = SupervisorJob()
@@ -67,6 +84,8 @@ class ReadSnapshotOrderingTest {
         })
         val pageEntered = CompletableDeferred<Unit>()
         val releasePage = CompletableDeferred<Unit>()
+        val newerEntered = CompletableDeferred<Unit>()
+        val releaseNewer = CompletableDeferred<Unit>()
         val infoEntered = CompletableDeferred<Unit>()
         val releaseInfo = CompletableDeferred<Unit>()
         val pageProof = if (unchangedPage) "[]" else "[\"old-peer\"]"
@@ -74,11 +93,18 @@ class ReadSnapshotOrderingTest {
         val http = HttpClient(MockEngine { request ->
             val body = when (request.url.encodedPath) {
                 "/api/conversations/room/messages" -> {
-                    pageEntered.complete(Unit)
-                    if (!infoFirst) releasePage.await()
-                    """{"syncVersion":1,"hasMore":false,"messages":[
-                      {"id":"anchor","conversationId":"room","senderId":"peer","content":"old page","createdAt":"2026-10-26T00:00:00Z","readByMembershipIds":$pageProof},
-                      {"id":"unrelated","conversationId":"room","senderId":"peer","content":"keep this row","createdAt":"2026-10-26T00:00:01Z"}]}"""
+                    if (overlappingPages && request.url.parameters["q"] == null) {
+                        newerEntered.complete(Unit)
+                        releaseNewer.await()
+                        """{"syncVersion":1,"hasMore":false,"messages":[
+                          {"id":"anchor","conversationId":"room","senderId":"peer","content":"new page","createdAt":"2026-10-26T00:00:00Z","readByMembershipIds":[]}]}"""
+                    } else {
+                        pageEntered.complete(Unit)
+                        if (!infoFirst) releasePage.await()
+                        val anchor = if (unrelatedOnly) "" else """{"id":"anchor","conversationId":"room","senderId":"peer","content":"old page","createdAt":"2026-10-26T00:00:00Z","readByMembershipIds":$pageProof},"""
+                        """{"syncVersion":1,"hasMore":false,"messages":[$anchor
+                          {"id":"unrelated","conversationId":"room","senderId":"peer","content":"keep this row","createdAt":"2026-10-26T00:00:01Z"}]}"""
+                    }
                 }
                 "/api/messages/anchor/read-state" -> {
                     infoEntered.complete(Unit)
@@ -98,17 +124,51 @@ class ReadSnapshotOrderingTest {
                 "anchor", "room", "peer", "Peer", Message.Kind.TEXT, "current body", "2026-10-26T00:00:00Z"))))
             repo.start("owner")
             startupEntered.await()
+            if (overlappingPages) {
+                coroutineScope {
+                    val oldPage = async { repo.searchInConversation("room", "older") }
+                    pageEntered.await()
+                    val newPage = async { repo.refreshMessages("room", limit = 200) }
+                    newerEntered.await()
+                    if (retire) {
+                        repo.stop()
+                        releasePage.complete(Unit); releaseNewer.complete(Unit)
+                        try { oldPage.await(); fail("Retired search must not commit") } catch (_: CancellationException) {}
+                        try { newPage.await(); fail("Retired refresh must not commit") } catch (_: CancellationException) {}
+                    } else if (olderCommitsFirst) {
+                        releasePage.complete(Unit)
+                        assertEquals("old page", oldPage.await().first { it.id == "anchor" }.body)
+                        releaseNewer.complete(Unit)
+                        newPage.await().getOrThrow()
+                    } else {
+                        releaseNewer.complete(Unit)
+                        newPage.await().getOrThrow()
+                        releasePage.complete(Unit)
+                        val rows = oldPage.await()
+                        assertEquals("new page", rows.first { it.id == "anchor" }.body)
+                        assertTrue(rows.first { it.id == "anchor" }.readByMembershipIds.isEmpty())
+                    }
+                }
+                val stored = checkNotNull(db.messageDao().byId("anchor")).toDomain()
+                assertEquals(if (retire) "current body" else "new page", stored.body)
+                assertTrue(stored.readByMembershipIds.isEmpty())
+                if (retire) assertNull(db.messageDao().byId("unrelated"))
+                else assertEquals("keep this row", db.messageDao().byId("unrelated")?.toDomain()?.body)
+                return@withTimeout
+            }
             if (infoFirst) {
                 coroutineScope {
                     val oldInfo = async { repo.refreshMessageReadState("room", "anchor") }
                     infoEntered.await()
                     try { repo.refreshMessages("room", limit = 200).getOrThrow() }
                     finally { releaseInfo.complete(Unit) }
-                    assertTrue("A page committed after this Info request began", oldInfo.await().isFailure)
+                    if (unrelatedOnly) assertTrue(oldInfo.await().getOrThrow())
+                    else assertTrue("A page committed after this Info request began", oldInfo.await().isFailure)
                 }
                 val stored = checkNotNull(db.messageDao().byId("anchor")).toDomain()
-                assertEquals(if (unchangedPage) emptyList<String>() else listOf("old-peer"), stored.readByMembershipIds)
-                assertEquals("old page", stored.body)
+                val expected = if (unrelatedOnly) listOf("retired-peer") else if (unchangedPage) emptyList<String>() else listOf("old-peer")
+                assertEquals(expected, stored.readByMembershipIds)
+                assertEquals(if (unrelatedOnly) "current body" else "old page", stored.body)
                 return@withTimeout
             }
             coroutineScope {

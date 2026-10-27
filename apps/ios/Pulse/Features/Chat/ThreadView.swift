@@ -389,13 +389,13 @@ struct ThreadView: View {
         phase = .loaded
         pruneExpired()
         guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return }
-        let revision = session.messageRevision
         do {
             let page = try await session.validatedThread(rootId: root.id, roomId: conversation.id)
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
-            // A slower HTTP snapshot must not undo a newer edit/deletion relay.
-            let eligible = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
-            let fresh = try store?.mergeMessages(eligible) ?? eligible
+            // Validation already committed this page. Resolve current rows again,
+            // rather than re-applying its response after an actor suspension.
+            let rows = [page.parent] + page.replies
+            let fresh = try store?.currentMessageSnapshot(rows) ?? rows
             parent = fresh.first(where: { $0.id == root.id }) ?? (try? store?.message(id: root.id, now: .distantPast)) ?? parent
             guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else {
                 pruneExpired()

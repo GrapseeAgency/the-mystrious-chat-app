@@ -49,6 +49,8 @@ public final class PulseStore: Sendable {
     private let messageSnapshotVersions = MessageSnapshotVersions()
 
     func messageSnapshotVersion(_ id: String) -> UInt64 { messageSnapshotVersions.version(id) }
+    /// Capture before a read-only HTTP request; never use this lane for mutation ACKs.
+    func beginMessageSnapshot() -> UInt64 { messageSnapshotVersions.begin() }
     struct SupersededMessageReadState: Error {}
 
     let storageIdentity: String
@@ -419,10 +421,12 @@ public final class PulseStore: Sendable {
 
     /// A valid refreshed parent and its rows commit with removal of the refusal.
     /// Ordinary message upserts can never clear a denial.
-    public func acceptThreadSnapshot(rootId: String, roomId: String, messages: [WireChatMessage]) throws -> WireThreadPage {
+    public func acceptThreadSnapshot(rootId: String, roomId: String, messages: [WireChatMessage], snapshotRequest: UInt64? = nil) throws -> WireThreadPage {
         try dbQueue.write { db in
             var replies: [WireChatMessage] = []
-            for message in messages where message.conversationId == roomId && (message.id == rootId || message.parentId == rootId) {
+            let accepted = messages.filter { $0.conversationId == roomId && ($0.id == rootId || $0.parentId == rootId)
+                && messageSnapshotVersions.accepts($0.id, request: snapshotRequest) }
+            for message in accepted {
                 let saved = try Self.writeMessage(message, db: db)
                 if saved.parentId == rootId { replies.append(saved) }
             }
@@ -433,7 +437,7 @@ public final class PulseStore: Sendable {
             }
             try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [Self.threadDenialKey(rootId)])
             let projected = try Self.projectCachedQuotes(replies, db: db)
-            messageSnapshotVersions.note(messages.filter { $0.conversationId == roomId && ($0.id == rootId || $0.parentId == rootId) }.map(\.id))
+            messageSnapshotVersions.note(accepted.map(\.id), request: snapshotRequest)
             return WireThreadPage(parent: parent, replies: projected)
         }
     }
@@ -491,13 +495,38 @@ public final class PulseStore: Sendable {
     }
 
     /// Return the same privacy-preserving rows that committed, not stale HTTP inputs.
-    public func mergeMessages(_ messages: [WireChatMessage]) throws -> [WireChatMessage] {
+    public func mergeMessages(_ messages: [WireChatMessage], snapshotRequest: UInt64? = nil) throws -> [WireChatMessage] {
         try dbQueue.write { db in
-            for message in messages { try Self.writeMessage(message, db: db) }
+            var committed: [WireChatMessage] = [], accepted: [String] = []
+            for message in messages {
+                if messageSnapshotVersions.accepts(message.id, request: snapshotRequest) {
+                    committed.append(try Self.writeMessage(message, db: db))
+                    accepted.append(message.id)
+                } else if let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [message.id]),
+                          let current = Self.messageRow(from: row) {
+                    committed.append(current) // the return value must not revive the rejected HTTP row
+                }
+            }
             // A later source in the same page may have revoked an earlier quote.
-            let projected = try Self.projectCachedQuotes(messages, db: db)
-            messageSnapshotVersions.note(messages.map(\.id))
+            let projected = try Self.projectCachedQuotes(committed, db: db)
+            messageSnapshotVersions.note(accepted, request: snapshotRequest)
             return projected
+        }
+    }
+
+    /// Resolve a previously accepted page again after an actor suspension. This
+    /// never writes the old response back over a newer canonical cache commit.
+    func currentMessageSnapshot(_ messages: [WireChatMessage]) throws -> [WireChatMessage] {
+        try dbQueue.read { db in
+            var known: [String: WireChatMessage] = [:]
+            let ids = Array(Set(messages.map(\.id)))
+            for start in stride(from: 0, to: ids.count, by: 400) {
+                let part = Array(ids[start..<min(start + 400, ids.count)])
+                let marks = Array(repeating: "?", count: part.count).joined(separator: ",")
+                let rows = try Row.fetchAll(db, sql: "SELECT * FROM message WHERE id IN (\(marks))", arguments: StatementArguments(part))
+                for row in rows { if let message = Self.messageRow(from: row) { known[message.id] = message } }
+            }
+            return messages.compactMap { known[$0.id] }
         }
     }
 
@@ -1007,11 +1036,15 @@ public final class PulseStore: Sendable {
 
     /// Saved-library sync: upserts every item's message row (full fidelity,
     /// shared writer) AND its savedMessages marker (savedAt ISO from wire).
-    public func upsert(savedItems: [WireSavedItem], replacingSnapshot: Bool = false, preservingMessageIds: Set<String> = []) throws {
+    public func upsert(savedItems: [WireSavedItem], replacingSnapshot: Bool = false, preservingMessageIds: Set<String> = [], snapshotRequest: UInt64? = nil) throws {
         try dbQueue.write { db in
             if replacingSnapshot { try db.execute(sql: "DELETE FROM savedMessages") }
+            var accepted: [String] = []
             for item in savedItems {
-                if !preservingMessageIds.contains(item.message.id) { try Self.writeMessage(item.message, db: db) }
+                if !preservingMessageIds.contains(item.message.id), messageSnapshotVersions.accepts(item.message.id, request: snapshotRequest) {
+                    try Self.writeMessage(item.message, db: db)
+                    accepted.append(item.message.id)
+                }
                 try db.execute(
                     sql: """
                     INSERT INTO savedMessages (messageId, conversationId, savedAt)
@@ -1025,7 +1058,7 @@ public final class PulseStore: Sendable {
                     ],
                 )
             }
-            messageSnapshotVersions.note(savedItems.map { $0.message.id }.filter { !preservingMessageIds.contains($0) })
+            messageSnapshotVersions.note(accepted, request: snapshotRequest)
         }
     }
 
@@ -1713,12 +1746,26 @@ struct ThreadReplyCountSnapshot: Equatable {
 private final class MessageSnapshotVersions: @unchecked Sendable {
     private let lock = NSLock()
     private var versions: [String: UInt64] = [:]
+    private var requests: [String: UInt64] = [:]
+    private var nextRequest: UInt64 = 0
+    func begin() -> UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        nextRequest &+= 1
+        return nextRequest
+    }
+    func accepts(_ id: String, request: UInt64?) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return request.map { (requests[id] ?? 0) <= $0 } ?? true
+    }
     func version(_ id: String) -> UInt64 {
         lock.lock(); defer { lock.unlock() }
         return versions[id] ?? 0
     }
-    func note(_ ids: [String]) {
+    func note(_ ids: [String], request: UInt64? = nil) {
         lock.lock(); defer { lock.unlock() }
-        for id in Set(ids) { versions[id, default: 0] &+= 1 }
+        for id in Set(ids) {
+            versions[id, default: 0] &+= 1
+            if let request { requests[id] = request }
+        }
     }
 }

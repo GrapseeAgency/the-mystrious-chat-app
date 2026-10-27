@@ -92,6 +92,7 @@ struct SavedLibraryView: View {
             items = []; phase = .failed("Saved-message storage is unavailable"); return
         }
         let watermark = session.messageRevision
+        let snapshotRequest = store.beginMessageSnapshot()
         let savedWatermark = session.savedRevision
         if items.isEmpty, let cached = try? store.cachedSavedItems() { items = visibleItems(cached) }
         phase = items.isEmpty ? .loading : .loaded
@@ -100,7 +101,7 @@ struct SavedLibraryView: View {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             guard savedWatermark == session.savedRevision else { phase = .loaded; return }
             let changed = Set(fresh.filter { !session.acceptsSyncMessage($0.message.id, startedAt: watermark) }.map { $0.message.id })
-            try store.upsert(savedItems: fresh, replacingSnapshot: true, preservingMessageIds: changed)
+            try store.upsert(savedItems: fresh, replacingSnapshot: true, preservingMessageIds: changed, snapshotRequest: snapshotRequest)
             items = visibleItems(try store.cachedSavedItems())
             phase = .loaded
         } catch {

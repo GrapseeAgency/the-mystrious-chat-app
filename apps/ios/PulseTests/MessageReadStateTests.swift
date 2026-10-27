@@ -36,6 +36,55 @@ private final class MessageReadStateProtocol: URLProtocol {
 
 @MainActor
 final class MessageReadStateTests: XCTestCase {
+    func testOverlappingCanonicalPagesKeepTheNewerRequestWithoutDiscardingUnrelatedRows() throws {
+        for path in ["page", "thread", "saved"] {
+            let store = try PulseStore(path: ":memory:")
+            let older = store.beginMessageSnapshot(), newer = store.beginMessageSnapshot()
+            var old = OutboxFixtures.makeMessage(id: "anchor", conversationId: "room", content: "Old response")
+            old.readByMembershipIds = ["retired-peer"]
+            var current = OutboxFixtures.makeMessage(id: "anchor", conversationId: "room", content: "Current response")
+            current.readByMembershipIds = []
+            _ = try store.mergeMessages([current], snapshotRequest: newer)
+            let currentVersion = store.messageSnapshotVersion(current.id)
+            switch path {
+            case "thread":
+                let page = try store.acceptThreadSnapshot(rootId: current.id, roomId: "room", messages: [old], snapshotRequest: older)
+                XCTAssertEqual(page.parent.content, current.content)
+                XCTAssertEqual(page.parent.readByMembershipIds, [])
+            case "saved":
+                try store.upsert(savedItems: [WireSavedItem(savedAt: old.createdAt,
+                    conversation: WireSavedConversation(id: "room", isGroup: false, name: "Room"), message: old)], snapshotRequest: older)
+                XCTAssertEqual(try store.cachedSavedItems().first?.message.content, current.content)
+            default:
+                let unrelated = OutboxFixtures.makeMessage(id: "other", conversationId: "room", content: "Keep this")
+                let rows = try store.mergeMessages([old, unrelated], snapshotRequest: older)
+                XCTAssertEqual(rows.first?.content, current.content)
+                XCTAssertEqual(rows.first?.readByMembershipIds, [])
+                XCTAssertEqual(rows.last?.content, unrelated.content)
+            }
+            XCTAssertEqual(try store.message(id: current.id)?.content, current.content, path)
+            XCTAssertEqual(try store.message(id: current.id)?.readByMembershipIds, [], path)
+            XCTAssertEqual(store.messageSnapshotVersion(current.id), currentVersion, "Rejected rows cannot invalidate a fresh Info proof")
+            XCTAssertEqual(try store.currentMessageSnapshot([old]).first?.content, current.content,
+                "A resumed thread/search consumer must not republish the old input")
+        }
+    }
+
+    func testNewerRequestStillAppliesWhenTheEarlierPageCommitsFirstAndDoesNotSuppressMutationACKs() throws {
+        let store = try PulseStore(path: ":memory:")
+        let older = store.beginMessageSnapshot(), newer = store.beginMessageSnapshot()
+        var old = OutboxFixtures.makeMessage(id: "anchor", conversationId: "room", content: "Old")
+        old.readByMembershipIds = ["retired-peer"]
+        _ = try store.mergeMessages([old], snapshotRequest: older)
+        var fresh = OutboxFixtures.makeMessage(id: "anchor", conversationId: "room", content: "New")
+        fresh.readByMembershipIds = []
+        _ = try store.mergeMessages([fresh], snapshotRequest: newer)
+        XCTAssertEqual(try store.message(id: fresh.id)?.readByMembershipIds, [])
+        let ack = OutboxFixtures.makeMessage(id: "anchor", conversationId: "room", content: "Confirmed edit")
+        try store.upsert(messages: [ack]) // mutation ACKs do not enter the GET request lane
+        XCTAssertEqual(try store.message(id: ack.id)?.content, ack.content)
+    }
+
     func testCanonicalCacheCommitsFenceOlderInfoEvenWhenTheirProofIsUnchanged() throws {
         let store = try PulseStore(path: ":memory:")
         var message = OutboxFixtures.makeMessage(id: "anchor", conversationId: "room", content: "Current page body")

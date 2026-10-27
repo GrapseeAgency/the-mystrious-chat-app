@@ -270,6 +270,7 @@ public final class PulseSession: ObservableObject {
     public func validatedThread(rootId: String, roomId: String) async throws -> WireThreadPage {
         guard let store, let viewer, ready else { throw CancellationError() }
         let ticket = threadValidationFence.begin(rootId), epoch = sessionGeneration, client = api, revision = messageRevision
+        let snapshotRequest = store.beginMessageSnapshot()
         defer { threadValidationFence.finish(rootId, ticket) }
         do {
             let page = try await client.thread(rootId: rootId, userId: viewer.id)
@@ -282,7 +283,7 @@ public final class PulseSession: ObservableObject {
                 throw PulseAPIClient.Failure(kind: .validation, message: "Unexpected thread response.", status: 409)
             }
             let eligible = ([page.parent] + page.replies).filter { acceptsSyncMessage($0.id, startedAt: revision) }
-            let saved = try store.acceptThreadSnapshot(rootId: rootId, roomId: roomId, messages: eligible)
+            let saved = try store.acceptThreadSnapshot(rootId: rootId, roomId: roomId, messages: eligible, snapshotRequest: snapshotRequest)
             deniedThreadRoots.remove(rootId)
             messageVisibilityClock.send(Date())
             // Rows rejected by the revision fence may still be live in newer storage.
