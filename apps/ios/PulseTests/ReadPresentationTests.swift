@@ -11,14 +11,17 @@ final class ReadPresentationTests: XCTestCase {
     }
 
     @MainActor
-    private final class AppearingHost<Content: View>: UIHostingController<Content> {
-        var didAppear: (() -> Void)?
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
-            let completion = didAppear
-            didAppear = nil
-            completion?()
+    private func awaitPresentation(_ description: String, timeout: TimeInterval,
+                                   file: StaticString = #filePath, line: UInt = #line,
+                                   ready: () -> Bool) async throws {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while !ready(), ProcessInfo.processInfo.systemUptime < deadline {
+            // Let UIKit advance its real hierarchy/transition state. A hosting
+            // controller callback is not the condition under test, and can be
+            // omitted for a secondary hosting window even after attachment.
+            try await Task.sleep(nanoseconds: 20_000_000)
         }
+        XCTAssertTrue(ready(), description, file: file, line: line)
     }
 
     @MainActor
@@ -33,30 +36,31 @@ final class ReadPresentationTests: XCTestCase {
         session.showRoomReadVisit(conversationId: "room", entryID: visit)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
-        let primaryReady = expectation(description: "primary SwiftUI content appeared")
-        let primary = AppearingHost(rootView: Text("Primary reader")
+        let primary = UIHostingController(rootView: Text("Primary reader")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PulseReadPresentationAnchor(session: session, owner: visit)))
-        primary.didAppear = { primaryReady.fulfill() }
         window.rootViewController = primary
         window.makeKeyAndVisible()
         defer { window.isHidden = true; previousKey?.makeKey(); session.stop() }
         window.layoutIfNeeded()
         primary.view.layoutIfNeeded()
-        await fulfillment(of: [primaryReady], timeout: 5)
+        try await awaitPresentation("Primary SwiftUI anchor attached to its active window", timeout: 5) {
+            primary.viewIfLoaded?.window === window && primary.transitionCoordinator == nil &&
+                !session.nativePresentationBlockedNow
+        }
         XCTAssertFalse(session.nativePresentationBlockedNow, "The real SwiftUI background must resolve to its reading controller")
 
         let owner = try XCTUnwrap(session.beginReadSurface(conversationId: "room", rootId: "root"))
-        let threadReady = expectation(description: "thread presentation completed")
-        let thread = AppearingHost(rootView: Text("Thread reader")
+        let thread = UIHostingController(rootView: Text("Thread reader")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PulseReadPresentationAnchor(session: session, owner: owner.id)))
         thread.modalPresentationStyle = .pageSheet
-        // A secondary hosting window can attach the sheet without delivering a
-        // second hosting-controller appearance callback. Synchronize on UIKit's
-        // presentation completion, then assert the real window and anchor below.
-        primary.present(thread, animated: false) { threadReady.fulfill() }
-        await fulfillment(of: [threadReady], timeout: 5)
+        primary.present(thread, animated: false)
+        try await awaitPresentation("Thread sheet attached, settled, and owns its real reading anchor", timeout: 5) {
+            primary.presentedViewController === thread && thread.viewIfLoaded?.window === window &&
+                !thread.isBeingPresented && thread.transitionCoordinator == nil &&
+                primary.transitionCoordinator == nil && !session.nativePresentationBlockedNow
+        }
         XCTAssertTrue(primary.presentedViewController === thread)
         XCTAssertTrue(thread.view.window === window)
         thread.view.layoutIfNeeded()
@@ -70,15 +74,19 @@ final class ReadPresentationTests: XCTestCase {
         XCTAssertGreaterThan(session.readAttentionRevision, revision)
 
         let panel = UIViewController()
-        let covered = expectation(description: "UIKit panel presented")
-        thread.present(panel, animated: false) { covered.fulfill() }
-        await fulfillment(of: [covered], timeout: 2)
+        thread.present(panel, animated: false)
+        try await awaitPresentation("Cover panel attached above the thread", timeout: 2) {
+            thread.presentedViewController === panel && panel.viewIfLoaded?.window === window &&
+                !panel.isBeingPresented && panel.transitionCoordinator == nil
+        }
         XCTAssertTrue(session.nativePresentationBlockedNow)
         await session.markReadIfVisible(conversationId: "room") // samples the real pre-qualification guard; this fixture is not authenticated
         let coveredRevision = session.readAttentionRevision
-        let closed = expectation(description: "UIKit panel dismissed")
-        panel.dismiss(animated: false) { closed.fulfill() }
-        await fulfillment(of: [closed], timeout: 2)
+        panel.dismiss(animated: false)
+        try await awaitPresentation("Cover panel detached and thread transition settled", timeout: 2) {
+            thread.presentedViewController == nil && panel.viewIfLoaded?.window == nil &&
+                thread.transitionCoordinator == nil && !thread.isBeingDismissed
+        }
         session.refreshNativeReadPresentation()
         XCTAssertFalse(session.nativePresentationBlockedNow)
         XCTAssertGreaterThan(session.readAttentionRevision, coveredRevision)
