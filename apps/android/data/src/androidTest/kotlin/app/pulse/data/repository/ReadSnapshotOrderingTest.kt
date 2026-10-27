@@ -64,7 +64,7 @@ class ReadSnapshotOrderingTest {
     }
 
     @Test fun deliveryAcknowledgementKeepsCurrentProofInRoomAndInItsPublishedEvent() = runBlocking {
-        exerciseReadOrdering(cached = false, onReady = { repo, db ->
+        exerciseReadOrdering(cached = false, onReady = { repo, db, _ ->
             for ((index, proof) in listOf(emptyList<String>(), listOf("current-member")).withIndex()) {
                 val canonical = Message("delivered-$index", "room", "owner", "Owner", Message.Kind.TEXT,
                     "message", "2026-10-26T00:00:00Z", readByMembershipIds = proof)
@@ -89,10 +89,28 @@ class ReadSnapshotOrderingTest {
         })
     }
 
+    @Test fun genericOrForeignRefusalCannotDiscardTheDurableOriginalRead() = runBlocking {
+        for (mode in listOf("generic", "foreign", "retired")) {
+            val body = if (mode == "generic") """{"error":"Credential rejected"}""" else
+                """{"error":"Retired","readRetirement":{"version":1,"userId":"owner","conversationId":"room","messageId":"anchor","readIntent":"${if (mode == "foreign") "foreign.member" else "original.member"}"}}"""
+            exerciseReadOrdering(cached = true, readFailureBody = body, onReady = { repo, db, tokens ->
+                tokens.save("fixture-credential")
+                val entry = Wave7CacheEntity("read-journal:v1|owner|member|anchor|original.member",
+                    """{"owner":"owner","room":"room","message":"anchor","minimumReadAt":"2026-10-26T00:00:00Z","intent":"original.member"}""", 1L)
+                db.wave7Dao().insertReadIntent(entry)
+                assertEquals(if (mode == "retired") 0 else 1, repo.flushReadReceipts().getOrThrow())
+                assertEquals(if (mode == "retired") emptyList<Wave7CacheEntity>() else listOf(entry),
+                    db.wave7Dao().readJournal("read-journal:v1|owner|"))
+                assertEquals(emptyList<String>(), db.messageDao().byId("anchor")?.toDomain()?.readByMembershipIds)
+            })
+        }
+    }
+
     private suspend fun exerciseReadOrdering(cached: Boolean, retire: Boolean = false,
         infoFirst: Boolean = false, unchangedPage: Boolean = false,
         overlappingPages: Boolean = false, olderCommitsFirst: Boolean = false, unrelatedOnly: Boolean = false,
-        onReady: (suspend (PulseRepositoryImpl, PulseDatabase) -> Unit)? = null) = withTimeout(30_000) {
+        readFailureBody: String? = null,
+        onReady: (suspend (PulseRepositoryImpl, PulseDatabase, SessionTokenStore) -> Unit)? = null) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
         val prefsJob = SupervisorJob()
@@ -120,6 +138,8 @@ class ReadSnapshotOrderingTest {
         val pageProof = if (unchangedPage) "[]" else "[\"old-peer\"]"
         val infoProof = if (unchangedPage) "[\"retired-peer\"]" else "[]"
         val http = HttpClient(MockEngine { request ->
+            if (request.url.encodedPath == "/api/conversations/room/read-state" && readFailureBody != null)
+                return@MockEngine respond(readFailureBody, HttpStatusCode.Forbidden, headersOf("Content-Type", "application/json"))
             val body = when (request.url.encodedPath) {
                 "/api/conversations/room/messages" -> {
                     if (overlappingPages && request.url.parameters["q"] == null) {
@@ -153,7 +173,7 @@ class ReadSnapshotOrderingTest {
                 "anchor", "room", "peer", "Peer", Message.Kind.TEXT, "current body", "2026-10-26T00:00:00Z"))))
             repo.start("owner")
             startupEntered.await()
-            if (onReady != null) { onReady(repo, db); return@withTimeout }
+            if (onReady != null) { onReady(repo, db, tokens); return@withTimeout }
             if (overlappingPages) {
                 coroutineScope {
                     val oldPage = async { repo.searchInConversation("room", "older") }

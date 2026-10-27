@@ -122,3 +122,22 @@ test('alternate Swift mark-all invalidates canonical scopes even without a socke
   assert.ok(settlement.includes('session.sessionGeneration == epoch'))
   assert.ok(settlement.includes('session.noteReadAllChanged(row.id)'))
 })
+
+
+test('only authenticated permanent observation refusals issue identity-bound retirement', async () => {
+  for (const status of [400, 403, 404, 409, 410, 422, 500]) {
+    for (const mode of ['visible', 'all']) {
+      const f = await fixture(); f.refuse(new ReadReceiptError(status, 'refused'))
+      const response = await f.request({ mode, ...(mode === 'visible' ? { messageId: 'anchor' } : {}) })
+      const body = await response.json()
+      assert.equal(response.status, status)
+      assert.deepEqual(body.readRetirement, mode === 'visible' && [403, 404, 410].includes(status)
+        ? { version: 1, userId: 'reader', conversationId: 'room', messageId: 'anchor', readIntent: 'fence' } : undefined)
+      assert.equal(f.fanouts.length, 0); assert.equal(f.hints.length, 0)
+    }
+  }
+  const denied = await fixture(); denied.deny()
+  assert.equal((await (await denied.request({ mode: 'visible', messageId: 'anchor' })).json()).readRetirement, undefined)
+  const invalid = await fixture()
+  assert.equal((await (await invalid.request({ mode: 'visible' })).json()).readRetirement, undefined)
+})

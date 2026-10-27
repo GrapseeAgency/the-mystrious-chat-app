@@ -29,7 +29,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: true, readReceiptVersion: 3, readIntent, conversationId: id, userId, mode,
       messageId: mode === 'visible' ? messageId : null, lastReadAt: at.toISOString() }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
-    if (error instanceof ReadReceiptError) return NextResponse.json({ error: error.message }, { status: error.status })
+    if (error instanceof ReadReceiptError) return NextResponse.json({ error: error.message,
+      // Only an authenticated, validated observation can be retired. A generic
+      // proxy/auth 4xx is not permission to discard a device's durable journal.
+      ...(mode === 'visible' && [403, 404, 410].includes(error.status) ? {
+        readRetirement: { version: 1, userId, conversationId: id, messageId, readIntent },
+      } : {}),
+    }, { status: error.status, headers: { 'Cache-Control': 'private, no-store' } })
     throw error
   }
 }

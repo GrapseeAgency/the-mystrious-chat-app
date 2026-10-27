@@ -1,5 +1,13 @@
 package app.pulse.core.result
 
+/** Server-bound retirement, not a successful read and not inferred from status. */
+data class ReadRetirement(val version: Int, val userId: String, val conversationId: String,
+    val messageId: String, val readIntent: String) {
+    fun matches(owner: String, room: String, message: String, intent: String): Boolean =
+        version == 1 && owner.isNotBlank() && room.isNotBlank() && message.isNotBlank() && intent.isNotBlank() &&
+            userId == owner && conversationId == room && messageId == message && readIntent == intent
+}
+
 /**
  * Railway-oriented error envelope shared by every Pulse layer.
  * `Failure.kind` maps 1:1 to the web API's error semantics (403 blocked pair,
@@ -24,7 +32,10 @@ sealed interface PulseResult<out T> {
         val retryAfter: Int? = null,
         /** Echoed operation ID on a terminal receipt, never inferred from HTTP status alone. */
         val receiptClientId: String? = null,
+        val readRetirement: ReadRetirement? = null,
     ) : PulseResult<Nothing> {
+        fun retiresRead(owner: String, room: String, message: String, intent: String): Boolean =
+            status in setOf(403, 404, 410) && readRetirement?.matches(owner, room, message, intent) == true
         enum class Kind { NETWORK, AUTH, FORBIDDEN, RATE_LIMITED, NOT_FOUND, VALIDATION, SERVER, UNKNOWN }
     }
 

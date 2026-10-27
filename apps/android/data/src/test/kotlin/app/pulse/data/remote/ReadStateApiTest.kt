@@ -15,6 +15,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReadStateApiTest {
+    @Test fun retirementRequiresTheOriginalObservationAndNotJustAnHttpError() = runTest {
+        for (status in listOf(400, 403, 404, 409, 410, 422, 500)) {
+            for (mode in listOf("valid", "missing", "version", "userId", "conversationId", "messageId", "readIntent", "numeric")) {
+                val receipt = buildJsonObject {
+                    put("version", if (mode == "version") 2 else 1)
+                    for ((key, value) in mapOf("userId" to "me", "conversationId" to "room", "messageId" to "anchor", "readIntent" to "fence")) {
+                        if (mode == "numeric" && key == "userId") put(key, 1)
+                        else put(key, if (mode == key) "foreign" else value)
+                    }
+                }
+                val body = buildJsonObject { put("error", "Refused"); if (mode != "missing") put("readRetirement", receipt) }.toString()
+                val http = HttpClient(MockEngine { respond(body, HttpStatusCode.fromValue(status), headersOf("Content-Type", "application/json")) })
+                try {
+                    val result = PulseApi(http, gateway = { "https://read.test" }).markRead("room", "me", "anchor", readIntent = "fence") as PulseResult.Failure
+                    assertEquals("$status/$mode", mode == "valid" && status in listOf(403, 404, 410),
+                        result.retiresRead("me", "room", "anchor", "fence"))
+                } finally { http.close() }
+            }
+        }
+    }
+
     @Test fun messageInfoRequiresExactVersionOwnerRoomMessageAvailabilityAndProofArray() = runTest {
         for (mode in listOf("valid", "empty", "unavailable", "legacy", "owner", "room", "message", "version", "available", "contradiction", "numeric", "blank", "duplicate", "old-server")) {
             val http = HttpClient(MockEngine { request ->

@@ -27,7 +27,18 @@ private final class ReadStateProtocol: URLProtocol {
             default: break
             }
         } else { XCTAssertFalse(mode.hasPrefix("prepare-"), "Invalid intent must not dispatch a write") }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
+        var status = 200
+        if mode.hasPrefix("retirement-") {
+            status = Int(request.value(forHTTPHeaderField: "X-Read-Status") ?? "403") ?? 403
+            let variant = String(mode.dropFirst("retirement-".count))
+            var receipt: [String: Any] = ["version": variant == "version" ? 2 : 1,
+                "userId": "me", "conversationId": "room", "messageId": "anchor", "readIntent": "fence"]
+            if ["userId", "conversationId", "messageId", "readIntent"].contains(variant) { receipt[variant] = "foreign" }
+            if variant == "numeric" { receipt["userId"] = 1 }
+            body = ["error": "Refused"]
+            if variant != "missing" { body["readRetirement"] = receipt }
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
             httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body))
         client?.urlProtocolDidFinishLoading(self)
@@ -37,6 +48,26 @@ private final class ReadStateProtocol: URLProtocol {
 
 @MainActor
 final class ReadStateAcknowledgementTests: XCTestCase {
+    func testErrorStatusAloneCannotRetireAnObservation() async throws {
+        for status in [400, 403, 404, 409, 410, 422, 500] {
+            for variant in ["valid", "missing", "version", "userId", "conversationId", "messageId", "readIntent", "numeric"] {
+                let config = URLSessionConfiguration.ephemeral
+                config.protocolClasses = [ReadStateProtocol.self]
+                config.httpAdditionalHeaders = ["X-Read-Test": "retirement-" + variant, "X-Read-Status": String(status)]
+                let transport = URLSession(configuration: config)
+                defer { transport.invalidateAndCancel() }
+                let api = PulseAPIClient(baseURL: URL(string: "https://read-state.test")!, userId: "me", session: transport)
+                do {
+                    try await api.markRead(conversationId: "room", messageId: "anchor", readIntent: "fence")
+                    XCTFail("A refusal cannot confirm Seen")
+                } catch let failure as PulseAPIClient.Failure {
+                    XCTAssertEqual(failure.retiresRead(owner: "me", room: "room", message: "anchor", intent: "fence"),
+                        variant == "valid" && [403, 404, 410].contains(status), "\(status)/\(variant)")
+                }
+            }
+        }
+    }
+
     func testInvalidPreparationNeverDispatchesAReadWrite() async throws {
         for mode in ["prepare-missing", "prepare-owner", "prepare-room", "prepare-version", "prepare-token", "prepare-blank"] {
             let config = URLSessionConfiguration.ephemeral

@@ -253,7 +253,8 @@ enum PulseReadJournalReplay {
                     try store.acknowledgeRead(read)
                 } catch {
                     guard !Task.isCancelled, isCurrent(),
-                          [400, 403, 404, 410, 422].contains((error as? PulseAPIClient.Failure)?.status ?? 0) else { return false }
+                          (error as? PulseAPIClient.Failure)?.retiresRead(owner: read.owner, room: read.room,
+                            message: read.message, intent: read.intent) == true else { return false }
                     onSettled(read)
                     try store.acknowledgeRead(read)
                 }

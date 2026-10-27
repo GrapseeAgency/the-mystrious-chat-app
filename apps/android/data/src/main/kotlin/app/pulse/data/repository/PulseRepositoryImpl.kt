@@ -2942,7 +2942,8 @@ class PulseRepositoryImpl constructor(
                 val response = api.markRead(read.room, owner, read.message, read.minimumReadAt, read.intent)
                 requireConversationOwner(owner, epoch)
                 val failure = (response as? PulseResult.Failure)?.let { apiExceptionOf(it) }
-                if (response is PulseResult.Success || failure?.status in setOf(400, 403, 404, 410, 422)) {
+                if (response is PulseResult.Success || (response as? PulseResult.Failure)
+                    ?.retiresRead(read.owner, read.room, read.message, read.intent) == true) {
                     settledRooms += read.room
                     conversationSnapshots.invalidate(read.room)
                     if (response is PulseResult.Success) acknowledgeConfirmedRead(entry, read, epoch)

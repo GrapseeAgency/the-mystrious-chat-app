@@ -1,6 +1,6 @@
 # Seen / unread / read-ordering workstream
 
-## Current candidate — exact observations (2026-10-26)
+## Current candidate — exact observations (2026-10-27)
 
 This section supersedes the timestamp-only limitations in the historical notes below.
 It records implemented runtime paths, **not a physical-device acceptance certificate**.
@@ -19,6 +19,8 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 | 9. Convergence | One exact unread aggregate backs inbox counts, expiration schedules and first-unread identity; channel badges use it too. Read events update exact cached Seen and invalidate authoritative inbox/topic state, including the reader's other devices with privacy enabled. | Room/inbox/launcher badges across two devices. |
 
 ### Durability follow-up
+
+- Journal retirement now requires a versioned, identity-bound refusal from the authenticated visible-read endpoint. Generic 400/403/404/410/422 responses—including credential rejection, proxy errors and old gateways—are not proof that an observation is obsolete. Both native transports carry the retirement envelope; replay checks owner, room, exact message and original intent before compare-and-delete. Only server-validated missing membership/message or retired membership refusals issue it. Conflicts and mark-all refusals do not. Refusal never becomes Seen. No account sign-in/recovery behavior changes; an older gateway without this envelope conservatively leaves the original journal pending.
 
 - Send/action acknowledgements no longer replace an existing message's exact read proof with their incidental full-row snapshot. A fast socket read or a newer canonical negative survives a late send/edit/pin/reaction/poll/view-once ACK; action fields still commit. Both outgoing writers now publish the retained committed row, not the old HTTP input, after atomic outbox retirement. This is a distinct ACK merge, not a union: canonical GETs, Info proofs and dedicated read acknowledgements retain their original replacement/observation semantics. Native regressions cover positive and negative cached proof, successful delivery retirement, and the published delivery event.
 
@@ -160,7 +162,7 @@ Read timestamps remain cumulative and timestamp-only. This patch does not solve 
 
 Prisma's checked-in client was regenerated from the actual schema with the same 6.19.2 generator; it also catches up declarations for previously added schema models. No engine binary replacement is included.
 
-## Nine-item status
+### Historical nine-item status — superseded
 
 | # | Item | Current status / next closure evidence |
 |---|---|---|

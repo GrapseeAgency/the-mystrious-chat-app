@@ -7,6 +7,16 @@ import Foundation
 /// response shapes verified against the live routes (send + react return
 /// `{ message }`, conversation create returns `{ conversation }`).
 public struct PulseAPIClient: Sendable {
+    public struct ReadRetirement: Decodable, Equatable, Sendable {
+        let version: Int
+        let userId: String, conversationId: String, messageId: String, readIntent: String
+        func matches(owner: String, room: String, message: String, intent: String) -> Bool {
+            version == 1 && !owner.isEmpty && !room.isEmpty && !message.isEmpty && !intent.isEmpty &&
+                userId == owner && conversationId == room && messageId == message && readIntent == intent
+        }
+    }
+    private struct ReadRetirementEnvelope: Decodable { let readRetirement: ReadRetirement }
+
     public struct Failure: Error, Equatable {
         public enum Kind: Equatable { case network, auth, forbidden, rateLimited, notFound, validation, server, unknown }
         public let kind: Kind
@@ -22,8 +32,13 @@ public struct PulseAPIClient: Sendable {
         /// wait (body { error, retryAfter } or the Retry-After header).
         public var retryAfter: Int?
         public var receiptClientId: String?
+        public var readRetirement: ReadRetirement?
+        func retiresRead(owner: String, room: String, message: String, intent: String) -> Bool {
+            [403, 404, 410].contains(status ?? 0) &&
+                readRetirement?.matches(owner: owner, room: room, message: message, intent: intent) == true
+        }
 
-        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil, receiptClientId: String? = nil) {
+        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil, receiptClientId: String? = nil, readRetirement: ReadRetirement? = nil) {
             self.kind = kind
             self.message = message
             self.code = code
@@ -31,6 +46,7 @@ public struct PulseAPIClient: Sendable {
             self.status = status
             self.retryAfter = retryAfter
             self.receiptClientId = receiptClientId
+            self.readRetirement = readRetirement
         }
     }
 
@@ -2542,7 +2558,8 @@ public struct PulseAPIClient: Sendable {
             retryAfter = [retryAfter.flatMap { $0 > 0 ? min($0, 86_400) : nil },
                 Self.retryAfterSeconds(http.value(forHTTPHeaderField: "Retry-After"), serverDate: http.value(forHTTPHeaderField: "Date"))]
                 .compactMap { $0 }.max()
-            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter, receiptClientId: receiptClientId)
+            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter, receiptClientId: receiptClientId,
+                readRetirement: (try? decoder.decode(ReadRetirementEnvelope.self, from: data))?.readRetirement)
         }
         return data
     }

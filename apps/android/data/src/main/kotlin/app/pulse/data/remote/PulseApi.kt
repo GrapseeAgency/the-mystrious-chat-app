@@ -272,9 +272,18 @@ class PulseApi(
         var suggestion: String? = null
         var retryAfter: Int? = null
         var receiptClientId: String? = null
+        var readRetirement: app.pulse.core.result.ReadRetirement? = null
         try {
             val json = PulseJson.parseToJsonElement(body)
             if (json is JsonObject) {
+                val retirement = json["readRetirement"] as? JsonObject
+                val keys = listOf("userId", "conversationId", "messageId", "readIntent")
+                if (retirement != null && retirement["version"] == JsonPrimitive(1) && keys.all {
+                    (retirement[it] as? JsonPrimitive)?.isString == true
+                }) {
+                    val values = keys.map { (retirement[it] as JsonPrimitive).content }
+                    readRetirement = app.pulse.core.result.ReadRetirement(1, values[0], values[1], values[2], values[3])
+                }
                 (json["error"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
                     if (it.isString) message = it.content
                 }
@@ -302,7 +311,7 @@ class PulseApi(
         if (status == 401) onAuthInvalid(message)
         retryAfter = listOfNotNull(retryAfter?.takeIf { it > 0 }, retryAfterSeconds(retryHeader, serverDate)).maxOrNull()
         val base = PulseResult.fromHttp(status, message)
-        return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter, receiptClientId = receiptClientId)
+        return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter, receiptClientId = receiptClientId, readRetirement = readRetirement)
     }
 
     // conversations

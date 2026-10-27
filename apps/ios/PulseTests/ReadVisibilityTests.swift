@@ -389,6 +389,33 @@ extension ReadVisibilityTests {
     }
 
     @MainActor
+    func testGenericAndMismatchedRefusalsKeepTheOriginalJournalWithoutInventingSeen() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let read = PulseQueuedRead(owner: "owner", room: "room", message: "message",
+            minimumReadAt: "2026-10-26T00:00:00Z", intent: "original.member")
+        _ = try store.enqueueRead(read)
+        var confirmed = 0, settled = 0
+        for status in [400, 403, 404, 410, 422] {
+            for mismatch in ["missing", "version", "owner", "room", "message", "intent"] {
+                let receipt: PulseAPIClient.ReadRetirement? = mismatch == "missing" ? nil : .init(
+                    version: mismatch == "version" ? 2 : 1,
+                    userId: mismatch == "owner" ? "foreign" : read.owner,
+                    conversationId: mismatch == "room" ? "foreign" : read.room,
+                    messageId: mismatch == "message" ? "foreign" : read.message,
+                    readIntent: mismatch == "intent" ? "foreign.member" : read.intent)
+                let complete = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true },
+                    onConfirmed: { _ in confirmed += 1 }, onSettled: { _ in settled += 1 }) { _ in
+                        throw PulseAPIClient.Failure(kind: .forbidden, message: "Refused", status: status, readRetirement: receipt)
+                    }
+                XCTAssertFalse(complete, "\(status)/\(mismatch)")
+                XCTAssertEqual(try store.pendingReads(owner: "owner"), [read])
+            }
+        }
+        XCTAssertEqual(confirmed, 0)
+        XCTAssertEqual(settled, 0)
+    }
+
+    @MainActor
     func testBackgroundReplayRetiresRemovedMembershipButPreservesRetryableFailure() async throws {
         let store = try PulseStore(path: ":memory:")
         let read = PulseQueuedRead(owner: "owner", room: "room", message: "message",
@@ -402,7 +429,9 @@ extension ReadVisibilityTests {
         XCTAssertTrue(settled.isEmpty)
         XCTAssertEqual(try store.pendingReads(owner: "owner").count, 1)
         let retired = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }, onSettled: { settled.append($0.room) }) { _ in
-            throw PulseAPIClient.Failure(kind: .forbidden, message: "Membership retired", status: 410)
+            throw PulseAPIClient.Failure(kind: .forbidden, message: "Membership retired", status: 410,
+                readRetirement: .init(version: 1, userId: read.owner, conversationId: read.room,
+                    messageId: read.message, readIntent: read.intent))
         }
         XCTAssertTrue(retired)
         XCTAssertEqual(settled, ["room"], "A refused scope needs canonical refresh, not invented read progress")
@@ -459,7 +488,9 @@ extension ReadVisibilityTests {
             minimumReadAt: message.createdAt, intent: "retired.retired-member")
         _ = try store.enqueueRead(refused)
         _ = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { _ in
-            throw PulseAPIClient.Failure(kind: .forbidden, message: "Retired", status: 410)
+            throw PulseAPIClient.Failure(kind: .forbidden, message: "Retired", status: 410,
+                readRetirement: .init(version: 1, userId: refused.owner, conversationId: refused.room,
+                    messageId: refused.message, readIntent: refused.intent))
         }
         XCTAssertFalse(try XCTUnwrap(store.message(id: "message")?.readByMembershipIds).contains("retired-member"))
     }
