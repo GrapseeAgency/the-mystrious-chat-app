@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import SwiftUI
+import QuartzCore
 @testable import Pulse
 
 final class ReadPresentationTests: XCTestCase {
@@ -30,12 +31,16 @@ final class ReadPresentationTests: XCTestCase {
                                    diagnostics: () -> String = { "" }, ready: () -> Bool) async throws {
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         while !ready(), ProcessInfo.processInfo.systemUptime < deadline {
-            // Let UIKit advance its real hierarchy/transition state. A hosting
-            // controller callback is not the condition under test, and can be
-            // omitted for a secondary hosting window even after attachment.
+            // Task.sleep yields the actor but does not itself commit pending
+            // implicit Core Animation transactions in this hosted test window.
+            // Submit them through the public rendering API; UIKit must still
+            // complete the real lifecycle before the unchanged predicate passes.
+            CATransaction.flush()
             try await Task.sleep(nanoseconds: 20_000_000)
         }
-        XCTAssertTrue(ready(), description + "; " + diagnostics(), file: file, line: line)
+        // Abort this fixture on failure rather than presenting another panel
+        // from a controller whose first presentation has not finished.
+        _ = try XCTUnwrap(ready() ? true : nil, description + "; " + diagnostics(), file: file, line: line)
     }
 
     @MainActor
@@ -55,7 +60,7 @@ final class ReadPresentationTests: XCTestCase {
             .background(PulseReadPresentationAnchor(session: session, owner: visit)))
         window.rootViewController = primary
         window.makeKeyAndVisible()
-        defer { window.isHidden = true; previousKey?.makeKey(); session.stop() }
+        defer { window.isHidden = true; window.rootViewController = nil; previousKey?.makeKey(); session.stop() }
         window.layoutIfNeeded()
         primary.view.layoutIfNeeded()
         // Attachment/layout can complete synchronously before the root's first
@@ -74,12 +79,12 @@ final class ReadPresentationTests: XCTestCase {
             .background(PulseReadPresentationAnchor(session: session, owner: owner.id)))
         thread.modalPresentationStyle = .pageSheet
         let threadDiagnostics = {
+            "key=\(window.isKeyWindow); windowBounds=\(window.bounds); threadBounds=\(String(describing: thread.viewIfLoaded?.bounds)); animations=\(UIView.areAnimationsEnabled); layerSpeed=\(window.layer.speed); runLoopMode=\(String(describing: RunLoop.current.currentMode)); " +
             "expectedThread=\(ObjectIdentifier(thread)); expectedPrimary=\(ObjectIdentifier(primary)); expectedOwner=\(owner.id); " + session.nativeReadPresentationDiagnostics()
         }
         // Exercise the animated sheet lifecycle used by the SwiftUI surface.
-        // The secondary-window, non-animated hosting fixture was observed with
-        // presenting=true and a zero-duration coordinator still at progress 0.
-        // That is correctly blocked, not permission to bypass the runtime gate.
+        // Both animated and non-animated fixtures have exposed unfinished
+        // presentations. Await actual completion; never bypass the runtime gate.
         primary.present(thread, animated: true)
         XCTAssertTrue(session.nativePresentationBlockedNow, "Presentation must interrupt reading")
         try await awaitPresentation("Thread sheet attached, settled, and owns its real reading anchor", timeout: 5, diagnostics: threadDiagnostics) {
