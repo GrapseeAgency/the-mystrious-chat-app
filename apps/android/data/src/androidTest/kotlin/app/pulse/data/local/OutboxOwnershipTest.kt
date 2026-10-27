@@ -14,6 +14,32 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class OutboxOwnershipTest {
+    @Test fun deferredReadOrderSurvivesDatabaseReopeningAndRejectsStalePayloads() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "read-fairness-${java.util.UUID.randomUUID()}.db"
+        val prefix = "read-journal:v1|owner|"
+        val first = Wave7CacheEntity(prefix + "first", "original intent", 1)
+        val second = Wave7CacheEntity(prefix + "second", "other original intent", 2)
+        try {
+            val db = Room.databaseBuilder(context, PulseDatabase::class.java, name).build()
+            try {
+                db.wave7Dao().insertReadIntent(first)
+                db.wave7Dao().insertReadIntent(second)
+                db.wave7Dao().deferReadIntent(first.key, first.json, prefix)
+            } finally { db.close() }
+            val reopened = Room.databaseBuilder(context, PulseDatabase::class.java, name).build()
+            try {
+                val dao = reopened.wave7Dao()
+                assertEquals(listOf(second.key, first.key), dao.readJournal(prefix).map { it.key })
+                assertEquals(first.json, dao.get(first.key)?.json)
+                val before = dao.get(first.key)
+                dao.deferReadIntent(first.key, "obsolete payload", prefix)
+                assertEquals(before, dao.get(first.key))
+                assertEquals(emptyList<Wave7CacheEntity>(), dao.readJournal("read-journal:v1|foreign|"))
+            } finally { reopened.close() }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test fun foreignAndUnknownOwnersNeverDrainAndCannotHideCurrentOwner() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(
             ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java,

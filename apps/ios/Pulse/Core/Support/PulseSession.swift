@@ -182,6 +182,7 @@ public final class PulseSession: ObservableObject {
             while let self, self.generation == epoch, !Task.isCancelled {
                 guard let reads = try? store.pendingReads(owner: owner), !reads.isEmpty else { return }
                 var retry: TimeInterval?
+                var deferred = 0
                 var settledRooms = Set<String>()
                 let publish: () -> Void = {
                     if self.generation == epoch { settledRooms.forEach { self.noteReadStateChanged($0) } }
@@ -205,10 +206,15 @@ public final class PulseSession: ObservableObject {
                             settledRooms.insert(read.room)
                             do { try store.acknowledgeRead(read) } catch { return }
                         } else {
+                            do { try store.deferRead(read) } catch { return }
+                            if let failure = error as? PulseAPIClient.Failure,
+                               failure.kind == .auth || failure.status == 401 { return }
                             failures += 1
-                            guard let wait = PulseVisibleReadRetry.delay(after: error, failures: failures) else { return }
-                            retry = wait
-                            break
+                            let wait = PulseVisibleReadRetry.delay(after: error, failures: failures) ?? 30
+                            retry = max(retry ?? 0, wait)
+                            deferred += 1
+                            if deferred >= PulseReadJournalReplay.maxDeferralsPerPass ||
+                                !PulseReadJournalReplay.canContinue(after: error) { break }
                         }
                     }
                 }

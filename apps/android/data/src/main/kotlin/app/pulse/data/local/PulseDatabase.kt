@@ -1108,6 +1108,11 @@ interface Wave7Dao {
     @Query("SELECT COUNT(*) FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix")
     fun observeReadJournalCount(prefix: String): Flow<Int>
 
+    // Retry order is durable metadata only. Never rewrite the original intent,
+    // and do not let a stale attempt reorder a replacement record.
+    @Query("UPDATE wave7_cache SET updatedAt = (SELECT COALESCE(MAX(updatedAt), 0) + 1 FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix) WHERE `key` = :key AND json = :json")
+    suspend fun deferReadIntent(key: String, json: String, prefix: String)
+
     @Query("DELETE FROM wave7_cache WHERE `key` = :key AND json = :json")
     suspend fun acknowledgeReadIntent(key: String, json: String)
 

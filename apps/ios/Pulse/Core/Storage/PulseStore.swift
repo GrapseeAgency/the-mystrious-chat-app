@@ -386,6 +386,24 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Persist fair retry order without changing evidence or original authority.
+    func deferRead(_ observation: PulseQueuedRead) throws {
+        try dbQueue.write { db in
+            let prefix = "read-journal:v1|\(observation.owner)|"
+            for key in [observation.key, observation.legacyKey] {
+                if let json = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key = ?", arguments: [key]),
+                   let current = try? JSONDecoder().decode(PulseQueuedRead.self, from: Data(json.utf8)), current == observation {
+                    try db.execute(sql: """
+                        UPDATE wave7Cache SET updatedAt = (
+                            SELECT COALESCE(MAX(updatedAt), 0) + 1 FROM wave7Cache
+                            WHERE substr(key, 1, length(?)) = ?
+                        ) WHERE key = ? AND json = ?
+                        """, arguments: [prefix, prefix, key, json])
+                }
+            }
+        }
+    }
+
     func acknowledgeRead(_ observation: PulseQueuedRead) throws {
         try dbQueue.write { db in
             // Drain pre-upgrade records too, but never let their delayed ACK

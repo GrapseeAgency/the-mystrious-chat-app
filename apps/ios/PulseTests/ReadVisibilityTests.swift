@@ -549,4 +549,98 @@ extension ReadVisibilityTests {
         surfaces.end(thread)
         XCTAssertTrue(surfaces.obscuredByPip(isOpen: true))
     }
+    @MainActor
+    func testUnboundRefusalDoesNotBlockAnotherRoomOrBecomeSeen() async throws {
+        let store = try PulseStore(path: ":memory:")
+        let blocked = PulseQueuedRead(owner: "owner", room: "blocked", message: "first",
+            minimumReadAt: "2026-10-26T00:00:00Z", intent: "original.member")
+        let healthy = PulseQueuedRead(owner: "owner", room: "healthy", message: "second",
+            minimumReadAt: blocked.minimumReadAt, intent: "other.other-member")
+        _ = try store.enqueueRead(blocked)
+        _ = try store.enqueueRead(healthy)
+        // Deterministic FIFO independent of millisecond/key ties.
+        try store.saveWave7Cache(key: blocked.key,
+            json: String(decoding: JSONEncoder().encode(blocked), as: UTF8.self), updatedAt: 1)
+        var sent: [PulseQueuedRead] = [], settled: [PulseQueuedRead] = []
+        let complete = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true },
+            onSettled: { settled.append($0) }) { read in
+                sent.append(read)
+                if read == blocked { throw PulseAPIClient.Failure(kind: .forbidden, message: "Unbound refusal", status: 403) }
+            }
+        XCTAssertFalse(complete)
+        XCTAssertEqual(sent, [blocked, healthy])
+        XCTAssertEqual(settled, [healthy])
+        XCTAssertEqual(try store.pendingReads(owner: "owner"), [blocked])
+    }
+
+    @MainActor
+    func testDeferredReadOrderSurvivesReopeningWithoutChangingOriginalIntent() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("fair.sqlite").path
+        let blocked = PulseQueuedRead(owner: "owner", room: "room", message: "first",
+            minimumReadAt: "2026-10-26T00:00:00Z", intent: "original.member")
+        let untouched = PulseQueuedRead(owner: "owner", room: "room", message: "second",
+            minimumReadAt: blocked.minimumReadAt, intent: "newer.member")
+        do {
+            let store = try PulseStore(path: path)
+            _ = try store.enqueueRead(blocked)
+            _ = try store.enqueueRead(untouched)
+            try store.deferRead(blocked)
+        }
+        let reopened = try PulseStore(path: path)
+        XCTAssertEqual(try reopened.pendingReads(owner: "owner"), [untouched, blocked])
+        XCTAssertTrue(try reopened.pendingReads(owner: "other").isEmpty)
+        // An old callback must not change a replacement payload under a legacy key.
+        try reopened.saveWave7Cache(key: blocked.legacyKey,
+            json: String(decoding: JSONEncoder().encode(untouched), as: UTF8.self), updatedAt: 0)
+        try reopened.deferRead(blocked)
+        XCTAssertEqual(try reopened.loadWave7Cache(key: blocked.legacyKey)?.updatedAt, 0)
+    }
+
+    @MainActor
+    func testGlobalReadFailuresStopThePassAndRotateForTheNextOpportunity() async throws {
+        for status in [401, 429, 500] {
+            let store = try PulseStore(path: ":memory:")
+            let first = PulseQueuedRead(owner: "owner", room: "room", message: "first",
+                minimumReadAt: "2026-10-26T00:00:00Z", intent: "old.member")
+            let second = PulseQueuedRead(owner: "owner", room: "other", message: "second",
+                minimumReadAt: first.minimumReadAt, intent: "fresh.member")
+            _ = try store.enqueueRead(first); _ = try store.enqueueRead(second)
+            try store.saveWave7Cache(key: first.key,
+                json: String(decoding: JSONEncoder().encode(first), as: UTF8.self), updatedAt: 0)
+            var attempts = 0
+            let complete = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { _ in
+                attempts += 1
+                throw PulseAPIClient.Failure(kind: .network, message: "Unavailable", status: status)
+            }
+            XCTAssertFalse(complete)
+            XCTAssertEqual(attempts, 1)
+            XCTAssertEqual(try store.pendingReads(owner: "owner"), [second, first])
+        }
+    }
+
+    @MainActor
+    func testIncompatibleGatewayPassIsBoundedAndDoesNotPinTheFirstBatch() async throws {
+        let store = try PulseStore(path: ":memory:")
+        for index in 0..<20 {
+            let read = PulseQueuedRead(owner: "owner", room: "room", message: "m-\(index)",
+                minimumReadAt: "2026-10-26T00:00:00Z", intent: "original.member")
+            try store.saveWave7Cache(key: read.key,
+                json: String(decoding: JSONEncoder().encode(read), as: UTF8.self), updatedAt: Int64(index))
+        }
+        var attempted: [String] = []
+        let complete = await PulseReadJournalReplay.flush(store: store, owner: "owner", isCurrent: { true }) { read in
+            attempted.append(read.message)
+            throw PulseAPIClient.Failure(kind: .notFound, message: "Old route", status: 404)
+        }
+        XCTAssertFalse(complete)
+        XCTAssertEqual(attempted.count, 16)
+        let pending = try store.pendingReads(owner: "owner")
+        XCTAssertEqual(pending.count, 20)
+        XCTAssertEqual(pending.first?.message, "m-16")
+        XCTAssertTrue(pending.allSatisfy { $0.intent == "original.member" })
+    }
+
 }

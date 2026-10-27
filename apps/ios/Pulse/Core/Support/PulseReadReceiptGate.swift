@@ -235,6 +235,14 @@ struct PulseQueuedRead: Codable, Sendable, Equatable {
 /// read-intent preparation is allowed here. Unconfirmed records stay on disk.
 @MainActor
 enum PulseReadJournalReplay {
+    static let maxDeferralsPerPass = 16
+
+    static func canContinue(after error: Error) -> Bool {
+        guard let failure = error as? PulseAPIClient.Failure,
+              failure.kind != .auth, failure.kind != .rateLimited else { return false }
+        return [400, 403, 404, 409, 410, 422].contains(failure.status ?? 0)
+    }
+
     static func flush(store: PulseStore, owner: String,
                              isCurrent: () -> Bool,
                              onConfirmed: (PulseQueuedRead) -> Void = { _ in },
@@ -242,6 +250,7 @@ enum PulseReadJournalReplay {
                              send: (PulseQueuedRead) async throws -> Void) async -> Bool {
         do {
             guard !Task.isCancelled, isCurrent() else { return false }
+            var deferred = 0
             for read in try store.pendingReads(owner: owner) {
                 guard !Task.isCancelled, isCurrent(), read.owner == owner else { return false }
                 do {
@@ -252,11 +261,16 @@ enum PulseReadJournalReplay {
                     if try store.recordConfirmedRead(read) { onConfirmed(read) }
                     try store.acknowledgeRead(read)
                 } catch {
-                    guard !Task.isCancelled, isCurrent(),
-                          (error as? PulseAPIClient.Failure)?.retiresRead(owner: read.owner, room: read.room,
-                            message: read.message, intent: read.intent) == true else { return false }
-                    onSettled(read)
-                    try store.acknowledgeRead(read)
+                    guard !Task.isCancelled, isCurrent() else { return false }
+                    if (error as? PulseAPIClient.Failure)?.retiresRead(owner: read.owner, room: read.room,
+                        message: read.message, intent: read.intent) == true {
+                        onSettled(read)
+                        try store.acknowledgeRead(read)
+                    } else {
+                        try store.deferRead(read)
+                        deferred += 1
+                        if deferred >= maxDeferralsPerPass || !canContinue(after: error) { return false }
+                    }
                 }
             }
             let empty = try store.pendingReads(owner: owner).isEmpty

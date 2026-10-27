@@ -99,17 +99,56 @@ class ReadSnapshotOrderingTest {
                     """{"owner":"owner","room":"room","message":"anchor","minimumReadAt":"2026-10-26T00:00:00Z","intent":"original.member"}""", 1L)
                 db.wave7Dao().insertReadIntent(entry)
                 assertEquals(if (mode == "retired") 0 else 1, repo.flushReadReceipts().getOrThrow())
-                assertEquals(if (mode == "retired") emptyList<Wave7CacheEntity>() else listOf(entry),
-                    db.wave7Dao().readJournal("read-journal:v1|owner|"))
+                assertEquals(if (mode == "retired") emptyList<Pair<String, String>>() else listOf(entry.key to entry.json),
+                    db.wave7Dao().readJournal("read-journal:v1|owner|").map { it.key to it.json })
                 assertEquals(emptyList<String>(), db.messageDao().byId("anchor")?.toDomain()?.readByMembershipIds)
             })
         }
     }
 
+    @Test fun unboundRefusalDoesNotStarveAnIndependentObservation() = runBlocking {
+        exerciseReadOrdering(cached = true, readFailureBody = """{"error":"Old room gateway refusal"}""",
+            readSuccessRoom = "other-room", onReady = { repo, db, tokens ->
+                tokens.save("fixture-credential")
+                fun entry(room: String, message: String, at: Long) = Wave7CacheEntity(
+                    "read-journal:v1|owner|member|$message|original.member",
+                    """{"owner":"owner","room":"$room","message":"$message","minimumReadAt":"2026-10-26T00:00:00Z","intent":"original.member"}""", at)
+                val blocked = entry("room", "anchor", 1)
+                val healthy = entry("other-room", "healthy", 2)
+                db.wave7Dao().insertReadIntent(blocked)
+                db.wave7Dao().insertReadIntent(healthy)
+                db.messageDao().upsertAll(listOf(MessageEntity.from(Message("healthy", "other-room", "peer", "Peer",
+                    Message.Kind.TEXT, "healthy", "2026-10-26T00:00:00Z"))))
+                assertEquals(1, repo.flushReadReceipts().getOrThrow())
+                val remaining = db.wave7Dao().readJournal("read-journal:v1|owner|").single()
+                assertEquals(blocked.key, remaining.key)
+                assertEquals(blocked.json, remaining.json)
+                assertTrue(remaining.updatedAt > healthy.updatedAt)
+                assertEquals(emptyList<String>(), db.messageDao().byId("anchor")?.toDomain()?.readByMembershipIds)
+                assertEquals(listOf("member"), db.messageDao().byId("healthy")?.toDomain()?.readByMembershipIds)
+            })
+    }
+
+    @Test fun incompatibleGatewayPassIsBoundedAndLeavesUntouchedRowsAtTheHead() = runBlocking {
+        exerciseReadOrdering(cached = true, readFailureBody = """{"error":"Unbound refusal"}""",
+            onReady = { repo, db, tokens ->
+                tokens.save("fixture-credential")
+                repeat(20) { index ->
+                    db.wave7Dao().insertReadIntent(Wave7CacheEntity("read-journal:v1|owner|member|m-$index|original.member",
+                        """{"owner":"owner","room":"room","message":"m-$index","minimumReadAt":"2026-10-26T00:00:00Z","intent":"original.member"}""", index.toLong()))
+                }
+                assertEquals(20, repo.flushReadReceipts().getOrThrow())
+                val pending = db.wave7Dao().readJournal("read-journal:v1|owner|")
+                assertTrue(pending.first().key.contains("|m-16|"))
+                assertEquals(20, pending.size)
+                assertTrue(pending.all { it.json.contains("original.member") })
+            })
+    }
+
     private suspend fun exerciseReadOrdering(cached: Boolean, retire: Boolean = false,
         infoFirst: Boolean = false, unchangedPage: Boolean = false,
         overlappingPages: Boolean = false, olderCommitsFirst: Boolean = false, unrelatedOnly: Boolean = false,
-        readFailureBody: String? = null,
+        readFailureBody: String? = null, readSuccessRoom: String? = null,
         onReady: (suspend (PulseRepositoryImpl, PulseDatabase, SessionTokenStore) -> Unit)? = null) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
@@ -138,6 +177,9 @@ class ReadSnapshotOrderingTest {
         val pageProof = if (unchangedPage) "[]" else "[\"old-peer\"]"
         val infoProof = if (unchangedPage) "[\"retired-peer\"]" else "[]"
         val http = HttpClient(MockEngine { request ->
+            if (readSuccessRoom != null && request.url.encodedPath == "/api/conversations/$readSuccessRoom/read-state")
+                return@MockEngine respond("""{"ok":true,"readReceiptVersion":3,"userId":"owner","conversationId":"$readSuccessRoom","messageId":"healthy","readIntent":"original.member","mode":"visible","lastReadAt":"2026-10-26T00:00:00Z"}""",
+                    HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
             if (request.url.encodedPath == "/api/conversations/room/read-state" && readFailureBody != null)
                 return@MockEngine respond(readFailureBody, HttpStatusCode.Forbidden, headersOf("Content-Type", "application/json"))
             val body = when (request.url.encodedPath) {

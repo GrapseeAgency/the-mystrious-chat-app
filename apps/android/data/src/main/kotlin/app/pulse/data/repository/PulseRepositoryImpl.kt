@@ -2930,6 +2930,7 @@ class PulseRepositoryImpl constructor(
             return@withLock
         }
         val settledRooms = linkedSetOf<String>()
+        var deferred = 0
         try {
             for (entry in wave7Dao.readJournal("read-journal:v1|$owner|")) {
                 requireConversationOwner(owner, epoch)
@@ -2949,10 +2950,17 @@ class PulseRepositoryImpl constructor(
                     if (response is PulseResult.Success) acknowledgeConfirmedRead(entry, read, epoch)
                     else wave7Dao.acknowledgeReadIntent(entry.key, entry.json)
                 } else {
-                    readReplayRetryAt = android.os.SystemClock.elapsedRealtime() + maxOf(SELF_HEAL_MS,
-                        app.pulse.domain.sync.visibleReadRetryDelay(failure, 1) ?: SELF_HEAL_MS)
+                    // Keep the failed observation, but move it behind untouched
+                    // work even across process death. Refusal is never Seen.
+                    wave7Dao.deferReadIntent(entry.key, entry.json, "read-journal:v1|$owner|")
+                    requireConversationOwner(owner, epoch)
+                    readReplayRetryAt = maxOf(readReplayRetryAt, android.os.SystemClock.elapsedRealtime() + maxOf(SELF_HEAL_MS,
+                        app.pulse.domain.sync.visibleReadRetryDelay(failure, 1) ?: SELF_HEAL_MS))
                     scheduleSelfHeal()
-                    break
+                    deferred += 1
+                    // Bound a pass against an entirely incompatible gateway.
+                    // Global/auth/rate failures stop immediately, not one request per row.
+                    if (deferred >= 16 || (response as? PulseResult.Failure)?.allowsFollowingReadObservation() != true) break
                 }
             }
         } finally {

@@ -36,6 +36,11 @@ sealed interface PulseResult<out T> {
     ) : PulseResult<Nothing> {
         fun retiresRead(owner: String, room: String, message: String, intent: String): Boolean =
             status in setOf(403, 404, 410) && readRetirement?.matches(owner, room, message, intent) == true
+        // These refusals may be specific to one observation. They do not
+        // authorize deletion, but must not poison every other room's replay.
+        fun allowsFollowingReadObservation(): Boolean =
+            kind != Kind.AUTH && kind != Kind.RATE_LIMITED && status in setOf(400, 403, 404, 409, 410, 422)
+
         enum class Kind { NETWORK, AUTH, FORBIDDEN, RATE_LIMITED, NOT_FOUND, VALIDATION, SERVER, UNKNOWN }
     }
 
