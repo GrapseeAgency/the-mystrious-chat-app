@@ -508,6 +508,10 @@ class PulseRepositoryImpl constructor(
                     is PulseSocketClient.Signal.Connection -> {
                         connectedFlow.value = signal.connected
                         if (signal.connected) {
+                            // Rejoining cannot replay missed read/unread events.
+                            // Repair projections even when both journals are empty.
+                            readStateRevisions.reconnected()
+                            scheduleConversationsRefresh()
                             // Flush trigger: the relay came back - drain the outbox first
                             // so queued sends overtake anything new.
                             scope.launch {

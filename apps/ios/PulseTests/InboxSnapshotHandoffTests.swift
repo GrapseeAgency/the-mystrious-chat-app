@@ -20,7 +20,7 @@ private final class InboxSnapshotProtocol: URLProtocol {
         XCTAssertEqual(request.url?.path, "/api/conversations", "Handoff must not need another request")
         let status = request.url?.host == "failed-badge-snapshot.test" ? 503 : 200
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
-            httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+            httpVersion: nil, headerFields: ["Content-Type": "application/json", "Retry-After": "45"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data((status == 200 ? Self.body : "{\"error\":\"offline\"}").utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -123,6 +123,20 @@ final class InboxSnapshotHandoffTests: XCTestCase {
             XCTAssertEqual(publications, 0)
             XCTAssertEqual(try store.cachedConversations().first?.unreadCount, 9)
         }
+    }
+
+    func testSessionOwnedInboxRecoveryRetainsServerRetryAfterWithoutPublishingAZero() async throws {
+        let store = try PulseStore(path: ":memory:")
+        try store.upsert(conversations: fixture(stale).map { $0.toDomain() }, replacingSnapshot: true)
+        let transport = transport()
+        defer { transport.invalidateAndCancel() }
+        var publications = 0
+        let result = await PulsePushNotifications.refreshUnreadBadgeState(using: api(transport, failed: true),
+            store: store, isCurrent: { true }, failures: 1, onSnapshot: { _ in publications += 1 })
+        XCTAssertFalse(result.complete)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(result.retryDelay), 45)
+        XCTAssertEqual(publications, 0)
+        XCTAssertEqual(try store.cachedConversations().first?.unreadCount, 9)
     }
 
     func testFailedSnapshotPersistenceDoesNotPublishAnInventedZero() async throws {

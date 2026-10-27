@@ -56,3 +56,23 @@ test('inbox GET ordering is separate from immediate mutation invalidation on bot
   assert.match(invalidation, /self.refreshRevision &\+= 1[\s\S]*?self.refresh\(\)/)
   assert.match(mirror, /inboxInvalidations\?\.cancel\(\)/)
 })
+
+test('rejoining repairs projections independently of outbox contents and Swift inbox lifetime', async () => {
+  const android = await source('apps/android/data/src/main/kotlin/app/pulse/data/repository/PulseRepositoryImpl.kt')
+  const reconnect = android.split('is PulseSocketClient.Signal.Connection ->')[1].split('is PulseSocketClient.Signal.SessionRejected')[0]
+  assert.match(reconnect, /if \(signal.connected\) \{[\s\S]*?readStateRevisions.reconnected\(\)[\s\S]*?scheduleConversationsRefresh\(\)/)
+  const session = await source('apps/ios/Pulse/Core/Support/PulseSession.swift')
+  const live = session.split('case .connectionState(let isOn):')[1].split('case .typing(')[0]
+  assert.match(live, /if isOn \{[\s\S]*?realtimeRefreshTick \+= 1\s*noteInboxChanged\(\)/)
+  assert.doesNotMatch(live, /readGate.reset\(|prepareRead|captureReadIntent/)
+  const recovery = session.split('private func reconcileMessageNotifications()')[1].split('/// Single enqueue entry point')[0]
+  assert.match(recovery, /PulsePushNotifications.refreshUnreadBadgeState\(using: client, store: store/)
+  assert.match(recovery, /self.generation == epoch && self.viewer\?\.id == client.userId/)
+  assert.match(recovery, /self.publishInboxSnapshot\(rooms, epoch: epoch\)/)
+  assert.match(recovery, /result.retryDelay/)
+  assert.match(recovery, /revision != self.notificationRefreshRevision/)
+  for (const start of ['case .messageNew(let conversationId, let raw):', 'case .messageDeleted(let room, let raw), .messageReact(let room, let raw):', 'case .conversationUpdated:']) {
+    const event = session.split(start)[1].split('\n        case ')[0]
+    assert.match(event, /noteInboxChanged\(\)/)
+  }
+})

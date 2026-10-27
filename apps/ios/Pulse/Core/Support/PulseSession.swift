@@ -1424,7 +1424,7 @@ public final class PulseSession: ObservableObject {
     }
 
     private func reconcileMessageNotifications() {
-        guard ready, isForeground else { return }
+        guard ready, isForeground, let store else { return }
         notificationRefreshRevision &+= 1
         guard notificationRefreshTask == nil else { return }
         let epoch = generation, client = api
@@ -1435,9 +1435,13 @@ public final class PulseSession: ObservableObject {
             repeat {
                 guard !Task.isCancelled, self.ready, self.isForeground, self.generation == epoch else { return }
                 let revision = self.notificationRefreshRevision
-                let result = await PulsePushNotifications.reconcileDeliveredMessages(using: client, isCurrent: {
-                    self.ready && self.isForeground && self.generation == epoch && self.viewer?.id == client.userId
-                }, failures: failures + 1)
+                let inboxRevision = self.inboxRefreshTick, liveRevision = self.realtimeRefreshTick
+                let result = await PulsePushNotifications.refreshUnreadBadgeState(using: client, store: store, isCurrent: {
+                    self.ready && self.isForeground && self.generation == epoch && self.viewer?.id == client.userId &&
+                        self.inboxRefreshTick == inboxRevision && self.realtimeRefreshTick == liveRevision
+                }, failures: failures + 1, onSnapshot: { rooms in
+                    self.publishInboxSnapshot(rooms, epoch: epoch)
+                })
                 guard !Task.isCancelled, self.ready, self.isForeground, self.generation == epoch else { return }
                 if !result.complete, let delay = result.retryDelay {
                     failures = min(failures + 1, 7)
@@ -1556,6 +1560,10 @@ public final class PulseSession: ObservableObject {
             connected = isOn
             // Flush trigger: socket connect / reconnect.
             if isOn {
+                // An accepted join is a resync trigger, not replay of missed
+                // events and not new read authority for the mounted visit.
+                realtimeRefreshTick += 1
+                noteInboxChanged()
                 readFailureCount = 0
                 readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
                 scheduleVisibleRead(after: PulseReadReceiptGate.dwell)
@@ -1576,14 +1584,17 @@ public final class PulseSession: ObservableObject {
             registerTyping(conversationId: conversationId, userId: userId, userName: userName, isTyping: isTyping)
         case .messageNew(let conversationId, let raw):
             cacheMessage(from: raw, conversationId: conversationId)
+            noteInboxChanged()
             noteIncomingAttention(conversationId: conversationId, raw: raw)
         case .messageDeleted(let room, let raw), .messageReact(let room, let raw):
             cacheMessage(from: raw, conversationId: room)
+            noteInboxChanged()
         case .messageEnvelope(_, let room, let raw):
             cacheMessage(from: raw, conversationId: room)
             // message:edited/pinned/viewed, poll:voted, link:preview,
             // translation:added - live surfaces re-fetch on this tick.
             realtimeRefreshTick += 1
+            noteInboxChanged()
         case .messageRead(let room, _, _, let ids, let membership, _):
             if let membership, !membership.isEmpty {
                 for id in Set(ids) {
@@ -1594,10 +1605,11 @@ public final class PulseSession: ObservableObject {
                 }
             }
             // Includes the viewer's other devices, even with receipt privacy on.
-            noteInboxChanged()
             realtimeRefreshTick += 1
+            noteInboxChanged()
         case .conversationUpdated:
             realtimeRefreshTick += 1
+            noteInboxChanged()
         case .callSignal(let event, let raw):
             // W3-b - offer/answer/ice/reject/cancel/hangup → the call engine
             // (machine + WebRTC + single-writer log). Also relayed to feature

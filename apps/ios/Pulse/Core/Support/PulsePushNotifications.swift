@@ -55,23 +55,35 @@ public enum PulsePushNotifications {
     @MainActor
     static func refreshUnreadBadge(using client: PulseAPIClient, store: PulseStore, isCurrent: () -> Bool,
                                    onSnapshot: ([WireConversationSummary]) -> Void = { _ in }) async -> Bool {
+        await refreshUnreadBadgeState(using: client, store: store, isCurrent: isCurrent, onSnapshot: onSnapshot).complete
+    }
+
+    /// Live reconciliation retains retry/backoff information; OS-granted cold
+    /// work uses the Boolean adapter above. Neither path depends on a mounted inbox.
+    @MainActor
+    static func refreshUnreadBadgeState(using client: PulseAPIClient, store: PulseStore, isCurrent: () -> Bool,
+                                        failures: Int = 1,
+                                        onSnapshot: ([WireConversationSummary]) -> Void = { _ in }) async -> PulseMessageAlertReconciliation {
+        let incomplete = PulseMessageAlertReconciliation(complete: false, retryDelay: nil)
         do {
-            guard !Task.isCancelled, isCurrent() else { return false }
+            guard !Task.isCancelled, isCurrent() else { return incomplete }
             let ticket = snapshotFence.reserve()
             let rooms = try await client.conversations()
-            guard !Task.isCancelled, isCurrent(), snapshotFence.owns(ticket) else { return false }
+            guard !Task.isCancelled, isCurrent(), snapshotFence.owns(ticket) else { return incomplete }
             try store.upsert(conversations: rooms.map { $0.toDomain() }, replacingSnapshot: true)
             let count = rooms.filter { !$0.isArchived && $0.isSelf != true }
                 .reduce(0) { $0 + $1.removingExpiredSummary().badgeUnreadCount }
             setUnreadBadge(count)
-            // The live inbox must adopt this already-confirmed snapshot even
-            // when a second fetch or delivered-alert reconciliation fails.
+            // Publish confirmed inbox truth even if later alert proofs fail.
             onSnapshot(rooms)
             await badgeTask?.value
-            let alerts = await reconcileDeliveredMessages(using: client, isCurrent: isCurrent)
+            let alerts = await reconcileDeliveredMessages(using: client, isCurrent: isCurrent, failures: failures)
             // Badge permission is optional. Failed server/proof refreshes are not.
-            return !Task.isCancelled && isCurrent() && alerts.complete
-        } catch { return false }
+            return !Task.isCancelled && isCurrent() ? alerts : incomplete
+        } catch {
+            return PulseMessageAlertReconciliation(complete: false,
+                retryDelay: PulseVisibleReadRetry.delay(after: error, failures: failures))
+        }
     }
 
     @MainActor
