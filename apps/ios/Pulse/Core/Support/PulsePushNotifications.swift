@@ -53,7 +53,8 @@ public enum PulsePushNotifications {
     }
 
     @MainActor
-    static func refreshUnreadBadge(using client: PulseAPIClient, store: PulseStore, isCurrent: () -> Bool) async -> Bool {
+    static func refreshUnreadBadge(using client: PulseAPIClient, store: PulseStore, isCurrent: () -> Bool,
+                                   onSnapshot: ([WireConversationSummary]) -> Void = { _ in }) async -> Bool {
         do {
             guard !Task.isCancelled, isCurrent() else { return false }
             let ticket = snapshotFence.reserve()
@@ -63,6 +64,9 @@ public enum PulsePushNotifications {
             let count = rooms.filter { !$0.isArchived && $0.isSelf != true }
                 .reduce(0) { $0 + $1.removingExpiredSummary().badgeUnreadCount }
             setUnreadBadge(count)
+            // The live inbox must adopt this already-confirmed snapshot even
+            // when a second fetch or delivered-alert reconciliation fails.
+            onSnapshot(rooms)
             await badgeTask?.value
             let alerts = await reconcileDeliveredMessages(using: client, isCurrent: isCurrent)
             // Badge permission is optional. Failed server/proof refreshes are not.

@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import PhotosUI
 import UniformTypeIdentifiers
 import CoreLocation
@@ -124,6 +125,7 @@ final class MirrorViewModel: ObservableObject {
     private var refreshRevision: UInt64 = 0
     private var inboxRequestID: UUID?
     private var inboxRefreshQueued = false
+    private var inboxSnapshots: AnyCancellable?
     private var client: PulseAPIClient?
 
 
@@ -181,6 +183,11 @@ final class MirrorViewModel: ObservableObject {
         if client?.userId != session.api.userId || client?.baseURL != session.api.baseURL { profile = nil; stats = nil; coins = nil }
         client = session.api
         store = session.store
+        let inboxEpoch = session.sessionGeneration, viewerId = session.api.userId
+        inboxSnapshots = session.inboxSnapshots.sink { [weak self, weak session] rooms in
+            guard let session, session.sessionGeneration == inboxEpoch else { return }
+            self?.acceptCanonicalInbox(rooms, viewerId: viewerId)
+        }
         inbox = ((try? store?.cachedConversations()) ?? []).map { WireConversationSummary(cached: $0) }
         projectInbox()
         expiryTimer?.invalidate()
@@ -198,21 +205,28 @@ final class MirrorViewModel: ObservableObject {
     }
 
     func stop() {
+        inboxSnapshots?.cancel(); inboxSnapshots = nil
         timer?.invalidate(); timer = nil
         expiryTimer?.invalidate(); expiryTimer = nil
         refreshRevision &+= 1
         inboxRequestID = nil; inboxRefreshQueued = false
     }
 
-    private func projectInbox() {
-        guard let client else { return }
+    func acceptCanonicalInbox(_ rooms: [WireConversationSummary], viewerId: String) {
+        refreshRevision &+= 1 // a pre-snapshot poll cannot restore stale counts
+        inbox = rooms
+        projectInbox(viewerId: viewerId)
+    }
+
+    private func projectInbox(viewerId: String? = nil) {
+        guard let viewerId = viewerId ?? client?.userId else { return }
         inbox = inbox.map { $0.removingExpiredSummary() }
-        let built = inbox.filter { $0.isSelf != true }.map { Self.buildRow(summary: $0, viewerId: client.userId) }
+        let built = inbox.filter { $0.isSelf != true }.map { Self.buildRow(summary: $0, viewerId: viewerId) }
         let active = built.filter { !$0.isArchived }, archived = built.filter { $0.isArchived }
         let changed = rows != active || archivedRows != archived
         if rows != active { rows = active }
         if archivedRows != archived { archivedRows = archived }
-        if let session = badgeSession, session.viewer?.id == client.userId, session.api.baseURL == client.baseURL,
+        if let client, let session = badgeSession, session.viewer?.id == client.userId, session.api.baseURL == client.baseURL,
            (changed || session.dockUnreadCount != totalUnread) { session.dockUnreadCount = totalUnread }
     }
 

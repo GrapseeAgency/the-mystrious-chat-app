@@ -1,6 +1,6 @@
 # Seen / unread / read-ordering workstream
 
-## Current candidate — exact observations (2026-10-27)
+## Current candidate — exact observations (2026-10-28)
 
 This section supersedes the timestamp-only limitations in the historical notes below.
 It records implemented runtime paths, **not a physical-device acceptance certificate**.
@@ -16,9 +16,11 @@ Autumn styling and sign-in/recovery scope are unchanged. No merge or deployment 
 | 6. Cross-device order | Serializable explicit intent conflicts; exact monotonic progress; compare-and-delete journal ACKs; socket/cache mutation fences and topic request ownership. | Paired-device acceptance, including response loss. |
 | 7. New-member history | Messages already present at membership creation, including equal-time identities, are exempt without becoming Seen. Later equal-time arrivals remain unread. Membership removal cascades proof. | Product/device acceptance of documented history policy. |
 | 8. Obscuring surfaces | Existing lifecycle/lock/modal gates plus missing call/ring/permission/share/invite gates on Android; central call/live-room/lock gates on Swift; measured mirror viewport replaces lazy onAppear; explicit photo/document picker visibility. | OS interruptions, sheet nesting, accessibility, PiP, and rendered geometry. |
-| 9. Convergence | One exact unread aggregate backs inbox counts, expiration schedules and first-unread identity; channel badges use it too. Read events update exact cached Seen and invalidate authoritative inbox/topic state, including the reader's other devices with privacy enabled. | Room/inbox/launcher badges across two devices. |
+| 9. Convergence | One exact unread aggregate backs inbox counts, expiration schedules and first-unread identity; channel badges use it too. Read events update exact cached Seen and invalidate authoritative inbox/topic state, including the reader's other devices with privacy enabled. Confirmed background snapshots now feed both Swift inbox models and the dock without another fetch. | Room/inbox/launcher badges across two devices. |
 
 ### Durability follow-up
+
+- **Confirmed background inbox handoff (2026-10-28):** a successful Swift background badge fetch used to update GRDB and the icon while the loaded primary inbox ignored cache emissions and the Mirror inbox kept its own previous array. If the next list fetch failed, the UI could remain stale. The live engine now synchronously publishes its persisted, owner-fenced full snapshot to both models and the session dock. Each model retires older pending list responses before adopting it; no second fetch or optimistic count is needed. Publication happens before delivered-alert reconciliation, so a later alert-query failure does not hide already-confirmed inbox truth. Cold engines retain the existing persisted-cache startup path. Android already observes canonical Room changes; that wiring is regression-checked rather than rewritten. New Swift tests exercise real API decoding/GRDB persistence, both loaded models, manual/archive/self totals, empty snapshots, stale owner and HTTP/disk failure; native SDK execution is pending. Full local backend/source regression suite: 463 passing; Swift syntax parsing passes. No change to autumn styling or read authority.
 
 - **Proof provenance consistency (2026-10-28):** exact Info and full message serialization now accept only `visible`/`all` observations as Seen. The real serializer also checks that each proof membership belongs to the message's room. Unknown source strings are not treated as read progress or notification exemptions; `legacy` remains an intentional non-Seen unread exemption. A deliberate mark-all can upgrade legacy/unknown entries with a real observation time. This makes malformed/future records fail closed instead of relying on a single `source != legacy` exclusion. Real-serializer history tests now include legacy, unknown and foreign-room evidence; SQLite/Prisma scope/Info/notification tests cover unknown evidence before and after an explicit action. Full local backend suite: 461 passing. No migration was run and no physical acceptance is implied.
 

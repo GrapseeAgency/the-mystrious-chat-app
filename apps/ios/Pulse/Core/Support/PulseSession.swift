@@ -249,6 +249,17 @@ public final class PulseSession: ObservableObject {
 
     /// Raw relay signals for feature view models.
     public let signals = PassthroughSubject<PulseSocketClient.Signal, Never>()
+    /// Full, persisted canonical inbox snapshots, not push-supplied counts.
+    /// Synchronous delivery retires pre-snapshot requests before they can land.
+    let inboxSnapshots = PassthroughSubject<[WireConversationSummary], Never>()
+
+    func publishInboxSnapshot(_ rooms: [WireConversationSummary], epoch: UUID) {
+        guard generation == epoch else { return }
+        dockUnreadCount = rooms.filter { !$0.isArchived && $0.isSelf != true }
+            .reduce(0) { $0 + $1.removingExpiredSummary().badgeUnreadCount }
+        inboxSnapshots.send(rooms)
+    }
+
     /// Outbox deliver/drop events (queued-bubble swap in the open room).
     public let outboxEvents = PassthroughSubject<PulseOutboxEvent, Never>()
 
@@ -1287,6 +1298,8 @@ public final class PulseSession: ObservableObject {
             let epoch = self.generation, inboxRevision = self.inboxRefreshTick, liveRevision = self.realtimeRefreshTick
             return await PulsePushNotifications.refreshUnreadBadge(using: self.api, store: store, isCurrent: {
                 self.generation == epoch && self.inboxRefreshTick == inboxRevision && self.realtimeRefreshTick == liveRevision
+            }, onSnapshot: { rooms in
+                self.publishInboxSnapshot(rooms, epoch: epoch)
             })
         }
         engine.onEvent = { [weak self] event in

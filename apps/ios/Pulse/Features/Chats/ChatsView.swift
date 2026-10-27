@@ -3000,6 +3000,13 @@ final class ChatsViewModel: ObservableObject {
     private func observe(session: PulseSession) {
         guard !observing else { return }
         observing = true
+        let inboxEpoch = session.sessionGeneration
+        session.inboxSnapshots
+            .sink { [weak self, weak session] rooms in
+                guard let session, session.sessionGeneration == inboxEpoch else { return }
+                self?.acceptCanonicalInbox(rooms, session: session)
+            }
+            .store(in: &cancellables)
         session.signals
             .filter { signal in
                 switch signal {
@@ -3035,6 +3042,18 @@ final class ChatsViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    /// A background badge fetch already obtained and persisted canonical truth.
+    /// Do not wait for another network request to replace a loaded inbox.
+    func acceptCanonicalInbox(_ fresh: [WireConversationSummary], session: PulseSession) {
+        refreshGeneration &+= 1
+        hasLoadedSummary = true
+        summaries = fresh.map { $0.removingExpiredSummary() }
+        confirmedSelf = nil
+        cachedRows = []
+        phase = .loaded
+        session.dockUnreadCount = unreadTotal
+    }
+
     // ── refresh ──────────────────────────────────────────────
 
     func refresh(session: PulseSession, force: Bool = false) async {
@@ -3045,13 +3064,8 @@ final class ChatsViewModel: ObservableObject {
         do {
             let fresh = try await session.api.conversations()
             guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
-            hasLoadedSummary = true
-            summaries = fresh.map { $0.removingExpiredSummary() }
-            confirmedSelf = nil
-            cachedRows = []
-            phase = .loaded
+            acceptCanonicalInbox(fresh, session: session)
             entranceOn = false
-            session.dockUnreadCount = unreadTotal
             try? store?.upsert(conversations: fresh.map { $0.toDomain() }, replacingSnapshot: true)
         } catch {
             guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
@@ -3070,12 +3084,7 @@ final class ChatsViewModel: ObservableObject {
         do {
             let fresh = try await session.api.conversations()
             guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
-            hasLoadedSummary = true
-            summaries = fresh.map { $0.removingExpiredSummary() }
-            confirmedSelf = nil
-            cachedRows = []
-            phase = .loaded
-            session.dockUnreadCount = unreadTotal
+            acceptCanonicalInbox(fresh, session: session)
             try? store?.upsert(conversations: fresh.map { $0.toDomain() }, replacingSnapshot: true)
         } catch {
             guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
