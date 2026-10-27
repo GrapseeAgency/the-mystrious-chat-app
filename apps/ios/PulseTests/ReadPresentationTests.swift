@@ -7,7 +7,12 @@ final class ReadPresentationTests: XCTestCase {
     @MainActor
     private final class Controller: UIViewController {
         var panel: UIViewController?
+        var entering = false, leaving = false, attaching = false, detaching = false
         override var presentedViewController: UIViewController? { panel }
+        override var isBeingPresented: Bool { entering }
+        override var isBeingDismissed: Bool { leaving }
+        override var isMovingToParent: Bool { attaching }
+        override var isMovingFromParent: Bool { detaching }
     }
 
     @MainActor
@@ -155,6 +160,32 @@ final class ReadPresentationTests: XCTestCase {
         // already close the gate, not briefly grant reading while it loads.
         XCTAssertTrue(PulseReadPresentation.hasPresentationAbove(anchor))
         reader.panel = nil
+        XCTAssertFalse(PulseReadPresentation.hasPresentationAbove(anchor))
+    }
+
+    @MainActor
+    func testLifecycleTransitionsBlockEvenWithoutCoordinatorOrCoverPanel() {
+        let container = Controller(), reader = Controller()
+        container.addChild(reader)
+        container.view.addSubview(reader.view)
+        reader.didMove(toParent: container)
+        let anchor = UIView()
+        reader.view.addSubview(anchor)
+        XCTAssertNil(reader.transitionCoordinator)
+        XCTAssertNil(container.transitionCoordinator)
+        XCTAssertFalse(PulseReadPresentation.hasPresentationAbove(anchor))
+        reader.entering = true
+        XCTAssertTrue(PulseReadPresentation.hasPresentationAbove(anchor))
+        reader.entering = false
+        reader.leaving = true
+        XCTAssertTrue(PulseReadPresentation.hasPresentationAbove(anchor))
+        reader.leaving = false
+        container.attaching = true
+        XCTAssertTrue(PulseReadPresentation.hasPresentationAbove(anchor))
+        container.attaching = false
+        container.detaching = true
+        XCTAssertTrue(PulseReadPresentation.hasPresentationAbove(anchor))
+        container.detaching = false
         XCTAssertFalse(PulseReadPresentation.hasPresentationAbove(anchor))
     }
 

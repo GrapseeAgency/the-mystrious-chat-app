@@ -21,7 +21,7 @@ enum PulseReadPresentation {
             let presented = current.presentedViewController.map {
                 "\(String(reflecting: type(of: $0))), containsAnchor=\($0.viewIfLoaded.map { view.isDescendant(of: $0) } ?? false)"
             } ?? "none"
-            rows.append("\(String(reflecting: type(of: current))) [\(ObjectIdentifier(current))]: presenting=\(current.isBeingPresented), dismissing=\(current.isBeingDismissed), transition=[\(transition)], presented=[\(presented)]")
+            rows.append("\(String(reflecting: type(of: current))) [\(ObjectIdentifier(current))]: presenting=\(current.isBeingPresented), dismissing=\(current.isBeingDismissed), attaching=\(current.isMovingToParent), detaching=\(current.isMovingFromParent), transition=[\(transition)], presented=[\(presented)]")
             controller = current.parent
         }
         return rows.isEmpty ? "no reading controller in responder chain" : rows.joined(separator: " -> ")
@@ -34,6 +34,10 @@ enum PulseReadPresentation {
         while true {
             // Keep transitions covered too, including the interval where UIKit
             // clears presentedViewController before the dismissal has finished.
+            // The controller lifecycle is also authoritative when there is no
+            // coordinator (including non-animated containment/navigation).
+            if controller.isBeingPresented || controller.isBeingDismissed ||
+                controller.isMovingToParent || controller.isMovingFromParent { return true }
             if controller.transitionCoordinator != nil { return true }
             if let presented = controller.presentedViewController,
                presented.viewIfLoaded.map({ !view.isDescendant(of: $0) }) ?? true { return true }
