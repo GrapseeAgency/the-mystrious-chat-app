@@ -17,11 +17,13 @@ async function load(file, bindings, expression) {
 
 test('every history window retains the authenticated reader own private proof without disclosing another reader', async () => {
   const at = new Date('2026-10-26T00:00:00Z')
-  const proof = (id, visible = false) => ({ participant: { id: `${id}-membership`, userId: id,
+  const proof = (id, visible = false, source = 'visible', room = 'room') => ({ source,
+    participant: { id: `${id}-membership`, userId: id, conversationId: room,
     user: { preferences: JSON.stringify({ readReceipts: visible }) } } })
   const row = { id: 'message', conversationId: 'room', senderId: 'peer', sender: { id: 'peer', name: 'Peer', color: 'amber' },
     content: 'Hello', createdAt: at, deletedAt: null, reactions: [], translations: [], linkPreview: null,
-    readObservations: [proof('reader'), proof('private-peer'), proof('public-peer', true)],
+    readObservations: [proof('reader'), proof('private-peer'), proof('public-peer', true),
+      proof('legacy', true, 'legacy'), proof('unknown', true, 'unknown'), proof('foreign', true, 'visible', 'other-room')],
     poll: { id: 'poll', question: 'Ready?', closedAt: null,
       options: [{ id: 'option', text: 'Yes', position: 0, votes: [{ userId: 'reader' }] }] } }
   const db = { conversationParticipant: { findUnique: async () => ({ id: 'reader-membership' }) },

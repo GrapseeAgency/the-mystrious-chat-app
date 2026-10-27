@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { unreadSnapshot, threadRootAvailable, notificationMessageUnread, exactMessageReadState } from '../../src/lib/message-visibility.ts'
-import { ReadReceiptError } from '../../src/lib/read-receipt.ts'
+import { ReadReceiptError, captureReadIntent, advanceReadReceipt } from '../../src/lib/read-receipt.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 
 async function fixture(run) {
@@ -156,4 +156,22 @@ test('exact Info proof checks authentication, membership, message ownership and 
   assert.equal((await (await proof('b')).json()).messageAvailable,false)
   await db.conversationParticipant.deleteMany({ where: { id: 'membership' } })
   assert.equal((await (await proof('root-b')).json()).messageAvailable,false)
+}))
+
+
+test('unknown observation sources are neither Seen nor unread exemptions; deliberate mark-all supplies real evidence', () => fixture(async (db, request, _, proof) => {
+  await db.$executeRawUnsafe("UPDATE MessageReadObservation SET source='unknown', observedAt=1 WHERE participantId='membership' AND messageId='a'")
+  assert.equal((await (await request('&threadId=root-a')).json()).unreadCount, 1)
+  assert.equal((await (await request('&messageId=a')).json()).messageUnread, true)
+  assert.deepEqual((await (await proof('a')).json()).readByMembershipIds, [])
+  const intent = await captureReadIntent(db, 'room', 'reader')
+  await advanceReadReceipt(db, 'room', 'reader', undefined, intent.readIntent)
+  assert.equal((await (await request('&threadId=root-a')).json()).unreadCount, 0)
+  assert.equal((await (await request('&messageId=a')).json()).messageUnread, false)
+  assert.deepEqual((await (await proof('a')).json()).readByMembershipIds, ['membership'])
+  const upgraded = await db.messageReadObservation.findUnique({ where: {
+    participantId_messageId: { participantId: 'membership', messageId: 'a' },
+  } })
+  assert.equal(upgraded.source, 'all')
+  assert.ok(upgraded.observedAt.getTime() > 1)
 }))

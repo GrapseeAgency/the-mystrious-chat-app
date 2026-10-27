@@ -78,7 +78,8 @@ export async function unreadSnapshot(
       JOIN ConversationParticipant member ON member.conversationId = m.conversationId AND member.userId = ${viewer}
       WHERE m.conversationId = ${room} AND (m.senderId <> ${viewer} OR m.viaAutomation = 1)
         AND m.deletedAt IS NULL AND m.createdAt >= member.joinedAt
-        AND NOT EXISTS (SELECT 1 FROM MessageReadObservation r WHERE r.participantId = member.id AND r.messageId = m.id)
+        AND NOT EXISTS (SELECT 1 FROM MessageReadObservation r WHERE r.participantId = member.id AND r.messageId = m.id
+          AND r.source IN ('visible', 'all', 'legacy'))
         AND (${scope?.threadId ?? null} IS NULL OR m.parentId = ${scope?.threadId ?? null})
         AND (${scope?.topicId ?? null} IS NULL OR COALESCE(m.topicId, p.topicId) = ${scope?.topicId ?? null})
         AND (m.expiresAt IS NULL OR m.expiresAt > ${at})
@@ -178,7 +179,7 @@ export async function notificationMessageUnread(
 ): Promise<boolean> {
   return !!await db.message.findFirst({ where: {
     id: messageId, deletedAt: null, createdAt: { gte: membership.joinedAt },
-    readObservations: { none: { participantId: membership.id } },
+    readObservations: { none: { participantId: membership.id, source: { in: ['visible', 'all', 'legacy'] } } },
     AND: [inboxMessagesWhere(room, at), { OR: [{ senderId: { not: viewer } }, { viaAutomation: true }] }],
   }, select: { id: true } })
 }
@@ -192,7 +193,7 @@ export async function exactMessageReadState(
   const message = await db.message.findFirst({ where: {
     id: messageId, deletedAt: null, AND: [inboxMessagesWhere(room, at)],
   }, select: { readObservations: {
-    where: { source: { not: 'legacy' }, participant: { conversationId: room } },
+    where: { source: { in: ['visible', 'all'] }, participant: { conversationId: room } },
     select: { participant: { select: { id: true, userId: true, user: { select: { preferences: true } } } } },
   } } })
   if (!message) return null

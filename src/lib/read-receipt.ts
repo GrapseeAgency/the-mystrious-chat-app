@@ -84,8 +84,11 @@ export async function advanceReadReceipt(db: PrismaClient, room: string, owner: 
             AND (m.expiresAt IS NULL OR m.expiresAt > ${now})
             AND (m.parentId IS NULL OR (p.conversationId = m.conversationId AND p.parentId IS NULL
               AND p.deletedAt IS NULL AND (p.expiresAt IS NULL OR p.expiresAt > ${now})))
-          ON CONFLICT(participantId, messageId) DO UPDATE SET source = CASE
-            WHEN MessageReadObservation.source = 'legacy' THEN 'all' ELSE MessageReadObservation.source END
+          ON CONFLICT(participantId, messageId) DO UPDATE SET
+            observedAt = CASE WHEN MessageReadObservation.source IN ('visible', 'all')
+              THEN MessageReadObservation.observedAt ELSE excluded.observedAt END,
+            source = CASE WHEN MessageReadObservation.source IN ('visible', 'all')
+              THEN MessageReadObservation.source ELSE 'all' END
         `
       }
       const boundary = message?.createdAt ?? participant.lastReadAt

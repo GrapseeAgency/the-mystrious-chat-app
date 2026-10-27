@@ -198,8 +198,9 @@ export function groupReactions(reactions: ReactionRow[]): MessageReactionGroup[]
 
 /** Deep include reused by every message fetch (history, last-message, single). */
 export const MESSAGE_FULL_INCLUDE = {
-  readObservations: { where: { source: { not: 'legacy' } }, select: {
-    participant: { select: { id: true, userId: true, user: { select: { preferences: true } } } },
+  readObservations: { where: { source: { in: ['visible', 'all'] } }, select: {
+    source: true,
+    participant: { select: { id: true, userId: true, conversationId: true, user: { select: { preferences: true } } } },
   } },
   sender: true,
   reactions: { select: { emoji: true, userId: true } },
@@ -256,7 +257,8 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
 
   return redactDeletedMessage({
     readByMembershipIds: (message.readObservations ?? []).filter(r =>
-      r.participant.userId === viewerId || privacyPreferenceEnabled(r.participant.user.preferences, 'readReceipts')
+      (r.source === 'visible' || r.source === 'all') && r.participant.conversationId === message.conversationId &&
+      (r.participant.userId === viewerId || privacyPreferenceEnabled(r.participant.user.preferences, 'readReceipts'))
     ).map(r => r.participant.id),
     id: message.id,
     conversationId: message.conversationId,
