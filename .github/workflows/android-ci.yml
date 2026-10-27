@@ -134,6 +134,8 @@ jobs:
 
       - name: Instrumented failure details
         if: failure()
+        env:
+          PULSE_INSTRUMENTED_OUTCOME: ${{ steps.instrumented_tests.outcome }}
         run: python3 ../../scripts/ci/native-test-diagnostics.py
 
       - name: RELEASE smoke - boot the signed artifact, walk onboarding, drive all nav paths

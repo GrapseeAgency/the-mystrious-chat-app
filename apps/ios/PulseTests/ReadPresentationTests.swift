@@ -47,13 +47,15 @@ final class ReadPresentationTests: XCTestCase {
         XCTAssertFalse(session.nativePresentationBlockedNow, "The real SwiftUI background must resolve to its reading controller")
 
         let owner = try XCTUnwrap(session.beginReadSurface(conversationId: "room", rootId: "root"))
-        let threadReady = expectation(description: "thread SwiftUI content appeared")
+        let threadReady = expectation(description: "thread presentation completed")
         let thread = AppearingHost(rootView: Text("Thread reader")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PulseReadPresentationAnchor(session: session, owner: owner.id)))
-        thread.didAppear = { threadReady.fulfill() }
         thread.modalPresentationStyle = .pageSheet
-        primary.present(thread, animated: false)
+        // A secondary hosting window can attach the sheet without delivering a
+        // second hosting-controller appearance callback. Synchronize on UIKit's
+        // presentation completion, then assert the real window and anchor below.
+        primary.present(thread, animated: false) { threadReady.fulfill() }
         await fulfillment(of: [threadReady], timeout: 5)
         XCTAssertTrue(primary.presentedViewController === thread)
         XCTAssertTrue(thread.view.window === window)
