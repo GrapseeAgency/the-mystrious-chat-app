@@ -70,6 +70,7 @@ apps/android/app/release/
 
 # iOS / macOS
 apps/ios/Pulse.xcodeproj/
+apps/ios/.generated/
 apps/ios/DerivedData/
 apps/ios/build/
 *.xcuserstate
