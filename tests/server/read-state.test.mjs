@@ -120,7 +120,7 @@ test('alternate Swift mark-all invalidates canonical scopes even without a socke
   assert.ok(options.includes('perform(readAll: true) { try await $0.markRead(conversationId: row.id) }'))
   const settlement = options.slice(options.indexOf('defer {'), options.indexOf('try await work(client)'))
   assert.ok(settlement.includes('session.sessionGeneration == epoch'))
-  assert.ok(settlement.includes('session.noteReadAllChanged(row.id)'))
+  assert.ok(settlement.includes('session.reconcileReadAction(row.id, all: readAll, epoch: epoch)'))
 })
 
 

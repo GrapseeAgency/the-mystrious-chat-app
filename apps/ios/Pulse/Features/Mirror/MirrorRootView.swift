@@ -775,8 +775,7 @@ struct MirrorRowOptions: View {
                 if session.sessionGeneration == epoch {
                     // Includes an uncertain/lost response: fetch truth, never
                     // mark local rows read or depend on a socket echo.
-                    if readAll { session.noteReadAllChanged(row.id) }
-                    else { session.noteInboxChanged() }
+                    session.reconcileReadAction(row.id, all: readAll, epoch: epoch)
                 }
             }
             do {

@@ -145,10 +145,24 @@ class ReadSnapshotOrderingTest {
             })
     }
 
+    @Test fun lostMarkAllAcknowledgementInvalidatesCanonicalScopesWithoutInventingProof() = runBlocking {
+        val requests = mutableListOf<String>()
+        exerciseReadOrdering(cached = true, lostReadAck = true, readRequests = requests,
+            onReady = { repo, db, tokens ->
+                tokens.save("fixture-credential")
+                val before = repo.observeReadStateRevision("room").first()
+                assertTrue(repo.markRead("room").isFailure)
+                assertTrue(repo.observeReadStateRevision("room").first() > before)
+                assertEquals(emptyList<String>(), db.messageDao().byId("anchor")?.toDomain()?.readByMembershipIds)
+                assertEquals(listOf("read-intent", "read-state"), requests)
+            })
+    }
+
     private suspend fun exerciseReadOrdering(cached: Boolean, retire: Boolean = false,
         infoFirst: Boolean = false, unchangedPage: Boolean = false,
         overlappingPages: Boolean = false, olderCommitsFirst: Boolean = false, unrelatedOnly: Boolean = false,
         readFailureBody: String? = null, readSuccessRoom: String? = null,
+        lostReadAck: Boolean = false, readRequests: MutableList<String>? = null,
         onReady: (suspend (PulseRepositoryImpl, PulseDatabase, SessionTokenStore) -> Unit)? = null) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
@@ -177,6 +191,16 @@ class ReadSnapshotOrderingTest {
         val pageProof = if (unchangedPage) "[]" else "[\"old-peer\"]"
         val infoProof = if (unchangedPage) "[\"retired-peer\"]" else "[]"
         val http = HttpClient(MockEngine { request ->
+            if (lostReadAck && request.url.encodedPath == "/api/conversations/room/read-intent") {
+                readRequests?.add("read-intent")
+                return@MockEngine respond("""{"readIntentVersion":2,"userId":"owner","conversationId":"room","readIntent":"original.member"}""",
+                    HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+            }
+            if (lostReadAck && request.url.encodedPath == "/api/conversations/room/read-state") {
+                readRequests?.add("read-state")
+                return@MockEngine respond("""{"error":"Response lost after possible commit"}""",
+                    HttpStatusCode.InternalServerError, headersOf("Content-Type", "application/json"))
+            }
             if (readSuccessRoom != null && request.url.encodedPath == "/api/conversations/$readSuccessRoom/read-state")
                 return@MockEngine respond("""{"ok":true,"readReceiptVersion":3,"userId":"owner","conversationId":"$readSuccessRoom","messageId":"healthy","readIntent":"original.member","mode":"visible","lastReadAt":"2026-10-26T00:00:00Z"}""",
                     HttpStatusCode.OK, headersOf("Content-Type", "application/json"))

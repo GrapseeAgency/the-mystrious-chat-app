@@ -2330,11 +2330,13 @@ private struct ChatActionSheet: View {
         let client = session.api, epoch = session.sessionGeneration
         PulseHaptics.tap()
         dismiss()
+        defer {
+            session.reconcileReadAction(conversation.id, all: true, epoch: epoch)
+            if !Task.isCancelled, session.sessionGeneration == epoch { onChanged() }
+        }
         do {
             try await client.markRead(conversationId: conversation.id)
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-            session.noteReadAllChanged(conversation.id)
-            onChanged() // current counts, never an invented local zero
         } catch {
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show("Could not confirm marking this chat read")
@@ -2345,9 +2347,12 @@ private struct ChatActionSheet: View {
         let client = session.api, epoch = session.sessionGeneration
         PulseHaptics.tap()
         dismiss()
+        defer {
+            session.reconcileReadAction(conversation.id, all: false, epoch: epoch)
+            if !Task.isCancelled, session.sessionGeneration == epoch { onChanged() }
+        }
         do {
             try await client.markUnread(conversationId: conversation.id, on: !conversation.manualUnread)
-            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; onChanged() }
         } catch {
             await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not update the unread flag") }
         }
@@ -3377,6 +3382,7 @@ final class ChatsViewModel: ObservableObject {
             return
         }
         launchConversationAction(ticket, session: session) { [self] in
+            defer { session.reconcileReadAction(conv.id, all: false, epoch: epoch) }
             let next = !conv.manualUnread
             do {
                 try await client.markUnread(conversationId: conv.id, on: next)
@@ -3478,11 +3484,12 @@ final class ChatsViewModel: ObservableObject {
             var failed = 0
             for conv in convs {
                 guard !Task.isCancelled, session.sessionGeneration == epoch, isConversationActionCurrent(ticket) else { return }
+                // Reconcile each attempted room, including a lost ACK/cancellation.
+                defer { session.reconcileReadAction(conv.id, all: true, epoch: epoch) }
                 // Explicit mark-all; acceptance must not erase arrivals during the request.
                 if (try? await client.markRead(conversationId: conv.id)) != nil {
                     guard !Task.isCancelled, session.sessionGeneration == epoch, isConversationActionCurrent(ticket) else { return }
                     acknowledgeBatchSelection([conv.id], epoch: selectionTicket)
-                    session.noteReadAllChanged(conv.id) // reload canonical scopes; never zero newer arrivals
                     read += 1
                 } else {
                     failed += 1

@@ -3015,17 +3015,18 @@ class PulseRepositoryImpl constructor(
                     is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
                 }
             } finally {
-                if (viewerId == owner && attachmentSession == epoch) conversationSnapshots.invalidate(conversationId)
+                if (viewerId == owner && attachmentSession == epoch) {
+                    // A lost response can follow a committed frozen-ID mark-all.
+                    // Refresh truth on either outcome; never invent a local zero
+                    // or automatically prepare/retry a newer user intent.
+                    noteReadStateChanged(conversationId)
+                    scope.launch {
+                        requireConversationOwner(owner, epoch)
+                        refreshMessages(conversationId, limit = 200)
+                    }
+                }
             }
             requireConversationOwner(owner, epoch)
-            // Do not zero newer arrivals or roll an entire stale conversation back
-            // over messages/pins received while the read request was in flight.
-            if (result.isSuccess && viewerId == owner) {
-                noteReadStateChanged(conversationId)
-                // Explicit-all has a frozen server set, not every local row.
-                // Reconcile the retained range just as an all-read socket echo does.
-                scope.launch { refreshMessages(conversationId, limit = 200) }
-            }
             result
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
             Result.failure(error)

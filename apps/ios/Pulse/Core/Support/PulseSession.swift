@@ -154,6 +154,13 @@ public final class PulseSession: ObservableObject {
         noteInboxChanged()
     }
 
+    /// Settlement is not success: a cancelled/lost reply may follow a commit.
+    /// Only the originating session can invalidate its canonical projections.
+    func reconcileReadAction(_ room: String, all: Bool, epoch: UUID) {
+        guard generation == epoch else { return }
+        if all { noteReadAllChanged(room) } else { noteReadStateChanged(room) }
+    }
+
     func noteReadAllChanged(_ room: String) {
         noteReadStateChanged(room)
         guard let owner = viewer?.id else { return }

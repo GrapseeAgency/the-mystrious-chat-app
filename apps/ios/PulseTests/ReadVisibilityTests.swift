@@ -643,4 +643,20 @@ extension ReadVisibilityTests {
         XCTAssertTrue(pending.allSatisfy { $0.intent == "original.member" })
     }
 
+    @MainActor
+    func testUncertainReadActionSettlementOnlyInvalidatesItsOriginalSession() {
+        let session = PulseSession(notificationCenter: NotificationCenter())
+        let epoch = session.sessionGeneration
+        XCTAssertEqual(session.readStateRevision("room"), 0)
+        session.reconcileReadAction("room", all: true, epoch: epoch)
+        XCTAssertEqual(session.readStateRevision("room"), 1)
+        session.reconcileReadAction("room", all: false, epoch: epoch)
+        XCTAssertEqual(session.readStateRevision("room"), 2)
+        XCTAssertEqual(session.readStateRevision("unrelated"), 0)
+        session.stop()
+        let afterStop = session.readStateRevision("room")
+        session.reconcileReadAction("room", all: true, epoch: epoch)
+        XCTAssertEqual(session.readStateRevision("room"), afterStop)
+    }
+
 }
