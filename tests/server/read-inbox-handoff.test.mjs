@@ -71,6 +71,8 @@ test('rejoining repairs projections independently of outbox contents and Swift i
   assert.match(recovery, /self.publishInboxSnapshot\(rooms, epoch: epoch\)/)
   assert.match(recovery, /result.retryDelay/)
   assert.match(recovery, /revision != self.notificationRefreshRevision/)
+  assert.ok(recovery.indexOf('Task.sleep(nanoseconds: 500_000_000)') < recovery.indexOf('let revision = self.notificationRefreshRevision'))
+
   for (const start of ['case .messageNew(let conversationId, let raw):', 'case .messageDeleted(let room, let raw), .messageReact(let room, let raw):', 'case .conversationUpdated:']) {
     const event = session.split(start)[1].split('\n        case ')[0]
     assert.match(event, /noteInboxChanged\(\)/)

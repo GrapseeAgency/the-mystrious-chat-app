@@ -1434,6 +1434,12 @@ public final class PulseSession: ObservableObject {
             var failures = 0
             repeat {
                 guard !Task.isCancelled, self.ready, self.isForeground, self.generation == epoch else { return }
+                // Batch read/socket bursts before a full-inbox query. Capture
+                // the revision AFTER the delay; do not debounce cancellation or
+                // weaken the Retry-After sleep below.
+                do { try await Task.sleep(nanoseconds: 500_000_000) }
+                catch { return }
+                guard !Task.isCancelled, self.ready, self.isForeground, self.generation == epoch else { return }
                 let revision = self.notificationRefreshRevision
                 let inboxRevision = self.inboxRefreshTick, liveRevision = self.realtimeRefreshTick
                 let result = await PulsePushNotifications.refreshUnreadBadgeState(using: client, store: store, isCurrent: {
