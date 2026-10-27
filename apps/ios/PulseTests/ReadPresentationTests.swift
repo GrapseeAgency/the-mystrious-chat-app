@@ -13,7 +13,7 @@ final class ReadPresentationTests: XCTestCase {
     @MainActor
     private func awaitPresentation(_ description: String, timeout: TimeInterval,
                                    file: StaticString = #filePath, line: UInt = #line,
-                                   ready: () -> Bool) async throws {
+                                   diagnostics: () -> String = { "" }, ready: () -> Bool) async throws {
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         while !ready(), ProcessInfo.processInfo.systemUptime < deadline {
             // Let UIKit advance its real hierarchy/transition state. A hosting
@@ -21,7 +21,7 @@ final class ReadPresentationTests: XCTestCase {
             // omitted for a secondary hosting window even after attachment.
             try await Task.sleep(nanoseconds: 20_000_000)
         }
-        XCTAssertTrue(ready(), description, file: file, line: line)
+        XCTAssertTrue(ready(), description + "; " + diagnostics(), file: file, line: line)
     }
 
     @MainActor
@@ -44,7 +44,7 @@ final class ReadPresentationTests: XCTestCase {
         defer { window.isHidden = true; previousKey?.makeKey(); session.stop() }
         window.layoutIfNeeded()
         primary.view.layoutIfNeeded()
-        try await awaitPresentation("Primary SwiftUI anchor attached to its active window", timeout: 5) {
+        try await awaitPresentation("Primary SwiftUI anchor attached to its active window", timeout: 5, diagnostics: { session.nativeReadPresentationDiagnostics() }) {
             primary.viewIfLoaded?.window === window && primary.transitionCoordinator == nil &&
                 !session.nativePresentationBlockedNow
         }
@@ -55,8 +55,11 @@ final class ReadPresentationTests: XCTestCase {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PulseReadPresentationAnchor(session: session, owner: owner.id)))
         thread.modalPresentationStyle = .pageSheet
+        let threadDiagnostics = {
+            "expectedThread=\(ObjectIdentifier(thread)); expectedPrimary=\(ObjectIdentifier(primary)); expectedOwner=\(owner.id); " + session.nativeReadPresentationDiagnostics()
+        }
         primary.present(thread, animated: false)
-        try await awaitPresentation("Thread sheet attached, settled, and owns its real reading anchor", timeout: 5) {
+        try await awaitPresentation("Thread sheet attached, settled, and owns its real reading anchor", timeout: 5, diagnostics: threadDiagnostics) {
             primary.presentedViewController === thread && thread.viewIfLoaded?.window === window &&
                 !thread.isBeingPresented && thread.transitionCoordinator == nil &&
                 primary.transitionCoordinator == nil && !session.nativePresentationBlockedNow
@@ -64,13 +67,13 @@ final class ReadPresentationTests: XCTestCase {
         XCTAssertTrue(primary.presentedViewController === thread)
         XCTAssertTrue(thread.view.window === window)
         thread.view.layoutIfNeeded()
-        XCTAssertFalse(session.nativePresentationBlockedNow, "The active thread must not be blocked by its own sheet")
+        XCTAssertFalse(session.nativePresentationBlockedNow, "The active thread must not be blocked by its own sheet; " + threadDiagnostics())
 
         let revision = session.readAttentionRevision
         center.post(name: UIScene.willDeactivateNotification, object: scene)
         XCTAssertTrue(session.nativePresentationBlockedNow)
         center.post(name: UIScene.didActivateNotification, object: scene)
-        XCTAssertFalse(session.nativePresentationBlockedNow)
+        XCTAssertFalse(session.nativePresentationBlockedNow, threadDiagnostics())
         XCTAssertGreaterThan(session.readAttentionRevision, revision)
 
         let panel = UIViewController()

@@ -6,6 +6,27 @@ import UIKit
 /// SwiftUI sheet binding (for example a panel opened from a text edit menu).
 @MainActor
 enum PulseReadPresentation {
+    /// Read-only diagnostics for a failed hosted/device check. Never changes
+    /// presentation, loads another controller's view, or grants read authority.
+    static func diagnostics(_ view: UIView) -> String {
+        var responder: UIResponder? = view
+        while let next = responder, !(next is UIViewController) { responder = next.next }
+        var controller = responder as? UIViewController
+        var rows: [String] = []
+        while let current = controller {
+            let coordinator = current.transitionCoordinator
+            let transition = coordinator.map {
+                "animated=\($0.isAnimated), interactive=\($0.isInteractive), cancelled=\($0.isCancelled), progress=\($0.percentComplete), duration=\($0.transitionDuration)"
+            } ?? "none"
+            let presented = current.presentedViewController.map {
+                "\(String(reflecting: type(of: $0))), containsAnchor=\($0.viewIfLoaded.map { view.isDescendant(of: $0) } ?? false)"
+            } ?? "none"
+            rows.append("\(String(reflecting: type(of: current))) [\(ObjectIdentifier(current))]: presenting=\(current.isBeingPresented), dismissing=\(current.isBeingDismissed), transition=[\(transition)], presented=[\(presented)]")
+            controller = current.parent
+        }
+        return rows.isEmpty ? "no reading controller in responder chain" : rows.joined(separator: " -> ")
+    }
+
     static func hasPresentationAbove(_ view: UIView) -> Bool {
         var responder: UIResponder? = view
         while let next = responder, !(next is UIViewController) { responder = next.next }

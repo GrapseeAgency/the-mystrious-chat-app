@@ -673,6 +673,17 @@ public final class PulseSession: ObservableObject {
         return PulseReadPresentation.hasPresentationAbove(view)
     }
 
+    /// Diagnostics only: include the actual selected anchor and scene, rather
+    /// than inferring the cause of a failed check from a timeout alone.
+    func nativeReadPresentationDiagnostics() -> String {
+        let owner = readSurfaces.owner?.id ?? roomReadVisit.owner?.entryID
+        guard let view = activeNativeReadView else {
+            return "missing active anchor; owner=\(String(describing: owner)); registered=\(nativeReadAnchors.count)"
+        }
+        let scene = view.window?.windowScene
+        return "owner=\(String(describing: owner)); attached=\(view.window != nil); hidden=\(String(describing: view.window?.isHidden)); scene=\(String(describing: scene?.activationState.rawValue)); notifiedInactive=\(scene.map { nativeInactiveScenes.contains($0) } ?? false); " + PulseReadPresentation.diagnostics(view)
+    }
+
     func setNativeReadAnchor(_ view: UIView, owner: UUID) {
         guard nativeReadAnchors.object(forKey: owner as NSUUID) !== view else { return }
         nativeReadAnchors.setObject(view, forKey: owner as NSUUID)
