@@ -26,6 +26,20 @@ class ConfirmedReadObservationTest {
         assertEquals(deleted, retainOwnSocketReadObservation(stored, deleted, "own-member"))
     }
 
+    @Test fun `message action acknowledgements preserve both positive and negative current proof without unioning`() {
+        for (proof in listOf(emptyList(), listOf("current-member"))) {
+            val stored = current.copy(readByMembershipIds = proof)
+            val ack = current.copy(body = "Confirmed edit", readByMembershipIds = listOf("obsolete-member"))
+            val retained = retainAcknowledgedReadState(stored, ack)
+            assertEquals(proof, retained.readByMembershipIds)
+            assertEquals(ack, retained.copy(readByMembershipIds = ack.readByMembershipIds))
+            assertEquals(proof, mergeMessageMutationReceipt(stored, ack, MessageMutationKind.EDIT, false).readByMembershipIds)
+            assertEquals(ack, retainAcknowledgedReadState(null, ack))
+            assertEquals(ack, retainAcknowledgedReadState(stored.copy(conversationId = "foreign"), ack))
+            assertEquals(ack, retainAcknowledgedReadState(stored.copy(id = "foreign"), ack))
+        }
+    }
+
     @Test fun `confirmed observation changes only exact membership proof`() {
         val updated = confirmedReadObservation(current, "room", "message", "original.member")!!
         assertEquals(listOf("other-member", "member"), updated.readByMembershipIds)

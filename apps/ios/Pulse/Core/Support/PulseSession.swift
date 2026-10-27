@@ -326,7 +326,7 @@ public final class PulseSession: ObservableObject {
             guard receipt.message.id == requested.id, receipt.message.conversationId == requested.conversationId else {
                 throw PulseAPIClient.Failure(kind: .validation, message: "Unexpected photo acknowledgement.")
             }
-            let retained = try store.mergeMessages([receipt.message]).first ?? receipt.message
+            let retained = try store.mergeMessageAcknowledgement(receipt.message)
             noteMessageRevision(retained.id)
             messageVisibilityClock.send(Date())
             let rootLive: Bool
@@ -500,10 +500,12 @@ public final class PulseSession: ObservableObject {
         if acceptsSyncMessage(fresh.id, startedAt: revision) { try recordMessageMutation(fresh) }
     }
 
-    public func recordMessageMutation(_ message: WireChatMessage) throws {
-        try store?.upsert(messages: [message])
+    @discardableResult
+    public func recordMessageMutation(_ message: WireChatMessage) throws -> WireChatMessage {
+        let retained = try store?.mergeMessageAcknowledgement(message) ?? message
         noteMessageRevision(message.id)
         messageVisibilityClock.send(Date())
+        return retained
     }
 
     public func applyPinRemoval(_ id: String, startedAt revision: UInt64) throws {

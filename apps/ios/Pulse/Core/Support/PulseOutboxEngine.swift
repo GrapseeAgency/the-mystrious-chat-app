@@ -421,8 +421,7 @@ public final class PulseOutboxEngine: ObservableObject {
                     anon: forward?.anon
                 )
                 guard canWork, !Task.isCancelled else { return false }
-                let real = receipt.message
-                try store.resolveDelivery(clientId: entry.clientId, message: real)
+                let real = try store.resolveDelivery(clientId: entry.clientId, message: receipt.message)
                 _ = refreshPendingCount()
                 onEvent?(.delivered(message: real, conversationId: entry.conversationId, clientId: entry.clientId))
                 onAcknowledgement?(receipt)

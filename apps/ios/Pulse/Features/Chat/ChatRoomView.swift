@@ -5220,24 +5220,24 @@ final class RoomViewModel: ObservableObject {
     /// not overwrite the current message cache.
     private func triggerUnfurl(for message: WireChatMessage, viewerId: String, session: PulseSession) {
         let api = session.api
-        let store = session.store
         let epoch = session.sessionGeneration
         let revision = session.messageRevision
         Task { [weak self] in
             guard let row = try? await api.unfurl(messageId: message.id, userId: viewerId),
                   !Task.isCancelled, session.sessionGeneration == epoch,
                   session.acceptsSyncMessage(message.id, startedAt: revision) else { return }
-            try? store?.upsert(messages: [row])
-            self?.upsert(row)
+            if let retained = try? session.recordMessageMutation(row) { self?.upsert(retained) }
         }
     }
 
     /// Only the acknowledged operation is retired. Identical sends are distinct.
     private func swapTemp(_ tempId: String, for message: WireChatMessage, session: PulseSession) {
-        messages.removeAll { $0.id == tempId }
-        upsert(message)
         let clientId = String(tempId.dropFirst("local_".count))
-        do { try session.store?.resolveDelivery(clientId: clientId, message: message) }
+        do {
+            let retained = try session.store?.resolveDelivery(clientId: clientId, message: message) ?? message
+            messages.removeAll { $0.id == tempId }
+            upsert(retained)
+        }
         catch { self.errorText = "Delivered, but local storage could not be updated. Pending data was retained." }
     }
 

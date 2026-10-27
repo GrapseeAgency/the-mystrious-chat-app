@@ -305,6 +305,27 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertFalse(projected)
     }
 
+    func testDeliveredEventPublishesTheCommittedReadProofNotTheOldSendResponse() async throws {
+        let store = try PulseStore(), sender = StubSender(behaviors: [:])
+        sender.beforeSend = { content in
+            var alreadySeen = OutboxFixtures.makeMessage(id: "srv-\(content)", conversationId: "c1", content: content)
+            alreadySeen.readByMembershipIds = ["peer-membership"]
+            try store.upsert(messages: [alreadySeen]) // socket read before the HTTP send ACK returns
+        }
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        XCTAssertTrue(engine.append(conversationId: "c1", clientId: "operation", content: "hello"))
+        var delivered: WireChatMessage?
+        engine.onEvent = { event in
+            if case .delivered(let message, _, _) = event { delivered = message }
+        }
+        let complete = await engine.flush()
+        XCTAssertTrue(complete)
+        XCTAssertEqual(delivered?.readByMembershipIds, ["peer-membership"])
+        XCTAssertEqual(try store.message(id: "srv-hello")?.readByMembershipIds, ["peer-membership"])
+        XCTAssertTrue(try store.outboxAll().isEmpty)
+    }
+
     func testBackgroundCompletionRequiresUnreadProjectionAsWellAsDurableQueues() async throws {
         let store = try PulseStore(path: ":memory:")
         let engine = makeEngine(store, StubSender(behaviors: [:]))

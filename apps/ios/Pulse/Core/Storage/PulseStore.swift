@@ -679,12 +679,30 @@ public final class PulseStore: Sendable {
         return false
     }
 
-    /// The acknowledgement is one SQLite transaction, never three independent writes.
-    public func resolveDelivery(clientId: String, message: WireChatMessage) throws {
+    private static func writeAcknowledgedMessage(_ message: WireChatMessage, db: Database) throws -> WireChatMessage {
+        let current = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [message.id]).flatMap(Self.messageRow(from:))
+        return try Self.writeMessage(PulseMessageMerge.retainAcknowledgedReadState(current, incoming: message), db: db)
+    }
+
+    @discardableResult
+    public func mergeMessageAcknowledgement(_ message: WireChatMessage) throws -> WireChatMessage {
         try dbQueue.write { db in
-            try Self.writeMessage(message, db: db)
+            let retained = try Self.writeAcknowledgedMessage(message, db: db)
+            messageSnapshotVersions.note([message.id])
+            return retained
+        }
+    }
+
+    /// The acknowledgement is one SQLite transaction, never three independent writes.
+    /// Return the committed row: a faster read receipt must survive UI delivery too.
+    @discardableResult
+    public func resolveDelivery(clientId: String, message: WireChatMessage) throws -> WireChatMessage {
+        try dbQueue.write { db in
+            let retained = try Self.writeAcknowledgedMessage(message, db: db)
             try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
             try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [clientId])
+            messageSnapshotVersions.note([message.id])
+            return retained
         }
     }
 

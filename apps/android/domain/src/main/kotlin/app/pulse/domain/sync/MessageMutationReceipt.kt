@@ -27,5 +27,5 @@ fun mergeMessageMutationReceipt(current: Message?, incoming: Message, kind: Mess
         MessageMutationKind.PIN -> current
         MessageMutationKind.DELETE -> incoming
     } else incoming
-    return mergeMessageState(current, accepted)
+    return mergeMessageState(current, retainAcknowledgedReadState(current, accepted))
 }

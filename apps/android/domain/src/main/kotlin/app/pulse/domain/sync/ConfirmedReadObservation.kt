@@ -21,3 +21,12 @@ fun retainOwnSocketReadObservation(current: Message?, incoming: Message, members
         membership !in current.readByMembershipIds || membership in incoming.readByMembershipIds) return incoming
     return incoming.copy(readByMembershipIds = incoming.readByMembershipIds + membership)
 }
+
+/** Sending/editing a message is not a new read observation. Preserve the current
+ * exact proof (including a canonical negative) while accepting the action fields.
+ * Canonical GETs and dedicated read receipts must NOT use this merge. */
+fun retainAcknowledgedReadState(current: Message?, incoming: Message): Message {
+    if (current == null || current.id != incoming.id || current.conversationId != incoming.conversationId ||
+        incoming.id.startsWith(TEMP_MESSAGE_PREFIX)) return incoming
+    return incoming.copy(readByMembershipIds = current.readByMembershipIds)
+}

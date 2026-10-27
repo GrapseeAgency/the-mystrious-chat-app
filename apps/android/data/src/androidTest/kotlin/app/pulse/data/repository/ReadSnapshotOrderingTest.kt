@@ -16,6 +16,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import java.io.File
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,44 +28,71 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReadSnapshotOrderingTest {
     @Test fun unchangedNegativeProofRetiresOlderPageWithoutDroppingOtherMessages() = runBlocking {
-        negativeProofWins(cached = true)
+        exerciseReadOrdering(cached = true)
     }
 
     @Test fun unavailableUncachedProofCannotBeResurrectedByAnOlderPage() = runBlocking {
-        negativeProofWins(cached = false)
+        exerciseReadOrdering(cached = false)
     }
 
     @Test fun retiredSessionCannotCommitEvenUnrelatedRowsFromAnInflightPage() = runBlocking {
-        negativeProofWins(cached = true, retire = true)
+        exerciseReadOrdering(cached = true, retire = true)
     }
 
     @Test fun laterCanonicalPageRetiresAnOlderExactInfoResponse() = runBlocking {
-        negativeProofWins(cached = true, infoFirst = true)
+        exerciseReadOrdering(cached = true, infoFirst = true)
     }
 
     @Test fun unchangedCanonicalPageAlsoRetiresOlderPositiveInfoProof() = runBlocking {
-        negativeProofWins(cached = true, infoFirst = true, unchangedPage = true)
+        exerciseReadOrdering(cached = true, infoFirst = true, unchangedPage = true)
     }
 
     @Test fun olderOverlappingPageCannotResurrectSeenOrOverwriteCurrentContent() = runBlocking {
-        negativeProofWins(cached = true, overlappingPages = true)
+        exerciseReadOrdering(cached = true, overlappingPages = true)
     }
 
     @Test fun newerPageStillAppliesWhenTheEarlierPageCommitsFirst() = runBlocking {
-        negativeProofWins(cached = true, overlappingPages = true, olderCommitsFirst = true)
+        exerciseReadOrdering(cached = true, overlappingPages = true, olderCommitsFirst = true)
     }
 
     @Test fun retiredSearchCannotCommitAnInflightPage() = runBlocking {
-        negativeProofWins(cached = true, overlappingPages = true, retire = true)
+        exerciseReadOrdering(cached = true, overlappingPages = true, retire = true)
     }
 
     @Test fun unrelatedPageDoesNotRetireAnExactInfoResponse() = runBlocking {
-        negativeProofWins(cached = true, infoFirst = true, unchangedPage = true, unrelatedOnly = true)
+        exerciseReadOrdering(cached = true, infoFirst = true, unchangedPage = true, unrelatedOnly = true)
     }
 
-    private suspend fun negativeProofWins(cached: Boolean, retire: Boolean = false,
+    @Test fun deliveryAcknowledgementKeepsCurrentProofInRoomAndInItsPublishedEvent() = runBlocking {
+        exerciseReadOrdering(cached = false, onReady = { repo, db ->
+            for ((index, proof) in listOf(emptyList<String>(), listOf("current-member")).withIndex()) {
+                val canonical = Message("delivered-$index", "room", "owner", "Owner", Message.Kind.TEXT,
+                    "message", "2026-10-26T00:00:00Z", readByMembershipIds = proof)
+                val entry = app.pulse.domain.model.OutboxEntry(conversationId = "room", clientId = "operation-$index",
+                    content = canonical.body, createdAt = canonical.createdAt)
+                db.messageDao().upsertAll(listOf(MessageEntity.from(canonical),
+                    MessageEntity.from(canonical.copy(id = "local_${entry.clientId}"))))
+                db.outboxDao().insert(OutboxEntity.from(entry))
+                coroutineScope {
+                    val event = async(start = CoroutineStart.UNDISPATCHED) {
+                        repo.events().filterIsInstance<app.pulse.domain.repository.PulseEvent.OutboxFlushed>()
+                            .first { it.clientId == entry.clientId }
+                    }
+                    repo.resolveOutboxDelivery(entry, canonical.copy(readByMembershipIds =
+                        if (proof.isEmpty()) listOf("obsolete-member") else emptyList()))
+                    assertEquals(proof, event.await().message.readByMembershipIds)
+                }
+                assertEquals(proof, db.messageDao().byId(canonical.id)?.toDomain()?.readByMembershipIds)
+                assertNull(db.messageDao().byId("local_${entry.clientId}"))
+                assertNull(db.outboxDao().pendingByClientId(entry.clientId))
+            }
+        })
+    }
+
+    private suspend fun exerciseReadOrdering(cached: Boolean, retire: Boolean = false,
         infoFirst: Boolean = false, unchangedPage: Boolean = false,
-        overlappingPages: Boolean = false, olderCommitsFirst: Boolean = false, unrelatedOnly: Boolean = false) = withTimeout(30_000) {
+        overlappingPages: Boolean = false, olderCommitsFirst: Boolean = false, unrelatedOnly: Boolean = false,
+        onReady: (suspend (PulseRepositoryImpl, PulseDatabase) -> Unit)? = null) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
         val prefsJob = SupervisorJob()
@@ -124,6 +153,7 @@ class ReadSnapshotOrderingTest {
                 "anchor", "room", "peer", "Peer", Message.Kind.TEXT, "current body", "2026-10-26T00:00:00Z"))))
             repo.start("owner")
             startupEntered.await()
+            if (onReady != null) { onReady(repo, db); return@withTimeout }
             if (overlappingPages) {
                 coroutineScope {
                     val oldPage = async { repo.searchInConversation("room", "older") }

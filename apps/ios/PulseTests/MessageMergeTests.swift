@@ -14,6 +14,27 @@ final class MessageMergeTests: XCTestCase {
         return try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object))
     }
 
+    func testActionAndDeliveryAcknowledgementsKeepCurrentReadProofIncludingCanonicalNegatives() throws {
+        let store = try PulseStore()
+        for proof in [[String](), ["current-member"]] {
+            let current = try row(["readByMembershipIds": proof])
+            let ack = try row(["content": "Confirmed action", "readByMembershipIds": ["obsolete-member"]])
+            try store.upsert(messages: [current])
+            let retained = try store.mergeMessageAcknowledgement(ack)
+            XCTAssertEqual(retained.content, ack.content)
+            XCTAssertEqual(retained.readByMembershipIds, proof)
+            XCTAssertEqual(try store.message(id: current.id)?.readByMembershipIds, proof)
+            try store.appendOutbox(conversationId: "room", clientId: "operation", content: ack.content)
+            let delivered = try store.resolveDelivery(clientId: "operation", message: ack)
+            XCTAssertEqual(delivered.readByMembershipIds, proof)
+            XCTAssertTrue(try store.outboxAll().isEmpty)
+            // Only the acknowledgement lane retains proof; a newer GET must
+            // still be able to replace/remove it rather than unioning arrays.
+            _ = try store.mergeMessages([ack], snapshotRequest: store.beginMessageSnapshot())
+            XCTAssertEqual(try store.message(id: current.id)?.readByMembershipIds, ["obsolete-member"])
+        }
+    }
+
     func testPublicSocketRetainsOnlyExistingOwnProofAndCanonicalSnapshotsCanStillRemoveIt() throws {
         let stored = try row(["readByMembershipIds": ["own-member", "stale-peer"]])
         let incoming = try row(["content": "New socket content", "readByMembershipIds": ["public-peer"]])

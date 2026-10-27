@@ -17,6 +17,16 @@ enum PulseMessageMerge {
         return result
     }
 
+    /// An action ACK is not a read observation. Keep the current exact proof,
+    /// including a canonical negative; never apply this rule to GETs/read ACKs.
+    static func retainAcknowledgedReadState(_ current: WireChatMessage?, incoming: WireChatMessage) -> WireChatMessage {
+        guard let current, current.id == incoming.id, current.conversationId == incoming.conversationId,
+              !incoming.id.hasPrefix("local_") else { return incoming }
+        var result = incoming
+        result.readByMembershipIds = current.readByMembershipIds
+        return result
+    }
+
     /// The edit ACK may advance text without rolling unrelated events backward.
     static func acceptEdit(_ current: WireChatMessage, incoming: WireChatMessage) -> WireChatMessage {
         guard current.id == incoming.id, current.conversationId == incoming.conversationId, current.deletedAt == nil else { return current }

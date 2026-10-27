@@ -1481,6 +1481,7 @@ class PulseRepositoryImpl constructor(
         clientId: String,
         send: suspend () -> PulseResult<app.pulse.protocol.MessageSendEnvelopeDto>,
     ): Result<SendReceipt> {
+        val deliveryEpoch = attachmentSession
         val immediate = try {
             dispatchGate.tryImmediate(
                 isHead = {
@@ -1497,13 +1498,10 @@ class PulseRepositoryImpl constructor(
                 when (val response = send()) {
                     is PulseResult.Success -> {
                         val receipt = response.value.toReceipt()
-                        database.withTransaction {
-                            messageDao.upsertAll(listOf(MessageEntity.from(receipt.message, reactionsJsonOf(receipt.message))))
-                            messageDao.deleteById(temp.id)
-                            outboxDao.deleteByClientId(clientId)
-                        }
+                        val retained = commitSendAcknowledgement(clientId, receipt.message, temp.conversationId,
+                            temp.authorId, deliveryEpoch)
                         scheduleConversationsRefresh()
-                        Result.success(receipt)
+                        Result.success(receipt.copy(message = retained))
                     }
                     is PulseResult.Failure -> {
                         holdMessageRetries(response, temp.conversationId)
@@ -2613,14 +2611,36 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message) {
-        database.withTransaction {
-            messageDao.upsertAll(listOf(MessageEntity.from(real, reactionsJsonOf(real))))
-            messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
-            outboxDao.deleteByClientId(entry.clientId)
+    private suspend fun commitSendAcknowledgement(clientId: String, real: Message, room: String,
+        owner: String, epoch: String): Message {
+        check(real.conversationId == room && real.authorId == owner && !real.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) {
+            "The send acknowledgement returned another message owner or conversation."
         }
+        val retained = messageCacheMutex.withLock {
+            val committed = database.withTransaction {
+                kotlin.coroutines.coroutineContext.ensureActive()
+                requireConversationOwner(owner, epoch)
+                val accepted = app.pulse.domain.sync.retainAcknowledgedReadState(messageDao.byId(real.id)?.toDomain(), real)
+                messageDao.upsertAll(listOf(MessageEntity.from(accepted, reactionsJsonOf(accepted))))
+                messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+                outboxDao.deleteByClientId(clientId)
+                val current = checkNotNull(messageDao.byId(real.id)).toDomain()
+                requireConversationOwner(owner, epoch)
+                current
+            }
+            messageEventRevisions[real.id] = messageEventClock.incrementAndGet()
+            messageCacheChanges.value = messageEventClock.get()
+            committed
+        }
+        requireConversationOwner(owner, epoch)
+        return retained
+    }
+
+    override suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message) {
+        val owner = viewerId ?: throw kotlinx.coroutines.CancellationException("No active account")
+        val retained = commitSendAcknowledgement(entry.clientId, real, entry.conversationId, owner, attachmentSession)
         scheduleConversationsRefresh()
-        eventsBus.tryEmit(PulseEvent.OutboxFlushed(entry.clientId, real))
+        eventsBus.tryEmit(PulseEvent.OutboxFlushed(entry.clientId, retained))
     }
 
     override suspend fun dropOutboxEntry(clientId: String, reason: String) {
@@ -3041,7 +3061,8 @@ class PulseRepositoryImpl constructor(
                             // A newer relayed mutation wins over this late full-row ACK.
                             if ((messageEventRevisions[messageId] ?: 0L) <= watermark) {
                                 messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
-                                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                                val retained = app.pulse.domain.sync.retainAcknowledgedReadState(messageDao.byId(messageId)?.toDomain(), message)
+                                messageDao.upsertAll(listOf(MessageEntity.from(retained, reactionsJsonOf(retained))))
                             }
                             requireConversationOwner(owner, epoch)
                         }
@@ -3458,7 +3479,8 @@ class PulseRepositoryImpl constructor(
     /** One-row cache write shared by every Wave-2 read-modify-write path. */
     private suspend fun upsertMessage(m: Message) = messageCacheMutex.withLock {
         messageEventRevisions[m.id] = messageEventClock.incrementAndGet()
-        messageDao.upsertAll(listOf(MessageEntity.from(m, reactionsJsonOf(m))))
+        val accepted = app.pulse.domain.sync.retainAcknowledgedReadState(messageDao.byId(m.id)?.toDomain(), m)
+        messageDao.upsertAll(listOf(MessageEntity.from(accepted, reactionsJsonOf(accepted))))
         messageCacheChanges.value = messageEventClock.get()
         checkNotNull(messageDao.byId(m.id)).toDomain()
     }
@@ -3545,9 +3567,9 @@ class PulseRepositoryImpl constructor(
         when (val r = api.createPoll(conversationId, viewerId ?: "", question, options)) {
             is PulseResult.Success -> {
                 val message = r.value.toDomain()
-                upsertMessage(message)
+                val retained = upsertMessage(message)
                 scheduleConversationsRefresh()
-                Result.success(message)
+                Result.success(retained)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
@@ -3588,7 +3610,8 @@ class PulseRepositoryImpl constructor(
                         // rolling a newer edit/reaction back to this HTTP snapshot.
                         if (incoming.poll?.closed == true && !current.isDeleted) current.copy(poll = incoming.poll) else current
                     } else incoming
-                    messageDao.upsertAll(listOf(MessageEntity.from(accepted, reactionsJsonOf(accepted))))
+                    val retained = app.pulse.domain.sync.retainAcknowledgedReadState(current, accepted)
+                    messageDao.upsertAll(listOf(MessageEntity.from(retained, reactionsJsonOf(retained))))
                     messageEventRevisions[incoming.id] = messageEventClock.incrementAndGet()
                     requireConversationOwner(owner, epoch)
                     checkNotNull(messageDao.byId(incoming.id)).toDomain()
