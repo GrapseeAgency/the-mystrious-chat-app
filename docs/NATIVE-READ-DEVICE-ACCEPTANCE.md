@@ -8,6 +8,12 @@ Do not nominate the current build as accepted yet. At source checkpoint `3cf8cf4
 
 No production migration or deployment has been executed in this workstream. The matching backend must be ready in an **authorized test environment** before these scenarios are meaningful. See [deployment order and contracts](NATIVE-READ-ORDERING.md#deployment-order-not-executed). Do not apply migrations or change production data just to run this checklist.
 
+## Later hosted checkpoint (not device acceptance)
+
+Candidate `02976a6` completed the Android build/API 30/API 34 workflow and the iOS archive/build-test workflow successfully. This later passing run does not by itself establish the cause of earlier intermittent failures or certify physical OS behavior. The strengthened runtime gates and both-platform permission ownership changes are included. No matching deployed test environment or paired-device results have yet been verified.
+
+If backend readiness is unknown, give the operator [the backend-readiness guide and receipt](NATIVE-READ-BACKEND-READINESS.md) first. Do not guess readiness from a successful app build.
+
 ## Setup
 
 - Record the exact backend and installed native commit/build identifiers. Use one nominated, matching candidate, not an old `main` backend with a new APK/archive.
