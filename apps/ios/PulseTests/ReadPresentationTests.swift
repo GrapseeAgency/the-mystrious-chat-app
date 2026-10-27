@@ -11,6 +11,15 @@ final class ReadPresentationTests: XCTestCase {
     }
 
     @MainActor
+    private final class AppearingHost<Content: View>: UIHostingController<Content> {
+        private(set) var hasAppeared = false
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            hasAppeared = true
+        }
+    }
+
+    @MainActor
     private func awaitPresentation(_ description: String, timeout: TimeInterval,
                                    file: StaticString = #filePath, line: UInt = #line,
                                    diagnostics: () -> String = { "" }, ready: () -> Bool) async throws {
@@ -36,7 +45,7 @@ final class ReadPresentationTests: XCTestCase {
         session.showRoomReadVisit(conversationId: "room", entryID: visit)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
-        let primary = UIHostingController(rootView: Text("Primary reader")
+        let primary = AppearingHost(rootView: Text("Primary reader")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PulseReadPresentationAnchor(session: session, owner: visit)))
         window.rootViewController = primary
@@ -44,8 +53,12 @@ final class ReadPresentationTests: XCTestCase {
         defer { window.isHidden = true; previousKey?.makeKey(); session.stop() }
         window.layoutIfNeeded()
         primary.view.layoutIfNeeded()
-        try await awaitPresentation("Primary SwiftUI anchor attached to its active window", timeout: 5, diagnostics: { session.nativeReadPresentationDiagnostics() }) {
-            primary.viewIfLoaded?.window === window && primary.transitionCoordinator == nil &&
+        // Attachment/layout can complete synchronously before the root's first
+        // appearance. Do not present a sheet from a still-appearing test root.
+        // Poll the actual lifecycle state on the main actor; no synthetic
+        // appearance calls, longer timeout, or weakened reading assertion.
+        try await awaitPresentation("Primary SwiftUI reader appeared in its active window", timeout: 5, diagnostics: { "appeared=\(primary.hasAppeared); " + session.nativeReadPresentationDiagnostics() }) {
+            primary.hasAppeared && primary.viewIfLoaded?.window === window && primary.transitionCoordinator == nil &&
                 !session.nativePresentationBlockedNow
         }
         XCTAssertFalse(session.nativePresentationBlockedNow, "The real SwiftUI background must resolve to its reading controller")
