@@ -1892,13 +1892,14 @@ class PulseRepositoryImpl constructor(
         val key = localEditKey(owner,message.id)
         val epoch = attachmentSession
         val revision = draftWrites.editVersions.getOrPut(key) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
-        val snapshot = app.pulse.protocol.ComposerLocalEditDto(text,message.body,message.editedAt)
+        val buffered = draftWrites.editBuffers[key]?.second
+        val snapshot = app.pulse.protocol.ComposerLocalEditDto(text,buffered?.baseText ?: message.body,if (buffered != null) buffered.baseEditedAt else message.editedAt)
         draftWrites.editBuffers[key] = revision to snapshot
         draftWriteScope.launch {
             try { draftMutex.withLock {
                 if (draftWrites.editVersions[key]?.get() != revision) return@withLock
                 val previous = wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
-                val local = app.pulse.protocol.ComposerLocalEditDto(text,previous?.baseText ?: message.body,if (previous != null) previous.baseEditedAt else message.editedAt,snapshot.revision)
+                val local = app.pulse.protocol.ComposerLocalEditDto(text,previous?.baseText ?: snapshot.baseText,if (previous != null) previous.baseEditedAt else snapshot.baseEditedAt,snapshot.revision)
                 wave7Dao.upsert(Wave7CacheEntity(key,app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local),System.currentTimeMillis()))
                 draftWrites.editBuffers.computeIfPresent(key) { _, value -> value.takeIf { it.first != revision } }
             } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }

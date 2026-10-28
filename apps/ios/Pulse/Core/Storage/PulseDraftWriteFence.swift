@@ -17,6 +17,16 @@ final class PulseDraftWriteFence: @unchecked Sendable {
         return fence
     }
 
+    private let editLock = NSLock()
+    private var failedEdits: [String: PulseComposerLocalEdit] = [:]
+    /// Shared across reopened handles. Acquire before SQLite, never from inside
+    /// a database transaction, so edit recovery cannot invert the lock order.
+    func withEditSnapshot<T>(_ key: String, action: (inout PulseComposerLocalEdit?) throws -> T) rethrows -> T {
+        editLock.lock()
+        var value = failedEdits[key]
+        defer { failedEdits[key] = value; editLock.unlock() }
+        return try action(&value)
+    }
     private let lock = NSLock()
     private var revisions: [String: UInt64] = [:]
     private var settled: [String: UInt64] = [:]

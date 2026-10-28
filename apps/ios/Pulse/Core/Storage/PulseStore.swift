@@ -2061,10 +2061,15 @@ extension PulseStore {
     }
     func enqueueComposerEdit(_ message: WireChatMessage, text: String, owner: String) throws {
         guard composerOwner == nil || composerOwner == owner, message.senderId == owner else { throw CocoaError(.coderInvalidValue) }
-        try dbQueue.write { db in
-            let local = try Self.localEdit(db,owner: owner,id: message.id)
-            try Self.stageComposer(db,owner: owner,kind: "edit",target: message.id,room: message.conversationId,root: nil,
-                text: text,baseText: local?.baseText ?? message.content,editedAt: local != nil ? local!.baseEditedAt : message.editedAt,localEditRevision: local?.revision)
+        try draftFence.withEditSnapshot(Self.localEditKey(owner: owner,id: message.id)) { memory in
+            let buffered = memory
+            try dbQueue.write { db in
+                let local = try buffered ?? Self.localEdit(db,owner: owner,id: message.id)
+                if let buffered { try Self.putLocalEdit(db,owner: owner,id: message.id,value: buffered) }
+                try Self.stageComposer(db,owner: owner,kind: "edit",target: message.id,room: message.conversationId,root: nil,
+                    text: text,baseText: local?.baseText ?? message.content,editedAt: local != nil ? local!.baseEditedAt : message.editedAt,localEditRevision: local?.revision)
+            }
+            memory = nil
         }
     }
     func composerEditPending(owner: String, id: String) throws -> Bool {
@@ -2167,22 +2172,32 @@ extension PulseStore {
         guard let json = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [localEditKey(owner: owner,id: id)]) else { return nil }
         return try JSONDecoder().decode(PulseComposerLocalEdit.self,from: Data(json.utf8))
     }
+    private static func putLocalEdit(_ db: Database, owner: String, id: String, value: PulseComposerLocalEdit) throws {
+        let json = String(decoding: try JSONEncoder().encode(value),as: UTF8.self)
+        try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt",arguments: [localEditKey(owner: owner,id: id),json,Date().timeIntervalSince1970])
+    }
     func saveComposerEdit(_ message: WireChatMessage, text: String, owner: String) throws {
         guard composerOwner == nil || composerOwner == owner, message.senderId == owner else { throw CocoaError(.coderInvalidValue) }
-        try dbQueue.write { db in
-            let previous = try Self.localEdit(db,owner: owner,id: message.id)
+        try draftFence.withEditSnapshot(Self.localEditKey(owner: owner,id: message.id)) { memory in
+            let previous = try memory ?? dbQueue.read { try Self.localEdit($0,owner: owner,id: message.id) }
             let value = PulseComposerLocalEdit(text: text,baseText: previous?.baseText ?? message.content,baseEditedAt: previous != nil ? previous!.baseEditedAt : message.editedAt)
-            let json = String(decoding: try JSONEncoder().encode(value),as: UTF8.self)
-            try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt",arguments: [Self.localEditKey(owner: owner,id: message.id),json,Date().timeIntervalSince1970])
+            memory = value
+            try dbQueue.write { try Self.putLocalEdit($0,owner: owner,id: message.id,value: value) }
+            memory = nil
         }
     }
     func recoveredComposerEdit(owner: String, id: String) throws -> String? {
-        try dbQueue.read { db in
-            if let local = try Self.localEdit(db,owner: owner,id: id) { return local.text }
-            let key = Self.composerKey(owner: owner,kind: "edit",target: id,root: nil)
-            return try (Self.composer(db,key: key) ?? Self.composer(db,key: Self.heldComposer(key)))?.text
+        guard composerOwner == nil || composerOwner == owner else { throw CocoaError(.coderInvalidValue) }
+        return try draftFence.withEditSnapshot(Self.localEditKey(owner: owner,id: id)) { memory in
+            if let memory { return memory.text }
+            return try dbQueue.read { db in
+                if let local = try Self.localEdit(db,owner: owner,id: id) { return local.text }
+                let key = Self.composerKey(owner: owner,kind: "edit",target: id,root: nil)
+                return try (Self.composer(db,key: key) ?? Self.composer(db,key: Self.heldComposer(key)))?.text
+            }
         }
     }
+
 }
 
 extension PulseStore {

@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import Pulse
 
 @MainActor
@@ -83,6 +84,25 @@ final class ComposerJournalTests: XCTestCase {
         XCTAssertTrue(baseline.matchesBaselineText("private e\u{301}"))
         XCTAssertFalse(baseline.matchesBaselineText("private é"))
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(baseline),as: UTF8.self).contains("private"))
+    }
+
+    func testFailedEditWriteSurvivesReopenedStoreWithoutRebasingOntoRemoteText() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+        defer { for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path,composerOwner: "me")
+        let connection = try DatabaseQueue(path: path)
+        let message = try JSONDecoder().decode(WireChatMessage.self,from: Data("{\"id\":\"m\",\"conversationId\":\"room\",\"senderId\":\"me\",\"kind\":\"text\",\"content\":\"original\",\"createdAt\":\"2026-10-28T00:00:00Z\"}".utf8))
+        try await connection.write { try $0.execute(sql: "CREATE TRIGGER fail_edit BEFORE INSERT ON wave7Cache BEGIN SELECT RAISE(ABORT, 'disk full'); END") }
+        XCTAssertThrowsError(try store.saveComposerEdit(message,text: "my edit",owner: "me"))
+        let reopened = try PulseStore(path: path,composerOwner: "me")
+        XCTAssertEqual(try reopened.recoveredComposerEdit(owner: "me",id: "m"),"my edit")
+        XCTAssertThrowsError(try reopened.recoveredComposerEdit(owner: "other",id: "m"))
+        try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_edit") }
+        var changed = message; changed.content = "other device"
+        try reopened.enqueueComposerEdit(changed,text: "my edit",owner: "me")
+        let pending = try XCTUnwrap(reopened.composerPage(owner: "me").first?.intent)
+        XCTAssertEqual(pending.baseText,"original")
+        XCTAssertEqual(pending.text,"my edit")
     }
 
 }
