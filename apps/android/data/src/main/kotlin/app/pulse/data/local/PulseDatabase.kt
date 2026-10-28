@@ -177,7 +177,7 @@ private fun membersOf(json: String): List<ConversationMember> = runCatching {
     )
 }.getOrDefault(emptyList())
 
-@Entity(tableName = "messages", indices = [Index(value = ["replyToId"]), Index(value = ["threadRootId"])])
+@Entity(tableName = "messages", indices = [Index(value = ["replyToId"]), Index(value = ["threadRootId"]), Index(value = ["threadRootId", "createdAt", "id"]), Index(value = ["conversationId", "threadRootId", "createdAt", "id"])])
 data class MessageEntity(
     @PrimaryKey val id: String,
     val conversationId: String,
@@ -214,6 +214,7 @@ data class MessageEntity(
     // Wave 7 (v9) - raw rich-object payload JSON (red packet / game / tournament).
     val payloadJson: String? = null,
     val quoteBoundsJson: String? = null,
+    val expiresAtEpochMs: Long? = null,
 ) {
     fun toDomain(): Message {
         val reactionDtos = reactionsJson?.let { json ->
@@ -264,7 +265,7 @@ data class MessageEntity(
             payload = payloadClean,
             anon = anon,
             anonAlias = anonAlias,
-            expiresAtEpochMs = expiresAt,
+            expiresAtEpochMs = listOfNotNull(expiresAt, expiresAtEpochMs).minOrNull(),
         ))
     }
 
@@ -353,6 +354,7 @@ data class MessageEntity(
             },
             topicId = m.topicId,
             payloadJson = payloadWithPulseKeys(m),
+            expiresAtEpochMs = m.expiresAtEpochMs,
         )
 
         /** ISO wire timestamp → epoch ms (null when absent/unparseable). */
@@ -1194,7 +1196,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1339,6 +1341,36 @@ abstract class PulseDatabase : RoomDatabase() {
 
         /** Index reverse quote dependencies; retire previously cached quotes
          * whose source/root is already known deleted, without deleting replies. */
+        val MIGRATION_18_19: Migration = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val hasProjection = db.query("PRAGMA table_info(messages)").use { cursor ->
+                    var found = false
+                    while (cursor.moveToNext()) if (cursor.getString(1) == "expiresAtEpochMs") found = true
+                    found
+                }
+                if (!hasProjection) db.execSQL("ALTER TABLE messages ADD COLUMN expiresAtEpochMs INTEGER")
+                // Android 21 SQLite has no guaranteed JSON extension. Decode only
+                // a bounded scalar batch, preserving malformed-expiry refusal.
+                var position: String? = null
+                while (true) {
+                    val batch = db.query("SELECT id, payloadJson FROM messages WHERE (? IS NULL OR id > ?) ORDER BY id LIMIT 200",
+                        arrayOf<Any?>(position, position)).use { cursor ->
+                        buildList<Pair<String, String?>> {
+                            while (cursor.moveToNext()) add(cursor.getString(0) to if (cursor.isNull(1)) null else cursor.getString(1))
+                        }
+                    }
+                    if (batch.isEmpty()) break
+                    batch.forEach { (id, payload) ->
+                        val expiry = MessageEntity.expiryFromPayload(payload)
+                        if (expiry != null) db.execSQL("UPDATE messages SET expiresAtEpochMs = ? WHERE id = ? AND (expiresAtEpochMs IS NULL OR expiresAtEpochMs > ?)", arrayOf<Any>(expiry, id, expiry))
+                    }
+                    position = batch.last().first
+                }
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_threadRootId_createdAt_id ON messages(threadRootId, createdAt, id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_conversationId_threadRootId_createdAt_id ON messages(conversationId, threadRootId, createdAt, id)")
+            }
+        }
+
         val MIGRATION_17_18: Migration = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 val exists = db.query("PRAGMA table_info(topics)").use { cursor ->

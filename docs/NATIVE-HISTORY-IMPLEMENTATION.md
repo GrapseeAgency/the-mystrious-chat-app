@@ -56,3 +56,11 @@ Streaming export/mention commit: `8d112ac`; its iOS archive succeeded while othe
 native jobs were still running at the last inspection. Native SDK validation is
 still required for this new implementation. No item is closed merely because a
 historical backlog label was removed.
+
+Android SDK compilation of `e57c580` caught a missing physical expiry column
+(the earlier cache stores expiry in reserved payload keys). Room v19 now adds
+and backfills an explicit projection in 200-row batches without SQLite JSON
+extensions, registers the migration for every account, and adds cache ordering
+indexes. Added native migration coverage for multi-batch/malformed expiries.
+Native SDK validation must be rerun for this correction; earlier SQL fixture
+passes alone did not establish compatibility with the actual Room schema.
