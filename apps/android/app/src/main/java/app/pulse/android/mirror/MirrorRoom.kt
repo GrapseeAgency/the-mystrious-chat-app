@@ -990,7 +990,8 @@ internal fun MirrorRoom(
             sending = true
             historyScope.launch {
                 try {
-                    if (!roomActionsLive.get() || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
+                    if (!roomActionsLive.get() || repository.viewerId != owner || repository.attachmentSessionKey() != epoch ||
+                        composerDraft.revision != submittedRevision) return@launch
                     actionRepository.editMessage(editTarget.id, rawText).getOrThrow()
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     if (!roomActionsLive.get() || repository.attachmentSessionKey() != epoch) return@launch

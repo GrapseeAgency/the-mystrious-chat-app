@@ -5379,7 +5379,8 @@ final class RoomViewModel: ObservableObject {
             guard let self else { return }
             defer { if self.editGeneration == ticket { self.savingEdit = false } }
             do {
-                guard session.sessionGeneration == epoch, self.editGeneration == ticket, session.viewer?.id == viewer.id else { return }
+                guard session.sessionGeneration == epoch, self.editGeneration == ticket,
+                      self.draftEditRevision == revision, session.viewer?.id == viewer.id else { return }
                 let fresh = try await session.mutateMessage(target, action: .edit(body))
                 try Task.checkCancellation()
                 guard session.sessionGeneration == epoch, self.editGeneration == ticket else { return }

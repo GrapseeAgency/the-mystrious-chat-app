@@ -882,7 +882,7 @@ class ChatRoomViewModel @Inject constructor(
         editSendPending = true
         viewModelScope.launch {
             try {
-                if (repo.attachmentSessionKey() != epoch) return@launch
+                if (repo.attachmentSessionKey() != epoch || composerRevision != revision || editGeneration != ticket) return@launch
                 owned.editMessage(messageId, content.trim()).getOrThrow()
                 if (repo.attachmentSessionKey() == epoch && editGeneration == ticket && composerRevision == revision &&
                     _state.value.editing?.id == messageId) cancelEdit()
