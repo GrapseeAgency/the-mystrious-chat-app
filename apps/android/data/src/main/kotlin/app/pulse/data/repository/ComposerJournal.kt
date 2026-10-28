@@ -107,6 +107,8 @@ internal class ComposerJournal(private val db: PulseDatabase) {
             for (row in rows.take(25)) {
                 currentCoroutineContext().ensureActive(); if (!current()) break
                 if (!retryAdmission.canRun(owner)) break
+                // Restoring admission suspends on Room; the account may retire during it.
+                currentCoroutineContext().ensureActive(); if (!current()) break
                 var pending: ComposerIntentDto
                 try { pending = decode(row) } catch (_: Exception) {
                     db.withTransaction { dao.upsert(row.copy(key=held(row.key))); dao.acknowledgeReadIntent(row.key,row.json) }; continue

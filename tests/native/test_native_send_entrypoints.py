@@ -87,6 +87,8 @@ class NativeSendEntrypoints(unittest.TestCase):
         for name in ('ComposerJournal', 'ScheduledJournal'):
             source = (ROOT / f'apps/android/data/src/main/kotlin/app/pulse/data/repository/{name}.kt').read_text()
             self.assertIn('if (!retryAdmission.canRun(owner)) break', source)
+            after_restore = source.split('if (!retryAdmission.canRun(owner)) break', 1)[1]
+            self.assertIn('currentCoroutineContext().ensureActive(); if (!current()) break', after_restore.split('try {', 1)[0])
             self.assertIn('retryAdmission.hold(owner, failure.retryAfter)', source)
             self.assertIn('failure?.status == 503 && failure.retryAfter != null', source)
         for name in ('PulseComposerSync', 'PulseScheduledJournal'):

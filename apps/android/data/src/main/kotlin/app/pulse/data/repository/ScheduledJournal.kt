@@ -83,6 +83,8 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
             for (row in dao.savedJournalPage(prefix(owner)).take(25)) {
                 currentCoroutineContext().ensureActive(); if (!current()) break
                 if (!retryAdmission.canRun(owner)) break
+                // Restoring admission suspends on Room; the account may retire during it.
+                currentCoroutineContext().ensureActive(); if (!current()) break
                 val command = try { decode(row) } catch (_: Exception) {
                     db.withTransaction { dao.upsert(row.copy(key=held(row.key))); dao.acknowledgeReadIntent(row.key,row.json) }; continue
                 }
