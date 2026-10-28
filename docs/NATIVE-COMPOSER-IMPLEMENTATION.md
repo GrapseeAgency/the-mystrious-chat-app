@@ -92,3 +92,6 @@ still in progress**, so this is not yet the section's completion declaration.
 - Confirmed cancellation also releases an unconsumed creation's room fence via
   a direct metadata-only lookup. An older acknowledgement cannot release a newer
   replacement's fence. Both native scheduled-journal tests exercise this order.
+- Cancellation marks the original creation receipt terminal too, including
+  cancellation after its composer was already acknowledged. Retrying the old
+  body/time cannot return a cached “scheduled” success for a known cancellation.

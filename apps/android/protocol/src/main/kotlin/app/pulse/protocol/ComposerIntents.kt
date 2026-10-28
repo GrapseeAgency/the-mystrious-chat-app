@@ -40,7 +40,7 @@ data class ScheduledCommandDto(val owner: String, val clientId: String, val kind
 /** Accepted schedules retain identity/metadata, never another copy of message text. */
 @Serializable
 data class ScheduledCommandAckDto(val version: Int = 1, val owner: String, val clientId: String,
-    val kind: String, val requestHash: String, val item: ScheduledItemDto? = null)
+    val kind: String, val requestHash: String, val item: ScheduledItemDto? = null, val cancelled: Boolean = false)
 
 /** An unknown draft baseline must not overwrite a remote clear/edit ABA. */
 fun ComposerReceiptDto.hasSafeDraftBaseline(intent: ComposerIntentDto): Boolean =

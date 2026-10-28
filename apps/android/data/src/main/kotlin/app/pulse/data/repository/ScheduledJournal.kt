@@ -19,13 +19,21 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
     private fun held(key: String) = key.replaceFirst("composer-schedule:","composer-schedule-blocked:")
     private fun ack(key: String) = key.replaceFirst("composer-schedule:","composer-schedule-ack:")
     private fun head(command: ScheduledCommandDto) = "composer-schedule-head:v1|${command.owner}|${command.conversationId}"
-    private fun unacknowledged(owner: String, scheduledId: String) = "composer-schedule-unack:v1|$owner|$scheduledId"
-    private suspend fun releaseHead(owner: String, scheduledId: String) {
-        val row = dao.get(unacknowledged(owner,scheduledId)) ?: return
+    private fun referenceKey(owner: String, scheduledId: String) = "composer-schedule-reference:v1|$owner|$scheduledId"
+    private suspend fun releaseHead(owner: String, scheduledId: String, cancelled: Boolean = false) {
+        val row = dao.get(referenceKey(owner,scheduledId)) ?: return
         val reference = PulseJson.decodeFromString(ScheduledCommandDto.serializer(),row.json)
         check(reference.owner == owner && reference.kind == "create" && reference.conversationId.isNotBlank()) { "Schedule recovery reference changed" }
+        if (cancelled) {
+            val accepted = dao.get(ack(key(reference)))
+            if (accepted != null) {
+                val receipt = PulseJson.decodeFromString(ScheduledCommandAckDto.serializer(),accepted.json)
+                check(receipt.owner == owner && receipt.clientId == reference.clientId && receipt.kind == "create")
+                dao.upsert(accepted.copy(json=PulseJson.encodeToString(ScheduledCommandAckDto.serializer(),receipt.copy(cancelled=true))))
+            }
+        }
         dao.acknowledgeReadIntent(head(reference),reference.clientId)
-        dao.acknowledgeReadIntent(row.key,row.json)
+        if (cancelled) dao.acknowledgeReadIntent(row.key,row.json)
     }
     private fun requestHash(command: ScheduledCommandDto): String {
         val input = listOf(command.owner,command.clientId,command.kind,command.conversationId,command.text,command.scheduledAt).joinToString("") { "${it.length}:$it" }
@@ -33,6 +41,7 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
     }
     private fun receipt(row: Wave7CacheEntity, command: ScheduledCommandDto): ScheduledCommandAckDto =
         PulseJson.decodeFromString(ScheduledCommandAckDto.serializer(),row.json).also {
+            check(!it.cancelled) { "The original schedule was cancelled. Choose a different time for a new send." }
             check(it.version == 1 && it.owner == command.owner && it.clientId == command.clientId && it.kind == command.kind && it.requestHash == requestHash(command)) { "Schedule receipt does not match these original instructions" }
         }
     private fun encode(command: ScheduledCommandDto) = PulseJson.encodeToString(ScheduledCommandDto.serializer(),command)
@@ -90,8 +99,8 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
                         val receipt = ScheduledCommandAckDto(owner=owner,clientId=command.clientId,kind=command.kind,requestHash=requestHash(command),item=item)
                         dao.upsert(Wave7CacheEntity(ack(row.key),PulseJson.encodeToString(ScheduledCommandAckDto.serializer(),receipt),System.currentTimeMillis()))
                         if (item != null) {
-                            dao.upsert(Wave7CacheEntity(unacknowledged(owner,item.id),encode(command.copy(text="",scheduledAt="",notice=null)),0))
-                        } else if (command.kind == "cancel") releaseHead(owner,command.clientId)
+                            dao.upsert(Wave7CacheEntity(referenceKey(owner,item.id),encode(command.copy(text="",scheduledAt="",notice=null)),0))
+                        } else if (command.kind == "cancel") releaseHead(owner,command.clientId,cancelled=true)
                         dao.acknowledgeReadIntent(row.key,row.json)
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }

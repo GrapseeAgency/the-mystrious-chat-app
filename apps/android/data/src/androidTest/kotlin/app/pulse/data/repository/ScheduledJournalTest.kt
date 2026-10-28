@@ -20,6 +20,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ScheduledJournalTest {
     @Test fun acceptedInstructionsRemainFencedUntilComposerAcknowledgementAndStoreNoDuplicateBody() = runBlocking {
+      for (acknowledgeBeforeCancel in listOf(false, true)) {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
         val command = ScheduledCommandDto("me", "operation-000000001", "create", "room", "private-body", "2030-01-01T09:00:00Z")
         var requests = 0
@@ -47,10 +48,13 @@ class ScheduledJournalTest {
             assertEquals(0, journal.flush("me", api) { true })
             assertEquals(1, requests)
             assertTrue(runCatching { journal.acknowledge("me", command.clientId, "wrong", "room") }.isFailure)
+            if (acknowledgeBeforeCancel) journal.acknowledge("me", command.clientId, "accepted", "room")
             val cancel = ScheduledCommandDto("me", "accepted", "cancel")
             journal.stage(cancel)
             assertEquals(0, journal.flush("me", api) { true })
             assertTrue(journal.cancelled(cancel))
+            assertTrue(runCatching { journal.stage(command) }.isFailure)
+            assertTrue(runCatching { journal.result(command) }.isFailure)
             assertNull(db.wave7Dao().get("composer-schedule-head:v1|me|room"))
             journal.stage(next)
             // A late acknowledgement of the cancelled predecessor cannot
@@ -59,5 +63,6 @@ class ScheduledJournalTest {
             assertEquals(next.clientId, db.wave7Dao().get("composer-schedule-head:v1|me|room")?.json)
             assertNotNull(db.wave7Dao().get("composer-schedule:v1|me|create|${next.clientId}"))
         } finally { http.close(); db.close() }
+      }
     }
 }

@@ -2035,7 +2035,7 @@ class PulseRepositoryImpl constructor(
                     row.key.startsWith("composer-schedule-ack:") -> {
                         val receipt = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandAckDto.serializer(),row.json)
                         check(receipt.owner == owner && receipt.version == 1)
-                        val cancel = receipt.kind == "cancel"
+                        val cancel = receipt.kind == "cancel" || receipt.cancelled
                         val value = receipt.item
                         app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,"Schedule receipt",value?.id ?: "",value?.conversationId ?: "",value?.content ?: "",if (cancel) "Cancellation was confirmed." else "Scheduled for ${value?.scheduledAt}. Check Scheduled messages for its current status.")
                     }
@@ -2076,7 +2076,7 @@ class PulseRepositoryImpl constructor(
                 val accepted = receipt?.item
                 if (receipt != null && receipt.owner == owner && receipt.kind == "create" && accepted != null) {
                     wave7Dao.acknowledgeReadIntent("composer-schedule-head:v1|$owner|${accepted.conversationId}",receipt.clientId)
-                    wave7Dao.delete("composer-schedule-unack:v1|$owner|${accepted.id}")
+                    wave7Dao.delete("composer-schedule-reference:v1|$owner|${accepted.id}")
                 }
             }
             wave7Dao.acknowledgeReadIntent(row.key,row.json)

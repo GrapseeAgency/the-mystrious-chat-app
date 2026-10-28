@@ -64,7 +64,9 @@ struct PulseScheduledCommandAck: Codable, Sendable {
     let kind: String
     let requestHash: String
     let item: WireScheduledItem?
+    var cancelled: Bool? = nil
     func validate(_ command: PulseScheduledCommand) throws {
+        guard cancelled != true else { throw PulseAPIClient.Failure(kind: .validation,message: "The original schedule was cancelled. Choose a different time for a new send.") }
         guard version == 1, owner == command.owner, clientId == command.clientId, kind == command.kind,
               requestHash == command.requestHash else { throw CocoaError(.coderInvalidValue) }
     }
