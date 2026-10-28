@@ -6,6 +6,25 @@ import GRDB
 final class DraftHandoffTests: XCTestCase {
     private let viewer = PulseViewer(id: "sender", name: "Sender")
 
+    func testDisplacedWindowCheckpointReappearsInRecoveryWithoutSendingOrRevivingAfterRemoval() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+        defer { for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path, composerOwner: "sender")
+        let connection = try DatabaseQueue(path: path)
+        try await connection.write { try $0.execute(sql: "CREATE TRIGGER fail_detached BEFORE INSERT ON wave7Cache BEGIN SELECT RAISE(ABORT, 'SQLite cannot commit'); END") }
+        XCTAssertThrowsError(try store.preserveDetachedDraft(text: "other window text",id: UUID(),room: "room",root: "thread"))
+        try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_detached") }
+        let reopened = try PulseStore(path: path, composerOwner: "sender")
+        XCTAssertTrue(try reopened.allDraftRows().isEmpty, "Private recovery JSON must never appear as a conversation draft")
+        let row = try XCTUnwrap(reopened.composerRecoveryPage(owner: "sender").items.first)
+        XCTAssertEqual(row.kind, "Other window draft")
+        XCTAssertEqual(row.text, "other window text")
+        XCTAssertEqual(try reopened.countOutbox(), 0)
+        XCTAssertEqual(try reopened.pendingComposerCount(owner: "sender"), 0)
+        try reopened.recoverComposer(row, owner: "sender", action: "remove")
+        XCTAssertTrue(try PulseStore(path: path, composerOwner: "sender").composerRecoveryPage(owner: "sender").items.isEmpty)
+    }
+
     func testCheckpointCleanupIsBoundedResumesAndNeverExpiresUnacknowledgedText() async throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
         defer { for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) } }

@@ -107,6 +107,26 @@ public final class PulseStore: Sendable {
         let cursor = try dbQueue.read { try String.fetchOne($0, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [cursorKey]) ?? "" }
         let page = try draftCheckpoints.page(after: cursor)
         guard !page.snapshots.isEmpty || !cursor.isEmpty || !page.next.isEmpty else { return 0 }
+        // Rehydrate unsubmitted edit / displaced-window snapshots into the
+        // recovery list, never into the outbound intent namespace. ACK the UUID
+        // read, not whichever file a concurrent typing writer creates later.
+        try dbQueue.write { db in
+            for snapshot in page.snapshots {
+                let owner = composerOwner ?? "local"
+                let edit = snapshot.scope.hasPrefix("composer-local-edit:v1|\(owner)|")
+                let detached = snapshot.scope.hasPrefix("composer-detached:v1|\(owner)|")
+                guard edit || detached, try draftCheckpoints.read(snapshot.scope)?.id == snapshot.id else { continue }
+                let ack = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [draftCheckpoints.receiptKey(snapshot.scope)])
+                guard ack != snapshot.id.uuidString else { continue }
+                if edit {
+                    guard (try? JSONDecoder().decode(PulseComposerLocalEdit.self, from: Data(snapshot.text.utf8))) != nil else { continue }
+                } else {
+                    guard (try? JSONDecoder().decode(PulseDetachedDraft.self, from: Data(snapshot.text.utf8))) != nil else { continue }
+                }
+                try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt", arguments: [snapshot.scope,snapshot.text,Date().timeIntervalSince1970])
+                try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET json=excluded.json", arguments: [draftCheckpoints.receiptKey(snapshot.scope),snapshot.id.uuidString])
+            }
+        }
         let consumed = try dbQueue.read { db in
             try page.snapshots.filter { snapshot in
                 try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [draftCheckpoints.receiptKey(snapshot.scope)]) == snapshot.id.uuidString
@@ -1541,7 +1561,7 @@ public final class PulseStore: Sendable {
     private func allDraftRowsIncludingCheckpoints(_ db: Database) throws -> [DraftRow] {
         let saved = try DraftRow.fetchAll(db, sql: "SELECT * FROM draft ORDER BY updatedAt ASC")
         var rows = Dictionary(saved.map { ($0.conversationId,$0) }, uniquingKeysWith: { _, later in later })
-        for scope in try draftCheckpoints.scopes() where !scope.hasPrefix("composer-local-edit:v1|") {
+        for scope in try draftCheckpoints.scopes() where !scope.hasPrefix("composer-local-edit:v1|") && !scope.hasPrefix("composer-detached:v1|") {
             if let snapshot = try recoverableDraftCheckpoint(db,room: scope) {
                 rows[scope] = DraftRow(conversationId: scope,text: snapshot.text,updatedAt: "checkpoint:" + snapshot.id.uuidString)
             }
@@ -2445,13 +2465,19 @@ extension PulseStore {
     func preserveDetachedDraft(text: String, id: UUID, room: String, root: String?) throws {
         let key = "composer-detached:v1|\(composerOwner ?? "local")|\(id.uuidString)"
         let json = String(decoding: try JSONEncoder().encode(PulseDetachedDraft(conversationId: room, rootId: root, text: text)), as: UTF8.self)
+        let checkpoint = try? draftCheckpoints.write(key, text: json)
         try dbQueue.write { db in
             try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt", arguments: [key,json,Date().timeIntervalSince1970])
+            if let checkpoint {
+                try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET json=excluded.json", arguments: [draftCheckpoints.receiptKey(key),checkpoint.id.uuidString])
+            }
         }
+        if let checkpoint { try? draftCheckpoints.remove(key,id: checkpoint.id) }
     }
     private static func recoveryVersion(_ json: String) -> String { SHA256.hash(data: Data(json.utf8)).map { String(format: "%02x",$0) }.joined() }
     func composerRecoveryPage(owner: String, after: String? = nil) throws -> PulseComposerRecoveryPage {
         guard composerOwner == nil || composerOwner == owner else { throw CocoaError(.coderInvalidValue) }
+        _ = try pruneConsumedDraftCheckpoints()
         let pattern = owner.map { $0 == "[" ? "[[]" : $0 == "*" ? "[*]" : $0 == "?" ? "[?]" : String($0) }.joined()
         return try dbQueue.read { db in
             let patterns = ["composer-intent","composer-blocked","composer-local-edit","composer-schedule","composer-schedule-blocked","composer-schedule-ack","composer-detached"].map { "\($0):v1|\(pattern)|*" }

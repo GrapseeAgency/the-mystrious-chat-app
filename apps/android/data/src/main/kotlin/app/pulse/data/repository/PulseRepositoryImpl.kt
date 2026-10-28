@@ -2062,6 +2062,7 @@ class PulseRepositoryImpl constructor(
     private fun recoveryVersion(json: String): String = java.security.MessageDigest.getInstance("SHA-256").digest(json.toByteArray()).joinToString("") { "%02x".format(it) }
     override suspend fun composerRecoveryPage(after: String?): Result<app.pulse.domain.model.ComposerRecoveryPage> = try {
         val owner = viewerId ?: error("No active account")
+        pruneConsumedDraftCheckpoints()
         val pattern = owner.map { when(it) { '[' -> "[[]"; '*' -> "[*]"; '?' -> "[?]"; else -> it.toString() } }.joinToString("")
         val rows = wave7Dao.composerRecoveryPage(pattern,after ?: "")
         val items = rows.take(100).map { row ->
@@ -3320,6 +3321,18 @@ class PulseRepositoryImpl constructor(
         val page = draftCheckpoints.page(cursor)
         if (page.snapshots.isEmpty() && cursor.isEmpty() && page.next.isEmpty()) return@withLock
         for (snapshot in page.snapshots) {
+            val owner = reminderOwner?.userId ?: viewerId
+            if (owner != null && snapshot.scope.startsWith("composer-local-edit:v1|$owner|") &&
+                runCatching { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),snapshot.text) }.isSuccess) {
+                database.withTransaction {
+                    if (draftCheckpoints.read(snapshot.scope)?.id == snapshot.id &&
+                        wave7Dao.get(draftCheckpoints.receiptKey(snapshot.scope))?.json != snapshot.id) {
+                        // Restore an unsubmitted snapshot, not an automatic send.
+                        wave7Dao.upsert(Wave7CacheEntity(snapshot.scope,snapshot.text,System.currentTimeMillis()))
+                        wave7Dao.upsert(Wave7CacheEntity(draftCheckpoints.receiptKey(snapshot.scope),snapshot.id,0))
+                    }
+                }
+            }
             if (wave7Dao.get(draftCheckpoints.receiptKey(snapshot.scope))?.json == snapshot.id) {
                 draftCheckpoints.remove(snapshot.scope,snapshot.id)
             }

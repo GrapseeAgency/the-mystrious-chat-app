@@ -23,9 +23,8 @@ class DraftCheckpointJournalTest {
      * DataStore avoids illegally constructing two writers for one preferences file. */
     private class Repositories(val context: Context, val http: HttpClient, val owner: String, val tokens: SessionTokenStore) {
         private val preferencesScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
-        private val preferences = PulsePrefsLocalStore(androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope=preferencesScope) {
-            File(context.filesDir, "checkpoint-test-${UUID.randomUUID()}.preferences_pb")
-        })
+        private val preferencesFile = File(context.filesDir, "checkpoint-test-${UUID.randomUUID()}.preferences_pb")
+        private val preferences = PulsePrefsLocalStore(androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope=preferencesScope) { preferencesFile })
         private val handles = mutableListOf<PulseDatabase>()
         private val repositories = mutableListOf<PulseRepositoryImpl>()
         fun open(): PulseRepositoryImpl {
@@ -149,6 +148,9 @@ class DraftCheckpointJournalTest {
                     reopened.stageEditDraft(remote,"my next edit")
                     failedAgain.await()
                     database.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_edit")
+                    val recoveredRow = reopened.composerRecoveryPage(null).getOrThrow().items.single { it.kind == "Unsubmitted edit" }
+                    assertEquals("my next edit", recoveredRow.text)
+                    assertTrue(database.wave7Dao().readJournal("composer-intent:v1|$owner|").isEmpty())
                     // Offline edit reports unconfirmed but must retain the original baseline,
                     // including the live buffer after another failed write on remote text.
                     assertTrue(reopened.editMessage(message.id,"my next edit").isFailure)

@@ -125,6 +125,10 @@ final class ComposerJournalTests: XCTestCase {
         let reopened = try PulseStore(path: path, composerOwner: "me")
         XCTAssertEqual(try reopened.recoveredComposerEdit(owner: "me", id: "m"), "my retained edit")
         try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_edit") }
+        let recoveredRow = try XCTUnwrap(reopened.composerRecoveryPage(owner: "me").items.first)
+        XCTAssertEqual(recoveredRow.kind, "Unsubmitted edit")
+        XCTAssertEqual(recoveredRow.text, "my retained edit")
+        XCTAssertEqual(try reopened.pendingComposerCount(owner: "me"), 0)
         var remote = message; remote.content = "new remote content"
         try reopened.enqueueComposerEdit(remote, text: "my retained edit", owner: "me")
         let intent = try XCTUnwrap(reopened.composerPage(owner: "me").first?.intent)

@@ -116,7 +116,6 @@ class ChatRoomViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     @ApplicationContext private val context: Context,
     private val repo: PulseRepository,
-    private val sendUseCase: SendMessageUseCase,
     /** The ONE active voice player - room + thread share the singleton. */
     val voicePlayer: VoicePlayer,
     // R1-W2I - PiP pane store (F-PI-01..03): the pop-out toggle writes the
@@ -370,17 +369,18 @@ class ChatRoomViewModel @Inject constructor(
 
     fun scheduleSend(content: String, scheduledAtIso: String, confirmed: () -> Unit = {}) {
         if (_scheduledBusy.value) return
-        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
+        val epoch = owned.attachmentSessionKey() ?: return
         _scheduledBusy.value = true; scheduledRevision++; _scheduledLoading.value = false
         viewModelScope.launch {
             try {
                 if (repo.attachmentSessionKey() != epoch) return@launch
-                val item = repo.scheduleMessage(conversationId, content, scheduledAtIso).getOrThrow()
+                val item = owned.scheduleMessage(conversationId, content, scheduledAtIso).getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repo.attachmentSessionKey() != epoch) return@launch
                 _scheduled.value = (_scheduled.value.filterNot { it.id == item.id } + item).sortedBy { it.scheduledAtIso }
                 confirmed()
-                repo.acknowledgeScheduledCreation(item).getOrThrow()
+                owned.acknowledgeScheduledCreation(item).getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repo.attachmentSessionKey() != epoch) return@launch
                 notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)}")
@@ -392,12 +392,13 @@ class ChatRoomViewModel @Inject constructor(
 
     fun cancelScheduled(scheduledId: String) {
         if (_scheduledBusy.value) return
-        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
+        val epoch = owned.attachmentSessionKey() ?: return
         _scheduledBusy.value = true; scheduledRevision++; _scheduledLoading.value = false
         viewModelScope.launch {
             try {
                 if (repo.attachmentSessionKey() != epoch) return@launch
-                repo.cancelScheduled(scheduledId).getOrThrow()
+                owned.cancelScheduled(scheduledId).getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repo.attachmentSessionKey() != epoch) return@launch
                 _scheduled.value = _scheduled.value.filterNot { it.id == scheduledId }
@@ -691,7 +692,9 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         val revision = composerRevision
-        val draftToken = repo.captureDraftToken(conversationId)
+        val owned = repo.boundToCurrentAccount()
+        val epoch = owned.attachmentSessionKey()
+        val draftToken = owned.captureDraftToken(conversationId)
         draftSaveJob?.cancel()
         val topic = _activeTopicId.value
         val reply = _state.value.replyTo
@@ -711,8 +714,9 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             // Quote replies DO file to the active topic (only THREAD replies
             // are excluded - the repo drops topicId on parentId sends).
-            safelySend { sendUseCase(conversationId, body, replyId, topicId = topic, anon = anonArmed, anonAliasPreview = anonAliasPreview, draftToken = draftToken) }
+            safelySend { SendMessageUseCase(owned)(conversationId, body, replyId, topicId = topic, anon = anonArmed, anonAliasPreview = anonAliasPreview, draftToken = draftToken) }
                 .onSuccess { receipt ->
+                    if (repo.attachmentSessionKey() != epoch) return@onSuccess
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
                         // composer text has left for the queue - clear the
@@ -735,6 +739,7 @@ class ChatRoomViewModel @Inject constructor(
                     }
                 }
                 .onFailure { failure ->
+                    if (repo.attachmentSessionKey() != epoch) return@onFailure
                     _state.value = _state.value.copy(error = failureNotice(failure))
                     if (composerRevision == revision) {
                         if (_state.value.replyTo == null) _state.value = _state.value.copy(replyTo = reply)
@@ -870,14 +875,15 @@ class ChatRoomViewModel @Inject constructor(
     private var editSendPending = false
     private fun sendEdit(messageId: String, content: String) {
         if (editSendPending) return
-        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
+        val epoch = owned.attachmentSessionKey() ?: return
         val ticket = editGeneration
         val revision = composerRevision
         editSendPending = true
         viewModelScope.launch {
             try {
                 if (repo.attachmentSessionKey() != epoch) return@launch
-                repo.editMessage(messageId, content.trim()).getOrThrow()
+                owned.editMessage(messageId, content.trim()).getOrThrow()
                 if (repo.attachmentSessionKey() == epoch && editGeneration == ticket && composerRevision == revision &&
                     _state.value.editing?.id == messageId) cancelEdit()
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
