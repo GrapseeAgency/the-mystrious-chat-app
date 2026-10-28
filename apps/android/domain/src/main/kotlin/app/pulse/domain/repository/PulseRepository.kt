@@ -268,6 +268,9 @@ interface PulseRepository {
     /** Capture the account receiver before launching feature-owned asynchronous work. */
     fun boundToCurrentAccount(): PulseRepository = this
 
+    /** Observed rows must retain the account that produced them, including across router switches. */
+    fun observeAccountRepository(): Flow<PulseRepository> = kotlinx.coroutines.flow.flowOf(boundToCurrentAccount())
+
     val viewerId: String?
 
     fun observeConversations(query: String = ""): Flow<List<Conversation>>

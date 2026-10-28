@@ -1,14 +1,11 @@
 # Section 3 — drafts, outgoing messages, edits and scheduling
 
-> **Current status:** Implementation and scoped regression verification are
-> complete for the supplied original eleven items. See
-> [the authoritative checklist](NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md).
-> Verified native source: `6f8762228e3178816e5a6d17ee8073a4980a118d`.
-> The entire Android run passed, including API30/API34 and release smoke;
-> scoped iOS explicitly passed 108/108, zero unverified, on the same source.
-> Backend: 535 passed, zero failed/skipped; local Python contracts: 20 passed.
-> The grouping and older counts below are historical, not the acceptance boundary.
-> Durability limits and deferred full-app/device acceptance remain explicit.
+> **Current status:** Reopened by the requested recheck: a displayed-row
+> revision/account gap in item 7 and reproducible scheduling contention in item 8.
+> Fixes and regressions are added; hosted native verification is pending.
+> Local recheck: 75 focused server contracts and 20 Python contracts passed.
+> The previous Android/108-test iOS successes remain historical evidence, not
+> exhaustive closure. See the authoritative checklist for exact boundaries.
 > No section 4, deployment or PR merge is included.
 
 

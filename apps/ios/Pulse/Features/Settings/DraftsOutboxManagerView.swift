@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// A refreshed manager must not lend its newer revisions/account to an old button callback.
+struct ComposerManagerViewFence {
+    private(set) var ticket = UUID()
+    mutating func invalidate() { ticket = UUID() }
+    func accepts(_ captured: UUID) -> Bool { captured == ticket }
+}
+
 /// Wave 8 - Drafts & outbox manager (web settings Chat section parity):
 /// the REAL per-conversation GRDB draft rows and the offline outbox queue
 /// with per-row delete + clear-all. Fully offline - both stores are local
@@ -24,6 +31,8 @@ struct DraftsOutboxManagerView: View {
     @State private var recoveryConfirmation: PulseComposerRecovery?
     @State private var recoveryAction = "remove"
     @State private var actionNotice: String?
+    @State private var snapshotFence = ComposerManagerViewFence()
+    @State private var recoveryConfirmationTicket: UUID?
 
     var body: some View {
         NavigationStack {
@@ -64,11 +73,12 @@ struct DraftsOutboxManagerView: View {
         .onChange(of: session.scheduledRecoveryRevision) { _, _ in reloadRecovery() }
         .alert(recoveryAction == "replace" ? "Use this saved version?" : "Remove local recovery?",isPresented: Binding(get: { recoveryConfirmation != nil },set: { if !$0 { recoveryConfirmation = nil } })) {
             Button("Keep it",role: .cancel) { recoveryConfirmation = nil }
-            Button("Confirm") { if let row = recoveryConfirmation { performRecovery(row,action: recoveryAction) }; recoveryConfirmation = nil }
+            Button("Confirm") { if let row = recoveryConfirmation, let ticket = recoveryConfirmationTicket { performRecovery(row,action: recoveryAction,ticket: ticket) }; recoveryConfirmation = nil; recoveryConfirmationTicket = nil }
         } message: {
             Text(recoveryAction == "replace" ? "Replace the current server draft or edit with this saved text? A further server change will still cause a conflict rather than being overwritten." : "This removes only the local recovery copy. It does NOT cancel a scheduled message or undo a send or edit already accepted by the server.")
         }
         .onChange(of: session.sessionGeneration) { _, _ in
+            snapshotFence.invalidate(); recoveryConfirmationTicket = nil
             drafts = []; queued = []; recovery = []; recoveryCursor = nil; recoveryConfirmation = nil
             conversationNames = [:]; draftRevisions = [:]; loadedOwner = nil; actionNotice = nil
             dismiss()
@@ -76,7 +86,8 @@ struct DraftsOutboxManagerView: View {
     }
 
     private var recoveryCard: some View {
-        settingsCard(title: "Composer recovery",icon: "arrow.clockwise",count: recovery.count) {
+        let ticket = snapshotFence.ticket
+        return settingsCard(title: "Composer recovery",icon: "arrow.clockwise",count: recovery.count) {
             Button("Refresh recovery") { reloadRecovery() }
             ForEach(recovery) { row in
                 VStack(alignment: .leading,spacing: 6) {
@@ -84,11 +95,11 @@ struct DraftsOutboxManagerView: View {
                     if !row.text.isEmpty { Text(row.text).font(.footnote).lineLimit(3) }
                     Text(row.notice).font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        if !row.text.isEmpty { Button("Copy text") { if ownedStore() != nil { UIPasteboard.general.string = row.text } } }
-                        if row.canRetry { Button("Retry original") { performRecovery(row,action: "retry") } }
+                        if !row.text.isEmpty { Button("Copy text") { if ownedStore(ticket: ticket) != nil { UIPasteboard.general.string = row.text } } }
+                        if row.canRetry { Button("Retry original") { performRecovery(row,action: "retry",ticket: ticket) } }
                     }.font(.caption)
-                    if row.canReplace { Button("Use this version") { recoveryAction = "replace"; recoveryConfirmation = row }.font(.caption) }
-                    Button("Remove local copy") { recoveryAction = "remove"; recoveryConfirmation = row }.font(.caption)
+                    if row.canReplace { Button("Use this version") { recoveryAction = "replace"; recoveryConfirmation = row; recoveryConfirmationTicket = ticket }.font(.caption) }
+                    Button("Remove local copy") { recoveryAction = "remove"; recoveryConfirmation = row; recoveryConfirmationTicket = ticket }.font(.caption)
                 }.padding(10).background(rowPanel)
             }
             if recoveryCursor != nil { Button("Load more recovery") { reloadRecovery(more: true) } }
@@ -98,15 +109,16 @@ struct DraftsOutboxManagerView: View {
         guard let store = ownedStore(), let owner = session.viewer?.id else { return }
         do {
             let page = try store.composerRecoveryPage(owner: owner,after: more ? recoveryCursor : nil)
+            snapshotFence.invalidate()
             recovery = (more ? recovery : []) + page.items; recoveryCursor = page.nextCursor
         } catch { actionNotice = "Recovery could not be loaded. Original text has not been discarded." }
     }
-    private func performRecovery(_ row: PulseComposerRecovery, action: String) {
-        guard ownedStore() != nil else { return }
+    private func performRecovery(_ row: PulseComposerRecovery, action: String, ticket: UUID) {
+        guard ownedStore(ticket: ticket) != nil else { return }
         let epoch = session.sessionGeneration
         Task {
             do {
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch, snapshotFence.accepts(ticket) else { return }
                 try await session.recoverComposer(row,action: action)
                 guard session.sessionGeneration == epoch else { return }
                 actionNotice = action == "remove" ? "Local copy removed. Server actions were not undone." : "Original text retained while the request is reconciled."
@@ -118,7 +130,8 @@ struct DraftsOutboxManagerView: View {
     // drafts
 
     private var draftsCard: some View {
-        settingsCard(title: "Saved drafts", icon: "doc.text", count: drafts.count) {
+        let ticket = snapshotFence.ticket
+        return settingsCard(title: "Saved drafts", icon: "doc.text", count: drafts.count) {
             if loadError != nil { emptyNote("Drafts could not be verified. Nothing has been cleared.") }
             else if drafts.isEmpty {
                 emptyNote("No drafts - composer text saves per conversation on this device.")
@@ -131,14 +144,15 @@ struct DraftsOutboxManagerView: View {
                     armed: clearDraftsArmed,
                     disabled: drafts.isEmpty,
                 ) {
-                    clearAllDrafts()
+                    clearAllDrafts(ticket: ticket)
                 }
             }
         }
     }
 
     private func draftRow(_ row: DraftRow) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let ticket = snapshotFence.ticket
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: "doc.plaintext")
                     .font(.system(size: 12, weight: .medium))
@@ -149,7 +163,7 @@ struct DraftsOutboxManagerView: View {
                     .lineLimit(1)
                 Spacer()
                 Button {
-                    deleteDraft(row)
+                    clearDrafts([row],ticket: ticket)
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 13, weight: .medium))
@@ -178,7 +192,8 @@ struct DraftsOutboxManagerView: View {
     // outbox
 
     private var outboxCard: some View {
-        settingsCard(title: "Outbox & failed sends", icon: "cloud.slash", count: queued.count) {
+        let ticket = snapshotFence.ticket
+        return settingsCard(title: "Outbox & failed sends", icon: "cloud.slash", count: queued.count) {
             if loadError != nil { emptyNote("The outgoing queue could not be verified.") }
             else if queued.isEmpty {
                 emptyNote("No retained outgoing messages.")
@@ -194,14 +209,15 @@ struct DraftsOutboxManagerView: View {
                     armed: discardQueueArmed,
                     disabled: queued.isEmpty,
                 ) {
-                    discardAll()
+                    discardAll(ticket: ticket)
                 }
             }
         }
     }
 
     private func outboxRow(_ row: OutboxRow) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let ticket = snapshotFence.ticket
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 12, weight: .medium))
@@ -217,7 +233,7 @@ struct DraftsOutboxManagerView: View {
                 }
                 Spacer()
                 Button {
-                    deleteQueued(row)
+                    discard([row],ticket: ticket)
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 13, weight: .medium))
@@ -231,7 +247,7 @@ struct DraftsOutboxManagerView: View {
             if let reason = row.failureReason {
                 Text("Not sent: " + reason).font(.system(size: 12)).foregroundStyle(.red)
                 Button("Retry original message") {
-                    guard ownedStore() != nil else { return }
+                    guard ownedStore(ticket: ticket) != nil else { return }
                     session.retryOutbox(clientId: row.clientId, conversationId: row.conversationId)
                     reload()
                 }
@@ -243,7 +259,7 @@ struct DraftsOutboxManagerView: View {
                 Text(envelope.uploadDataUrl == nil ? "Upload kept; message awaits delivery." : "Attachment bytes kept on this device.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            Button("Copy text") { UIPasteboard.general.string = row.content }
+            Button("Copy text") { if ownedStore(ticket: ticket) != nil { UIPasteboard.general.string = row.content } }
                 .font(.system(size: 12, weight: .semibold))
             Text(row.content)
                 .textSelection(.enabled)
@@ -343,15 +359,16 @@ struct DraftsOutboxManagerView: View {
 
     // actions (real GRDB rows)
 
-    private func ownedStore() -> PulseStore? {
-        guard loadedOwner == session.sessionGeneration, let store = session.store else {
-            actionNotice = "This account changed or its storage is unavailable. Reopen the manager."
+    private func ownedStore(ticket: UUID? = nil) -> PulseStore? {
+        guard ticket.map({ snapshotFence.accepts($0) }) ?? true, loadedOwner == session.sessionGeneration, let store = session.store else {
+            actionNotice = "This saved-message view changed or its storage is unavailable. Refresh before trying again."
             return nil
         }
         return store
     }
 
     private func reload() {
+        snapshotFence.invalidate()
         let epoch = session.sessionGeneration
         if loadedOwner != epoch {
             drafts = []; queued = []; conversationNames = [:]; draftRevisions = [:]
@@ -377,12 +394,8 @@ struct DraftsOutboxManagerView: View {
         } catch { loadError = "Couldn't read saved messages. Your drafts and outgoing queue have not been discarded." }
     }
 
-    private func deleteDraft(_ row: DraftRow) {
-        clearDrafts([row])
-    }
-
-    private func clearDrafts(_ rows: [DraftRow]) {
-        guard loadError == nil, let store = ownedStore() else { return }
+    private func clearDrafts(_ rows: [DraftRow], ticket: UUID) {
+        guard loadError == nil, let store = ownedStore(ticket: ticket) else { return }
         var changed = 0, failed = 0
         for row in rows {
             do {
@@ -394,16 +407,14 @@ struct DraftsOutboxManagerView: View {
         reload()
     }
 
-    private func clearAllDrafts() {
-        guard loadError == nil, ownedStore() != nil else { return }
+    private func clearAllDrafts(ticket: UUID) {
+        guard loadError == nil, ownedStore(ticket: ticket) != nil else { return }
         if !clearDraftsArmed { clearDraftsArmed = true; return }
-        clearDrafts(drafts)
+        clearDrafts(drafts,ticket: ticket)
     }
 
-    private func deleteQueued(_ row: OutboxRow) { discard([row]) }
-
-    private func discard(_ rows: [OutboxRow]) {
-        guard loadError == nil, let store = ownedStore() else { return }
+    private func discard(_ rows: [OutboxRow], ticket: UUID) {
+        guard loadError == nil, let store = ownedStore(ticket: ticket) else { return }
         let epoch = session.sessionGeneration
         var changed = 0, failed = 0
         for row in rows {
@@ -417,9 +428,9 @@ struct DraftsOutboxManagerView: View {
         reload()
     }
 
-    private func discardAll() {
-        guard loadError == nil, ownedStore() != nil else { return }
+    private func discardAll(ticket: UUID) {
+        guard loadError == nil, ownedStore(ticket: ticket) != nil else { return }
         if !discardQueueArmed { discardQueueArmed = true; return }
-        discard(queued)
+        discard(queued,ticket: ticket)
     }
 }

@@ -7,6 +7,7 @@ import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
@@ -45,6 +46,7 @@ internal class AccountRepositoryRouter(
                 else selected == owner
             }
             "stop" -> synchronized(transitionLock) { active.value = stopAccount(); null }
+            "observeAccountRepository" -> active.asStateFlow()
             else -> if (method.returnType == Flow::class.java) {
                 flow {
                     var initial = true

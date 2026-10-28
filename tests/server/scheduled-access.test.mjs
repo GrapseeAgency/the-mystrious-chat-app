@@ -16,7 +16,7 @@ async function load(path, bindings, expression) {
 }
 async function fixture(run) {
  const dir=await mkdtemp(join(tmpdir(),'scheduled-'));const db=new PrismaClient({datasourceUrl:`file:${join(dir,'test.sqlite')}`})
- const notificationWork=[]
+ const notificationWork=[], peerClients=[]
  try {
   // Real SQLite tables with the generated model's complete scalar columns.
   for(const name of ['User','Conversation','ConversationParticipant','UserBlock','Message','ScheduledMessage']) {
@@ -55,8 +55,9 @@ async function fixture(run) {
    fanoutPush:async(recipients,payload,options)=>{if(faults.push)throw Error('provider failed');pushes.push({recipients,payload,bodies:recipients.map(options.bodyFor)})},
    console:{error:()=>{}}},'POST')
   const create=(data={})=>db.scheduledMessage.create({data:{id:'queued',conversationId:'room',senderId:'me',content:'Hello',scheduledAt:new Date(Date.now()+3600000),...data}})
-  await run(db,{...base,POSTv2,DELETE:cancel,dispatch,events,pushes,faults,flushNotifications,create,helper})
- } finally {await Promise.all(notificationWork);await db.$disconnect();await rm(dir,{recursive:true,force:true})}
+  await run(db,{...base,POSTv2,DELETE:cancel,dispatch,events,pushes,faults,flushNotifications,create,helper,
+   peerClient:()=>{const peer=new PrismaClient({datasourceUrl:`file:${join(dir,'test.sqlite')}`});peerClients.push(peer);return peer}})
+ } finally {await Promise.all(notificationWork);await Promise.all(peerClients.map(peer=>peer.$disconnect()));await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
 const ctx=(id='room')=>({params:Promise.resolve({id})})
 const req=(method,owner='me',token='synthetic-me',body={},cursor=null)=>new Request(`https://schedule.test/?userId=${owner}${cursor?'&cursor='+encodeURIComponent(cursor):''}`,{method,headers:token?{Authorization:`Bearer ${token}`}:{},...(method==='GET'?{}:{body:JSON.stringify({senderId:owner,requesterId:owner,content:' Hello ',scheduledAt:new Date(Date.now()+3600000).toISOString(),...body})})})
@@ -387,7 +388,8 @@ test('cross-device and legacy simultaneous semantic duplicates admit one instruc
   h.POSTv2(req('POST','me','synthetic-me',{...body,clientId:'device-two-operation-001'}),ctx()),
   h.POSTv2(req('POST','me','synthetic-me',{...body,clientId:'device-three-operation-1'}),ctx()),
  ])
- assert.equal(responses.filter(r=>r.status===201).length,1)
+ const outcomes=await Promise.all(responses.map(async r=>({status:r.status,body:await r.clone().json()})))
+ assert.equal(responses.filter(r=>r.status===201).length,1,JSON.stringify(outcomes))
  for(const r of responses) assert.ok([201,409].includes(r.status))
  assert.equal(await db.scheduledMessage.count(),1)
  const changed=await h.POST(req('POST','me','synthetic-me',{...body,scheduledAt:new Date(Date.parse(when)+1000).toISOString()}),ctx())
@@ -404,5 +406,22 @@ test('legacy create fails closed without receipts and adopts an existing unkeyed
  assert.equal(await db.scheduledMessage.count(),1)
  await db.$executeRawUnsafe('DROP TABLE ScheduledCreationOperation')
  assert.equal((await h.POST(req('POST'),ctx())).status,503)
+ assert.equal(await db.scheduledMessage.count(),1)
+}))
+
+
+test('semantic schedule deduplication remains transactional across independent database clients',()=>fixture(async(db,h)=>{
+ const when=new Date(Date.now()+3600000), text='One instruction across database clients'
+ const clients=[db,h.peerClient(),h.peerClient()]
+ const ids=[undefined,'independent-client-two-001','independent-client-three-1']
+ const outcomes=await Promise.all(clients.map((client,i)=>h.helper.createScheduled(client,'me','room',text,when,ids[i])
+  .then(value=>({status:201,value}),error=>({status:error.status,code:error.code,message:error.message}))))
+ assert.equal(outcomes.filter(x=>x.status===201).length,1,JSON.stringify(outcomes))
+ for(const outcome of outcomes)if(outcome.status!==201){assert.equal(outcome.status,409);assert.equal(outcome.code,'schedule_duplicate')}
+ assert.equal(await db.scheduledMessage.count(),1)
+ const winner=outcomes.findIndex(x=>x.status===201)
+ const replay=await h.helper.createScheduled(clients[winner],'me','room',text,when,ids[winner])
+ assert.equal(replay.item.id,outcomes[winner].value.item.id)
+ assert.equal(replay.replayed,true)
  assert.equal(await db.scheduledMessage.count(),1)
 }))

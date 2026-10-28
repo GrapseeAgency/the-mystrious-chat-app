@@ -113,8 +113,14 @@ export async function createScheduled(db: PrismaClient, userId: string, conversa
           INSERT INTO ScheduledCreationOperation (userId, clientId, requestHash, scheduledId)
           VALUES (${userId}, ${key}, ${hash}, ${row.id})`
         return { ...scope(userId, conversationId), clientId: key, replayed: false, item: wire(row) }
-      }, { isolationLevel: 'Serializable' })
+      // SQLite's competing transaction starts can occupy the engine for its
+      // ~5s busy wait. The default 5s interactive deadline expires the winner
+      // at the same instant, causing synchronized retries to make no progress.
+      // Keep the transaction alive beyond that wait, but bounded. Every attempt
+      // still reuses the same immutable identity and rechecks authorization.
+      }, { isolationLevel: 'Serializable', maxWait: 15000, timeout: 20000 })
     } catch (error) {
+
       if (error instanceof Error && /no such table: (?:main\.)?ScheduledCreationOperation/.test(error.message)) {
         throw new ScheduledError(503, 'The server needs its scheduled-send receipt upgrade. Nothing was scheduled; retry after the upgrade.')
       }

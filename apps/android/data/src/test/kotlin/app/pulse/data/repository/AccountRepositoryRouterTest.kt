@@ -51,6 +51,23 @@ class AccountRepositoryRouterTest {
         } as PulseRepository
     }
 
+    @Test fun accountObservationReturnsTheActualProducerRatherThanRetargetingOldRows() = runTest {
+        val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(a.repo, { b.repo }, { a.repo })
+        val seen = mutableListOf<PulseRepository>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            router.repository.observeAccountRepository().collect { seen.add(it) }
+        }
+        runCurrent()
+        assertSame(a.repo, seen.last())
+        val captured = seen.last()
+        router.repository.start("b"); runCurrent()
+        assertSame(b.repo, seen.last())
+        assertSame(a.repo, captured)
+        router.repository.stop(); runCurrent()
+        assertSame(a.repo, seen.last())
+    }
+
     @Test fun observationsRebindAndIgnoreRetiredAccountUpdates() = runTest {
         val guest = Account("guest")
         val a = Account("a")

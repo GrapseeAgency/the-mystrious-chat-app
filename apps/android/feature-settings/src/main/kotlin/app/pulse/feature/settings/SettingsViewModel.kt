@@ -349,7 +349,8 @@ class SettingsViewModel @Inject constructor(
 
     // Chat section - Drafts & Outbox manager (fully offline)
 
-    data class DraftRow(val conversationId: String, val title: String, val text: String)
+    data class DraftRow(val conversationId: String, val title: String, val text: String,
+        val snapshot: ComposerManagerDraftSnapshot)
 
     data class OutboxRow(
         val clientId: String,
@@ -358,19 +359,23 @@ class SettingsViewModel @Inject constructor(
         val content: String,
         val attempts: Int,
         val failureReason: String? = null,
-        val snapshot: app.pulse.domain.model.OutboxEntry? = null,
+        val snapshot: app.pulse.domain.model.OutboxEntry,
+        val owner: ComposerManagerOwner,
     )
 
-    val drafts: StateFlow<List<DraftRow>> =
-        combine(repo.observeDrafts(), repo.observeConversations()) { drafts, conversations ->
+    val drafts: StateFlow<List<DraftRow>> = observeComposerManagerRows(repo) { owner ->
+        combine(owner.repository.observeDrafts(), owner.repository.observeConversations()) { drafts, conversations ->
             val titles = conversations.associate { it.id to it.title }
             drafts.filterValues { it.isNotBlank() }.map { (conversationId, text) ->
-                DraftRow(conversationId, if (app.pulse.domain.model.isThreadDraftKey(conversationId)) "Thread reply" else titles[conversationId] ?: "Chat", text)
+                DraftRow(conversationId,
+                    if (app.pulse.domain.model.isThreadDraftKey(conversationId)) "Thread reply" else titles[conversationId] ?: "Chat",
+                    text, owner.draft(conversationId, text))
             }.sortedBy { it.title.lowercase() }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val outbox: StateFlow<List<OutboxRow>> =
-        combine(repo.observeOutbox(), repo.observeConversations()) { rows, conversations ->
+    val outbox: StateFlow<List<OutboxRow>> = observeComposerManagerRows(repo) { owner ->
+        combine(owner.repository.observeOutbox(), owner.repository.observeConversations()) { rows, conversations ->
             val titles = conversations.associate { it.id to it.title }
             rows.map { entry ->
                 OutboxRow(
@@ -383,28 +388,29 @@ class SettingsViewModel @Inject constructor(
                     attempts = entry.attempts,
                     failureReason = entry.failureReason,
                     snapshot = entry,
+                    owner = owner,
                 )
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun deleteDraft(row: DraftRow) = deleteDraftSnapshots(listOf(row))
 
     fun clearDrafts() = deleteDraftSnapshots(drafts.value.toList())
 
     private fun deleteDraftSnapshots(rows: List<DraftRow>) {
-        val target = repo.boundToCurrentAccount()
-        val epoch = target.attachmentSessionKey() ?: return
-        val snapshots = rows.mapNotNull { row -> target.captureDraftToken(row.conversationId)?.let { row to it } }
+        val owner = rows.firstOrNull()?.snapshot?.owner ?: return
+        if (!owner.isCurrent(repo)) return
         viewModelScope.launch {
             var changed = 0
             try {
-                for ((row, token) in snapshots) {
-                    if (repo.attachmentSessionKey() != epoch) return@launch
-                    if (target.clearDraftIfUnchanged(token, row.text)) changed++
+                for (row in rows) {
+                    if (!owner.isCurrent(repo)) return@launch
+                    if (row.snapshot.clearIfCurrent(repo)) changed++
                 }
-                if (repo.attachmentSessionKey() == epoch) _outboxNotice.value = "Cleared $changed draft(s). Changed drafts are kept."
+                if (owner.isCurrent(repo)) _outboxNotice.value = "Cleared $changed draft(s). Changed drafts are kept."
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (repo.attachmentSessionKey() == epoch) _outboxNotice.value = "Some drafts could not be cleared. Review the remaining saved text." }
+            catch (error: Exception) { if (owner.isCurrent(repo)) _outboxNotice.value = "Some drafts could not be cleared. Review the remaining saved text." }
         }
     }
 
@@ -416,26 +422,32 @@ class SettingsViewModel @Inject constructor(
     private val _composerRecoveryCursor = MutableStateFlow<String?>(null)
     val composerRecoveryCursor = _composerRecoveryCursor.asStateFlow()
     private var recoveryRequest = 0L
+    private var recoveryOwner: ComposerManagerOwner? = null
     fun refreshComposerRecovery(more: Boolean = false) {
         val target = repo.boundToCurrentAccount()
         val epoch = target.attachmentSessionKey()
+        val owner = ComposerManagerOwner.capture(target)
+        if (more && recoveryOwner?.isCurrent(repo) != true) return
         val ticket = ++recoveryRequest
         val after = if (more) _composerRecoveryCursor.value else null
-        if (!more) { _composerRecovery.value = emptyList(); _composerRecoveryCursor.value = null }
+        if (!more) { _composerRecovery.value = emptyList(); _composerRecoveryCursor.value = null; recoveryOwner = null }
         viewModelScope.launch {
             val result = target.composerRecoveryPage(after)
             if (ticket != recoveryRequest || epoch != repo.attachmentSessionKey()) return@launch
             result.onSuccess { page ->
+                recoveryOwner = owner
                 _composerRecovery.value = (if (more) _composerRecovery.value else emptyList()) + page.items
                 _composerRecoveryCursor.value = page.nextCursor
             }.onFailure { _outboxNotice.value = it.message ?: "Recovery could not be loaded. No text was discarded." }
         }
     }
     fun recoverComposer(entry: app.pulse.domain.model.ComposerRecoveryEntry, action: String) {
-        val target = repo.boundToCurrentAccount()
-        val epoch = target.attachmentSessionKey()
+        val owner = recoveryOwner ?: return
+        if (!owner.isCurrent(repo) || entry !in _composerRecovery.value) return
+        val target = owner.repository
+        val epoch = owner.sessionKey
         viewModelScope.launch {
-            if (epoch == null || epoch != repo.attachmentSessionKey()) return@launch
+            if (!owner.isCurrent(repo)) return@launch
             val result = target.recoverComposer(entry,action)
             if (epoch != repo.attachmentSessionKey()) return@launch
             _outboxNotice.value = result.fold({ if (action == "remove") "Local recovery copy removed; this does not undo server actions." else "Original text retained while the request is reconciled." },{ it.message ?: "Recovery changed. Refresh before trying again." })
@@ -444,16 +456,18 @@ class SettingsViewModel @Inject constructor(
     }
 
     private val retryingOutbox = mutableSetOf<Pair<String, String>>()
-    fun retryOutboxEntry(clientId: String) {
-        val target = repo.boundToCurrentAccount()
-        val epoch = target.attachmentSessionKey() ?: return
-        val key = epoch to clientId
+    fun retryOutboxEntry(row: OutboxRow) {
+        val owner = row.owner
+        if (!owner.isCurrent(repo)) return
+        val target = owner.repository
+        val epoch = owner.sessionKey ?: return
+        val key = epoch to row.clientId
         if (!retryingOutbox.add(key)) return
         viewModelScope.launch {
             try {
-                if (repo.attachmentSessionKey() != epoch) return@launch
-                val result = target.retryOutboxEntry(clientId)
-                if (repo.attachmentSessionKey() != epoch) return@launch
+                if (!owner.isCurrent(repo)) return@launch
+                val result = target.retryOutboxEntry(row.clientId)
+                if (!owner.isCurrent(repo)) return@launch
                 _outboxNotice.value = result.fold({ "Original message queued for retry" }, { it.message ?: "The saved message could not be retried" })
             } finally { retryingOutbox.remove(key) }
         }
@@ -464,18 +478,18 @@ class SettingsViewModel @Inject constructor(
     fun clearOutbox() = discardOutboxSnapshots(outbox.value.toList())
 
     private fun discardOutboxSnapshots(rows: List<OutboxRow>) {
-        val target = repo.boundToCurrentAccount()
-        val epoch = target.attachmentSessionKey() ?: return
+        val owner = rows.firstOrNull()?.owner ?: return
+        if (!owner.isCurrent(repo)) return
         viewModelScope.launch {
             var changed = 0
             try {
                 for (row in rows) {
-                    if (repo.attachmentSessionKey() != epoch) return@launch
-                    if (row.snapshot?.let { target.discardOutboxEntryIfUnchanged(it) } == true) changed++
+                    if (!owner.isCurrent(repo)) return@launch
+                    if (row.owner.isCurrent(repo) && row.owner.repository.discardOutboxEntryIfUnchanged(row.snapshot)) changed++
                 }
-                if (repo.attachmentSessionKey() == epoch) _outboxNotice.value = "Discarded $changed recovery copy/copies. Changed or new messages are kept; an in-flight send may still arrive."
+                if (owner.isCurrent(repo)) _outboxNotice.value = "Discarded $changed recovery copy/copies. Changed or new messages are kept; an in-flight send may still arrive."
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (repo.attachmentSessionKey() == epoch) _outboxNotice.value = "Some messages could not be discarded. Review the remaining queue." }
+            catch (error: Exception) { if (owner.isCurrent(repo)) _outboxNotice.value = "Some messages could not be discarded. Review the remaining queue." }
         }
     }
 

@@ -50,6 +50,26 @@ final class DraftHandoffTests: XCTestCase {
         XCTAssertEqual(try files.scopes(), ["pending"])
     }
 
+    func testManagerRefreshCannotRenewAnOldDeleteCallbacksAuthority() throws {
+        let store = try PulseStore(owner: "sender")
+        try store.saveDraftSnapshot(conversationId: "room", text: "same text")
+        let displayed = try XCTUnwrap(store.allDraftRows().first)
+        let displayedRevision = store.captureDraftConsumption(conversationId: "room").revision
+        var fence = ComposerManagerViewFence()
+        let oldCallback = fence.ticket
+        try store.saveDraftSnapshot(conversationId: "room", text: "different")
+        try store.saveDraftSnapshot(conversationId: "room", text: "same text")
+        // A reload may install a new revision map/account. The old callback cannot borrow it.
+        fence.invalidate()
+        XCTAssertFalse(fence.accepts(oldCallback))
+        XCTAssertFalse(try store.deleteDraftIfUnchanged(displayed, revision: displayedRevision))
+        XCTAssertEqual(store.draftSnapshot(conversationId: "room"), "same text")
+        XCTAssertTrue(fence.accepts(fence.ticket))
+        let refreshed = fence.ticket
+        fence.invalidate() // account switch, even if row identifiers/text happen to match
+        XCTAssertFalse(fence.accepts(refreshed))
+    }
+
     func testFileOnlyDraftManagerClearIsExactAndSurvivesReopen() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
         defer { for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) } }

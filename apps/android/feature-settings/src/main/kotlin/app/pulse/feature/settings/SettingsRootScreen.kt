@@ -815,7 +815,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                         Text("${row.content} · ${row.failureReason ?: "attempt ${row.attempts}"}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
                     }
                     if (row.failureReason != null) {
-                        TextButton(onClick = { viewModel.retryOutboxEntry(row.clientId) }) { Text("Retry") }
+                        TextButton(onClick = { viewModel.retryOutboxEntry(row) }) { Text("Retry") }
                     }
                     IconButton(onClick = { viewModel.deleteOutboxEntry(row) }) {
                         Icon(PulseIcons.Trash, contentDescription = "Discard queued message", tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))

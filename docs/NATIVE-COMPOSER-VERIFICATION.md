@@ -283,3 +283,33 @@ clock limits remain explicit in the authoritative checklist.
 
 The final evidence reconciliation changes documentation only; native/backend
 source remains byte-for-byte the verified `6f87622` implementation.
+
+
+## Reopened by requested recheck — 2026-10-29
+
+The earlier all-eleven closure was too broad. This is a source/behavior gap,
+not a demand to bring forward the deferred physical-device audit.
+
+1. Main Android manager rows lacked observation-time revision/account authority.
+   An edit-away/edit-back before Delete let the UI capture a fresh token and
+   remove the new draft. The previous instrumented test captured its token
+   **before** the ABA, so it did not cover the actual manager wiring. The new
+   production snapshot helper is exercised with an explicit negative control:
+   late recapture permits deletion, while the displayed snapshot refuses it.
+   Bound producer observations, session-switch rejection and delayed deletion
+   tests are added, along with the actual router producer-flow test. Swift
+   manager callbacks now carry a view-generation fence through refresh/account
+   changes, with a new DraftHandoff regression (109 selected tests expected).
+2. `cross-device and legacy simultaneous semantic duplicates admit one instruction`
+   failed twice in the recheck: all three requests returned 409 busy, no 201.
+   Diagnostic output showed P1008 busy timeouts and P2028 expiration at the
+   default 5000ms transaction deadline. A no-op write reservation did not fix it
+   and was removed. The bounded 20000ms transaction/15000ms acquisition budgets
+   allow the winner to survive the busy wait. Original identities, authorization
+   checks, atomic writes and duplicate-conflict assertions remain unchanged.
+   A separate test covers independent Prisma clients sharing the database.
+
+Local recheck after fixes: **75 focused server tests passed, zero failed/skipped**;
+**20 Python contracts passed**. Hosted native verification is pending. The old
+535-test server and 108-test iOS results above must not be relabeled as current
+verification of these new changes.

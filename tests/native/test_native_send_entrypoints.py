@@ -57,13 +57,20 @@ class NativeSendEntrypoints(unittest.TestCase):
         self.assertNotIn('repo.clearAllDrafts(', section)
         self.assertNotIn('repo.clearOutbox(', section)
         self.assertNotIn('repo.retryOutboxEntry(', section)
-        self.assertIn('target.clearDraftIfUnchanged(token, row.text)', section)
-        self.assertIn('target.discardOutboxEntryIfUnchanged(it)', section)
-        self.assertIn('val snapshots = rows.mapNotNull', section)
-        self.assertIn('if (repo.attachmentSessionKey() != epoch) return@launch', section)
+        self.assertNotIn('captureDraftToken(', section, 'Delete must not recapture authority after a row was displayed')
+        self.assertIn('row.snapshot.clearIfCurrent(repo)', section)
+        self.assertIn('row.owner.repository.discardOutboxEntryIfUnchanged(row.snapshot)', section)
+        self.assertIn('if (!owner.isCurrent(repo)) return@launch', section)
+        self.assertIn('val owner = recoveryOwner ?: return', section)
+        self.assertIn('entry !in _composerRecovery.value', section)
+        observed = source[source.index('    val drafts: StateFlow'):source.index('    fun deleteDraft(')]
+        self.assertEqual(observed.count('observeComposerManagerRows(repo)'), 2)
+        self.assertIn('owner.draft(conversationId, text)', observed)
+        self.assertNotIn('combine(repo.observe', observed)
         ios = (ROOT / 'apps/ios/Pulse/Features/Settings/DraftsOutboxManagerView.swift').read_text()
         section = ios[ios.index('    private func performRecovery('):ios.index('    // drafts')]
-        self.assertIn('guard ownedStore() != nil else { return }', section)
+        self.assertIn('guard ownedStore(ticket: ticket) != nil else { return }', section)
+        self.assertIn('snapshotFence.accepts(ticket)', section)
         self.assertLess(section.index('guard !Task.isCancelled, session.sessionGeneration == epoch'),
                         section.index('try await session.recoverComposer('))
 
