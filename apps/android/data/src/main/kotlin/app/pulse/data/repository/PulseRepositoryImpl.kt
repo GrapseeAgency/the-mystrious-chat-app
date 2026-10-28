@@ -1,6 +1,7 @@
 package app.pulse.data.repository
 
 import app.pulse.protocol.validateSavedJournalRow
+import app.pulse.protocol.validateSavedState
 import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withSavedMessageExpiry
 import app.pulse.domain.sync.messageExpiryEpochMs
@@ -3669,26 +3670,27 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun mentionsPage(cursor: String?): Result<app.pulse.domain.model.FeedPage<MentionItem>> =
         ownedPeerRequest { owner -> api.mentions(owner, cursor) }.mapCatching { page ->
-            validateFeedPage(page.feedPageVersion, page.hasMore, page.nextCursor, cursor)
-            require(page.items.size <= 100 && page.items.map { it.messageId }.toSet().size == page.items.size) { "Invalid mention page size or duplicate identities" }
+            val hasMore = validateFeedPage(page.feedPageVersion, page.hasMore, page.nextCursor, cursor)
+            require(page.items.size <= 100 && page.items.map { it.messageId }.toSet().size == page.items.size && page.items.all { it.messageId.isNotBlank() && it.conversationId.isNotBlank() }) { "Invalid mention page size or duplicate identities" }
             app.pulse.domain.model.FeedPage(page.items.map { m ->
                 MentionItem(m.messageId, m.conversationId, m.conversationName, m.author?.name ?: "", m.snippet, m.createdAt, m.expiresAt)
-            }.filter { it.isVisible() }, page.nextCursor, page.hasMore)
+            }.filter { it.isVisible() }, page.nextCursor, hasMore)
         }
 
     override suspend fun searchMessages(query: String): Result<List<MessageHit>> = searchMessagePage(query, null).map { it.items }
 
-    private fun validateFeedPage(version: Int?, more: Boolean, next: String?, cursor: String?) {
-        check(version == 1 && more == (next != null) && (next == null || (next.isNotBlank() && next.length <= 2048 && next != cursor))) {
+    private fun validateFeedPage(version: Int?, more: Boolean?, next: String?, cursor: String?): Boolean {
+        check(version == 1 && more != null && more == (next != null) && (next == null || (next.isNotBlank() && next.length <= 2048 && next != cursor))) {
             "Feed pagination was not confirmed. Update the gateway or retry from the newest page."
         }
+        return checkNotNull(more)
     }
 
     override suspend fun searchMessagePage(query: String, cursor: String?): Result<app.pulse.domain.model.FeedPage<MessageHit>> {
         if (query.trim().length > 64) return Result.failure(IllegalArgumentException("Search text must be 64 UTF-16 units or fewer."))
         return ownedPeerRequest { owner -> api.search(owner, query, cursor) }.mapCatching { page ->
-            validateFeedPage(page.feedPageVersion, page.hasMore, page.nextCursor, cursor)
-            require(page.messages.size <= 30 && page.messages.map { it.id }.toSet().size == page.messages.size) { "Invalid search page size or duplicate identities" }
+            val hasMore = validateFeedPage(page.feedPageVersion, page.hasMore, page.nextCursor, cursor)
+            require(page.messages.size <= 30 && page.messages.map { it.id }.toSet().size == page.messages.size && page.messages.all { it.id.isNotBlank() && it.conversationId.isNotBlank() }) { "Invalid search page size or duplicate identities" }
             val items = page.messages.map { hit ->
                 MessageHit(
                     id = hit.id,
@@ -3707,7 +3709,7 @@ class PulseRepositoryImpl constructor(
                     viewOnce = hit.viewOnce,
                 )
             }
-            app.pulse.domain.model.FeedPage(items, page.nextCursor, page.hasMore)
+            app.pulse.domain.model.FeedPage(items, page.nextCursor, hasMore)
         }
     }
 
@@ -4038,10 +4040,11 @@ class PulseRepositoryImpl constructor(
                         database.withTransaction {
                             requireConversationOwner(owner, epoch)
                             kotlin.coroutines.coroutineContext.ensureActive()
-                            validateFeedPage(response.value.feedPageVersion, response.value.hasMore, response.value.nextCursor, cursor)
+                            val hasMore = validateFeedPage(response.value.feedPageVersion, response.value.hasMore, response.value.nextCursor, cursor)
                             val items = response.value.items
                             require(items.size <= 100 && items.map { it.message.id }.toSet().size == items.size && items.all {
                                 it.message.id.isNotBlank() && it.message.conversationId.isNotBlank() && it.message.conversationId == it.conversation.id &&
+                                    runCatching { java.time.Instant.parse(it.savedAt) }.isSuccess &&
                                     (it.revision?.let { version -> app.pulse.protocol.validSavedRevision(version) } != false)
                             }) { "Invalid saved page identities" }
                             cacheFetchedMessagesLocked(response.value.items.map { it.message.toDomain() }, watermark)
@@ -4050,12 +4053,12 @@ class PulseRepositoryImpl constructor(
                                     2, owner, item.message.id, true, item.savedAt, item.revision, visible = true))
                                 else if (wave7Dao.lastSavedIntent(savedIntentPrefix(owner, item.message.id)) == null) savedDao.upsertAll(listOf(item.toSavedEntity()))
                             }
-                            val index = app.pulse.protocol.SavedPageIndexDto(response.value.items.map { it.message.id }, cursor, response.value.nextCursor, response.value.hasMore)
+                            val index = app.pulse.protocol.SavedPageIndexDto(response.value.items.map { it.message.id }, cursor, response.value.nextCursor, hasMore)
                             wave7Dao.upsert(Wave7CacheEntity(savedPageKey(owner, cursor), app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.SavedPageIndexDto.serializer(), index), System.currentTimeMillis()))
                             requireConversationOwner(owner, epoch)
                             Result.success(app.pulse.domain.model.FeedPage(
                                 savedDao.page(response.value.items.map { it.message.id }, false).map { it.toDomain() }.filter { savedMessageVisible(it.message) },
-                                response.value.nextCursor, response.value.hasMore))
+                                response.value.nextCursor, hasMore))
                         }
                     }
                     is PulseResult.Failure -> {

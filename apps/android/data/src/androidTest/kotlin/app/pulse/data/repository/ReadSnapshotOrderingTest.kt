@@ -69,6 +69,49 @@ class ReadSnapshotOrderingTest {
         })
     }
 
+    @Test fun privateFeedsRequireCompleteIdentityMetadataButAllowEmptyContinuations() = runBlocking {
+        var body = "{}"
+        exerciseReadOrdering(cached = false, feedResponse = { body }, onReady = { repo, db, _ ->
+            for (kind in listOf("search", "mentions", "saved")) {
+                val key = if (kind == "search") "messages" else "items"
+                val row = when (kind) {
+                    "search" -> """{"id":"m","conversationId":"r"}"""
+                    "mentions" -> """{"messageId":"m","conversationId":"r"}"""
+                    else -> """{"savedAt":"2026-10-28T00:00:00.000Z","revision":"1","conversation":{"id":"r"},"message":{"id":"m","conversationId":"r","senderId":"p","content":"body","kind":"text","createdAt":"2026-10-28T00:00:00.000Z"}}"""
+                }
+                suspend fun fetch(cursor: String? = null): Result<*> = when (kind) {
+                    "search" -> repo.searchMessagePage("term", cursor)
+                    "mentions" -> repo.mentionsPage(cursor)
+                    else -> repo.savedLibraryPage(cursor)
+                }
+                val count = if (kind == "search") 31 else 101
+                val oversized = (0 until count).joinToString(",") { row.replace("\"m\"", "\"m$it\"") }
+                for (invalid in listOf(
+                    """{"feedPageVersion":1,"hasMore":false}""",
+                    """{"$key":[],"feedPageVersion":1}""",
+                    """{"$key":[$row,$row],"feedPageVersion":1,"hasMore":false}""",
+                    """{"$key":[$oversized],"feedPageVersion":1,"hasMore":false}""",
+                    """{"$key":[],"feedPageVersion":1,"hasMore":true,"nextCursor":"same"}""",
+                )) {
+                    body = invalid
+                    assertTrue("$kind accepted invalid metadata", fetch("same").isFailure)
+                }
+                if (kind == "saved") {
+                    body = """{"items":[${row.replace("\"savedAt\":\"2026-10-28T00:00:00.000Z\"", "\"savedAt\":\"invalid\"")}],"feedPageVersion":1,"hasMore":false}"""
+                    assertTrue(fetch().isFailure)
+                    assertNull(db.messageDao().byId("m"))
+                } else {
+                    body = """{"$key":[${row.replace("\"m\"", "\"\"")}],"feedPageVersion":1,"hasMore":false}"""
+                    assertTrue(fetch().isFailure)
+                }
+                body = """{"$key":[],"feedPageVersion":1,"hasMore":true,"nextCursor":"next"}"""
+                assertTrue("$kind rejected an empty continuation", fetch().isSuccess)
+                body = """{"$key":[$row],"feedPageVersion":1,"hasMore":false}"""
+                assertTrue("$kind rejected a valid page", fetch().isSuccess)
+            }
+        })
+    }
+
     @Test fun unchangedNegativeProofRetiresOlderPageWithoutDroppingOtherMessages() = runBlocking {
         exerciseReadOrdering(cached = true)
     }
@@ -313,6 +356,7 @@ class ReadSnapshotOrderingTest {
         readFailureBody: String? = null, readSuccessRoom: String? = null,
         lostReadAck: Boolean = false, readRequests: MutableList<String>? = null,
         inboxResponse: (suspend () -> String)? = null,
+        feedResponse: (() -> String)? = null,
         onReady: (suspend (PulseRepositoryImpl, PulseDatabase, SessionTokenStore) -> Unit)? = null) = withTimeout(30_000) {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
@@ -341,6 +385,7 @@ class ReadSnapshotOrderingTest {
         val pageProof = if (unchangedPage) "[]" else "[\"old-peer\"]"
         val infoProof = if (unchangedPage) "[\"retired-peer\"]" else "[]"
         val http = HttpClient(MockEngine { request ->
+            if (feedResponse != null) return@MockEngine respond(feedResponse(), HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
             if (request.url.encodedPath == "/api/conversations" && inboxResponse != null)
                 return@MockEngine respond(inboxResponse(), HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
             if (lostReadAck && request.url.encodedPath == "/api/conversations/room/read-intent") {

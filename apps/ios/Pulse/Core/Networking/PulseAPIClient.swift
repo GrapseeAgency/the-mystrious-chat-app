@@ -917,7 +917,8 @@ public struct PulseAPIClient: Sendable {
         let page: WireMentionEntriesPage = try await get("/api/mentions?userId=\(q(userId))&limit=50" + (cursor.map { "&cursor=\(q($0))" } ?? ""))
         try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor)
         guard page.items != nil else { throw Failure(kind: .server, message: "Mention feed is missing.") }
-        guard let rows = page.items, rows.count <= 100, Set(rows.map(\.id)).count == rows.count else {
+        guard let rows = page.items, rows.count <= 100, Set(rows.map(\.id)).count == rows.count,
+              rows.allSatisfy({ !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !($0.conversationId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
             throw Failure(kind: .validation, message: "Invalid mention page identities.")
         }
         try Task.checkCancellation()
@@ -1195,7 +1196,8 @@ public struct PulseAPIClient: Sendable {
         guard page.messages != nil else { throw Failure(kind: .server, message: "Search results are missing.") }
         if requirePagination {
             try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor)
-            guard let rows = page.messages, rows.count <= 30, Set(rows.map(\.id)).count == rows.count else {
+            guard let rows = page.messages, rows.count <= 30, Set(rows.map(\.id)).count == rows.count,
+                  rows.allSatisfy({ !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
                 throw Failure(kind: .validation, message: "Invalid search page identities.")
             }
         }
@@ -1329,7 +1331,7 @@ public struct PulseAPIClient: Sendable {
         try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor)
         guard page.items != nil else { throw Failure(kind: .validation, message: "Saved results are missing.") }
         guard let rows = page.items, rows.count <= 100, Set(rows.map { $0.message.id }).count == rows.count,
-              rows.allSatisfy({ !$0.message.id.isEmpty && !$0.message.conversationId.isEmpty && $0.message.conversationId == $0.conversation.id &&
+              rows.allSatisfy({ !$0.message.id.isEmpty && !$0.message.conversationId.isEmpty && $0.message.conversationId == $0.conversation.id && PulseFormat.date($0.savedAt) != nil &&
                   ($0.revision == nil || WireSavedStateReceipt.validRevision($0.revision!)) }) else {
             throw Failure(kind: .validation, message: "Invalid saved page identities.")
         }

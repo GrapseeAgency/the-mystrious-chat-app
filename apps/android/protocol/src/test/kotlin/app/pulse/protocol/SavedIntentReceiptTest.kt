@@ -26,4 +26,14 @@ class SavedIntentReceiptTest {
         listOf("", "01", "-1", "1\n", "1.0", "v1", "1".repeat(41)).forEach { assertFalse(validSavedRevision(it)) }
     }
 
+    @Test fun `private feed bodies cannot default missing lists or continuation proof to empty success`() {
+        val body = """{"feedPageVersion":1,"hasMore":false}"""
+        assertThrows(Exception::class.java) { PulseJson.decodeFromString(SearchPageDto.serializer(), body) }
+        assertThrows(Exception::class.java) { PulseJson.decodeFromString(MentionsPageDto.serializer(), body) }
+        assertThrows(Exception::class.java) { PulseJson.decodeFromString(SavedPageDto.serializer(), body) }
+        assertNull(PulseJson.decodeFromString(SearchPageDto.serializer(), """{"messages":[],"feedPageVersion":1}""").hasMore)
+        assertNull(PulseJson.decodeFromString(MentionsPageDto.serializer(), """{"items":[],"feedPageVersion":1}""").hasMore)
+        assertNull(PulseJson.decodeFromString(SavedPageDto.serializer(), """{"items":[],"feedPageVersion":1}""").hasMore)
+    }
+
 }

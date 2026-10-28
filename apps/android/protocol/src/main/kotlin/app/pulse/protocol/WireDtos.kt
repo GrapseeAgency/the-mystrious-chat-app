@@ -448,11 +448,11 @@ data class SearchHitDto(
 
 @Serializable
 data class SearchPageDto(
-    val messages: List<SearchHitDto> = emptyList(),
+    val messages: List<SearchHitDto>,
     val total: Int = 0,
     val feedPageVersion: Int? = null,
     val nextCursor: String? = null,
-    val hasMore: Boolean = false,
+    val hasMore: Boolean? = null,
 )
 
 /** GET /api/folders - Signal-style folder rail (tolerant subset). */
@@ -485,10 +485,10 @@ data class MentionDto(
 
 @Serializable
 data class MentionsPageDto(
-    val items: List<MentionDto> = emptyList(),
+    val items: List<MentionDto>,
     val feedPageVersion: Int? = null,
     val nextCursor: String? = null,
-    val hasMore: Boolean = false,
+    val hasMore: Boolean? = null,
 )
 
 /**
@@ -621,10 +621,10 @@ data class SavedItemDto(
 
 @Serializable
 data class SavedPageDto(
-    val items: List<SavedItemDto> = emptyList(),
+    val items: List<SavedItemDto>,
     val feedPageVersion: Int? = null,
     val nextCursor: String? = null,
-    val hasMore: Boolean = false,
+    val hasMore: Boolean? = null,
 )
 
 /** One Zulip-style topic chip (General is NOT a row - implicit whole room). */
