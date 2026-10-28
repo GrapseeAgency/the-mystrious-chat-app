@@ -29,4 +29,12 @@ class ComposerReceiptTest {
         assertTrue(good.copy(text="",revision="member:2").hasSafeDraftBaseline(intent.copy(baseRevision="member:2")))
     }
 
+    @Test fun acceptedBaselineStoresOnlyMetadataAndExactTextFingerprint() {
+        val baseline = good.copy(text="private e\u0301").metadataBaseline()
+        assertEquals("",baseline.text)
+        assertTrue(baseline.matchesBaselineText("private e\u0301"))
+        assertFalse(baseline.matchesBaselineText("private é"))
+        assertFalse(PulseJson.encodeToString(ComposerReceiptDto.serializer(),baseline).contains("private"))
+    }
+
 }

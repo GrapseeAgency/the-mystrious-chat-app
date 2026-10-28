@@ -7,6 +7,7 @@ data class ComposerReceiptDto(
     val composerVersion: Int, val userId: String, val kind: String, val targetId: String,
     val rootId: String? = null, val conversationId: String, val text: String, val revision: String,
     val editedAt: String? = null, val clientId: String? = null, val outcome: String? = null,
+    val textHash: String? = null,
 )
 @Serializable
 data class ComposerFlight(val clientId: String, val text: String, val expectedRevision: String, val localEditRevision: String? = null)
@@ -44,3 +45,9 @@ data class ScheduledCommandAckDto(val version: Int = 1, val owner: String, val c
 /** An unknown draft baseline must not overwrite a remote clear/edit ABA. */
 fun ComposerReceiptDto.hasSafeDraftBaseline(intent: ComposerIntentDto): Boolean =
     intent.kind != "draft" || intent.baseRevision != null || text == intent.text || revision.endsWith(":0")
+
+private fun composerTextHash(text: String): String = java.security.MessageDigest.getInstance("SHA-256")
+    .digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+fun ComposerReceiptDto.metadataBaseline(): ComposerReceiptDto = copy(text="",textHash=composerTextHash(text))
+fun ComposerReceiptDto.matchesBaselineText(value: String): Boolean =
+    textHash?.let { it == composerTextHash(value) } ?: (text == value)

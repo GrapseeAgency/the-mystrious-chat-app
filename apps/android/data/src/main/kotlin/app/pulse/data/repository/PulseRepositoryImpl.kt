@@ -2056,6 +2056,12 @@ class PulseRepositoryImpl constructor(
                 val command = runCatching { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandDto.serializer(),row.json) }.getOrNull()
                 if (command?.owner == owner && command.kind == "create") wave7Dao.acknowledgeReadIntent("composer-schedule-head:v1|$owner|${command.conversationId}",command.clientId)
             }
+            if (row.key.startsWith("composer-schedule-ack:")) {
+                val receipt = runCatching { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandAckDto.serializer(),row.json) }.getOrNull()
+                val accepted = receipt?.item
+                if (receipt != null && receipt.owner == owner && receipt.kind == "create" && accepted != null)
+                    wave7Dao.acknowledgeReadIntent("composer-schedule-head:v1|$owner|${accepted.conversationId}",receipt.clientId)
+            }
             wave7Dao.acknowledgeReadIntent(row.key,row.json)
         } else if (row.key.startsWith("composer-schedule-blocked:") && action == "retry") {
             val command = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandDto.serializer(),row.json)
@@ -3018,6 +3024,8 @@ class PulseRepositoryImpl constructor(
             }
             requireConversationOwner(owner,epoch)
             prefsLocalStore.finishRoomCreation(scheduledCreationIntent(owner, item.conversationId, item.content, item.scheduledAtIso), id)
+            requireConversationOwner(owner,epoch)
+            scheduledJournal.acknowledge(owner,id,item.id,item.conversationId)
             Result.success(Unit)
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (error: Exception) { Result.failure(error) }

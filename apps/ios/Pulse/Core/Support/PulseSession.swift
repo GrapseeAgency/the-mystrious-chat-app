@@ -543,11 +543,13 @@ public final class PulseSession: ObservableObject {
         return item
     }
     func acknowledgeScheduledCreation(_ item: WireScheduledItem) async throws {
-        guard ready, let store else { throw CancellationError() }
+        guard ready, let store, let owner = viewer?.id else { throw CancellationError() }
         let epoch = generation, client = api
         try await PulseDraftJournal.flushPending(store: store,conversationId: item.conversationId)
         guard generation == epoch else { throw CancellationError() }
         try await client.acknowledgeScheduledCreation(item)
+        guard generation == epoch else { throw CancellationError() }
+        try store.acknowledgeScheduledCommand(item,owner: owner)
     }
     func cancelScheduled(_ id: String) async throws {
         guard ready, let store, let owner = viewer?.id else { throw CancellationError() }

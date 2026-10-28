@@ -25,7 +25,7 @@ internal class ComposerJournal(private val db: PulseDatabase) {
     }
     suspend fun recordBaseline(receipt: ComposerReceiptDto) {
         dao.upsert(Wave7CacheEntity(head(key(receipt.userId,receipt.kind,receipt.targetId,receipt.rootId)),
-            PulseJson.encodeToString(ComposerReceiptDto.serializer(),receipt),System.currentTimeMillis()))
+            PulseJson.encodeToString(ComposerReceiptDto.serializer(),receipt.metadataBaseline()),System.currentTimeMillis()))
     }
     private fun held(key: String) = key.replaceFirst("composer-intent:v1|","composer-blocked:v1|")
     private fun key(owner: String, kind: String, target: String, root: String?): String {
@@ -52,7 +52,7 @@ internal class ComposerJournal(private val db: PulseDatabase) {
         put(key, ComposerIntentDto(owner,kind,target,room,root,UUID.randomUUID().toString(),text,
             if (kind == "edit") base else previous?.baseText ?: base,
             if (kind == "edit") editedAt else if (previous != null) previous.baseEditedAt else editedAt,ready,flight,null,
-            if (kind == "edit") baseline?.takeIf { it.text == base && dateEqual(it.editedAt,editedAt) }?.revision
+            if (kind == "edit") baseline?.takeIf { it.matchesBaselineText(base) && dateEqual(it.editedAt,editedAt) }?.revision
             else if (previous != null) previous.baseRevision else baseline?.revision, localEditRevision))
     }
     suspend fun editText(owner: String, id: String): String? {

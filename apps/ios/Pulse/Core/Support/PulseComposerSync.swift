@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct PulseComposerFlight: Codable, Equatable, Sendable {
     let clientId: String
@@ -39,6 +40,17 @@ struct PulseComposerReceipt: Codable, Sendable {
     let editedAt: String?
     let clientId: String?
     let outcome: String?
+    var textHash: String? = nil
+    private static func hash(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    func matchesBaselineText(_ value: String) -> Bool {
+        textHash.map { $0 == Self.hash(value) } ?? text.utf16.elementsEqual(value.utf16)
+    }
+    var metadataBaseline: Self {
+        Self(composerVersion: composerVersion,userId: userId,kind: kind,targetId: targetId,rootId: rootId,
+            conversationId: conversationId,text: "",revision: revision,editedAt: editedAt,clientId: clientId,outcome: outcome,textHash: Self.hash(text))
+    }
     func hasSafeDraftBaseline(_ intent: PulseComposerIntent) -> Bool {
         intent.kind != "draft" || intent.baseRevision != nil || text.utf16.elementsEqual(intent.text.utf16) || revision.hasSuffix(":0")
     }

@@ -49,6 +49,15 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
         receipt(it,command).item?.copy(content=command.text)
     }
     suspend fun cancelled(command: ScheduledCommandDto): Boolean = dao.get(ack(key(command)))?.let { receipt(it,command).kind == "cancel" } == true
+    /** Server acceptance does not prove that its composer/draft was consumed. */
+    suspend fun acknowledge(owner: String, clientId: String, scheduledId: String, room: String) = db.withTransaction {
+        val command = ScheduledCommandDto(owner,clientId,"create",room)
+        val raw = checkNotNull(dao.get(ack(key(command)))) { "Schedule acceptance needs recovery review" }
+        val receipt = PulseJson.decodeFromString(ScheduledCommandAckDto.serializer(),raw.json)
+        check(receipt.owner == owner && receipt.clientId == clientId && receipt.kind == "create" &&
+            receipt.item?.id == scheduledId && receipt.item?.conversationId == room) { "Schedule acknowledgement changed" }
+        dao.acknowledgeReadIntent(head(command),clientId)
+    }
     private class Transport(val failure: PulseResult.Failure): Exception(failure.message)
     suspend fun flush(owner: String, api: PulseApi, current: () -> Boolean): Int =
         DraftWriteCoordinator.forDatabase(db).scheduleMutex.withLock {
@@ -72,7 +81,6 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
                         val receipt = ScheduledCommandAckDto(owner=owner,clientId=command.clientId,kind=command.kind,requestHash=requestHash(command),item=item)
                         dao.upsert(Wave7CacheEntity(ack(row.key),PulseJson.encodeToString(ScheduledCommandAckDto.serializer(),receipt),System.currentTimeMillis()))
                         dao.acknowledgeReadIntent(row.key,row.json)
-                        if (command.kind == "create") dao.acknowledgeReadIntent(head(command),command.clientId)
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) {

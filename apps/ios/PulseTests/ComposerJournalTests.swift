@@ -75,6 +75,16 @@ final class ComposerJournalTests: XCTestCase {
         XCTAssertTrue(state.hasSafeDraftBaseline(verified))
     }
 
+    func testAcceptedBaselineStoresOnlyMetadataAndExactTextFingerprint() throws {
+        let state = PulseComposerReceipt(composerVersion: 1,userId: "me",kind: "edit",targetId: "message",rootId: nil,
+            conversationId: "room",text: "private e\u{301}",revision: "fingerprint",editedAt: nil,clientId: nil,outcome: nil)
+        let baseline = state.metadataBaseline
+        XCTAssertEqual(baseline.text, "")
+        XCTAssertTrue(baseline.matchesBaselineText("private e\u{301}"))
+        XCTAssertFalse(baseline.matchesBaselineText("private é"))
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(baseline),as: UTF8.self).contains("private"))
+    }
+
 }
 
 @MainActor
@@ -126,6 +136,10 @@ final class ScheduledCommandJournalTests: XCTestCase {
         XCTAssertThrowsError(try store.scheduledCommandResult(altered))
         let recovery = try XCTUnwrap(store.composerRecoveryPage(owner: "me").items.first)
         XCTAssertEqual(recovery.text, "")
+        let replacement = PulseScheduledCommand(owner: "me",clientId: "new-operation",kind: "create",conversationId: "room",text: "new",scheduledAt: "2030-01-02T00:00:00.000Z")
+        XCTAssertThrowsError(try store.stageScheduledCommand(replacement), "Background acceptance must still fence an unconsumed composer")
+        try store.acknowledgeScheduledCommand(item,owner: "me")
+        XCTAssertNil(try store.loadWave7Cache(key: command.headKey))
         let cancel = PulseScheduledCommand(owner: "me",clientId: "accepted",kind: "cancel")
         try store.stageScheduledCommand(cancel)
         XCTAssertThrowsError(try store.finishScheduledCommand(cancel,result: "pending"))
