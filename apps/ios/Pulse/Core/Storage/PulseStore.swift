@@ -2506,7 +2506,8 @@ extension PulseStore {
                         let value = try JSONDecoder().decode(PulseScheduledCommand.self,from: Data(json.utf8))
                         guard value.owner == owner else { throw CocoaError(.coderInvalidValue) }
                         return PulseComposerRecovery(id: key,version: version,kind: value.kind == "cancel" ? "Pending cancellation" : "Pending schedule",targetId: value.clientId,conversationId: value.conversationId,text: value.text,
-                            notice: value.notice ?? (value.kind == "cancel" ? "NOT cancelled yet. It may still send before cancellation arrives." : "Not confirmed. Retrying the original time: \(value.scheduledAt)."),canRetry: key.hasPrefix("composer-schedule-blocked:"))
+                            notice: value.kind == "cancel" ? (value.notice ?? "NOT cancelled yet. It may still send before cancellation arrives.")
+                                : "Original time: \(value.scheduledAt). " + (value.notice ?? "Not confirmed. The original instructions will be retried."),canRetry: key.hasPrefix("composer-schedule-blocked:"))
                     }
                     let value = try Self.decodeComposer(json,key: key)
                     guard value.owner == owner else { throw CocoaError(.coderInvalidValue) }

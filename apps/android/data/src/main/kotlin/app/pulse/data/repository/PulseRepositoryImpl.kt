@@ -2086,7 +2086,8 @@ class PulseRepositoryImpl constructor(
                         val value = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandDto.serializer(),row.json)
                         check(value.owner == owner)
                         app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,if (value.kind == "cancel") "Pending cancellation" else "Pending schedule",value.clientId,value.conversationId,value.text,
-                            value.notice ?: if (value.kind == "cancel") "NOT cancelled yet. It may still send before cancellation arrives." else "Not confirmed. Retrying the original time: ${value.scheduledAt}.",canRetry=row.key.startsWith("composer-schedule-blocked:"))
+                            if (value.kind == "cancel") value.notice ?: "NOT cancelled yet. It may still send before cancellation arrives."
+                            else "Original time: ${value.scheduledAt}. " + (value.notice ?: "Not confirmed. The original instructions will be retried."),canRetry=row.key.startsWith("composer-schedule-blocked:"))
                     }
                     else -> {
                         val value = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerIntentDto.serializer(),row.json)

@@ -110,6 +110,16 @@ class DraftCheckpointJournalTest {
                         afterSend.clearAllDrafts()
                         assertEquals("", afterSend.observeDraft("file-only").first())
                         assertNull(DraftCheckpointJournal(directory).read("file-only"))
+                        val heldSchedule = app.pulse.protocol.ScheduledCommandDto(owner,"notice-test","create","room","exact body",
+                            "2030-01-01T09:00:00.123Z",notice="Original time is no longer valid")
+                        connection!!.execSQL("INSERT INTO wave7_cache (`key`,json,updatedAt) VALUES (?,?,?)",arrayOf(
+                            "composer-schedule-blocked:v1|$owner|create|notice-test",
+                            app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ScheduledCommandDto.serializer(),heldSchedule),0))
+                        val heldRow = afterSend.composerRecoveryPage(null).getOrThrow().items.single { it.targetId == "notice-test" }
+                        assertEquals("exact body",heldRow.text)
+                        assertTrue(heldRow.notice.contains(heldSchedule.scheduledAt))
+                        assertTrue(heldRow.notice.contains("Original time is no longer valid"))
+                        assertTrue(heldRow.canRetry)
                     }
                     finally { afterSend.stop() }
                 } finally { next.stop() }

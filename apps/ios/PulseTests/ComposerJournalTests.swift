@@ -179,6 +179,8 @@ final class ScheduledCommandJournalTests: XCTestCase {
         XCTAssertEqual(try reopened.pendingSchedules(owner: "me"),0)
         let recovery = try XCTUnwrap(reopened.composerRecoveryPage(owner: "me").items.first)
         XCTAssertEqual(recovery.text,"original")
+        XCTAssertTrue(recovery.notice.contains(command.scheduledAt), "A held request must still show its exact selected time")
+        XCTAssertTrue(recovery.notice.contains("Original time is no longer valid"))
         XCTAssertTrue(recovery.canRetry)
         XCTAssertThrowsError(try reopened.composerRecoveryPage(owner: "other"))
     }

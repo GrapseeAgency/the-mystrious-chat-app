@@ -16,7 +16,7 @@ requirements. Deployment and real-device auditing remain deferred; autumn remain
 | 7 | Every send entry point: Ancillary rich-message, alternate-screen, and background paths still need a complete ownership/durable-dispatch audit. | Source inventory in NATIVE-COMPOSER-SEND-PATHS.md. Audit found and fixed Android PiP pre-persistence clear/memory-only draft, alternate sticker/location swallowed failures, and rich/poll account capture gaps. Added PiP handoff tests and architectural tripwires; new native runtime verification pending. |
 | 8 | Legacy scheduled-create duplication: Older/no-operation-ID callers remain non-idempotent; cross-device semantic deduplication is also absent. | Implemented deterministic legacy identities, cross-device exact-instruction semantic deduplication, legacy-row adoption, and terminal protection. Different operation IDs receive an explicit duplicate conflict rather than an unsafe aliased success. Scheduled suite 27/27 and full server suite 535/535 pass locally. Additive semantic index patch not deployed. |
 | 9 | Offline scheduling queue: Scheduled-message creation is not a complete durable offline scheduling feature. | Native pending/held schedule journals now persist before HTTP. Expired offline instructions must be retained for review, not silently moved into the future. Verify all entry points. |
-| 10 | Recoverable pending-schedule UI: Closing/reopening or restarting does not fully restore an uncertain schedule’s exact selected instruction. | Existing paged recovery preserves exact original time/body/identity; retry does not open a new instruction. Verify current managers against original requirement. |
+| 10 | Recoverable pending-schedule UI: Closing/reopening or restarting does not fully restore an uncertain schedule’s exact selected instruction. | Paged recovery preserves exact original time/body/identity; retry does not open a new instruction. The final review found held/error notices hid the original time: both apps now show that exact time alongside the refusal reason. New assertions cover the held-state display; hosted execution pending. |
 | 11 | Operation-record retention: Long-term retention/cleanup policies for uncertain and terminal operation receipts need completion. | Per-family policy in NATIVE-COMPOSER-RETENTION.md. Compact replay receipts are deliberately permanent; uncertain bodies never age out. Added bounded (100 payloads/pass), restart-cursored consumption-file cleanup on both apps, alongside 500-row retry/500-child+100-parent notice cleanup. New native maintenance tests pending. |
 
 Retry deadlines use persisted wall-clock admission times across restart and
@@ -52,3 +52,7 @@ to exist when the coroutine runs. Swift recovery and schedule-cancel tasks rejec
 retired sessions before mutation. Android checkpoint instrumentation now also
 covers same-text ABA, foreign-owner/wrong-text deletion, and failed-SQL deletion
 preserving the recovery snapshot. These additions await hosted native execution.
+
+Scoped iOS follow-up at `9d9f57a`, run 40714146325/check 122907113066,
+explicitly passed **108/108, zero unverified**. This verifies the file-only
+maintenance import addition, but not the newer PiP/edit/scheduler/manager changes.
