@@ -1,6 +1,7 @@
 # Section 3 — source-to-regression reconciliation
 
-Status: **verification in progress; original eleven-item provenance unresolved**.
+Status: **scoped regression execution verified; original eleven-item checklist
+still required for closure**.
 This supplements `NATIVE-COMPOSER-IMPLEMENTATION.md`, whose previous blanket
 closure statement has been withdrawn. It does not substitute a new list and call
 it the recovered original. Deployment and physical-device acceptance stay deferred.
@@ -71,7 +72,8 @@ stages new text during the older GET, returns 403 for the old request, verifies
 new text stays pending, then verifies the next GET/PATCH confirms only that new
 text. It runs for both draft and edit. The Swift storage regression confirms the
 same ownership boundary; its production `blockComposer` already used that rule.
-Native execution of these newly added cases is not yet established.
+The new cases have now executed successfully: Android API30/API34 instrumentation
+and the 102-method scoped iOS run, detailed below.
 
 ## Explicit verification gate
 
@@ -83,9 +85,8 @@ record for every one. Missing, skipped, and failed-then-passed cases fail the
 scoped check. Build success alone cannot pass it. Four local reporter tests cover
 both XCTest output forms, multi-class files, missing cases, skips and retries.
 
-Exact-candidate native run IDs and per-test counts will be recorded when complete.
-The earlier `adb3490` Android success and iOS archive success do not verify the
-new Android correction or added native regression methods.
+Exact-candidate native run IDs and per-suite counts are recorded below. Earlier
+`adb3490` results are not being used as verification of the new correction.
 
 ## Boundaries that remain explicit
 
@@ -132,3 +133,54 @@ new Android correction or added native regression methods.
   remain in the artifact/summary. A regression checks the annotation size for
   both all-passed and all-missing cases. No production test is skipped to obtain
   a green result; the ordinary full iOS workflow is unchanged.
+
+## Verified scoped result — final follow-up
+
+### iOS: explicit outcomes, not inferred from absent failures
+
+- Source: `7542dcb8aa5cae8e525c76354b2398e06358578c`.
+- Run: [40703333608](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40703333608), job/check `122868719955`: **success**.
+- **102 expected / 102 passed / 0 unverified**, `verified=true`. The full bounded
+  JSON annotation was retrieved and decoded; every suite's expected count equals
+  its passed count. The corrected new ownership case is included in the eight
+  ComposerJournalTests methods.
+- Per-method results remain in the run's `pulse-ios-composer-evidence` artifact
+  and job summary. The case-map digest reported by the runner is
+  `07d2a47666ace70bcef9eea70cff1d8ac6a7d3725ed12d30181d1d0d9b591dac`.
+
+| XCTest suite | Explicitly passed / expected |
+| --- | --- |
+| `ComposerAttentionTests` | 4 / 4 |
+| `ComposerJournalTests` | 8 / 8 |
+| `DraftHandoffTests` | 5 / 5 |
+| `DraftJournalTests` | 8 / 8 |
+| `DraftReceiptTests` | 1 / 1 |
+| `PulseOutboxTests` | 48 / 48 |
+| `ScheduledAcceptanceTests` | 6 / 6 |
+| `ScheduledCommandJournalTests` | 3 / 3 |
+| `ScheduledCreationRetryTests` | 3 / 3 |
+| `TextDeliveryTests` | 11 / 11 |
+| `ThreadDraftHandoffTests` | 5 / 5 |
+
+### Android and backend
+
+- Android source `293bc7452044bee9d7e6cb08004f223527788d14`, run
+  `40699700570`: build succeeded; API30 and API34 **instrumentation steps both
+  succeeded**, including the new Room/Ktor stale-lookup regression. API30's
+  entire job succeeded. API34's subsequent release-smoke step remained running
+  at the last observation; that whole job is not labeled passed.
+- Android production and test sources are byte-for-byte unchanged between
+  `293bc74` and `7542dcb` (`git diff` for `apps/android` is empty).
+- Backend run `40703333710` succeeded on `7542dcb`, including the now-enabled
+  Python SQLite/reporter checks. Local reruns: **13 Python checks + 2 Node
+  native-query checks passed**. Backend production code is unchanged in this
+  follow-up; the previously recorded complete suite remains 525 tests.
+
+### What this resolves—and does not
+
+This resolves the lack of explicit scoped iOS outcomes and verifies the new
+Android stale-failure ownership repair. It does **not** establish equivalence to
+the unavailable original eleven-item list. The user explicitly required that
+original list; overall section closure therefore remains open pending it.
+The unrelated full-suite read-presentation failure, deployment and comprehensive
+physical-device acceptance are not waived by these scoped successes.

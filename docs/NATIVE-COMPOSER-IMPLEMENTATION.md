@@ -1,11 +1,12 @@
 # Section 3 — drafts, outgoing messages, edits and scheduling
 
-**Reopened for verification.** The previous implementation-closure statement was
+**Original-checklist closure still open; scoped native verification now complete.**
+The previous implementation-closure statement was
 stronger than the available evidence. Android and backend checks passed, but a
 failed full iOS run with no reported composer failures is not explicit proof that
 every composer regression ran and passed. A separate fail-closed iOS test check
-now requires a terminal `passed` result for every selected test; it supplements,
-not replaces, the full iOS suite.
+requires a terminal `passed` result for every selected test. It has now verified
+**102/102** at `7542dcb`; it supplements, not replaces, the full iOS suite.
 
 The eleven rows below are a **reconstructed working checklist**, not a recovered
 verbatim copy of the original eleven-item backlog. Reconciliation must identify
@@ -135,5 +136,7 @@ this document. No release replacement or pull-request merge was performed.
 
 See [source-to-regression reconciliation](NATIVE-COMPOSER-VERIFICATION.md) for
 historical requirement sources, the eleven working-area mappings, explicit limits
-and the newly discovered Android preflight-refusal ownership correction. Its
-native results are pending; prior successes do not certify the new correction.
+and the newly discovered Android preflight-refusal ownership correction. Both
+Android instrumentation steps passed the new regression; the corrected scoped
+iOS run explicitly passed 102/102 methods. The user requires the original list,
+so these results do not authorize closing all eleven reconstructed rows.
