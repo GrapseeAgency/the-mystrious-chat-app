@@ -1,7 +1,6 @@
 """Architectural tripwires; these complement, never replace native runtime tests."""
 from pathlib import Path
 import re
-import json
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -18,8 +17,8 @@ class NativeSendEntrypoints(unittest.TestCase):
         self.assertEqual(calls, ['apps/android/data/src/main/kotlin/app/pulse/data/repository/PulseRepositoryImpl.kt'] * 3)
 
     def test_checkpoint_fault_injection_targets_real_room_tables(self):
-        schema = json.loads((ROOT / 'apps/android/data/schemas/app.pulse.data.local.PulseDatabase/19.json').read_text())
-        tables = {row['tableName'] for row in schema['database']['entities']}
+        schema = (ROOT / 'apps/android/data/src/main/kotlin/app/pulse/data/local/PulseDatabase.kt').read_text()
+        tables = set(re.findall(r'@Entity\(\s*tableName\s*=\s*"([^"]+)"', schema))
         source = (ROOT / 'apps/android/data/src/androidTest/kotlin/app/pulse/data/repository/DraftCheckpointJournalTest.kt').read_text()
         targets = re.findall(r'CREATE TRIGGER \w+ BEFORE INSERT ON (\w+)', source)
         self.assertGreaterEqual(len(targets), 2)
