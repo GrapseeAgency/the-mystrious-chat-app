@@ -107,7 +107,7 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
                 catch (error: Exception) {
                     if (!current()) break
                     val failure = (error as? Transport)?.failure
-                    val terminal = failure?.status in setOf(400,403,404,410,422) || failure?.code == "schedule_already_sent" || failure?.kind == PulseResult.Failure.Kind.VALIDATION
+                    val terminal = failure?.status in setOf(400,403,404,410,422) || failure?.code in setOf("schedule_already_sent", "schedule_duplicate") || failure?.kind == PulseResult.Failure.Kind.VALIDATION
                     if (terminal) db.withTransaction {
                         if (dao.get(row.key)?.json == row.json) {
                             dao.upsert(row.copy(key=held(row.key),json=encode(command.copy(notice=error.message ?: "This original schedule needs review; nothing was rescheduled."))))

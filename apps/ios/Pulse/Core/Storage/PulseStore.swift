@@ -46,6 +46,7 @@ public final class PulseStore: Sendable {
     }
 
     private let dbQueue: DatabaseQueue
+    private let draftCheckpoints: PulseDraftCheckpointJournal
     private let savedSnapshotVersions = MessageSnapshotVersions()
     private let messageSnapshotVersions = MessageSnapshotVersions()
 
@@ -59,6 +60,7 @@ public final class PulseStore: Sendable {
     let composerOwner: String?
     public init(path: String, composerOwner: String? = nil) throws {
         self.composerOwner = composerOwner
+        draftCheckpoints = PulseDraftCheckpointJournal(path: path)
         storageIdentity = URL(fileURLWithPath: path).standardizedFileURL.path
         dbQueue = try DatabaseQueue(path: path)
         try migrator.migrate(dbQueue)
@@ -67,6 +69,7 @@ public final class PulseStore: Sendable {
     /// In-memory store (previews/tests).
     public init(owner: String? = nil) throws {
         composerOwner = owner
+        draftCheckpoints = PulseDraftCheckpointJournal(path: nil)
         storageIdentity = "memory:" + UUID().uuidString
         dbQueue = try DatabaseQueue()
         try migrator.migrate(dbQueue)
@@ -1463,11 +1466,16 @@ public final class PulseStore: Sendable {
 
     func saveDraftSnapshot(conversationId: String, text: String, expectedRevision: UInt64? = nil) throws {
         try draftFence.write(conversationId, expected: expectedRevision) {
+            // Try both persistent write paths: a checkpoint error must not prevent a
+            // healthy SQLite commit, and a SQLite error keeps the checkpoint.
+            let checkpoint = try? draftCheckpoints.write(conversationId, text: text)
             try dbQueue.write { db in try self.writeDraftSnapshot(db, room: conversationId, text: text) }
+            if let checkpoint { try? draftCheckpoints.remove(conversationId, id: checkpoint.id) }
         }
     }
 
     private func writeDraftSnapshot(_ db: Database, room: String, text: String) throws {
+        try acknowledgeDraftCheckpoint(db, scope: room)
         if let owner = composerOwner {
             let scope = try PulseThreadDraft.scope(room)
             let before = try String.fetchOne(db, sql: "SELECT text FROM draft WHERE conversationId=?", arguments: [room]) ?? ""
@@ -1487,44 +1495,53 @@ public final class PulseStore: Sendable {
     }
 
     /// nil means never edited locally; an empty string means explicitly cleared.
+    private func recoverableDraftCheckpoint(_ db: Database, room: String) throws -> PulseDraftCheckpointJournal.Snapshot? {
+        guard let snapshot = try draftCheckpoints.read(room) else { return nil }
+        let accepted = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [draftCheckpoints.receiptKey(room)])
+        if accepted == snapshot.id.uuidString {
+            try? draftCheckpoints.remove(room, id: snapshot.id)
+            return nil
+        }
+        return snapshot
+    }
     func draftSnapshot(conversationId: String) -> String? {
         try? dbQueue.read { db in
-            try String.fetchOne(db, sql: "SELECT text FROM draft WHERE conversationId = :cid",
+            if let snapshot = try recoverableDraftCheckpoint(db, room: conversationId) { return snapshot.text }
+            return try String.fetchOne(db, sql: "SELECT text FROM draft WHERE conversationId = :cid",
                 arguments: ["cid": conversationId])
         }
     }
 
     /// Every local draft (chats-list preview rehydration).
     public func allDrafts(includingClears: Bool = false) -> [String: String] {
-        let rows: [(String, String)]? = try? dbQueue.read { db in
-            let pairs = try Row.fetchAll(db, sql: "SELECT conversationId, text FROM draft")
-            return pairs.compactMap { row in
-                guard let cid: String = row["conversationId"],
-                      let text: String = row["text"],
-                      (includingClears || !text.isEmpty) else { return nil }
-                return (cid, text)
-            }
-        }
-        guard let rows else { return [:] }
-        return Dictionary(rows, uniquingKeysWith: { _, later in later })
+        let rows = (try? dbQueue.read { try allDraftRowsIncludingCheckpoints($0) }) ?? []
+        return Dictionary(rows.filter { includingClears || !$0.text.isEmpty }.map { ($0.conversationId,$0.text) }, uniquingKeysWith: { _, later in later })
     }
 
-    /// Wave 8 - full draft rows (id + text + updatedAt) oldest-first, the
-    /// Drafts & outbox manager's feed. Blank rows never surface.
-    public func allDraftRows() throws -> [DraftRow] {
-        try dbQueue.read { db in
-            try DraftRow
-                .fetchAll(db, sql: "SELECT * FROM draft ORDER BY updatedAt ASC")
-                .filter { !$0.text.isEmpty }
+    private func allDraftRowsIncludingCheckpoints(_ db: Database) throws -> [DraftRow] {
+        let saved = try DraftRow.fetchAll(db, sql: "SELECT * FROM draft ORDER BY updatedAt ASC")
+        var rows = Dictionary(saved.map { ($0.conversationId,$0) }, uniquingKeysWith: { _, later in later })
+        for scope in try draftCheckpoints.scopes() where !scope.hasPrefix("composer-local-edit:v1|") {
+            if let snapshot = try recoverableDraftCheckpoint(db,room: scope) {
+                rows[scope] = DraftRow(conversationId: scope,text: snapshot.text,updatedAt: "checkpoint:" + snapshot.id.uuidString)
+            }
         }
+        return rows.values.sorted { $0.updatedAt == $1.updatedAt ? $0.conversationId < $1.conversationId : $0.updatedAt < $1.updatedAt }
+    }
+    public func allDraftRows() throws -> [DraftRow] {
+        try dbQueue.read { db in try allDraftRowsIncludingCheckpoints(db).filter { !$0.text.isEmpty } }
     }
 
     /// Clear only the exact draft the manager displayed, not a newer composer write.
     func deleteDraftIfUnchanged(_ row: DraftRow, revision: UInt64) throws -> Bool {
         try draftFence.removeIfCurrent(row.conversationId, expected: revision) {
             try dbQueue.write { db in
-                let current = try DraftRow.fetchOne(db, sql: "SELECT * FROM draft WHERE conversationId = ?", arguments: [row.conversationId])
-                guard current == row else { return false }
+                if let snapshot = try recoverableDraftCheckpoint(db,room: row.conversationId) {
+                    guard row.updatedAt == "checkpoint:" + snapshot.id.uuidString, row.text == snapshot.text else { return false }
+                } else {
+                    let current = try DraftRow.fetchOne(db, sql: "SELECT * FROM draft WHERE conversationId = ?", arguments: [row.conversationId])
+                    guard current == row else { return false }
+                }
                 try self.writeDraftSnapshot(db, room: row.conversationId, text: "")
                 return true
             }
@@ -2089,8 +2106,9 @@ extension PulseStore {
         try draftFence.withEditSnapshot(Self.localEditKey(owner: owner,id: message.id)) { memory in
             let buffered = memory
             try dbQueue.write { db in
-                let local = try buffered ?? Self.localEdit(db,owner: owner,id: message.id)
-                if let buffered { try Self.putLocalEdit(db,owner: owner,id: message.id,value: buffered) }
+                let local = try buffered ?? self.recoveryLocalEdit(db,owner: owner,id: message.id)
+                if let local { try Self.putLocalEdit(db,owner: owner,id: message.id,value: local) }
+                try self.acknowledgeDraftCheckpoint(db, scope: Self.localEditKey(owner: owner,id: message.id))
                 try Self.stageComposer(db,owner: owner,kind: "edit",target: message.id,room: message.conversationId,root: nil,
                     text: text,baseText: local?.baseText ?? message.content,editedAt: local != nil ? local!.baseEditedAt : message.editedAt,localEditRevision: local?.revision)
             }
@@ -2192,6 +2210,17 @@ extension PulseStore {
         let json = String(decoding: try JSONEncoder().encode(receipt.metadataBaseline),as: UTF8.self)
         try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt",arguments: [key,json,Date().timeIntervalSince1970])
     }
+    private func recoveryLocalEdit(_ db: Database, owner: String, id: String) throws -> PulseComposerLocalEdit? {
+        if let snapshot = try recoverableDraftCheckpoint(db, room: Self.localEditKey(owner: owner,id: id)) {
+            return try JSONDecoder().decode(PulseComposerLocalEdit.self,from: Data(snapshot.text.utf8))
+        }
+        return try Self.localEdit(db,owner: owner,id: id)
+    }
+    private func acknowledgeDraftCheckpoint(_ db: Database, scope: String) throws {
+        if let snapshot = try draftCheckpoints.read(scope) {
+            try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET json=excluded.json", arguments: [draftCheckpoints.receiptKey(scope),snapshot.id.uuidString])
+        }
+    }
     private static func localEditKey(owner: String, id: String) -> String { "composer-local-edit:v1|\(owner)|\(id)" }
     private static func localEdit(_ db: Database, owner: String, id: String) throws -> PulseComposerLocalEdit? {
         guard let json = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [localEditKey(owner: owner,id: id)]) else { return nil }
@@ -2204,10 +2233,17 @@ extension PulseStore {
     func saveComposerEdit(_ message: WireChatMessage, text: String, owner: String) throws {
         guard composerOwner == nil || composerOwner == owner, message.senderId == owner else { throw CocoaError(.coderInvalidValue) }
         try draftFence.withEditSnapshot(Self.localEditKey(owner: owner,id: message.id)) { memory in
-            let previous = try memory ?? dbQueue.read { try Self.localEdit($0,owner: owner,id: message.id) }
+            let previous = try memory ?? dbQueue.read { try self.recoveryLocalEdit($0,owner: owner,id: message.id) }
             let value = PulseComposerLocalEdit(text: text,baseText: previous?.baseText ?? message.content,baseEditedAt: previous != nil ? previous!.baseEditedAt : message.editedAt)
             memory = value
-            try dbQueue.write { try Self.putLocalEdit($0,owner: owner,id: message.id,value: value) }
+            let scope = Self.localEditKey(owner: owner,id: message.id)
+            let raw = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+            let checkpoint = try? draftCheckpoints.write(scope,text: raw)
+            try dbQueue.write { db in
+                try Self.putLocalEdit(db,owner: owner,id: message.id,value: value)
+                try self.acknowledgeDraftCheckpoint(db,scope: scope)
+            }
+            if let checkpoint { try? draftCheckpoints.remove(scope,id: checkpoint.id) }
             memory = nil
         }
     }
@@ -2216,7 +2252,7 @@ extension PulseStore {
         return try draftFence.withEditSnapshot(Self.localEditKey(owner: owner,id: id)) { memory in
             if let memory { return memory.text }
             return try dbQueue.read { db in
-                if let local = try Self.localEdit(db,owner: owner,id: id) { return local.text }
+                if let local = try self.recoveryLocalEdit(db,owner: owner,id: id) { return local.text }
                 let key = Self.composerKey(owner: owner,kind: "edit",target: id,root: nil)
                 return try (Self.composer(db,key: key) ?? Self.composer(db,key: Self.heldComposer(key)))?.text
             }
@@ -2238,6 +2274,7 @@ extension PulseStore {
         return try draftFence.removeIfCurrent(token.storageKey,expected: token.revision) {
             try dbQueue.write { db in
                 let key = Self.composerKey(owner: state.userId,kind: "draft",target: state.targetId,root: state.rootId)
+                guard try recoverableDraftCheckpoint(db, room: token.storageKey) == nil else { return false }
                 guard try Self.composer(db,key: key) == nil, try Self.composer(db,key: Self.heldComposer(key)) == nil else { return false }
                 let current = try String.fetchOne(db,sql: "SELECT text FROM draft WHERE conversationId=?",arguments: [token.storageKey])
                 guard current == previous else { return false }

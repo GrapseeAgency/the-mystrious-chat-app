@@ -859,6 +859,7 @@ model ScheduledCreationOperation {
   scheduledId String
 
   @@id([userId, clientId])
+  @@index([userId, requestHash, clientId])
 }
 
 // Independent of message timestamps: a new manual action retires old read intent.

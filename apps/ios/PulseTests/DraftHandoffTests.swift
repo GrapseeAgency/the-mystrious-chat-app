@@ -6,6 +6,25 @@ import GRDB
 final class DraftHandoffTests: XCTestCase {
     private let viewer = PulseViewer(id: "sender", name: "Sender")
 
+    func testFileOnlyDraftManagerClearIsExactAndSurvivesReopen() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+        defer { for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path, composerOwner: "sender")
+        let files = PulseDraftCheckpointJournal(path: path)
+        _ = try files.write("file-only", text: "first")
+        let old = try XCTUnwrap(store.allDraftRows().first)
+        let revision = store.captureDraftConsumption(conversationId: "file-only").revision
+        _ = try files.write("file-only", text: "newer")
+        XCTAssertFalse(try store.deleteDraftIfUnchanged(old, revision: revision))
+        let current = try XCTUnwrap(store.allDraftRows().first)
+        XCTAssertEqual(current.text, "newer")
+        XCTAssertTrue(try store.deleteDraftIfUnchanged(current, revision: revision))
+        let reopened = try PulseStore(path: path, composerOwner: "sender")
+        XCTAssertEqual(reopened.draftSnapshot(conversationId: "file-only"), "")
+        XCTAssertTrue(try reopened.allDraftRows().isEmpty)
+        XCTAssertNil(try files.read("file-only"))
+    }
+
     func testPendingJournalCannotReviveTextAfterQueueCommitAndReopen() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -80,6 +99,39 @@ final class DraftHandoffTests: XCTestCase {
         XCTAssertEqual(try other.countOutbox(), 0)
         XCTAssertEqual(journal.snapshot, "unfinished")
     }
+    func testIndependentCheckpointSurvivesFailedSQLiteAndConsumedFileCannotReviveDraft() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+        defer { for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path, composerOwner: "sender")
+        let connection = try DatabaseQueue(path: path)
+        try store.saveDraftSnapshot(conversationId: "room", text: "older disk text")
+        try await connection.write { try $0.execute(sql: "CREATE TRIGGER fail_draft BEFORE INSERT ON draft BEGIN SELECT RAISE(ABORT, 'SQLite cannot commit'); END") }
+        let thread = PulseThreadDraft.key("room", parentId: "root")
+        XCTAssertThrowsError(try store.saveDraftSnapshot(conversationId: "room", text: "last keystrokes"))
+        XCTAssertThrowsError(try store.saveDraftSnapshot(conversationId: thread, text: "thread keystrokes"))
+        // No PulseDraftJournal/front buffer was used above. These fresh objects
+        // recover from a real file, not the shared in-memory draft fence.
+        let checkpoint = try XCTUnwrap(PulseDraftCheckpointJournal(path: path).read("room"))
+        XCTAssertEqual(checkpoint.text, "last keystrokes")
+        let reopened = try PulseStore(path: path, composerOwner: "sender")
+        XCTAssertEqual(reopened.draftSnapshot(conversationId: "room"), "last keystrokes")
+        XCTAssertEqual(reopened.draftSnapshot(conversationId: thread), "thread keystrokes")
+        XCTAssertEqual(try reopened.allDraftRows().first { $0.conversationId == "room" }?.text, "last keystrokes")
+        let state = PulseComposerReceipt(composerVersion: 1, userId: "sender", kind: "draft", targetId: "room", rootId: nil,
+            conversationId: "room", text: "remote", revision: "member:1", editedAt: nil, clientId: nil, outcome: nil)
+        XCTAssertFalse(try reopened.importComposerDraft(state, token: reopened.captureDraftConsumption(conversationId: "room"), previous: "older disk text"))
+        try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_draft") }
+        let journal = PulseDraftJournal(store: reopened, conversationId: "room")
+        _ = try PulseTextDelivery.enqueue(store: reopened, viewer: viewer, conversationId: "room", content: "last keystrokes", draftJournal: journal)
+        // Simulate process death before post-commit file removal. The UUID ACK
+        // committed with queue+clear, so this surviving file is not a new draft.
+        XCTAssertEqual(try PulseDraftCheckpointJournal(path: path).read("room")?.id, checkpoint.id)
+        let afterSend = try PulseStore(path: path, composerOwner: "sender")
+        XCTAssertEqual(afterSend.draftSnapshot(conversationId: "room"), "")
+        XCTAssertEqual(afterSend.draftSnapshot(conversationId: thread), "thread keystrokes")
+        XCTAssertEqual(try afterSend.countOutbox(), 1)
+    }
+
     func testScheduleAcknowledgementWaitsForAFailedLocalWriteToBecomeDurable() async throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
         defer { for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }

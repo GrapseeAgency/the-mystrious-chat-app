@@ -47,7 +47,7 @@ enum PulseScheduledReplay {
             catch {
                 guard current() else { throw CancellationError() }
                 if let failure = error as? PulseAPIClient.Failure,
-                   [400,403,404,410,422].contains(failure.status ?? 0) || failure.code == "schedule_already_sent" || failure.kind == .validation {
+                   [400,403,404,410,422].contains(failure.status ?? 0) || ["schedule_already_sent", "schedule_duplicate"].contains(failure.code ?? "") || failure.kind == .validation {
                     try store.deferScheduledCommand(command,notice: failure.message ?? "These original scheduling instructions need review. Nothing was rescheduled.")
                 } else { try store.deferScheduledCommand(command) }
                 if let failure = error as? PulseAPIClient.Failure, failure.kind == .auth || failure.kind == .rateLimited { break }

@@ -34,6 +34,7 @@ async function fixture(run) {
    await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
   }
   await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261024_scheduled_creation_operations.sql',import.meta.url),'utf8'))
+  await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261028_scheduled_semantic_index.sql',import.meta.url),'utf8'))
   for(const sql of (await readFile(new URL('../../prisma/patches/20261028_scheduled_delivery_notices.sql',import.meta.url),'utf8')).split(';').filter(s=>s.trim())) await db.$executeRawUnsafe(sql)
   for(const id of ['me','other']) await db.$executeRawUnsafe('INSERT INTO User(id,name,sessionTokenHash,legacyTokenHashes) VALUES(?,?,?,?)',id,'Name '+id,hashSessionToken(`synthetic-${id}`),'[]')
   for(const id of ['room','second']) await db.conversation.create({data:{id,isGroup:true}})
@@ -165,7 +166,7 @@ test('a lost cancellation acknowledgement can be retried without resending or le
 }))
 
 const createKey='scheduled-operation-0001'
-test('scheduled creation receipt replays one row, survives new database handles and allows distinct intentional sends',()=>fixture(async(db,h)=>{
+test('scheduled creation receipt replays one row across reopen and refuses another device duplicating it',()=>fixture(async(db,h)=>{
  const when=new Date(Date.now()+3600000).toISOString(), body={clientId:createKey,scheduledAt:when}
  const first=await(await h.POSTv2(req('POST','me','synthetic-me',body),ctx())).json()
  assert.equal(first.clientId,createKey);assert.equal(first.replayed,false)
@@ -174,9 +175,10 @@ test('scheduled creation receipt replays one row, survives new database handles 
  await db.$disconnect();await db.$connect()
  const reopened=await h.helper.createScheduled(db,'me','room','Hello',new Date(when),createKey)
  assert.equal(reopened.item.id,first.item.id);assert.equal(reopened.replayed,true)
- const other=await(await h.POSTv2(req('POST','me','synthetic-me',{...body,clientId:'scheduled-operation-0002'}),ctx())).json()
- assert.notEqual(other.item.id,first.item.id)
- assert.equal(await db.scheduledMessage.count(),2)
+ const duplicate=await h.POSTv2(req('POST','me','synthetic-me',{...body,clientId:'scheduled-operation-0002'}),ctx())
+ assert.equal(duplicate.status,409)
+ assert.equal((await duplicate.json()).code,'schedule_duplicate')
+ assert.equal(await db.scheduledMessage.count(),1)
 }))
 test('same-key races settle to one schedule and changed instructions or a removed member are refused',()=>fixture(async(db,h)=>{
  const when=new Date(Date.now()+3600000).toISOString(), body={clientId:createKey,scheduledAt:when}
@@ -362,4 +364,45 @@ test('notice retention bounds child cleanup without deleting unfinished receipts
  assert.equal((await db.$queryRaw`SELECT * FROM ScheduledDeliveryNotice WHERE messageId=${message.id}`).length,0)
  assert.equal(await scheduledPushDelivered(db,'unfinished','keep'),true)
  assert.ok(await db.message.findUnique({where:{id:message.id}}))
+}))
+
+
+test('legacy no-ID scheduled retries survive restart and terminal rows cannot be recreated',()=>fixture(async(db,h)=>{
+ const when=new Date(Date.now()+3600000).toISOString(), body={scheduledAt:when,content:'Legacy exact instruction'}
+ const first=await(await h.POST(req('POST','me','synthetic-me',body),ctx())).json()
+ assert.equal(first.replayed,false)
+ await db.$disconnect();await db.$connect()
+ const retry=await(await h.POST(req('POST','me','synthetic-me',body),ctx())).json()
+ assert.equal(retry.item.id,first.item.id);assert.equal(retry.replayed,true)
+ assert.equal(await db.scheduledMessage.count(),1)
+ await h.DELETE(req('DELETE'),ctx(first.item.id))
+ assert.equal((await h.POST(req('POST','me','synthetic-me',body),ctx())).status,410)
+ assert.equal((await h.POSTv2(req('POST','me','synthetic-me',{...body,clientId:'fresh-other-device-0001'}),ctx())).status,410)
+ assert.equal(await db.scheduledMessage.count(),1)
+}))
+test('cross-device and legacy simultaneous semantic duplicates admit one instruction',()=>fixture(async(db,h)=>{
+ const when=new Date(Date.now()+3600000).toISOString(), body={scheduledAt:when,content:'One exact send'}
+ const responses=await Promise.all([
+  h.POST(req('POST','me','synthetic-me',body),ctx()),
+  h.POSTv2(req('POST','me','synthetic-me',{...body,clientId:'device-two-operation-001'}),ctx()),
+  h.POSTv2(req('POST','me','synthetic-me',{...body,clientId:'device-three-operation-1'}),ctx()),
+ ])
+ assert.equal(responses.filter(r=>r.status===201).length,1)
+ for(const r of responses) assert.ok([201,409].includes(r.status))
+ assert.equal(await db.scheduledMessage.count(),1)
+ const changed=await h.POST(req('POST','me','synthetic-me',{...body,scheduledAt:new Date(Date.parse(when)+1000).toISOString()}),ctx())
+ assert.equal(changed.status,201)
+ const foreign=await h.POST(req('POST','other','synthetic-other',body),ctx())
+ assert.equal(foreign.status,201)
+ assert.equal(await db.scheduledMessage.count(),3)
+}))
+test('legacy create fails closed without receipts and adopts an existing unkeyed pending schedule',()=>fixture(async(db,h)=>{
+ const when=new Date(Date.now()+3600000).toISOString()
+ await h.create({id:'old-unkeyed',content:'Old body',scheduledAt:new Date(when)})
+ const adopted=await(await h.POST(req('POST','me','synthetic-me',{content:'Old body',scheduledAt:when}),ctx())).json()
+ assert.equal(adopted.item.id,'old-unkeyed');assert.equal(adopted.replayed,true)
+ assert.equal(await db.scheduledMessage.count(),1)
+ await db.$executeRawUnsafe('DROP TABLE ScheduledCreationOperation')
+ assert.equal((await h.POST(req('POST'),ctx())).status,503)
+ assert.equal(await db.scheduledMessage.count(),1)
 }))

@@ -110,6 +110,31 @@ final class ComposerJournalTests: XCTestCase {
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(baseline),as: UTF8.self).contains("private"))
     }
 
+    func testEditCheckpointRecoversAfterVolatileBufferLossAndCannotReviveAfterAcceptance() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+        defer { for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path, composerOwner: "me")
+        let connection = try DatabaseQueue(path: path)
+        let message = try JSONDecoder().decode(WireChatMessage.self, from: Data("{\"id\":\"m\",\"conversationId\":\"room\",\"senderId\":\"me\",\"kind\":\"text\",\"content\":\"original\",\"createdAt\":\"2026-10-28T00:00:00Z\"}".utf8))
+        try await connection.write { try $0.execute(sql: "CREATE TRIGGER fail_edit BEFORE INSERT ON wave7Cache BEGIN SELECT RAISE(ABORT, 'SQLite cannot commit'); END") }
+        XCTAssertThrowsError(try store.saveComposerEdit(message, text: "my retained edit", owner: "me"))
+        let scope = "composer-local-edit:v1|me|m"
+        XCTAssertNotNil(try PulseDraftCheckpointJournal(path: path).read(scope))
+        // Explicitly discard the volatile front buffer, as process death would.
+        PulseDraftWriteFence.shared(for: store.storageIdentity).withEditSnapshot(scope) { $0 = nil }
+        let reopened = try PulseStore(path: path, composerOwner: "me")
+        XCTAssertEqual(try reopened.recoveredComposerEdit(owner: "me", id: "m"), "my retained edit")
+        try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_edit") }
+        var remote = message; remote.content = "new remote content"
+        try reopened.enqueueComposerEdit(remote, text: "my retained edit", owner: "me")
+        let intent = try XCTUnwrap(reopened.composerPage(owner: "me").first?.intent)
+        XCTAssertEqual(intent.baseText, "original")
+        let frozen = try XCTUnwrap(reopened.freezeComposer(intent, revision: "fingerprint"))
+        try reopened.acceptComposer(frozen, receipt: receipt(frozen, text: "my retained edit", revision: "next-fingerprint"))
+        XCTAssertNil(try reopened.recoveredComposerEdit(owner: "me", id: "m"))
+        XCTAssertNil(try PulseDraftCheckpointJournal(path: path).read(scope))
+    }
+
     func testFailedEditWriteSurvivesReopenedStoreWithoutRebasingOntoRemoteText() async throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
         defer { for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }

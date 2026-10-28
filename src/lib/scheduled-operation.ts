@@ -53,11 +53,13 @@ export async function scheduledPage(db: PrismaClient, userId: string, conversati
   }, { isolationLevel: 'Serializable' })
 }
 export async function createScheduled(db: PrismaClient, userId: string, conversationId: string, content: string, when: Date, clientId?: unknown) {
-  if (clientId !== undefined && (typeof clientId !== 'string' || clientId.length < 16 || clientId.length > 128 || /[^A-Za-z0-9_-]/.test(clientId))) {
+  if (clientId !== undefined && (typeof clientId !== 'string' || clientId.length < 16 || clientId.length > 128 || clientId.startsWith('legacy_schedule_') || /[^A-Za-z0-9_-]/.test(clientId))) {
     throw new ScheduledError(400, 'clientId must contain 16–128 ASCII letters, digits, underscores or hyphens.')
   }
-  const key = clientId as string | undefined
   const hash = createHash('sha256').update(JSON.stringify([conversationId, content, when.toISOString()])).digest('hex')
+  // Legacy callers have no operation key. Bind their exact semantic instruction
+  // deterministically; never allocate a fresh identity for an uncertain retry.
+  const key = typeof clientId === 'string' ? clientId : `legacy_schedule_${hash}`
   for (let attempt = 0; ; attempt++) {
     try {
       return await db.$transaction(async tx => {
@@ -78,6 +80,27 @@ export async function createScheduled(db: PrismaClient, userId: string, conversa
             const { senderId: _, ...publicRow } = row
             return { ...scope(userId, conversationId), clientId: key, replayed: true, item: wire(publicRow) }
           }
+        }
+        // Different devices may choose different operation IDs for the same
+        // instruction. Refuse the duplicate explicitly rather than manufacture
+        // a second schedule (or return another device's creation as a new ACK).
+        const equivalent = await tx.$queryRaw<Array<{ scheduledId: string }>>`
+          SELECT scheduledId FROM ScheduledCreationOperation
+          WHERE userId=${userId} AND requestHash=${hash} ORDER BY clientId LIMIT 1`
+        if (equivalent[0]) {
+          const existing = await tx.scheduledMessage.findUnique({ where: { id: equivalent[0].scheduledId }, select: { sentAt: true, cancelledAt: true } })
+          if (!existing || existing.sentAt !== null || existing.cancelledAt !== null)
+            throw new ScheduledError(410, 'This exact instruction was already sent, cancelled or removed. Choose a different time for a new send.', 'schedule_finished', key)
+          throw new ScheduledError(409, 'An identical message is already scheduled for this account, chat and time. Review Scheduled messages; no duplicate was created.', 'schedule_duplicate', key)
+        }
+        // Adopt an extant pre-upgrade unkeyed row without inserting a duplicate.
+        // Already-erased historical content cannot be reverse-engineered here.
+        const unkeyed = await tx.scheduledMessage.findFirst({ where: { senderId: userId, conversationId, content, scheduledAt: when }, orderBy: { id: 'asc' }, select: fields })
+        if (unkeyed) {
+          if (unkeyed.sentAt !== null || unkeyed.cancelledAt !== null)
+            throw new ScheduledError(410, 'The original schedule was sent or cancelled. Choose a different time.', 'schedule_finished', key)
+          await tx.$executeRaw`INSERT INTO ScheduledCreationOperation (userId,clientId,requestHash,scheduledId) VALUES (${userId},${key},${hash},${unkeyed.id})`
+          return { ...scope(userId, conversationId), clientId: key, replayed: true, item: wire(unkeyed) }
         }
         const now = new Date()
         if (when.getTime() < now.getTime() + 30_000 || when.getTime() > now.getTime() + 30 * 86400_000) {

@@ -503,7 +503,9 @@ class PulseRepositoryImpl constructor(
             // Cancellation after SQLite commit must not skip the in-memory fence:
             // old journal tasks intentionally outlive the composing UI.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                val rooms = draftDao.all().map { it.conversationId }.toSet() + draftVersions.keys
+                val recovered = draftCheckpoints.scopes().filterNot { it.startsWith("composer-local-edit:v1|") }
+                    .filter { recoverableDraftCheckpoint(it) != null }
+                val rooms = draftDao.all().map { it.conversationId }.toSet() + draftVersions.keys + recovered
                 val revisions = rooms.associateWith { room ->
                     draftVersions.getOrPut(room) { java.util.concurrent.atomic.AtomicLong() }.get()
                 }
@@ -898,8 +900,18 @@ class PulseRepositoryImpl constructor(
     override fun observeThreadMessages(rootId: String): Flow<List<Message>> =
         messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
-    override fun observeDrafts(): Flow<Map<String, String>> = draftDao.observeAll().map { rows ->
-        rows.associate { it.conversationId to it.text }
+    override fun observeDrafts(): Flow<Map<String, String>> = recoveringDraftObservation(
+        buffers = draftWrites.bufferChanges, database = { draftDao.observeAll() },
+        onFailure = { Log.w(TAG, "Draft list observation will retry", it) },
+    ) {
+        draftMutex.withLock {
+            val result = draftDao.all().associate { it.conversationId to it.text }.toMutableMap()
+            for (key in draftCheckpoints.scopes().filterNot { it.startsWith("composer-local-edit:v1|") })
+                recoverableDraftCheckpoint(key)?.let { result[key] = it.text }
+            for ((key, snapshot) in threadDraftBuffers) if (draftVersions[key]?.get() == snapshot.first)
+                result[key] = snapshot.second
+            result.toMap()
+        }
     }
 
     override fun observePresence(): Flow<Set<String>> = onlineIds.asStateFlow()
@@ -1902,16 +1914,23 @@ class PulseRepositoryImpl constructor(
         draftWriteScope.launch {
             try { draftMutex.withLock {
                 if (draftWrites.editVersions[key]?.get() != revision) return@withLock
-                val previous = wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
+                val previous = recoverableDraftCheckpoint(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.text) }
+                    ?: wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
                 val local = app.pulse.protocol.ComposerLocalEditDto(text,previous?.baseText ?: snapshot.baseText,if (previous != null) previous.baseEditedAt else snapshot.baseEditedAt,snapshot.revision)
-                wave7Dao.upsert(Wave7CacheEntity(key,app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local),System.currentTimeMillis()))
+                val raw = app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local)
+                val checkpoint = runCatching { draftCheckpoints.write(key,raw) }.getOrNull()
+                database.withTransaction {
+                    wave7Dao.upsert(Wave7CacheEntity(key,raw,System.currentTimeMillis()))
+                    draftCheckpoints.read(key)?.let { wave7Dao.upsert(Wave7CacheEntity(draftCheckpoints.receiptKey(key),it.id,0)) }
+                }
+                checkpoint?.let { runCatching { draftCheckpoints.remove(key,it.id) } }
                 draftWrites.editBuffers.computeIfPresent(key) { _, value -> value.takeIf { it.first != revision } }
             } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (error: Exception) {
                 Log.w(TAG,"Edited text could not be saved",error)
                 if (attachmentSession == epoch && viewerId == owner && draftWrites.editVersions[key]?.get() == revision) {
                     eventsBus.emit(PulseEvent.ComposerSaveFailed(message.conversationId,message.id,
-                        "Edited text could not be saved. Keep this screen open and check device storage; your text is still in memory."))
+                        "Chat storage could not save the edit. Keep this screen open and check device storage; reopening can recover it only if the independent checkpoint was saved."))
                 }
             }
         }
@@ -1920,7 +1939,9 @@ class PulseRepositoryImpl constructor(
         val owner = viewerId ?: return null
         val key = localEditKey(owner,messageId)
         return draftMutex.withLock {
-            draftWrites.editBuffers[key]?.second?.text ?: wave7Dao.get(key)?.let {
+            draftWrites.editBuffers[key]?.second?.text ?: recoverableDraftCheckpoint(key)?.let {
+                app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.text).text
+            } ?: wave7Dao.get(key)?.let {
                 app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json).text
             } ?: composerJournal.editText(owner,messageId)
         }
@@ -1937,11 +1958,15 @@ class PulseRepositoryImpl constructor(
                 val buffered = draftWrites.editBuffers[key]
                 database.withTransaction {
                     requireConversationOwner(owner,epoch)
-                    val local = buffered?.second ?: wave7Dao.get(key)?.let {
+                    val checkpoint = recoverableDraftCheckpoint(key)
+                    val local = buffered?.second ?: checkpoint?.let {
+                        app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.text)
+                    } ?: wave7Dao.get(key)?.let {
                         app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json)
                     }
-                    if (buffered != null) wave7Dao.upsert(Wave7CacheEntity(key,
-                        app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),buffered.second),System.currentTimeMillis()))
+                    if (local != null) wave7Dao.upsert(Wave7CacheEntity(key,
+                        app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local),System.currentTimeMillis()))
+                    checkpoint?.let { wave7Dao.upsert(Wave7CacheEntity(draftCheckpoints.receiptKey(key),it.id,0)) }
                     composerJournal.stage(owner,"edit",message.id,message.conversationId,null,content.trim(),local?.baseText ?: message.body,
                         if (local != null) local.baseEditedAt else message.editedAt,localEditRevision=local?.revision)
                 }
@@ -1995,6 +2020,7 @@ class PulseRepositoryImpl constructor(
         return try {
             val before = draftMutex.withLock {
                 if (threadDraftBuffers[key]?.first == revision) return Result.success(null)
+                if (recoverableDraftCheckpoint(key) != null) return Result.success(null)
                 draftDao.get(key)
             }
             if (composerJournal.hasIntent(owner,conversationId,rootId)) return Result.success(null)
@@ -2099,6 +2125,11 @@ class PulseRepositoryImpl constructor(
     private suspend fun persistDraftWithMirror(key: String, text: String) = database.withTransaction {
         val before = draftDao.get(key)?.text ?: ""
         draftDao.upsert(DraftEntity(key,text,java.time.OffsetDateTime.now().toString()))
+        // Same transaction as save / queue+clear: late checkpoint files cannot
+        // revive an acknowledged or consumed draft after a crash.
+        draftCheckpoints.read(key)?.let { checkpoint ->
+            wave7Dao.upsert(app.pulse.data.local.Wave7CacheEntity(draftCheckpoints.receiptKey(key), checkpoint.id, 0))
+        }
         val owner = reminderOwner?.userId ?: viewerId
         if (owner != null) {
             val (room,root) = app.pulse.domain.model.composerDraftScope(key)
@@ -3263,6 +3294,20 @@ class PulseRepositoryImpl constructor(
 
     // drafts (Wave 0 - web pulse-drafts parity)
 
+    private val draftCheckpoints = DraftCheckpointJournal(database.openHelper.databaseName?.let {
+        java.io.File(context.noBackupFilesDir, "draft-checkpoints/" + java.io.File(it).name)
+    })
+    private suspend fun recoverableDraftCheckpoint(key: String): DraftCheckpointJournal.Snapshot? {
+        val snapshot = kotlinx.coroutines.withContext(Dispatchers.IO) { draftCheckpoints.read(key) } ?: return null
+        if (wave7Dao.get(draftCheckpoints.receiptKey(key))?.json == snapshot.id) {
+            kotlinx.coroutines.withContext(Dispatchers.IO) { runCatching { draftCheckpoints.remove(key, snapshot.id) } }
+            return null
+        }
+        return snapshot
+    }
+    private suspend fun persistedDraftOrCheckpoint(key: String): String? =
+        recoverableDraftCheckpoint(key)?.text ?: draftDao.get(key)?.text
+
     private val draftWrites = DraftWriteCoordinator.forDatabase(database)
     private val draftVersions = draftWrites.versions
     private val draftMutex = draftWrites.localMutex
@@ -3297,7 +3342,7 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun loadThreadDraft(conversationId: String, rootId: String): String? = draftMutex.withLock {
         val key = threadDraftKey(conversationId, rootId)
-        threadDraftBuffers[key]?.second ?: draftDao.get(key)?.text
+        draftWrites.currentSnapshot(key, null) ?: persistedDraftOrCheckpoint(key)
     }
 
     override fun observeThreadDraft(conversationId: String, rootId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> {
@@ -3310,10 +3355,10 @@ class PulseRepositoryImpl constructor(
             val failures = threadDraftFailures.value
             draftMutex.withLock {
                 val revision = draftVersions[key]?.get() ?: 0L
-                val buffered = threadDraftBuffers[key]
+                val buffered = threadDraftBuffers[key]?.takeIf { it.first == revision }
                 // Re-read under the handoff lock: the triggering Room emission may be older.
                 if (buffered != null) app.pulse.domain.model.ThreadDraftSnapshot(buffered.second, buffered.first, failures[key] == buffered.first)
-                else app.pulse.domain.model.ThreadDraftSnapshot(draftDao.get(key)?.text, revision, failures[key] == revision)
+                else app.pulse.domain.model.ThreadDraftSnapshot(persistedDraftOrCheckpoint(key), revision, failures[key] == revision)
             }
         }.onStart { scope.launch { refreshComposerDraft(conversationId,rootId) } }
     }
@@ -3330,8 +3375,12 @@ class PulseRepositoryImpl constructor(
     private suspend fun writeLocalDraft(id: String, text: String, version: Long) = draftMutex.withLock {
         if (draftVersions[id]?.get() != version) return@withLock false
         val value = DraftWriteCoordinator.localSnapshot(text)
+        // Checkpoint before SQLite. Either durable medium may fail independently;
+        // if SQLite fails, the successful checkpoint remains for the next process.
+        val checkpoint = runCatching { draftCheckpoints.write(id, value) }.getOrNull()
         // Empty is an explicit local clear, not permission to restore stale server text.
         persistDraftWithMirror(id, value)
+        checkpoint?.let { runCatching { draftCheckpoints.remove(id, it.id) } }
         draftWrites.finishSnapshot(id, version)
         true
     }
@@ -3340,7 +3389,12 @@ class PulseRepositoryImpl constructor(
         val version = nextDraftVersion(conversationId)
         draftWrites.bufferSnapshot(conversationId, version, text)
         draftWriteScope.launch {
-            try { writeLocalDraft(conversationId, text, version) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Local draft could not be saved", error) }
+            try { writeLocalDraft(conversationId, text, version) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                Log.w(TAG, "Local draft could not be saved", error)
+                eventsBus.emit(PulseEvent.ComposerSaveFailed(conversationId, "", "Draft storage failed. Keep the composer open and check device storage; recovery is available only if the independent checkpoint was saved."))
+            }
         }
     }
 
@@ -3369,7 +3423,7 @@ class PulseRepositoryImpl constructor(
         buffers = draftWrites.bufferChanges,
         database = { draftDao.observe(conversationId) },
         onFailure = { Log.w(TAG, "Draft observation will retry", it) },
-    ) { draftWrites.readSnapshot(conversationId) { draftDao.get(conversationId)?.text } }
+    ) { draftWrites.readSnapshot(conversationId) { persistedDraftOrCheckpoint(conversationId) } }
 
     override suspend fun markRead(conversationId: String): Result<Unit> = acknowledgeRead(conversationId, null)
 
