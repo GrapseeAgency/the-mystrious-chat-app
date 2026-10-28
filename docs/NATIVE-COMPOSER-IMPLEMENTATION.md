@@ -1,12 +1,12 @@
 # Section 3 — drafts, outgoing messages, edits and scheduling
 
-> **Current status:** Reopened by the requested recheck: a displayed-row
-> revision/account gap in item 7 and reproducible scheduling contention in item 8.
-> Fixes and regressions are added; hosted native verification is pending.
-> Local recheck: 75 focused server contracts and 20 Python contracts passed.
-> The previous Android/108-test iOS successes remain historical evidence, not
-> exhaustive closure. See the authoritative checklist for exact boundaries.
-> No section 4, deployment or PR merge is included.
+> **Current status:** The recheck remains open for item 6: persisted
+> Retry-After admission was missing from composer/edit and scheduled-command
+> replay, despite existing ordinary-outbox coverage. Both native replay lanes
+> are now wired to durable global admission; new native tests await execution.
+> Earlier recheck fixes for manager authority and schedule contention have
+> 109-test scoped iOS / Android JVM+instrumentation / 536-server-test evidence.
+> These passes do not cover the newest retry changes. No section 4 or deployment.
 
 
 **Historical scoped verification—not closure of the supplied original list.**

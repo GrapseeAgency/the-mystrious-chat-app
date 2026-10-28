@@ -12,27 +12,42 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal class OutboxRetryJournal(
     private val db: PulseDatabase, private val gate: MessageDispatchGate,
+    private val loaded: ConcurrentHashMap<String, Long> = ConcurrentHashMap(),
+    private val unsaved: ConcurrentHashMap<String, Wave7CacheEntity> = ConcurrentHashMap(),
     private val wallNow: () -> Long = System::currentTimeMillis,
 ) {
-    private val loaded = ConcurrentHashMap<String, Long>()
     private fun prefix(owner: String) = "outbox-retry:v1|$owner|"
     suspend fun hold(owner: String, seconds: Int?, room: String?) {
         gate.holdRetries(seconds, room) // Retain the in-process hold even if disk fails.
         val scope = room ?: ""
         val key = prefix(owner) + if (room == null) "global" else "room|$room"
         val until = wallNow() + (seconds ?: 60).coerceIn(1, 86_400).toLong() * 1_000
-        val row = db.withTransaction {
-            val previous = db.wave7Dao().get(key)
-            Wave7CacheEntity(key, scope, maxOf(until, previous?.updatedAt ?: 0)).also { db.wave7Dao().upsert(it) }
-        }
-        restore(row)
+        val pending = Wave7CacheEntity(key, scope, until)
+        unsaved.merge(key, pending) { old, new -> if (old.updatedAt > new.updatedAt) old else new }
+        persistPending(owner)
     }
-    private fun restore(row: Wave7CacheEntity) {
-        if (loaded.put(row.key, row.updatedAt) == row.updatedAt) return
-        val remaining = (row.updatedAt - wallNow()).coerceIn(0, 86_400_000)
-        if (remaining > 0) gate.holdRetries(((remaining + 999) / 1_000).toInt(), row.json.ifEmpty { null })
+    private suspend fun persistPending(owner: String) {
+        for ((key, pending) in unsaved.entries.filter { it.key.startsWith(prefix(owner)) }) {
+            val row = db.withTransaction {
+                val previous = db.wave7Dao().get(key)
+                pending.copy(updatedAt = maxOf(pending.updatedAt, previous?.updatedAt ?: 0))
+                    .also { db.wave7Dao().upsert(it) }
+            }
+            unsaved.remove(key, pending) // Never acknowledge a newer in-memory deadline.
+            restore(row)
+        }
+    }
+    private fun restore(row: Wave7CacheEntity) = synchronized(loaded) {
+        if (loaded[row.key] != row.updatedAt) {
+            val remaining = (row.updatedAt - wallNow()).coerceIn(0, 86_400_000)
+            if (remaining > 0) gate.holdRetries(((remaining + 999) / 1_000).toInt(), row.json.ifEmpty { null })
+            // Publish after holding the gate: another replay lane must not skip
+            // restoration and dispatch in between these two operations.
+            loaded[row.key] = row.updatedAt
+        }
     }
     suspend fun restore(owner: String) {
+        persistPending(owner)
         val now = wallNow()
         loaded.entries.removeIf { it.value <= now }
         // These are only retry-admission rows, never user messages/receipts.

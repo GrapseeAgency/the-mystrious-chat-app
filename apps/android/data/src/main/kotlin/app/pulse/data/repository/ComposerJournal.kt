@@ -17,6 +17,7 @@ import java.util.UUID
  * flight is immutable and survives edits, response loss and process restart. */
 internal class ComposerJournal(private val db: PulseDatabase) {
     private val dao get() = db.wave7Dao()
+    private val retryAdmission = ComposerRetryAdmission(db)
     private fun prefix(owner: String) = "composer-intent:v1|$owner|"
     private fun head(key: String) = key.replaceFirst("composer-intent:v1|","composer-head:v1|")
     suspend fun hasIntent(owner: String, room: String, root: String?): Boolean {
@@ -105,6 +106,7 @@ internal class ComposerJournal(private val db: PulseDatabase) {
             val rows = dao.savedJournalPage(prefix(owner))
             for (row in rows.take(25)) {
                 currentCoroutineContext().ensureActive(); if (!current()) break
+                if (!retryAdmission.canRun(owner)) break
                 var pending: ComposerIntentDto
                 try { pending = decode(row) } catch (_: Exception) {
                     db.withTransaction { dao.upsert(row.copy(key=held(row.key))); dao.acknowledgeReadIntent(row.key,row.json) }; continue
@@ -132,7 +134,7 @@ internal class ComposerJournal(private val db: PulseDatabase) {
                         pending = frozen
                     }
                     val flight = checkNotNull(pending.flight)
-                    if (!current()) break
+                    if (!current() || retryAdmission.isHeld(owner)) break
                     val receipt = unwrap(api.writeComposer(pending,flight)); receipt.validateComposer(pending,flight)
                     currentCoroutineContext().ensureActive(); if (!current()) break
                     // Cache acceptance must finish before retiring its replay identity.
@@ -160,6 +162,9 @@ internal class ComposerJournal(private val db: PulseDatabase) {
                 catch (error: Exception) {
                     if (!current()) break
                     val failure = (error as? ComposerTransport)?.failure
+                    if (failure?.status == 429 || (failure?.status == 503 && failure.retryAfter != null)) {
+                        retryAdmission.hold(owner, failure.retryAfter)
+                    }
                     val terminal = failure == null || failure.status in setOf(400,403,404,410,422) || failure.kind == PulseResult.Failure.Kind.VALIDATION
                     if (terminal) db.withTransaction {
                         val latest = dao.get(row.key)?.let(::decode)

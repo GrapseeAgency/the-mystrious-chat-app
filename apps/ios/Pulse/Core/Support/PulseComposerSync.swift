@@ -77,6 +77,7 @@ enum PulseComposerReplay {
         defer { busy.remove(store.storageIdentity) }
         for row in try store.composerPage(owner: client.userId).prefix(25) {
             try Task.checkCancellation(); guard current() else { throw CancellationError() }
+            guard try store.composerRetryAdmission.canRun(store: store) else { break }
             var intent = row.intent
             do {
                 if intent.flight == nil {
@@ -95,6 +96,7 @@ enum PulseComposerReplay {
                     intent = frozen
                 }
                 guard let flight = intent.flight else { continue }
+                guard !store.composerRetryAdmission.isHeld else { break }
                 let receipt = try await client.writeComposer(intent, flight: flight)
                 try receipt.validate(intent, flight: flight)
                 try Task.checkCancellation(); guard current() else { throw CancellationError() }
@@ -104,6 +106,9 @@ enum PulseComposerReplay {
             catch {
                 guard current() else { throw CancellationError() }
                 if let failure = error as? PulseAPIClient.Failure {
+                    if failure.status == 429 || (failure.status == 503 && failure.retryAfter != nil) {
+                        try store.composerRetryAdmission.hold(store: store, seconds: failure.retryAfter)
+                    }
                     if [400,403,404,410,422].contains(failure.status ?? 0) || failure.kind == .validation {
                         try store.blockComposer(intent, notice: failure.message ?? "This operation needs review. Your text is retained.")
                     } else { try store.deferComposer(intent) }

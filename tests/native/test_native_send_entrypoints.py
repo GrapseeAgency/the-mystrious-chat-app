@@ -83,6 +83,18 @@ class NativeSendEntrypoints(unittest.TestCase):
         self.assertLess(section.index('guard !Task.isCancelled, session.sessionGeneration == epoch'),
                         section.index('try await session.recoverComposer('))
 
+    def test_all_composer_replay_lanes_consult_durable_admission(self):
+        for name in ('ComposerJournal', 'ScheduledJournal'):
+            source = (ROOT / f'apps/android/data/src/main/kotlin/app/pulse/data/repository/{name}.kt').read_text()
+            self.assertIn('if (!retryAdmission.canRun(owner)) break', source)
+            self.assertIn('retryAdmission.hold(owner, failure.retryAfter)', source)
+            self.assertIn('failure?.status == 503 && failure.retryAfter != null', source)
+        for name in ('PulseComposerSync', 'PulseScheduledJournal'):
+            source = (ROOT / f'apps/ios/Pulse/Core/Support/{name}.swift').read_text()
+            self.assertIn('guard try store.composerRetryAdmission.canRun(store: store) else { break }', source)
+            self.assertIn('store.composerRetryAdmission.hold(store: store, seconds: failure.retryAfter)', source)
+            self.assertIn('failure.status == 503 && failure.retryAfter != nil', source)
+
     def test_schedule_cancellation_is_owned_before_launch(self):
         android = (ROOT / 'apps/android/app/src/main/java/app/pulse/android/mirror/MirrorRoomTools.kt').read_text()
         section = android[android.index('    fun cancel(id: String)'):]

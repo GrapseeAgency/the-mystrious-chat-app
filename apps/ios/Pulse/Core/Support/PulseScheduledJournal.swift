@@ -31,6 +31,7 @@ enum PulseScheduledReplay {
         defer { busy.remove(store.storageIdentity) }
         for command in try store.scheduledCommandPage(owner: client.userId).prefix(25) {
             try Task.checkCancellation(); guard current() else { throw CancellationError() }
+            guard try store.composerRetryAdmission.canRun(store: store) else { break }
             do {
                 let result: String
                 if command.kind == "create" {
@@ -46,6 +47,10 @@ enum PulseScheduledReplay {
             } catch is CancellationError { throw CancellationError() }
             catch {
                 guard current() else { throw CancellationError() }
+                if let failure = error as? PulseAPIClient.Failure,
+                   failure.status == 429 || (failure.status == 503 && failure.retryAfter != nil) {
+                    try store.composerRetryAdmission.hold(store: store, seconds: failure.retryAfter)
+                }
                 if let failure = error as? PulseAPIClient.Failure,
                    [400,403,404,410,422].contains(failure.status ?? 0) || ["schedule_already_sent", "schedule_duplicate"].contains(failure.code ?? "") || failure.kind == .validation {
                     try store.deferScheduledCommand(command,notice: failure.message ?? "These original scheduling instructions need review. Nothing was rescheduled.")

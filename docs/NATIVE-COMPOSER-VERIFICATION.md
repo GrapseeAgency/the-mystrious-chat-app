@@ -329,3 +329,42 @@ confirmation dialog; refresh replaces that authority. Both before launch and
 inside the coroutine the original row must still belong to the displayed page.
 Two additional helper regressions include an explicit negative control for the
 old payload-equality guard. These additions still await hosted execution.
+
+
+### Recheck results before the additional retry finding
+
+- Full server rerun: **536 passed, zero failed/skipped**. Both same-client and
+  independent-client scheduling contention tests additionally passed three
+  repeated runs (two tests per run).
+- Scoped iOS `40744247685`, check `123013682525`, source
+  `582d29e96311de8ecd092896d4166a998faf84cb`: **109 expected / 109 passed /
+  0 unverified**, verified=true. Digest:
+  `16e00deef66e76a8424370f79d9287d12cbcb543aa971885626c13dae52e598a`.
+  This includes the new manager fence/store test. Swift source, selector and
+  reporter files were byte-unchanged from that commit through `457b46b`.
+- Android `40745035980`, source `457b46b`: JVM and both API30/API34 instrumented
+  steps passed; at observation the release assembly / remaining smoke completion
+  was still pending. New manager helper tests include two negative controls for
+  the old late-revision and latest-page-owner behaviors.
+
+### Item 6 reopened: non-message replay also needs persisted admission
+
+Source tracing showed ComposerJournal / PulseComposerReplay and ScheduledJournal /
+PulseScheduledReplay had no Retry-After restore/hold gate. Their 429 handling only
+ended that particular pass; another pass or restart could immediately retry. The
+new gates share global durable metadata with the ordinary outbox, ignore unrelated
+message-room holds, preserve instructions, and restore once into monotonic timing.
+They hold on 429 and on 503 with Retry-After. Failed deadline commits keep the
+memory hold and pending metadata; subsequent admission retries persistence.
+
+New real-HTTP fixture regressions exercise both lanes as the first caller, both
+429 and 503, repeated flushes, reopened stores, unchanged text/time, and a direct
+transport negative control. Additional tests cover room/owner isolation, repeated
+scans with wall-clock rollback, and failed deadline commit followed by recovery.
+The shared Android loaded-deadline publication is serialized so one lane cannot
+observe a restored marker before the other actually holds the gate.
+
+Current local source/reporter/SQL contracts: **21 passed**. Expected scoped Swift
+count is **112**. Native execution is pending; the preceding 109-test result must
+not be relabeled as verification of these newest changes. The full iOS workflow
+remains separate and is not declared green by the scoped run.

@@ -230,3 +230,104 @@ final class ScheduledCommandJournalTests: XCTestCase {
     }
 
 }
+
+private final class ReplayRetryCounts: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: Int] = [:]
+    func add(_ id: String) { lock.lock(); defer { lock.unlock() }; values[id, default: 0] += 1 }
+    func count(_ id: String) -> Int { lock.lock(); defer { lock.unlock() }; return values[id, default: 0] }
+    func remove(_ id: String) { lock.lock(); defer { lock.unlock() }; values.removeValue(forKey: id) }
+}
+private final class ReplayRetryProtocol: URLProtocol {
+    static let counts = ReplayRetryCounts()
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "replay-admission.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.counts.add(request.value(forHTTPHeaderField: "X-Test-ID") ?? "")
+        let status = Int(request.value(forHTTPHeaderField: "X-Status") ?? "429") ?? 429
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
+            headerFields: ["Content-Type": "application/json", "Retry-After": "60"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("{\"error\":\"Wait for admission\"}".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+private final class ReplayRetryClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var wall: TimeInterval = 10_000
+    private var uptime: TimeInterval = 100
+    func wallNow() -> TimeInterval { lock.lock(); defer { lock.unlock() }; return wall }
+    func monotonicNow() -> TimeInterval { lock.lock(); defer { lock.unlock() }; return uptime }
+    func advance(wall seconds: TimeInterval = 0, monotonic ticks: TimeInterval = 0) {
+        lock.lock(); defer { lock.unlock() }; wall += seconds; uptime += ticks
+    }
+}
+
+@MainActor
+final class ComposerRetryAdmissionTests: XCTestCase {
+    func testBothReplayLanesPersistServerAdmissionAcrossReopen() async throws {
+      for scheduleFirst in [false, true] { for status in [429, 503] {
+        let id = UUID().uuidString
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(id).path
+        defer {
+            ReplayRetryProtocol.counts.remove(id)
+            for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) }
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ReplayRetryProtocol.self]
+        config.httpAdditionalHeaders = ["X-Test-ID": id, "X-Status": String(status)]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
+        let api = PulseAPIClient(baseURL: URL(string: "https://replay-admission.test")!, userId: "me", session: session)
+        var store = try PulseStore(path: path, composerOwner: "me")
+        let command = PulseScheduledCommand(owner: "me", clientId: "original-operation-001", kind: "create",
+            conversationId: "room", text: "original schedule", scheduledAt: "2030-01-01T09:00:00.000Z")
+        try store.stageScheduledCommand(command)
+        try store.saveDraftSnapshot(conversationId: "draft-room", text: "original draft")
+        if scheduleFirst { _ = try await PulseScheduledReplay.flush(store: store, client: api, current: { true }) }
+        else { _ = try await PulseComposerReplay.flush(store: store, client: api, current: { true }) }
+        XCTAssertEqual(ReplayRetryProtocol.counts.count(id), 1)
+        XCTAssertNotNil(try store.outboxRetryDeadlines(now: Date().timeIntervalSince1970)[""])
+        _ = try await PulseScheduledReplay.flush(store: store, client: api, current: { true })
+        _ = try await PulseComposerReplay.flush(store: store, client: api, current: { true })
+        XCTAssertEqual(ReplayRetryProtocol.counts.count(id), 1)
+        store = try PulseStore(path: path, composerOwner: "me")
+        _ = try await PulseScheduledReplay.flush(store: store, client: api, current: { true })
+        _ = try await PulseComposerReplay.flush(store: store, client: api, current: { true })
+        XCTAssertEqual(ReplayRetryProtocol.counts.count(id), 1, "Reopen must not bypass Retry-After")
+        XCTAssertEqual(try store.scheduledCommandPage(owner: "me").first?.scheduledAt, command.scheduledAt)
+        XCTAssertEqual(try store.scheduledCommandPage(owner: "me").first?.text, command.text)
+        XCTAssertEqual(try store.composerPage(owner: "me").first?.intent.text, "original draft")
+        // Negative control: the HTTP fixture still permits a request when the replay gate is bypassed.
+        do { try await api.cancelScheduled("control") } catch { }
+        XCTAssertEqual(ReplayRetryProtocol.counts.count(id), 2)
+      } }
+    }
+
+    func testAdmissionRestoresOnceAndRoomSlowModeDoesNotBlockDrafts() throws {
+        let clock = ReplayRetryClock(), store = try PulseStore(owner: "me")
+        _ = try store.holdOutboxRetry(scope: "room", until: clock.wallNow() + 60)
+        let first = PulseComposerRetryAdmission(wallNow: { clock.wallNow() }, monotonicNow: { clock.monotonicNow() })
+        XCTAssertTrue(try first.canRun(store: store))
+        try first.hold(store: store, seconds: 60)
+        clock.advance(wall: 10, monotonic: 10)
+        let restored = PulseComposerRetryAdmission(wallNow: { clock.wallNow() }, monotonicNow: { clock.monotonicNow() })
+        XCTAssertFalse(try restored.canRun(store: store))
+        clock.advance(wall: -1000, monotonic: 49)
+        XCTAssertFalse(try restored.canRun(store: store))
+        clock.advance(monotonic: 1)
+        XCTAssertTrue(try restored.canRun(store: store), "Repeated scans and wall rollback must not restart a loaded hold")
+    }
+
+    func testFailedAdmissionCommitRetainsMemoryHoldAndRetriesPersistence() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+        defer { for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path, composerOwner: "me"), connection = try DatabaseQueue(path: path)
+        try await connection.write { try $0.execute(sql: "CREATE TRIGGER fail_retry BEFORE INSERT ON wave7Cache BEGIN SELECT RAISE(ABORT, 'disk unavailable'); END") }
+        XCTAssertThrowsError(try store.composerRetryAdmission.hold(store: store, seconds: 60))
+        XCTAssertTrue(store.composerRetryAdmission.isHeld)
+        try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_retry") }
+        XCTAssertFalse(try store.composerRetryAdmission.canRun(store: store))
+        let reopened = try PulseStore(path: path, composerOwner: "me")
+        XCTAssertFalse(try reopened.composerRetryAdmission.canRun(store: reopened))
+    }
+}

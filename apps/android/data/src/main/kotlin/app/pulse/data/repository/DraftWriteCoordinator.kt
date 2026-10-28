@@ -20,6 +20,7 @@ internal class DraftWriteCoordinator internal constructor() {
     val localMutex = Mutex()
     val serverMutex = Mutex()
     val scheduleMutex = Mutex()
+    val replayRetryStates = ConcurrentHashMap<String, ComposerRetryAdmission.State>()
     val bufferChanges = MutableStateFlow(0L)
 
     fun bufferSnapshot(key: String, revision: Long, text: String): Pair<Long, String> {

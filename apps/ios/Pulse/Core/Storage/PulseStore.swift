@@ -45,6 +45,7 @@ public final class PulseStore: Sendable {
         ).path, composerOwner: viewerId)
     }
 
+    let composerRetryAdmission = PulseComposerRetryAdmission()
     private let dbQueue: DatabaseQueue
     private let draftCheckpoints: PulseDraftCheckpointJournal
     private let savedSnapshotVersions = MessageSnapshotVersions()

@@ -49,4 +49,24 @@ class OutboxRetryJournalTest {
             assertTrue(db.wave7Dao().readJournal("outbox-retry:v1|me|").isEmpty())
         } finally { db.close(); context.deleteDatabase(name) }
     }
+
+    @Test fun failedRetryCommitKeepsMemoryHoldAndPersistsWhenStorageRecovers() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "retry-failure-${UUID.randomUUID()}.db"
+        var db = Room.databaseBuilder(context, PulseDatabase::class.java, name).build()
+        try {
+            val admission = ComposerRetryAdmission(db)
+            db.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_retry BEFORE INSERT ON wave7_cache BEGIN SELECT RAISE(ABORT, 'disk unavailable'); END")
+            assertTrue(runCatching { admission.hold("me", 60) }.isFailure)
+            assertTrue(admission.isHeld("me"))
+            db.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_retry")
+            // A fresh journal wrapper shares the pending deadline, not just the memory gate.
+            assertFalse(ComposerRetryAdmission(db).canRun("me"))
+            assertNotNull(db.wave7Dao().get("outbox-retry:v1|me|global"))
+            db.close()
+            db = Room.databaseBuilder(context, PulseDatabase::class.java, name).build()
+            assertFalse(ComposerRetryAdmission(db).canRun("me"))
+        } finally { db.close(); context.deleteDatabase(name) }
+    }
+
 }

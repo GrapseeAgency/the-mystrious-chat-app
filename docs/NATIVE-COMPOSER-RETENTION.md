@@ -29,3 +29,10 @@ native recovery SQL contracts, retry reopen tests, and new checkpoint bounded
 scan/consumption tests. The `6f87622` implementation passed Android JVM/API30/API34
 and all 108 selected iOS regressions; exact outcomes are recorded in
 NATIVE-COMPOSER-VERIFICATION.md. Deployment and physical acceptance remain deferred.
+
+
+Item-6 recheck addition (native verification pending): the same compact global
+admission record now gates composer/edit and scheduled-command replay, not only
+message outbox sends. Failed metadata commits retain a memory hold and retry the
+metadata write; this does not promise durability through process death while all
+writes fail. Neither the hold nor its expiry deletes an original instruction.

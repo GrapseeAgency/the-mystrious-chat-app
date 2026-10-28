@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.withLock
 /** Original schedule time/body are instructions, never a retry-time template. */
 internal class ScheduledJournal(private val db: PulseDatabase) {
     private val dao get() = db.wave7Dao()
+    private val retryAdmission = ComposerRetryAdmission(db)
     private fun prefix(owner: String) = "composer-schedule:v1|$owner|"
     private fun key(command: ScheduledCommandDto) = prefix(command.owner) + command.kind + "|" + command.clientId
     private fun held(key: String) = key.replaceFirst("composer-schedule:","composer-schedule-blocked:")
@@ -81,6 +82,7 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
         DraftWriteCoordinator.forDatabase(db).scheduleMutex.withLock {
             for (row in dao.savedJournalPage(prefix(owner)).take(25)) {
                 currentCoroutineContext().ensureActive(); if (!current()) break
+                if (!retryAdmission.canRun(owner)) break
                 val command = try { decode(row) } catch (_: Exception) {
                     db.withTransaction { dao.upsert(row.copy(key=held(row.key))); dao.acknowledgeReadIntent(row.key,row.json) }; continue
                 }
@@ -107,6 +109,9 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
                 catch (error: Exception) {
                     if (!current()) break
                     val failure = (error as? Transport)?.failure
+                    if (failure?.status == 429 || (failure?.status == 503 && failure.retryAfter != null)) {
+                        retryAdmission.hold(owner, failure.retryAfter)
+                    }
                     val terminal = failure?.status in setOf(400,403,404,410,422) || failure?.code in setOf("schedule_already_sent", "schedule_duplicate") || failure?.kind == PulseResult.Failure.Kind.VALIDATION
                     if (terminal) db.withTransaction {
                         if (dao.get(row.key)?.json == row.json) {
