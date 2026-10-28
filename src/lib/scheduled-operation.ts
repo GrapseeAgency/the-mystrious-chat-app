@@ -53,7 +53,7 @@ export async function scheduledPage(db: PrismaClient, userId: string, conversati
   }, { isolationLevel: 'Serializable' })
 }
 export async function createScheduled(db: PrismaClient, userId: string, conversationId: string, content: string, when: Date, clientId?: unknown) {
-  if (clientId !== undefined && (typeof clientId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(clientId))) {
+  if (clientId !== undefined && (typeof clientId !== 'string' || clientId.length < 16 || clientId.length > 128 || /[^A-Za-z0-9_-]/.test(clientId))) {
     throw new ScheduledError(400, 'clientId must contain 16–128 ASCII letters, digits, underscores or hyphens.')
   }
   const key = clientId as string | undefined
@@ -108,7 +108,7 @@ export async function cancelScheduled(db: PrismaClient, userId: string, schedule
     const row = await tx.scheduledMessage.findUnique({ where: { id: scheduledId }, select: { senderId: true, conversationId: true, sentAt: true, cancelledAt: true, cancelledReason: true } })
     if (!row) throw new ScheduledError(404, 'Scheduled message not found. Refresh to see its current state.')
     if (row.senderId !== userId) throw new ScheduledError(403, 'Only the sender can cancel this message.')
-    if (row.sentAt !== null) throw new ScheduledError(409, 'This message was already sent. It was not cancelled.')
+    if (row.sentAt !== null) throw new ScheduledError(409, 'This message was already sent. It was not cancelled.', 'schedule_already_sent', scheduledId)
     // Keep an owner-bound tombstone: a lost cancellation response can be retried.
     // The discarded content is erased, and tombstones never enter list/dispatch pages.
     if (row.cancelledAt === null || row.cancelledReason !== USER_CANCELLED) {

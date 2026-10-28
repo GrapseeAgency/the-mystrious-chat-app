@@ -42,7 +42,7 @@ internal class ComposerJournal(private val db: PulseDatabase) {
 
     /** Caller may include this nested Room transaction in draft/send atomic handoff. */
     suspend fun stage(owner: String, kind: String, target: String, room: String, root: String?, text: String,
-        base: String, editedAt: String? = null, ready: Boolean = true) = db.withTransaction {
+        base: String, editedAt: String? = null, ready: Boolean = true, localEditRevision: String? = null) = db.withTransaction {
         val key = key(owner,kind,target,root)
         val previous = (dao.get(key) ?: dao.get(held(key)))?.let(::decode)
         if (previous != null && previous.text == text && previous.ready == ready && previous.blocked == null) return@withTransaction
@@ -50,8 +50,10 @@ internal class ComposerJournal(private val db: PulseDatabase) {
         val flight = previous?.flight // never replace an uncertain transmitted operation
         dao.delete(held(key))
         put(key, ComposerIntentDto(owner,kind,target,room,root,UUID.randomUUID().toString(),text,
-            previous?.baseText ?: base, if (previous != null) previous.baseEditedAt else editedAt,ready,flight,null,
-            if (previous != null) previous.baseRevision else baseline?.revision))
+            if (kind == "edit") base else previous?.baseText ?: base,
+            if (kind == "edit") editedAt else if (previous != null) previous.baseEditedAt else editedAt,ready,flight,null,
+            if (kind == "edit") baseline?.takeIf { it.text == base && dateEqual(it.editedAt,editedAt) }?.revision
+            else if (previous != null) previous.baseRevision else baseline?.revision, localEditRevision))
     }
     suspend fun editText(owner: String, id: String): String? {
         val key = key(owner,"edit",id,null)
@@ -71,6 +73,23 @@ internal class ComposerJournal(private val db: PulseDatabase) {
     private suspend fun block(key: String, value: ComposerIntentDto, message: String) {
         put(held(key),value.copy(blocked=message))
         dao.delete(key)
+    }
+    suspend fun recover(row: Wave7CacheEntity, replace: Boolean, api: PulseApi, current: () -> Boolean) {
+        val intent = decode(row)
+        check(row.key == held(key(intent.owner,intent.kind,intent.targetId,intent.rootId))) { "This operation is already queued" }
+        if (replace) check(intent.flight == null) { "Reconcile the original request before replacing it" }
+        val state = if (replace) unwrap(api.composerState(intent)).also { it.validateComposer(intent) } else null
+        check(current()) { "Account changed" }
+        db.withTransaction {
+            check(dao.get(row.key)?.json == row.json) { "Recovery changed. Refresh before acting." }
+            val active = key(intent.owner,intent.kind,intent.targetId,intent.rootId)
+            if (state != null) {
+                recordBaseline(state)
+                put(active,intent.copy(desiredId=UUID.randomUUID().toString(),baseText=state.text,baseEditedAt=state.editedAt,
+                    baseRevision=state.revision,blocked=null))
+            } else put(active,intent.copy(blocked=null))
+            dao.acknowledgeReadIntent(row.key,row.json)
+        }
     }
     private fun dateEqual(a: String?, b: String?) = if (a == null || b == null) a == b else
         app.pulse.core.time.PulseTime.epochMs(a) == app.pulse.core.time.PulseTime.epochMs(b)
@@ -104,7 +123,7 @@ internal class ComposerJournal(private val db: PulseDatabase) {
                             }
                             continue
                         }
-                        val flight = ComposerFlight(pending.desiredId,pending.text,state.revision)
+                        val flight = ComposerFlight(pending.desiredId,pending.text,state.revision,pending.localEditRevision)
                         val frozen = db.withTransaction {
                             val latest = dao.get(row.key)?.let(::decode)
                             if (latest?.desiredId != pending.desiredId || latest.flight != null) null
@@ -121,11 +140,21 @@ internal class ComposerJournal(private val db: PulseDatabase) {
                     db.withTransaction {
                         val latest = dao.get(row.key)?.let(::decode) ?: return@withTransaction
                         if (latest.flight?.clientId != flight.clientId) return@withTransaction
-                        if (receipt.outcome == "applied") recordBaseline(receipt)
+                        if (receipt.outcome == "applied") {
+                            recordBaseline(receipt)
+                            if (pending.kind == "edit" && flight.localEditRevision != null) {
+                                val localKey = "composer-local-edit:v1|${pending.owner}|${pending.targetId}"
+                                val row = dao.get(localKey)
+                                val local = row?.let { PulseJson.decodeFromString(ComposerLocalEditDto.serializer(),it.json) }
+                                if (row != null && local?.revision == flight.localEditRevision && local.text.trim() == flight.text)
+                                    dao.acknowledgeReadIntent(localKey,row.json)
+                            }
+                        }
                         if (receipt.outcome != "applied") {
                             block(row.key,latest.copy(flight=null),"A newer server change won. Your text is retained for review.")
                         } else if (latest.desiredId == flight.clientId) dao.delete(row.key)
-                        else put(row.key,latest.copy(flight=null,baseText=receipt.text,baseEditedAt=receipt.editedAt,baseRevision=receipt.revision))
+                        else if (latest.kind == "draft") put(row.key,latest.copy(flight=null,baseText=receipt.text,baseEditedAt=receipt.editedAt,baseRevision=receipt.revision))
+                        else put(row.key,latest.copy(flight=null)) // another editor must retain its own observed base
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) {

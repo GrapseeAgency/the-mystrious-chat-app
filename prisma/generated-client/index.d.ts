@@ -352,6 +352,16 @@ export type ComposerOperation = $Result.DefaultSelection<Prisma.$ComposerOperati
  *
  */
 export type ThreadDraftState = $Result.DefaultSelection<Prisma.$ThreadDraftStatePayload>
+/**
+ * Model ScheduledDeliveryNotice
+ *
+ */
+export type ScheduledDeliveryNotice = $Result.DefaultSelection<Prisma.$ScheduledDeliveryNoticePayload>
+/**
+ * Model ScheduledPushReceipt
+ *
+ */
+export type ScheduledPushReceipt = $Result.DefaultSelection<Prisma.$ScheduledPushReceiptPayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -1030,6 +1040,26 @@ export class PrismaClient<
     * ```
     */
   get threadDraftState(): Prisma.ThreadDraftStateDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.scheduledDeliveryNotice`: Exposes CRUD operations for the **ScheduledDeliveryNotice** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ScheduledDeliveryNotices
+    * const scheduledDeliveryNotices = await prisma.scheduledDeliveryNotice.findMany()
+    * ```
+    */
+  get scheduledDeliveryNotice(): Prisma.ScheduledDeliveryNoticeDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.scheduledPushReceipt`: Exposes CRUD operations for the **ScheduledPushReceipt** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ScheduledPushReceipts
+    * const scheduledPushReceipts = await prisma.scheduledPushReceipt.findMany()
+    * ```
+    */
+  get scheduledPushReceipt(): Prisma.ScheduledPushReceiptDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1526,7 +1556,9 @@ export namespace Prisma {
     SavedMessageState: 'SavedMessageState',
     SavedMessageOperation: 'SavedMessageOperation',
     ComposerOperation: 'ComposerOperation',
-    ThreadDraftState: 'ThreadDraftState'
+    ThreadDraftState: 'ThreadDraftState',
+    ScheduledDeliveryNotice: 'ScheduledDeliveryNotice',
+    ScheduledPushReceipt: 'ScheduledPushReceipt'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1545,7 +1577,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -5693,6 +5725,154 @@ export namespace Prisma {
           }
         }
       }
+      ScheduledDeliveryNotice: {
+        payload: Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>
+        fields: Prisma.ScheduledDeliveryNoticeFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ScheduledDeliveryNoticeFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ScheduledDeliveryNoticeFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>
+          }
+          findFirst: {
+            args: Prisma.ScheduledDeliveryNoticeFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ScheduledDeliveryNoticeFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>
+          }
+          findMany: {
+            args: Prisma.ScheduledDeliveryNoticeFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>[]
+          }
+          create: {
+            args: Prisma.ScheduledDeliveryNoticeCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>
+          }
+          createMany: {
+            args: Prisma.ScheduledDeliveryNoticeCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ScheduledDeliveryNoticeCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>[]
+          }
+          delete: {
+            args: Prisma.ScheduledDeliveryNoticeDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>
+          }
+          update: {
+            args: Prisma.ScheduledDeliveryNoticeUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>
+          }
+          deleteMany: {
+            args: Prisma.ScheduledDeliveryNoticeDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ScheduledDeliveryNoticeUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ScheduledDeliveryNoticeUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>[]
+          }
+          upsert: {
+            args: Prisma.ScheduledDeliveryNoticeUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledDeliveryNoticePayload>
+          }
+          aggregate: {
+            args: Prisma.ScheduledDeliveryNoticeAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateScheduledDeliveryNotice>
+          }
+          groupBy: {
+            args: Prisma.ScheduledDeliveryNoticeGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ScheduledDeliveryNoticeGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ScheduledDeliveryNoticeCountArgs<ExtArgs>
+            result: $Utils.Optional<ScheduledDeliveryNoticeCountAggregateOutputType> | number
+          }
+        }
+      }
+      ScheduledPushReceipt: {
+        payload: Prisma.$ScheduledPushReceiptPayload<ExtArgs>
+        fields: Prisma.ScheduledPushReceiptFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ScheduledPushReceiptFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ScheduledPushReceiptFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>
+          }
+          findFirst: {
+            args: Prisma.ScheduledPushReceiptFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ScheduledPushReceiptFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>
+          }
+          findMany: {
+            args: Prisma.ScheduledPushReceiptFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>[]
+          }
+          create: {
+            args: Prisma.ScheduledPushReceiptCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>
+          }
+          createMany: {
+            args: Prisma.ScheduledPushReceiptCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ScheduledPushReceiptCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>[]
+          }
+          delete: {
+            args: Prisma.ScheduledPushReceiptDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>
+          }
+          update: {
+            args: Prisma.ScheduledPushReceiptUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>
+          }
+          deleteMany: {
+            args: Prisma.ScheduledPushReceiptDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ScheduledPushReceiptUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ScheduledPushReceiptUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>[]
+          }
+          upsert: {
+            args: Prisma.ScheduledPushReceiptUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ScheduledPushReceiptPayload>
+          }
+          aggregate: {
+            args: Prisma.ScheduledPushReceiptAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateScheduledPushReceipt>
+          }
+          groupBy: {
+            args: Prisma.ScheduledPushReceiptGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ScheduledPushReceiptGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ScheduledPushReceiptCountArgs<ExtArgs>
+            result: $Utils.Optional<ScheduledPushReceiptCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -5845,6 +6025,8 @@ export namespace Prisma {
     savedMessageOperation?: SavedMessageOperationOmit
     composerOperation?: ComposerOperationOmit
     threadDraftState?: ThreadDraftStateOmit
+    scheduledDeliveryNotice?: ScheduledDeliveryNoticeOmit
+    scheduledPushReceipt?: ScheduledPushReceiptOmit
   }
 
   /* Types for Logging */
@@ -68696,6 +68878,2068 @@ export namespace Prisma {
 
 
   /**
+   * Model ScheduledDeliveryNotice
+   */
+
+  export type AggregateScheduledDeliveryNotice = {
+    _count: ScheduledDeliveryNoticeCountAggregateOutputType | null
+    _avg: ScheduledDeliveryNoticeAvgAggregateOutputType | null
+    _sum: ScheduledDeliveryNoticeSumAggregateOutputType | null
+    _min: ScheduledDeliveryNoticeMinAggregateOutputType | null
+    _max: ScheduledDeliveryNoticeMaxAggregateOutputType | null
+  }
+
+  export type ScheduledDeliveryNoticeAvgAggregateOutputType = {
+    createdAtMs: number | null
+    nextAttemptMs: number | null
+    attempts: number | null
+    leaseUntilMs: number | null
+    completedAtMs: number | null
+  }
+
+  export type ScheduledDeliveryNoticeSumAggregateOutputType = {
+    createdAtMs: bigint | null
+    nextAttemptMs: bigint | null
+    attempts: number | null
+    leaseUntilMs: bigint | null
+    completedAtMs: bigint | null
+  }
+
+  export type ScheduledDeliveryNoticeMinAggregateOutputType = {
+    messageId: string | null
+    createdAtMs: bigint | null
+    nextAttemptMs: bigint | null
+    attempts: number | null
+    leaseToken: string | null
+    leaseUntilMs: bigint | null
+    socketDone: boolean | null
+    pushDone: boolean | null
+    pushCursor: string | null
+    completedAtMs: bigint | null
+  }
+
+  export type ScheduledDeliveryNoticeMaxAggregateOutputType = {
+    messageId: string | null
+    createdAtMs: bigint | null
+    nextAttemptMs: bigint | null
+    attempts: number | null
+    leaseToken: string | null
+    leaseUntilMs: bigint | null
+    socketDone: boolean | null
+    pushDone: boolean | null
+    pushCursor: string | null
+    completedAtMs: bigint | null
+  }
+
+  export type ScheduledDeliveryNoticeCountAggregateOutputType = {
+    messageId: number
+    createdAtMs: number
+    nextAttemptMs: number
+    attempts: number
+    leaseToken: number
+    leaseUntilMs: number
+    socketDone: number
+    pushDone: number
+    pushCursor: number
+    completedAtMs: number
+    _all: number
+  }
+
+
+  export type ScheduledDeliveryNoticeAvgAggregateInputType = {
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseUntilMs?: true
+    completedAtMs?: true
+  }
+
+  export type ScheduledDeliveryNoticeSumAggregateInputType = {
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseUntilMs?: true
+    completedAtMs?: true
+  }
+
+  export type ScheduledDeliveryNoticeMinAggregateInputType = {
+    messageId?: true
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseToken?: true
+    leaseUntilMs?: true
+    socketDone?: true
+    pushDone?: true
+    pushCursor?: true
+    completedAtMs?: true
+  }
+
+  export type ScheduledDeliveryNoticeMaxAggregateInputType = {
+    messageId?: true
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseToken?: true
+    leaseUntilMs?: true
+    socketDone?: true
+    pushDone?: true
+    pushCursor?: true
+    completedAtMs?: true
+  }
+
+  export type ScheduledDeliveryNoticeCountAggregateInputType = {
+    messageId?: true
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseToken?: true
+    leaseUntilMs?: true
+    socketDone?: true
+    pushDone?: true
+    pushCursor?: true
+    completedAtMs?: true
+    _all?: true
+  }
+
+  export type ScheduledDeliveryNoticeAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ScheduledDeliveryNotice to aggregate.
+     */
+    where?: ScheduledDeliveryNoticeWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledDeliveryNotices to fetch.
+     */
+    orderBy?: ScheduledDeliveryNoticeOrderByWithRelationInput | ScheduledDeliveryNoticeOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: ScheduledDeliveryNoticeWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledDeliveryNotices from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledDeliveryNotices.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned ScheduledDeliveryNotices
+    **/
+    _count?: true | ScheduledDeliveryNoticeCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to average
+    **/
+    _avg?: ScheduledDeliveryNoticeAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to sum
+    **/
+    _sum?: ScheduledDeliveryNoticeSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: ScheduledDeliveryNoticeMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: ScheduledDeliveryNoticeMaxAggregateInputType
+  }
+
+  export type GetScheduledDeliveryNoticeAggregateType<T extends ScheduledDeliveryNoticeAggregateArgs> = {
+        [P in keyof T & keyof AggregateScheduledDeliveryNotice]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateScheduledDeliveryNotice[P]>
+      : GetScalarType<T[P], AggregateScheduledDeliveryNotice[P]>
+  }
+
+
+
+
+  export type ScheduledDeliveryNoticeGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ScheduledDeliveryNoticeWhereInput
+    orderBy?: ScheduledDeliveryNoticeOrderByWithAggregationInput | ScheduledDeliveryNoticeOrderByWithAggregationInput[]
+    by: ScheduledDeliveryNoticeScalarFieldEnum[] | ScheduledDeliveryNoticeScalarFieldEnum
+    having?: ScheduledDeliveryNoticeScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ScheduledDeliveryNoticeCountAggregateInputType | true
+    _avg?: ScheduledDeliveryNoticeAvgAggregateInputType
+    _sum?: ScheduledDeliveryNoticeSumAggregateInputType
+    _min?: ScheduledDeliveryNoticeMinAggregateInputType
+    _max?: ScheduledDeliveryNoticeMaxAggregateInputType
+  }
+
+  export type ScheduledDeliveryNoticeGroupByOutputType = {
+    messageId: string
+    createdAtMs: bigint
+    nextAttemptMs: bigint
+    attempts: number
+    leaseToken: string | null
+    leaseUntilMs: bigint | null
+    socketDone: boolean
+    pushDone: boolean
+    pushCursor: string | null
+    completedAtMs: bigint | null
+    _count: ScheduledDeliveryNoticeCountAggregateOutputType | null
+    _avg: ScheduledDeliveryNoticeAvgAggregateOutputType | null
+    _sum: ScheduledDeliveryNoticeSumAggregateOutputType | null
+    _min: ScheduledDeliveryNoticeMinAggregateOutputType | null
+    _max: ScheduledDeliveryNoticeMaxAggregateOutputType | null
+  }
+
+  type GetScheduledDeliveryNoticeGroupByPayload<T extends ScheduledDeliveryNoticeGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ScheduledDeliveryNoticeGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ScheduledDeliveryNoticeGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ScheduledDeliveryNoticeGroupByOutputType[P]>
+            : GetScalarType<T[P], ScheduledDeliveryNoticeGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ScheduledDeliveryNoticeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    createdAtMs?: boolean
+    nextAttemptMs?: boolean
+    attempts?: boolean
+    leaseToken?: boolean
+    leaseUntilMs?: boolean
+    socketDone?: boolean
+    pushDone?: boolean
+    pushCursor?: boolean
+    completedAtMs?: boolean
+  }, ExtArgs["result"]["scheduledDeliveryNotice"]>
+
+  export type ScheduledDeliveryNoticeSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    createdAtMs?: boolean
+    nextAttemptMs?: boolean
+    attempts?: boolean
+    leaseToken?: boolean
+    leaseUntilMs?: boolean
+    socketDone?: boolean
+    pushDone?: boolean
+    pushCursor?: boolean
+    completedAtMs?: boolean
+  }, ExtArgs["result"]["scheduledDeliveryNotice"]>
+
+  export type ScheduledDeliveryNoticeSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    createdAtMs?: boolean
+    nextAttemptMs?: boolean
+    attempts?: boolean
+    leaseToken?: boolean
+    leaseUntilMs?: boolean
+    socketDone?: boolean
+    pushDone?: boolean
+    pushCursor?: boolean
+    completedAtMs?: boolean
+  }, ExtArgs["result"]["scheduledDeliveryNotice"]>
+
+  export type ScheduledDeliveryNoticeSelectScalar = {
+    messageId?: boolean
+    createdAtMs?: boolean
+    nextAttemptMs?: boolean
+    attempts?: boolean
+    leaseToken?: boolean
+    leaseUntilMs?: boolean
+    socketDone?: boolean
+    pushDone?: boolean
+    pushCursor?: boolean
+    completedAtMs?: boolean
+  }
+
+  export type ScheduledDeliveryNoticeOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"messageId" | "createdAtMs" | "nextAttemptMs" | "attempts" | "leaseToken" | "leaseUntilMs" | "socketDone" | "pushDone" | "pushCursor" | "completedAtMs", ExtArgs["result"]["scheduledDeliveryNotice"]>
+
+  export type $ScheduledDeliveryNoticePayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ScheduledDeliveryNotice"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      messageId: string
+      createdAtMs: bigint
+      nextAttemptMs: bigint
+      attempts: number
+      leaseToken: string | null
+      leaseUntilMs: bigint | null
+      socketDone: boolean
+      pushDone: boolean
+      pushCursor: string | null
+      completedAtMs: bigint | null
+    }, ExtArgs["result"]["scheduledDeliveryNotice"]>
+    composites: {}
+  }
+
+  type ScheduledDeliveryNoticeGetPayload<S extends boolean | null | undefined | ScheduledDeliveryNoticeDefaultArgs> = $Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload, S>
+
+  type ScheduledDeliveryNoticeCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ScheduledDeliveryNoticeFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ScheduledDeliveryNoticeCountAggregateInputType | true
+    }
+
+  export interface ScheduledDeliveryNoticeDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ScheduledDeliveryNotice'], meta: { name: 'ScheduledDeliveryNotice' } }
+    /**
+     * Find zero or one ScheduledDeliveryNotice that matches the filter.
+     * @param {ScheduledDeliveryNoticeFindUniqueArgs} args - Arguments to find a ScheduledDeliveryNotice
+     * @example
+     * // Get one ScheduledDeliveryNotice
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ScheduledDeliveryNoticeFindUniqueArgs>(args: SelectSubset<T, ScheduledDeliveryNoticeFindUniqueArgs<ExtArgs>>): Prisma__ScheduledDeliveryNoticeClient<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ScheduledDeliveryNotice that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ScheduledDeliveryNoticeFindUniqueOrThrowArgs} args - Arguments to find a ScheduledDeliveryNotice
+     * @example
+     * // Get one ScheduledDeliveryNotice
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ScheduledDeliveryNoticeFindUniqueOrThrowArgs>(args: SelectSubset<T, ScheduledDeliveryNoticeFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ScheduledDeliveryNoticeClient<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ScheduledDeliveryNotice that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledDeliveryNoticeFindFirstArgs} args - Arguments to find a ScheduledDeliveryNotice
+     * @example
+     * // Get one ScheduledDeliveryNotice
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ScheduledDeliveryNoticeFindFirstArgs>(args?: SelectSubset<T, ScheduledDeliveryNoticeFindFirstArgs<ExtArgs>>): Prisma__ScheduledDeliveryNoticeClient<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ScheduledDeliveryNotice that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledDeliveryNoticeFindFirstOrThrowArgs} args - Arguments to find a ScheduledDeliveryNotice
+     * @example
+     * // Get one ScheduledDeliveryNotice
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ScheduledDeliveryNoticeFindFirstOrThrowArgs>(args?: SelectSubset<T, ScheduledDeliveryNoticeFindFirstOrThrowArgs<ExtArgs>>): Prisma__ScheduledDeliveryNoticeClient<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ScheduledDeliveryNotices that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledDeliveryNoticeFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ScheduledDeliveryNotices
+     * const scheduledDeliveryNotices = await prisma.scheduledDeliveryNotice.findMany()
+     *
+     * // Get first 10 ScheduledDeliveryNotices
+     * const scheduledDeliveryNotices = await prisma.scheduledDeliveryNotice.findMany({ take: 10 })
+     *
+     * // Only select the `messageId`
+     * const scheduledDeliveryNoticeWithMessageIdOnly = await prisma.scheduledDeliveryNotice.findMany({ select: { messageId: true } })
+     *
+     */
+    findMany<T extends ScheduledDeliveryNoticeFindManyArgs>(args?: SelectSubset<T, ScheduledDeliveryNoticeFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ScheduledDeliveryNotice.
+     * @param {ScheduledDeliveryNoticeCreateArgs} args - Arguments to create a ScheduledDeliveryNotice.
+     * @example
+     * // Create one ScheduledDeliveryNotice
+     * const ScheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.create({
+     *   data: {
+     *     // ... data to create a ScheduledDeliveryNotice
+     *   }
+     * })
+     *
+     */
+    create<T extends ScheduledDeliveryNoticeCreateArgs>(args: SelectSubset<T, ScheduledDeliveryNoticeCreateArgs<ExtArgs>>): Prisma__ScheduledDeliveryNoticeClient<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ScheduledDeliveryNotices.
+     * @param {ScheduledDeliveryNoticeCreateManyArgs} args - Arguments to create many ScheduledDeliveryNotices.
+     * @example
+     * // Create many ScheduledDeliveryNotices
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends ScheduledDeliveryNoticeCreateManyArgs>(args?: SelectSubset<T, ScheduledDeliveryNoticeCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ScheduledDeliveryNotices and returns the data saved in the database.
+     * @param {ScheduledDeliveryNoticeCreateManyAndReturnArgs} args - Arguments to create many ScheduledDeliveryNotices.
+     * @example
+     * // Create many ScheduledDeliveryNotices
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many ScheduledDeliveryNotices and only return the `messageId`
+     * const scheduledDeliveryNoticeWithMessageIdOnly = await prisma.scheduledDeliveryNotice.createManyAndReturn({
+     *   select: { messageId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends ScheduledDeliveryNoticeCreateManyAndReturnArgs>(args?: SelectSubset<T, ScheduledDeliveryNoticeCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ScheduledDeliveryNotice.
+     * @param {ScheduledDeliveryNoticeDeleteArgs} args - Arguments to delete one ScheduledDeliveryNotice.
+     * @example
+     * // Delete one ScheduledDeliveryNotice
+     * const ScheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.delete({
+     *   where: {
+     *     // ... filter to delete one ScheduledDeliveryNotice
+     *   }
+     * })
+     *
+     */
+    delete<T extends ScheduledDeliveryNoticeDeleteArgs>(args: SelectSubset<T, ScheduledDeliveryNoticeDeleteArgs<ExtArgs>>): Prisma__ScheduledDeliveryNoticeClient<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ScheduledDeliveryNotice.
+     * @param {ScheduledDeliveryNoticeUpdateArgs} args - Arguments to update one ScheduledDeliveryNotice.
+     * @example
+     * // Update one ScheduledDeliveryNotice
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends ScheduledDeliveryNoticeUpdateArgs>(args: SelectSubset<T, ScheduledDeliveryNoticeUpdateArgs<ExtArgs>>): Prisma__ScheduledDeliveryNoticeClient<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ScheduledDeliveryNotices.
+     * @param {ScheduledDeliveryNoticeDeleteManyArgs} args - Arguments to filter ScheduledDeliveryNotices to delete.
+     * @example
+     * // Delete a few ScheduledDeliveryNotices
+     * const { count } = await prisma.scheduledDeliveryNotice.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends ScheduledDeliveryNoticeDeleteManyArgs>(args?: SelectSubset<T, ScheduledDeliveryNoticeDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ScheduledDeliveryNotices.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledDeliveryNoticeUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ScheduledDeliveryNotices
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends ScheduledDeliveryNoticeUpdateManyArgs>(args: SelectSubset<T, ScheduledDeliveryNoticeUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ScheduledDeliveryNotices and returns the data updated in the database.
+     * @param {ScheduledDeliveryNoticeUpdateManyAndReturnArgs} args - Arguments to update many ScheduledDeliveryNotices.
+     * @example
+     * // Update many ScheduledDeliveryNotices
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more ScheduledDeliveryNotices and only return the `messageId`
+     * const scheduledDeliveryNoticeWithMessageIdOnly = await prisma.scheduledDeliveryNotice.updateManyAndReturn({
+     *   select: { messageId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends ScheduledDeliveryNoticeUpdateManyAndReturnArgs>(args: SelectSubset<T, ScheduledDeliveryNoticeUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ScheduledDeliveryNotice.
+     * @param {ScheduledDeliveryNoticeUpsertArgs} args - Arguments to update or create a ScheduledDeliveryNotice.
+     * @example
+     * // Update or create a ScheduledDeliveryNotice
+     * const scheduledDeliveryNotice = await prisma.scheduledDeliveryNotice.upsert({
+     *   create: {
+     *     // ... data to create a ScheduledDeliveryNotice
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ScheduledDeliveryNotice we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ScheduledDeliveryNoticeUpsertArgs>(args: SelectSubset<T, ScheduledDeliveryNoticeUpsertArgs<ExtArgs>>): Prisma__ScheduledDeliveryNoticeClient<$Result.GetResult<Prisma.$ScheduledDeliveryNoticePayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ScheduledDeliveryNotices.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledDeliveryNoticeCountArgs} args - Arguments to filter ScheduledDeliveryNotices to count.
+     * @example
+     * // Count the number of ScheduledDeliveryNotices
+     * const count = await prisma.scheduledDeliveryNotice.count({
+     *   where: {
+     *     // ... the filter for the ScheduledDeliveryNotices we want to count
+     *   }
+     * })
+    **/
+    count<T extends ScheduledDeliveryNoticeCountArgs>(
+      args?: Subset<T, ScheduledDeliveryNoticeCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ScheduledDeliveryNoticeCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ScheduledDeliveryNotice.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledDeliveryNoticeAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ScheduledDeliveryNoticeAggregateArgs>(args: Subset<T, ScheduledDeliveryNoticeAggregateArgs>): Prisma.PrismaPromise<GetScheduledDeliveryNoticeAggregateType<T>>
+
+    /**
+     * Group by ScheduledDeliveryNotice.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledDeliveryNoticeGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends ScheduledDeliveryNoticeGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ScheduledDeliveryNoticeGroupByArgs['orderBy'] }
+        : { orderBy?: ScheduledDeliveryNoticeGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ScheduledDeliveryNoticeGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetScheduledDeliveryNoticeGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ScheduledDeliveryNotice model
+   */
+  readonly fields: ScheduledDeliveryNoticeFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ScheduledDeliveryNotice.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ScheduledDeliveryNoticeClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ScheduledDeliveryNotice model
+   */
+  interface ScheduledDeliveryNoticeFieldRefs {
+    readonly messageId: FieldRef<"ScheduledDeliveryNotice", 'String'>
+    readonly createdAtMs: FieldRef<"ScheduledDeliveryNotice", 'BigInt'>
+    readonly nextAttemptMs: FieldRef<"ScheduledDeliveryNotice", 'BigInt'>
+    readonly attempts: FieldRef<"ScheduledDeliveryNotice", 'Int'>
+    readonly leaseToken: FieldRef<"ScheduledDeliveryNotice", 'String'>
+    readonly leaseUntilMs: FieldRef<"ScheduledDeliveryNotice", 'BigInt'>
+    readonly socketDone: FieldRef<"ScheduledDeliveryNotice", 'Boolean'>
+    readonly pushDone: FieldRef<"ScheduledDeliveryNotice", 'Boolean'>
+    readonly pushCursor: FieldRef<"ScheduledDeliveryNotice", 'String'>
+    readonly completedAtMs: FieldRef<"ScheduledDeliveryNotice", 'BigInt'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * ScheduledDeliveryNotice findUnique
+   */
+  export type ScheduledDeliveryNoticeFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledDeliveryNotice to fetch.
+     */
+    where: ScheduledDeliveryNoticeWhereUniqueInput
+  }
+
+  /**
+   * ScheduledDeliveryNotice findUniqueOrThrow
+   */
+  export type ScheduledDeliveryNoticeFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledDeliveryNotice to fetch.
+     */
+    where: ScheduledDeliveryNoticeWhereUniqueInput
+  }
+
+  /**
+   * ScheduledDeliveryNotice findFirst
+   */
+  export type ScheduledDeliveryNoticeFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledDeliveryNotice to fetch.
+     */
+    where?: ScheduledDeliveryNoticeWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledDeliveryNotices to fetch.
+     */
+    orderBy?: ScheduledDeliveryNoticeOrderByWithRelationInput | ScheduledDeliveryNoticeOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ScheduledDeliveryNotices.
+     */
+    cursor?: ScheduledDeliveryNoticeWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledDeliveryNotices from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledDeliveryNotices.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ScheduledDeliveryNotices.
+     */
+    distinct?: ScheduledDeliveryNoticeScalarFieldEnum | ScheduledDeliveryNoticeScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledDeliveryNotice findFirstOrThrow
+   */
+  export type ScheduledDeliveryNoticeFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledDeliveryNotice to fetch.
+     */
+    where?: ScheduledDeliveryNoticeWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledDeliveryNotices to fetch.
+     */
+    orderBy?: ScheduledDeliveryNoticeOrderByWithRelationInput | ScheduledDeliveryNoticeOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ScheduledDeliveryNotices.
+     */
+    cursor?: ScheduledDeliveryNoticeWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledDeliveryNotices from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledDeliveryNotices.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ScheduledDeliveryNotices.
+     */
+    distinct?: ScheduledDeliveryNoticeScalarFieldEnum | ScheduledDeliveryNoticeScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledDeliveryNotice findMany
+   */
+  export type ScheduledDeliveryNoticeFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledDeliveryNotices to fetch.
+     */
+    where?: ScheduledDeliveryNoticeWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledDeliveryNotices to fetch.
+     */
+    orderBy?: ScheduledDeliveryNoticeOrderByWithRelationInput | ScheduledDeliveryNoticeOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing ScheduledDeliveryNotices.
+     */
+    cursor?: ScheduledDeliveryNoticeWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledDeliveryNotices from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledDeliveryNotices.
+     */
+    skip?: number
+    distinct?: ScheduledDeliveryNoticeScalarFieldEnum | ScheduledDeliveryNoticeScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledDeliveryNotice create
+   */
+  export type ScheduledDeliveryNoticeCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ScheduledDeliveryNotice.
+     */
+    data: XOR<ScheduledDeliveryNoticeCreateInput, ScheduledDeliveryNoticeUncheckedCreateInput>
+  }
+
+  /**
+   * ScheduledDeliveryNotice createMany
+   */
+  export type ScheduledDeliveryNoticeCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ScheduledDeliveryNotices.
+     */
+    data: ScheduledDeliveryNoticeCreateManyInput | ScheduledDeliveryNoticeCreateManyInput[]
+  }
+
+  /**
+   * ScheduledDeliveryNotice createManyAndReturn
+   */
+  export type ScheduledDeliveryNoticeCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * The data used to create many ScheduledDeliveryNotices.
+     */
+    data: ScheduledDeliveryNoticeCreateManyInput | ScheduledDeliveryNoticeCreateManyInput[]
+  }
+
+  /**
+   * ScheduledDeliveryNotice update
+   */
+  export type ScheduledDeliveryNoticeUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ScheduledDeliveryNotice.
+     */
+    data: XOR<ScheduledDeliveryNoticeUpdateInput, ScheduledDeliveryNoticeUncheckedUpdateInput>
+    /**
+     * Choose, which ScheduledDeliveryNotice to update.
+     */
+    where: ScheduledDeliveryNoticeWhereUniqueInput
+  }
+
+  /**
+   * ScheduledDeliveryNotice updateMany
+   */
+  export type ScheduledDeliveryNoticeUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ScheduledDeliveryNotices.
+     */
+    data: XOR<ScheduledDeliveryNoticeUpdateManyMutationInput, ScheduledDeliveryNoticeUncheckedUpdateManyInput>
+    /**
+     * Filter which ScheduledDeliveryNotices to update
+     */
+    where?: ScheduledDeliveryNoticeWhereInput
+    /**
+     * Limit how many ScheduledDeliveryNotices to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledDeliveryNotice updateManyAndReturn
+   */
+  export type ScheduledDeliveryNoticeUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * The data used to update ScheduledDeliveryNotices.
+     */
+    data: XOR<ScheduledDeliveryNoticeUpdateManyMutationInput, ScheduledDeliveryNoticeUncheckedUpdateManyInput>
+    /**
+     * Filter which ScheduledDeliveryNotices to update
+     */
+    where?: ScheduledDeliveryNoticeWhereInput
+    /**
+     * Limit how many ScheduledDeliveryNotices to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledDeliveryNotice upsert
+   */
+  export type ScheduledDeliveryNoticeUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ScheduledDeliveryNotice to update in case it exists.
+     */
+    where: ScheduledDeliveryNoticeWhereUniqueInput
+    /**
+     * In case the ScheduledDeliveryNotice found by the `where` argument doesn't exist, create a new ScheduledDeliveryNotice with this data.
+     */
+    create: XOR<ScheduledDeliveryNoticeCreateInput, ScheduledDeliveryNoticeUncheckedCreateInput>
+    /**
+     * In case the ScheduledDeliveryNotice was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ScheduledDeliveryNoticeUpdateInput, ScheduledDeliveryNoticeUncheckedUpdateInput>
+  }
+
+  /**
+   * ScheduledDeliveryNotice delete
+   */
+  export type ScheduledDeliveryNoticeDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+    /**
+     * Filter which ScheduledDeliveryNotice to delete.
+     */
+    where: ScheduledDeliveryNoticeWhereUniqueInput
+  }
+
+  /**
+   * ScheduledDeliveryNotice deleteMany
+   */
+  export type ScheduledDeliveryNoticeDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ScheduledDeliveryNotices to delete
+     */
+    where?: ScheduledDeliveryNoticeWhereInput
+    /**
+     * Limit how many ScheduledDeliveryNotices to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledDeliveryNotice without action
+   */
+  export type ScheduledDeliveryNoticeDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledDeliveryNotice
+     */
+    select?: ScheduledDeliveryNoticeSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledDeliveryNotice
+     */
+    omit?: ScheduledDeliveryNoticeOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model ScheduledPushReceipt
+   */
+
+  export type AggregateScheduledPushReceipt = {
+    _count: ScheduledPushReceiptCountAggregateOutputType | null
+    _min: ScheduledPushReceiptMinAggregateOutputType | null
+    _max: ScheduledPushReceiptMaxAggregateOutputType | null
+  }
+
+  export type ScheduledPushReceiptMinAggregateOutputType = {
+    messageId: string | null
+    bindingHash: string | null
+  }
+
+  export type ScheduledPushReceiptMaxAggregateOutputType = {
+    messageId: string | null
+    bindingHash: string | null
+  }
+
+  export type ScheduledPushReceiptCountAggregateOutputType = {
+    messageId: number
+    bindingHash: number
+    _all: number
+  }
+
+
+  export type ScheduledPushReceiptMinAggregateInputType = {
+    messageId?: true
+    bindingHash?: true
+  }
+
+  export type ScheduledPushReceiptMaxAggregateInputType = {
+    messageId?: true
+    bindingHash?: true
+  }
+
+  export type ScheduledPushReceiptCountAggregateInputType = {
+    messageId?: true
+    bindingHash?: true
+    _all?: true
+  }
+
+  export type ScheduledPushReceiptAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ScheduledPushReceipt to aggregate.
+     */
+    where?: ScheduledPushReceiptWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledPushReceipts to fetch.
+     */
+    orderBy?: ScheduledPushReceiptOrderByWithRelationInput | ScheduledPushReceiptOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: ScheduledPushReceiptWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledPushReceipts from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledPushReceipts.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned ScheduledPushReceipts
+    **/
+    _count?: true | ScheduledPushReceiptCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: ScheduledPushReceiptMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: ScheduledPushReceiptMaxAggregateInputType
+  }
+
+  export type GetScheduledPushReceiptAggregateType<T extends ScheduledPushReceiptAggregateArgs> = {
+        [P in keyof T & keyof AggregateScheduledPushReceipt]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateScheduledPushReceipt[P]>
+      : GetScalarType<T[P], AggregateScheduledPushReceipt[P]>
+  }
+
+
+
+
+  export type ScheduledPushReceiptGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ScheduledPushReceiptWhereInput
+    orderBy?: ScheduledPushReceiptOrderByWithAggregationInput | ScheduledPushReceiptOrderByWithAggregationInput[]
+    by: ScheduledPushReceiptScalarFieldEnum[] | ScheduledPushReceiptScalarFieldEnum
+    having?: ScheduledPushReceiptScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ScheduledPushReceiptCountAggregateInputType | true
+    _min?: ScheduledPushReceiptMinAggregateInputType
+    _max?: ScheduledPushReceiptMaxAggregateInputType
+  }
+
+  export type ScheduledPushReceiptGroupByOutputType = {
+    messageId: string
+    bindingHash: string
+    _count: ScheduledPushReceiptCountAggregateOutputType | null
+    _min: ScheduledPushReceiptMinAggregateOutputType | null
+    _max: ScheduledPushReceiptMaxAggregateOutputType | null
+  }
+
+  type GetScheduledPushReceiptGroupByPayload<T extends ScheduledPushReceiptGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ScheduledPushReceiptGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ScheduledPushReceiptGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ScheduledPushReceiptGroupByOutputType[P]>
+            : GetScalarType<T[P], ScheduledPushReceiptGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ScheduledPushReceiptSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    bindingHash?: boolean
+  }, ExtArgs["result"]["scheduledPushReceipt"]>
+
+  export type ScheduledPushReceiptSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    bindingHash?: boolean
+  }, ExtArgs["result"]["scheduledPushReceipt"]>
+
+  export type ScheduledPushReceiptSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    bindingHash?: boolean
+  }, ExtArgs["result"]["scheduledPushReceipt"]>
+
+  export type ScheduledPushReceiptSelectScalar = {
+    messageId?: boolean
+    bindingHash?: boolean
+  }
+
+  export type ScheduledPushReceiptOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"messageId" | "bindingHash", ExtArgs["result"]["scheduledPushReceipt"]>
+
+  export type $ScheduledPushReceiptPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ScheduledPushReceipt"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      messageId: string
+      bindingHash: string
+    }, ExtArgs["result"]["scheduledPushReceipt"]>
+    composites: {}
+  }
+
+  type ScheduledPushReceiptGetPayload<S extends boolean | null | undefined | ScheduledPushReceiptDefaultArgs> = $Result.GetResult<Prisma.$ScheduledPushReceiptPayload, S>
+
+  type ScheduledPushReceiptCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ScheduledPushReceiptFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ScheduledPushReceiptCountAggregateInputType | true
+    }
+
+  export interface ScheduledPushReceiptDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ScheduledPushReceipt'], meta: { name: 'ScheduledPushReceipt' } }
+    /**
+     * Find zero or one ScheduledPushReceipt that matches the filter.
+     * @param {ScheduledPushReceiptFindUniqueArgs} args - Arguments to find a ScheduledPushReceipt
+     * @example
+     * // Get one ScheduledPushReceipt
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ScheduledPushReceiptFindUniqueArgs>(args: SelectSubset<T, ScheduledPushReceiptFindUniqueArgs<ExtArgs>>): Prisma__ScheduledPushReceiptClient<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ScheduledPushReceipt that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ScheduledPushReceiptFindUniqueOrThrowArgs} args - Arguments to find a ScheduledPushReceipt
+     * @example
+     * // Get one ScheduledPushReceipt
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ScheduledPushReceiptFindUniqueOrThrowArgs>(args: SelectSubset<T, ScheduledPushReceiptFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ScheduledPushReceiptClient<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ScheduledPushReceipt that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledPushReceiptFindFirstArgs} args - Arguments to find a ScheduledPushReceipt
+     * @example
+     * // Get one ScheduledPushReceipt
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ScheduledPushReceiptFindFirstArgs>(args?: SelectSubset<T, ScheduledPushReceiptFindFirstArgs<ExtArgs>>): Prisma__ScheduledPushReceiptClient<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ScheduledPushReceipt that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledPushReceiptFindFirstOrThrowArgs} args - Arguments to find a ScheduledPushReceipt
+     * @example
+     * // Get one ScheduledPushReceipt
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ScheduledPushReceiptFindFirstOrThrowArgs>(args?: SelectSubset<T, ScheduledPushReceiptFindFirstOrThrowArgs<ExtArgs>>): Prisma__ScheduledPushReceiptClient<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ScheduledPushReceipts that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledPushReceiptFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ScheduledPushReceipts
+     * const scheduledPushReceipts = await prisma.scheduledPushReceipt.findMany()
+     *
+     * // Get first 10 ScheduledPushReceipts
+     * const scheduledPushReceipts = await prisma.scheduledPushReceipt.findMany({ take: 10 })
+     *
+     * // Only select the `messageId`
+     * const scheduledPushReceiptWithMessageIdOnly = await prisma.scheduledPushReceipt.findMany({ select: { messageId: true } })
+     *
+     */
+    findMany<T extends ScheduledPushReceiptFindManyArgs>(args?: SelectSubset<T, ScheduledPushReceiptFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ScheduledPushReceipt.
+     * @param {ScheduledPushReceiptCreateArgs} args - Arguments to create a ScheduledPushReceipt.
+     * @example
+     * // Create one ScheduledPushReceipt
+     * const ScheduledPushReceipt = await prisma.scheduledPushReceipt.create({
+     *   data: {
+     *     // ... data to create a ScheduledPushReceipt
+     *   }
+     * })
+     *
+     */
+    create<T extends ScheduledPushReceiptCreateArgs>(args: SelectSubset<T, ScheduledPushReceiptCreateArgs<ExtArgs>>): Prisma__ScheduledPushReceiptClient<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ScheduledPushReceipts.
+     * @param {ScheduledPushReceiptCreateManyArgs} args - Arguments to create many ScheduledPushReceipts.
+     * @example
+     * // Create many ScheduledPushReceipts
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends ScheduledPushReceiptCreateManyArgs>(args?: SelectSubset<T, ScheduledPushReceiptCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ScheduledPushReceipts and returns the data saved in the database.
+     * @param {ScheduledPushReceiptCreateManyAndReturnArgs} args - Arguments to create many ScheduledPushReceipts.
+     * @example
+     * // Create many ScheduledPushReceipts
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many ScheduledPushReceipts and only return the `messageId`
+     * const scheduledPushReceiptWithMessageIdOnly = await prisma.scheduledPushReceipt.createManyAndReturn({
+     *   select: { messageId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends ScheduledPushReceiptCreateManyAndReturnArgs>(args?: SelectSubset<T, ScheduledPushReceiptCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ScheduledPushReceipt.
+     * @param {ScheduledPushReceiptDeleteArgs} args - Arguments to delete one ScheduledPushReceipt.
+     * @example
+     * // Delete one ScheduledPushReceipt
+     * const ScheduledPushReceipt = await prisma.scheduledPushReceipt.delete({
+     *   where: {
+     *     // ... filter to delete one ScheduledPushReceipt
+     *   }
+     * })
+     *
+     */
+    delete<T extends ScheduledPushReceiptDeleteArgs>(args: SelectSubset<T, ScheduledPushReceiptDeleteArgs<ExtArgs>>): Prisma__ScheduledPushReceiptClient<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ScheduledPushReceipt.
+     * @param {ScheduledPushReceiptUpdateArgs} args - Arguments to update one ScheduledPushReceipt.
+     * @example
+     * // Update one ScheduledPushReceipt
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends ScheduledPushReceiptUpdateArgs>(args: SelectSubset<T, ScheduledPushReceiptUpdateArgs<ExtArgs>>): Prisma__ScheduledPushReceiptClient<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ScheduledPushReceipts.
+     * @param {ScheduledPushReceiptDeleteManyArgs} args - Arguments to filter ScheduledPushReceipts to delete.
+     * @example
+     * // Delete a few ScheduledPushReceipts
+     * const { count } = await prisma.scheduledPushReceipt.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends ScheduledPushReceiptDeleteManyArgs>(args?: SelectSubset<T, ScheduledPushReceiptDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ScheduledPushReceipts.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledPushReceiptUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ScheduledPushReceipts
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends ScheduledPushReceiptUpdateManyArgs>(args: SelectSubset<T, ScheduledPushReceiptUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ScheduledPushReceipts and returns the data updated in the database.
+     * @param {ScheduledPushReceiptUpdateManyAndReturnArgs} args - Arguments to update many ScheduledPushReceipts.
+     * @example
+     * // Update many ScheduledPushReceipts
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more ScheduledPushReceipts and only return the `messageId`
+     * const scheduledPushReceiptWithMessageIdOnly = await prisma.scheduledPushReceipt.updateManyAndReturn({
+     *   select: { messageId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends ScheduledPushReceiptUpdateManyAndReturnArgs>(args: SelectSubset<T, ScheduledPushReceiptUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ScheduledPushReceipt.
+     * @param {ScheduledPushReceiptUpsertArgs} args - Arguments to update or create a ScheduledPushReceipt.
+     * @example
+     * // Update or create a ScheduledPushReceipt
+     * const scheduledPushReceipt = await prisma.scheduledPushReceipt.upsert({
+     *   create: {
+     *     // ... data to create a ScheduledPushReceipt
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ScheduledPushReceipt we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ScheduledPushReceiptUpsertArgs>(args: SelectSubset<T, ScheduledPushReceiptUpsertArgs<ExtArgs>>): Prisma__ScheduledPushReceiptClient<$Result.GetResult<Prisma.$ScheduledPushReceiptPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ScheduledPushReceipts.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledPushReceiptCountArgs} args - Arguments to filter ScheduledPushReceipts to count.
+     * @example
+     * // Count the number of ScheduledPushReceipts
+     * const count = await prisma.scheduledPushReceipt.count({
+     *   where: {
+     *     // ... the filter for the ScheduledPushReceipts we want to count
+     *   }
+     * })
+    **/
+    count<T extends ScheduledPushReceiptCountArgs>(
+      args?: Subset<T, ScheduledPushReceiptCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ScheduledPushReceiptCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ScheduledPushReceipt.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledPushReceiptAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ScheduledPushReceiptAggregateArgs>(args: Subset<T, ScheduledPushReceiptAggregateArgs>): Prisma.PrismaPromise<GetScheduledPushReceiptAggregateType<T>>
+
+    /**
+     * Group by ScheduledPushReceipt.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ScheduledPushReceiptGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends ScheduledPushReceiptGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ScheduledPushReceiptGroupByArgs['orderBy'] }
+        : { orderBy?: ScheduledPushReceiptGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ScheduledPushReceiptGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetScheduledPushReceiptGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ScheduledPushReceipt model
+   */
+  readonly fields: ScheduledPushReceiptFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ScheduledPushReceipt.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ScheduledPushReceiptClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ScheduledPushReceipt model
+   */
+  interface ScheduledPushReceiptFieldRefs {
+    readonly messageId: FieldRef<"ScheduledPushReceipt", 'String'>
+    readonly bindingHash: FieldRef<"ScheduledPushReceipt", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * ScheduledPushReceipt findUnique
+   */
+  export type ScheduledPushReceiptFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledPushReceipt to fetch.
+     */
+    where: ScheduledPushReceiptWhereUniqueInput
+  }
+
+  /**
+   * ScheduledPushReceipt findUniqueOrThrow
+   */
+  export type ScheduledPushReceiptFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledPushReceipt to fetch.
+     */
+    where: ScheduledPushReceiptWhereUniqueInput
+  }
+
+  /**
+   * ScheduledPushReceipt findFirst
+   */
+  export type ScheduledPushReceiptFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledPushReceipt to fetch.
+     */
+    where?: ScheduledPushReceiptWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledPushReceipts to fetch.
+     */
+    orderBy?: ScheduledPushReceiptOrderByWithRelationInput | ScheduledPushReceiptOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ScheduledPushReceipts.
+     */
+    cursor?: ScheduledPushReceiptWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledPushReceipts from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledPushReceipts.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ScheduledPushReceipts.
+     */
+    distinct?: ScheduledPushReceiptScalarFieldEnum | ScheduledPushReceiptScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledPushReceipt findFirstOrThrow
+   */
+  export type ScheduledPushReceiptFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledPushReceipt to fetch.
+     */
+    where?: ScheduledPushReceiptWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledPushReceipts to fetch.
+     */
+    orderBy?: ScheduledPushReceiptOrderByWithRelationInput | ScheduledPushReceiptOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ScheduledPushReceipts.
+     */
+    cursor?: ScheduledPushReceiptWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledPushReceipts from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledPushReceipts.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ScheduledPushReceipts.
+     */
+    distinct?: ScheduledPushReceiptScalarFieldEnum | ScheduledPushReceiptScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledPushReceipt findMany
+   */
+  export type ScheduledPushReceiptFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which ScheduledPushReceipts to fetch.
+     */
+    where?: ScheduledPushReceiptWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ScheduledPushReceipts to fetch.
+     */
+    orderBy?: ScheduledPushReceiptOrderByWithRelationInput | ScheduledPushReceiptOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing ScheduledPushReceipts.
+     */
+    cursor?: ScheduledPushReceiptWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ScheduledPushReceipts from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ScheduledPushReceipts.
+     */
+    skip?: number
+    distinct?: ScheduledPushReceiptScalarFieldEnum | ScheduledPushReceiptScalarFieldEnum[]
+  }
+
+  /**
+   * ScheduledPushReceipt create
+   */
+  export type ScheduledPushReceiptCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ScheduledPushReceipt.
+     */
+    data: XOR<ScheduledPushReceiptCreateInput, ScheduledPushReceiptUncheckedCreateInput>
+  }
+
+  /**
+   * ScheduledPushReceipt createMany
+   */
+  export type ScheduledPushReceiptCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ScheduledPushReceipts.
+     */
+    data: ScheduledPushReceiptCreateManyInput | ScheduledPushReceiptCreateManyInput[]
+  }
+
+  /**
+   * ScheduledPushReceipt createManyAndReturn
+   */
+  export type ScheduledPushReceiptCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * The data used to create many ScheduledPushReceipts.
+     */
+    data: ScheduledPushReceiptCreateManyInput | ScheduledPushReceiptCreateManyInput[]
+  }
+
+  /**
+   * ScheduledPushReceipt update
+   */
+  export type ScheduledPushReceiptUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ScheduledPushReceipt.
+     */
+    data: XOR<ScheduledPushReceiptUpdateInput, ScheduledPushReceiptUncheckedUpdateInput>
+    /**
+     * Choose, which ScheduledPushReceipt to update.
+     */
+    where: ScheduledPushReceiptWhereUniqueInput
+  }
+
+  /**
+   * ScheduledPushReceipt updateMany
+   */
+  export type ScheduledPushReceiptUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ScheduledPushReceipts.
+     */
+    data: XOR<ScheduledPushReceiptUpdateManyMutationInput, ScheduledPushReceiptUncheckedUpdateManyInput>
+    /**
+     * Filter which ScheduledPushReceipts to update
+     */
+    where?: ScheduledPushReceiptWhereInput
+    /**
+     * Limit how many ScheduledPushReceipts to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledPushReceipt updateManyAndReturn
+   */
+  export type ScheduledPushReceiptUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * The data used to update ScheduledPushReceipts.
+     */
+    data: XOR<ScheduledPushReceiptUpdateManyMutationInput, ScheduledPushReceiptUncheckedUpdateManyInput>
+    /**
+     * Filter which ScheduledPushReceipts to update
+     */
+    where?: ScheduledPushReceiptWhereInput
+    /**
+     * Limit how many ScheduledPushReceipts to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledPushReceipt upsert
+   */
+  export type ScheduledPushReceiptUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ScheduledPushReceipt to update in case it exists.
+     */
+    where: ScheduledPushReceiptWhereUniqueInput
+    /**
+     * In case the ScheduledPushReceipt found by the `where` argument doesn't exist, create a new ScheduledPushReceipt with this data.
+     */
+    create: XOR<ScheduledPushReceiptCreateInput, ScheduledPushReceiptUncheckedCreateInput>
+    /**
+     * In case the ScheduledPushReceipt was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ScheduledPushReceiptUpdateInput, ScheduledPushReceiptUncheckedUpdateInput>
+  }
+
+  /**
+   * ScheduledPushReceipt delete
+   */
+  export type ScheduledPushReceiptDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter which ScheduledPushReceipt to delete.
+     */
+    where: ScheduledPushReceiptWhereUniqueInput
+  }
+
+  /**
+   * ScheduledPushReceipt deleteMany
+   */
+  export type ScheduledPushReceiptDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ScheduledPushReceipts to delete
+     */
+    where?: ScheduledPushReceiptWhereInput
+    /**
+     * Limit how many ScheduledPushReceipts to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ScheduledPushReceipt without action
+   */
+  export type ScheduledPushReceiptDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ScheduledPushReceipt
+     */
+    select?: ScheduledPushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ScheduledPushReceipt
+     */
+    omit?: ScheduledPushReceiptOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -69425,6 +71669,30 @@ export namespace Prisma {
   export type ThreadDraftStateScalarFieldEnum = (typeof ThreadDraftStateScalarFieldEnum)[keyof typeof ThreadDraftStateScalarFieldEnum]
 
 
+  export const ScheduledDeliveryNoticeScalarFieldEnum: {
+    messageId: 'messageId',
+    createdAtMs: 'createdAtMs',
+    nextAttemptMs: 'nextAttemptMs',
+    attempts: 'attempts',
+    leaseToken: 'leaseToken',
+    leaseUntilMs: 'leaseUntilMs',
+    socketDone: 'socketDone',
+    pushDone: 'pushDone',
+    pushCursor: 'pushCursor',
+    completedAtMs: 'completedAtMs'
+  };
+
+  export type ScheduledDeliveryNoticeScalarFieldEnum = (typeof ScheduledDeliveryNoticeScalarFieldEnum)[keyof typeof ScheduledDeliveryNoticeScalarFieldEnum]
+
+
+  export const ScheduledPushReceiptScalarFieldEnum: {
+    messageId: 'messageId',
+    bindingHash: 'bindingHash'
+  };
+
+  export type ScheduledPushReceiptScalarFieldEnum = (typeof ScheduledPushReceiptScalarFieldEnum)[keyof typeof ScheduledPushReceiptScalarFieldEnum]
+
+
   export const SortOrder: {
     asc: 'asc',
     desc: 'desc'
@@ -69486,6 +71754,13 @@ export namespace Prisma {
    */
   export type BytesFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Bytes'>
     
+
+
+  /**
+   * Reference to a field of type 'BigInt'
+   */
+  export type BigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt'>
+
   /**
    * Deep Input Types
    */
@@ -73302,6 +75577,123 @@ export namespace Prisma {
     rootId?: StringWithAggregatesFilter<"ThreadDraftState"> | string
     draft?: StringWithAggregatesFilter<"ThreadDraftState"> | string
     revision?: StringWithAggregatesFilter<"ThreadDraftState"> | string
+  }
+
+  export type ScheduledDeliveryNoticeWhereInput = {
+    AND?: ScheduledDeliveryNoticeWhereInput | ScheduledDeliveryNoticeWhereInput[]
+    OR?: ScheduledDeliveryNoticeWhereInput[]
+    NOT?: ScheduledDeliveryNoticeWhereInput | ScheduledDeliveryNoticeWhereInput[]
+    messageId?: StringFilter<"ScheduledDeliveryNotice"> | string
+    createdAtMs?: BigIntFilter<"ScheduledDeliveryNotice"> | bigint | number
+    nextAttemptMs?: BigIntFilter<"ScheduledDeliveryNotice"> | bigint | number
+    attempts?: IntFilter<"ScheduledDeliveryNotice"> | number
+    leaseToken?: StringNullableFilter<"ScheduledDeliveryNotice"> | string | null
+    leaseUntilMs?: BigIntNullableFilter<"ScheduledDeliveryNotice"> | bigint | number | null
+    socketDone?: BoolFilter<"ScheduledDeliveryNotice"> | boolean
+    pushDone?: BoolFilter<"ScheduledDeliveryNotice"> | boolean
+    pushCursor?: StringNullableFilter<"ScheduledDeliveryNotice"> | string | null
+    completedAtMs?: BigIntNullableFilter<"ScheduledDeliveryNotice"> | bigint | number | null
+  }
+
+  export type ScheduledDeliveryNoticeOrderByWithRelationInput = {
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrderInput | SortOrder
+    leaseUntilMs?: SortOrderInput | SortOrder
+    socketDone?: SortOrder
+    pushDone?: SortOrder
+    pushCursor?: SortOrderInput | SortOrder
+    completedAtMs?: SortOrderInput | SortOrder
+  }
+
+  export type ScheduledDeliveryNoticeWhereUniqueInput = Prisma.AtLeast<{
+    messageId?: string
+    AND?: ScheduledDeliveryNoticeWhereInput | ScheduledDeliveryNoticeWhereInput[]
+    OR?: ScheduledDeliveryNoticeWhereInput[]
+    NOT?: ScheduledDeliveryNoticeWhereInput | ScheduledDeliveryNoticeWhereInput[]
+    createdAtMs?: BigIntFilter<"ScheduledDeliveryNotice"> | bigint | number
+    nextAttemptMs?: BigIntFilter<"ScheduledDeliveryNotice"> | bigint | number
+    attempts?: IntFilter<"ScheduledDeliveryNotice"> | number
+    leaseToken?: StringNullableFilter<"ScheduledDeliveryNotice"> | string | null
+    leaseUntilMs?: BigIntNullableFilter<"ScheduledDeliveryNotice"> | bigint | number | null
+    socketDone?: BoolFilter<"ScheduledDeliveryNotice"> | boolean
+    pushDone?: BoolFilter<"ScheduledDeliveryNotice"> | boolean
+    pushCursor?: StringNullableFilter<"ScheduledDeliveryNotice"> | string | null
+    completedAtMs?: BigIntNullableFilter<"ScheduledDeliveryNotice"> | bigint | number | null
+  }, "messageId">
+
+  export type ScheduledDeliveryNoticeOrderByWithAggregationInput = {
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrderInput | SortOrder
+    leaseUntilMs?: SortOrderInput | SortOrder
+    socketDone?: SortOrder
+    pushDone?: SortOrder
+    pushCursor?: SortOrderInput | SortOrder
+    completedAtMs?: SortOrderInput | SortOrder
+    _count?: ScheduledDeliveryNoticeCountOrderByAggregateInput
+    _avg?: ScheduledDeliveryNoticeAvgOrderByAggregateInput
+    _max?: ScheduledDeliveryNoticeMaxOrderByAggregateInput
+    _min?: ScheduledDeliveryNoticeMinOrderByAggregateInput
+    _sum?: ScheduledDeliveryNoticeSumOrderByAggregateInput
+  }
+
+  export type ScheduledDeliveryNoticeScalarWhereWithAggregatesInput = {
+    AND?: ScheduledDeliveryNoticeScalarWhereWithAggregatesInput | ScheduledDeliveryNoticeScalarWhereWithAggregatesInput[]
+    OR?: ScheduledDeliveryNoticeScalarWhereWithAggregatesInput[]
+    NOT?: ScheduledDeliveryNoticeScalarWhereWithAggregatesInput | ScheduledDeliveryNoticeScalarWhereWithAggregatesInput[]
+    messageId?: StringWithAggregatesFilter<"ScheduledDeliveryNotice"> | string
+    createdAtMs?: BigIntWithAggregatesFilter<"ScheduledDeliveryNotice"> | bigint | number
+    nextAttemptMs?: BigIntWithAggregatesFilter<"ScheduledDeliveryNotice"> | bigint | number
+    attempts?: IntWithAggregatesFilter<"ScheduledDeliveryNotice"> | number
+    leaseToken?: StringNullableWithAggregatesFilter<"ScheduledDeliveryNotice"> | string | null
+    leaseUntilMs?: BigIntNullableWithAggregatesFilter<"ScheduledDeliveryNotice"> | bigint | number | null
+    socketDone?: BoolWithAggregatesFilter<"ScheduledDeliveryNotice"> | boolean
+    pushDone?: BoolWithAggregatesFilter<"ScheduledDeliveryNotice"> | boolean
+    pushCursor?: StringNullableWithAggregatesFilter<"ScheduledDeliveryNotice"> | string | null
+    completedAtMs?: BigIntNullableWithAggregatesFilter<"ScheduledDeliveryNotice"> | bigint | number | null
+  }
+
+  export type ScheduledPushReceiptWhereInput = {
+    AND?: ScheduledPushReceiptWhereInput | ScheduledPushReceiptWhereInput[]
+    OR?: ScheduledPushReceiptWhereInput[]
+    NOT?: ScheduledPushReceiptWhereInput | ScheduledPushReceiptWhereInput[]
+    messageId?: StringFilter<"ScheduledPushReceipt"> | string
+    bindingHash?: StringFilter<"ScheduledPushReceipt"> | string
+  }
+
+  export type ScheduledPushReceiptOrderByWithRelationInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+  }
+
+  export type ScheduledPushReceiptWhereUniqueInput = Prisma.AtLeast<{
+    messageId_bindingHash?: ScheduledPushReceiptMessageIdBindingHashCompoundUniqueInput
+    AND?: ScheduledPushReceiptWhereInput | ScheduledPushReceiptWhereInput[]
+    OR?: ScheduledPushReceiptWhereInput[]
+    NOT?: ScheduledPushReceiptWhereInput | ScheduledPushReceiptWhereInput[]
+    messageId?: StringFilter<"ScheduledPushReceipt"> | string
+    bindingHash?: StringFilter<"ScheduledPushReceipt"> | string
+  }, "messageId_bindingHash">
+
+  export type ScheduledPushReceiptOrderByWithAggregationInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+    _count?: ScheduledPushReceiptCountOrderByAggregateInput
+    _max?: ScheduledPushReceiptMaxOrderByAggregateInput
+    _min?: ScheduledPushReceiptMinOrderByAggregateInput
+  }
+
+  export type ScheduledPushReceiptScalarWhereWithAggregatesInput = {
+    AND?: ScheduledPushReceiptScalarWhereWithAggregatesInput | ScheduledPushReceiptScalarWhereWithAggregatesInput[]
+    OR?: ScheduledPushReceiptScalarWhereWithAggregatesInput[]
+    NOT?: ScheduledPushReceiptScalarWhereWithAggregatesInput | ScheduledPushReceiptScalarWhereWithAggregatesInput[]
+    messageId?: StringWithAggregatesFilter<"ScheduledPushReceipt"> | string
+    bindingHash?: StringWithAggregatesFilter<"ScheduledPushReceipt"> | string
   }
 
   export type UserCreateInput = {
@@ -77320,6 +79712,132 @@ export namespace Prisma {
     revision?: StringFieldUpdateOperationsInput | string
   }
 
+  export type ScheduledDeliveryNoticeCreateInput = {
+    messageId: string
+    createdAtMs: bigint | number
+    nextAttemptMs: bigint | number
+    attempts?: number
+    leaseToken?: string | null
+    leaseUntilMs?: bigint | number | null
+    socketDone?: boolean
+    pushDone?: boolean
+    pushCursor?: string | null
+    completedAtMs?: bigint | number | null
+  }
+
+  export type ScheduledDeliveryNoticeUncheckedCreateInput = {
+    messageId: string
+    createdAtMs: bigint | number
+    nextAttemptMs: bigint | number
+    attempts?: number
+    leaseToken?: string | null
+    leaseUntilMs?: bigint | number | null
+    socketDone?: boolean
+    pushDone?: boolean
+    pushCursor?: string | null
+    completedAtMs?: bigint | number | null
+  }
+
+  export type ScheduledDeliveryNoticeUpdateInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    nextAttemptMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    attempts?: IntFieldUpdateOperationsInput | number
+    leaseToken?: NullableStringFieldUpdateOperationsInput | string | null
+    leaseUntilMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+    socketDone?: BoolFieldUpdateOperationsInput | boolean
+    pushDone?: BoolFieldUpdateOperationsInput | boolean
+    pushCursor?: NullableStringFieldUpdateOperationsInput | string | null
+    completedAtMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  }
+
+  export type ScheduledDeliveryNoticeUncheckedUpdateInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    nextAttemptMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    attempts?: IntFieldUpdateOperationsInput | number
+    leaseToken?: NullableStringFieldUpdateOperationsInput | string | null
+    leaseUntilMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+    socketDone?: BoolFieldUpdateOperationsInput | boolean
+    pushDone?: BoolFieldUpdateOperationsInput | boolean
+    pushCursor?: NullableStringFieldUpdateOperationsInput | string | null
+    completedAtMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  }
+
+  export type ScheduledDeliveryNoticeCreateManyInput = {
+    messageId: string
+    createdAtMs: bigint | number
+    nextAttemptMs: bigint | number
+    attempts?: number
+    leaseToken?: string | null
+    leaseUntilMs?: bigint | number | null
+    socketDone?: boolean
+    pushDone?: boolean
+    pushCursor?: string | null
+    completedAtMs?: bigint | number | null
+  }
+
+  export type ScheduledDeliveryNoticeUpdateManyMutationInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    nextAttemptMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    attempts?: IntFieldUpdateOperationsInput | number
+    leaseToken?: NullableStringFieldUpdateOperationsInput | string | null
+    leaseUntilMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+    socketDone?: BoolFieldUpdateOperationsInput | boolean
+    pushDone?: BoolFieldUpdateOperationsInput | boolean
+    pushCursor?: NullableStringFieldUpdateOperationsInput | string | null
+    completedAtMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  }
+
+  export type ScheduledDeliveryNoticeUncheckedUpdateManyInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    nextAttemptMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    attempts?: IntFieldUpdateOperationsInput | number
+    leaseToken?: NullableStringFieldUpdateOperationsInput | string | null
+    leaseUntilMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+    socketDone?: BoolFieldUpdateOperationsInput | boolean
+    pushDone?: BoolFieldUpdateOperationsInput | boolean
+    pushCursor?: NullableStringFieldUpdateOperationsInput | string | null
+    completedAtMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  }
+
+  export type ScheduledPushReceiptCreateInput = {
+    messageId: string
+    bindingHash: string
+  }
+
+  export type ScheduledPushReceiptUncheckedCreateInput = {
+    messageId: string
+    bindingHash: string
+  }
+
+  export type ScheduledPushReceiptUpdateInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    bindingHash?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ScheduledPushReceiptUncheckedUpdateInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    bindingHash?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ScheduledPushReceiptCreateManyInput = {
+    messageId: string
+    bindingHash: string
+  }
+
+  export type ScheduledPushReceiptUpdateManyMutationInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    bindingHash?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ScheduledPushReceiptUncheckedUpdateManyInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    bindingHash?: StringFieldUpdateOperationsInput | string
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -79967,6 +82485,135 @@ export namespace Prisma {
     rootId?: SortOrder
     draft?: SortOrder
     revision?: SortOrder
+  }
+
+  export type BigIntFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntFilter<$PrismaModel> | bigint | number
+  }
+
+  export type BigIntNullableFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel> | null
+    in?: bigint[] | number[] | null
+    notIn?: bigint[] | number[] | null
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntNullableFilter<$PrismaModel> | bigint | number | null
+  }
+
+  export type ScheduledDeliveryNoticeCountOrderByAggregateInput = {
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrder
+    leaseUntilMs?: SortOrder
+    socketDone?: SortOrder
+    pushDone?: SortOrder
+    pushCursor?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type ScheduledDeliveryNoticeAvgOrderByAggregateInput = {
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseUntilMs?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type ScheduledDeliveryNoticeMaxOrderByAggregateInput = {
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrder
+    leaseUntilMs?: SortOrder
+    socketDone?: SortOrder
+    pushDone?: SortOrder
+    pushCursor?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type ScheduledDeliveryNoticeMinOrderByAggregateInput = {
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrder
+    leaseUntilMs?: SortOrder
+    socketDone?: SortOrder
+    pushDone?: SortOrder
+    pushCursor?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type ScheduledDeliveryNoticeSumOrderByAggregateInput = {
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseUntilMs?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type BigIntWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntWithAggregatesFilter<$PrismaModel> | bigint | number
+    _count?: NestedIntFilter<$PrismaModel>
+    _avg?: NestedFloatFilter<$PrismaModel>
+    _sum?: NestedBigIntFilter<$PrismaModel>
+    _min?: NestedBigIntFilter<$PrismaModel>
+    _max?: NestedBigIntFilter<$PrismaModel>
+  }
+
+  export type BigIntNullableWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel> | null
+    in?: bigint[] | number[] | null
+    notIn?: bigint[] | number[] | null
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntNullableWithAggregatesFilter<$PrismaModel> | bigint | number | null
+    _count?: NestedIntNullableFilter<$PrismaModel>
+    _avg?: NestedFloatNullableFilter<$PrismaModel>
+    _sum?: NestedBigIntNullableFilter<$PrismaModel>
+    _min?: NestedBigIntNullableFilter<$PrismaModel>
+    _max?: NestedBigIntNullableFilter<$PrismaModel>
+  }
+
+  export type ScheduledPushReceiptMessageIdBindingHashCompoundUniqueInput = {
+    messageId: string
+    bindingHash: string
+  }
+
+  export type ScheduledPushReceiptCountOrderByAggregateInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+  }
+
+  export type ScheduledPushReceiptMaxOrderByAggregateInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+  }
+
+  export type ScheduledPushReceiptMinOrderByAggregateInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {
@@ -82947,6 +85594,22 @@ export namespace Prisma {
     update?: XOR<XOR<PushTokenUpdateToOneWithWhereWithoutReadStateCapabilityInput, PushTokenUpdateWithoutReadStateCapabilityInput>, PushTokenUncheckedUpdateWithoutReadStateCapabilityInput>
   }
 
+  export type BigIntFieldUpdateOperationsInput = {
+    set?: bigint | number
+    increment?: bigint | number
+    decrement?: bigint | number
+    multiply?: bigint | number
+    divide?: bigint | number
+  }
+
+  export type NullableBigIntFieldUpdateOperationsInput = {
+    set?: bigint | number | null
+    increment?: bigint | number
+    decrement?: bigint | number
+    multiply?: bigint | number
+    divide?: bigint | number
+  }
+
   export type NestedStringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -83179,6 +85842,60 @@ export namespace Prisma {
     _count?: NestedIntFilter<$PrismaModel>
     _min?: NestedBytesFilter<$PrismaModel>
     _max?: NestedBytesFilter<$PrismaModel>
+  }
+
+  export type NestedBigIntFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntFilter<$PrismaModel> | bigint | number
+  }
+
+  export type NestedBigIntNullableFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel> | null
+    in?: bigint[] | number[] | null
+    notIn?: bigint[] | number[] | null
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntNullableFilter<$PrismaModel> | bigint | number | null
+  }
+
+  export type NestedBigIntWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    in?: bigint[] | number[]
+    notIn?: bigint[] | number[]
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntWithAggregatesFilter<$PrismaModel> | bigint | number
+    _count?: NestedIntFilter<$PrismaModel>
+    _avg?: NestedFloatFilter<$PrismaModel>
+    _sum?: NestedBigIntFilter<$PrismaModel>
+    _min?: NestedBigIntFilter<$PrismaModel>
+    _max?: NestedBigIntFilter<$PrismaModel>
+  }
+
+  export type NestedBigIntNullableWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: bigint | number | BigIntFieldRefInput<$PrismaModel> | null
+    in?: bigint[] | number[] | null
+    notIn?: bigint[] | number[] | null
+    lt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    lte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gt?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    gte?: bigint | number | BigIntFieldRefInput<$PrismaModel>
+    not?: NestedBigIntNullableWithAggregatesFilter<$PrismaModel> | bigint | number | null
+    _count?: NestedIntNullableFilter<$PrismaModel>
+    _avg?: NestedFloatNullableFilter<$PrismaModel>
+    _sum?: NestedBigIntNullableFilter<$PrismaModel>
+    _min?: NestedBigIntNullableFilter<$PrismaModel>
+    _max?: NestedBigIntNullableFilter<$PrismaModel>
   }
 
   export type AppInstallCreateWithoutUserInput = {

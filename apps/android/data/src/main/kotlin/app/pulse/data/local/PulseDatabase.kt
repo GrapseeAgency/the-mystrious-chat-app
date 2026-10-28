@@ -1168,6 +1168,16 @@ data class Wave7CacheEntity(
 
 @Dao
 interface Wave7Dao {
+    @Query("""SELECT * FROM wave7_cache WHERE `key` > :after AND (
+        `key` GLOB ('composer-intent:v1|' || :ownerPattern || '|*') OR
+        `key` GLOB ('composer-blocked:v1|' || :ownerPattern || '|*') OR
+        `key` GLOB ('composer-local-edit:v1|' || :ownerPattern || '|*') OR
+        `key` GLOB ('composer-schedule:v1|' || :ownerPattern || '|*') OR
+        `key` GLOB ('composer-schedule-blocked:v1|' || :ownerPattern || '|*') OR
+        `key` GLOB ('composer-schedule-ack:v1|' || :ownerPattern || '|*')
+    ) ORDER BY `key` LIMIT 101""")
+    suspend fun composerRecoveryPage(ownerPattern: String, after: String): List<Wave7CacheEntity>
+
     @Query("INSERT OR IGNORE INTO wave7_cache (`key`, json, updatedAt) SELECT :prefix || messageId, '0', 0 FROM savedMessages")
     suspend fun seedSavedVersions(prefix: String)
 

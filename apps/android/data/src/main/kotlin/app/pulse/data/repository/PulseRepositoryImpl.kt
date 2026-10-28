@@ -5,6 +5,7 @@ import app.pulse.protocol.validateSavedState
 import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withSavedMessageExpiry
 import app.pulse.domain.sync.messageExpiryEpochMs
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.transformLatest
@@ -1878,9 +1879,11 @@ class PulseRepositoryImpl constructor(
     }
 
     private val composerJournal by lazy { ComposerJournal(database) }
+    private val scheduledJournal by lazy { ScheduledJournal(database) }
     override fun observePendingComposer(): Flow<Boolean> = queueOwner.flatMapLatest { owner ->
         if (owner == null) kotlinx.coroutines.flow.flowOf(false)
-        else wave7Dao.observeReadJournalCount("composer-intent:v1|$owner|").map { it > 0 }
+        else kotlinx.coroutines.flow.combine(wave7Dao.observeReadJournalCount("composer-intent:v1|$owner|"),
+            wave7Dao.observeReadJournalCount("composer-schedule:v1|$owner|")) { drafts, schedules -> drafts + schedules > 0 }
     }
     private fun localEditKey(owner: String, id: String) = "composer-local-edit:v1|$owner|$id"
     override fun stageEditDraft(message: Message, text: String) {
@@ -1888,12 +1891,13 @@ class PulseRepositoryImpl constructor(
         if (message.authorId != owner || message.id.startsWith("local_")) return
         val key = localEditKey(owner,message.id)
         val revision = draftWrites.editVersions.getOrPut(key) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
-        draftWrites.editBuffers[key] = revision to app.pulse.protocol.ComposerLocalEditDto(text,message.body,message.editedAt)
+        val snapshot = app.pulse.protocol.ComposerLocalEditDto(text,message.body,message.editedAt)
+        draftWrites.editBuffers[key] = revision to snapshot
         draftWriteScope.launch {
             try { draftMutex.withLock {
                 if (draftWrites.editVersions[key]?.get() != revision) return@withLock
                 val previous = wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
-                val local = app.pulse.protocol.ComposerLocalEditDto(text,previous?.baseText ?: message.body,if (previous != null) previous.baseEditedAt else message.editedAt)
+                val local = app.pulse.protocol.ComposerLocalEditDto(text,previous?.baseText ?: message.body,if (previous != null) previous.baseEditedAt else message.editedAt,snapshot.revision)
                 wave7Dao.upsert(Wave7CacheEntity(key,app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local),System.currentTimeMillis()))
                 draftWrites.editBuffers.computeIfPresent(key) { _, value -> value.takeIf { it.first != revision } }
             } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
@@ -1921,7 +1925,7 @@ class PulseRepositoryImpl constructor(
                 wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
                     ?: draftWrites.editBuffers[key]?.second
             }
-            composerJournal.stage(owner,"edit",message.id,message.conversationId,null,content.trim(),local?.baseText ?: message.body,if (local != null) local.baseEditedAt else message.editedAt)
+            composerJournal.stage(owner,"edit",message.id,message.conversationId,null,content.trim(),local?.baseText ?: message.body,if (local != null) local.baseEditedAt else message.editedAt,localEditRevision=local?.revision)
             flushComposerIntents().getOrThrow()
             requireConversationOwner(owner,epoch)
             check(composerJournal.editText(owner,messageId) == null) { "Your edit is saved on this device but is not confirmed. Reopen it to recover the text." }
@@ -1933,7 +1937,9 @@ class PulseRepositoryImpl constructor(
         val owner = viewerId
         val epoch = attachmentSession
         if (owner == null || sessionTokenStore.cached.isNullOrBlank()) Result.success(0)
-        else Result.success(composerJournal.flush(owner,api,{ viewerId == owner && attachmentSession == epoch }) { intent, receipt ->
+        else kotlinx.coroutines.coroutineScope {
+          val schedules = async { scheduledJournal.flush(owner,api) { viewerId == owner && attachmentSession == epoch } }
+          Result.success(composerJournal.flush(owner,api,{ viewerId == owner && attachmentSession == epoch }) { intent, receipt ->
             if (intent.kind == "edit") messageCacheMutex.withLock {
                 database.withTransaction {
                     requireConversationOwner(owner,epoch)
@@ -1950,7 +1956,8 @@ class PulseRepositoryImpl constructor(
                     }
                 }
             }
-        })
+          } + schedules.await())
+        }
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
     catch (error: Exception) { Result.failure(error) }
 
@@ -1985,6 +1992,70 @@ class PulseRepositoryImpl constructor(
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (error: Exception) { Result.failure(error) }
     }
+
+    private fun recoveryVersion(json: String): String = java.security.MessageDigest.getInstance("SHA-256").digest(json.toByteArray()).joinToString("") { "%02x".format(it) }
+    override suspend fun composerRecoveryPage(after: String?): Result<app.pulse.domain.model.ComposerRecoveryPage> = try {
+        val owner = viewerId ?: error("No active account")
+        val pattern = owner.map { when(it) { '[' -> "[[]"; '*' -> "[*]"; '?' -> "[?]"; else -> it.toString() } }.joinToString("")
+        val rows = wave7Dao.composerRecoveryPage(pattern,after ?: "")
+        val items = rows.take(100).map { row ->
+            val version = recoveryVersion(row.json)
+            try {
+                when {
+                    row.key.startsWith("composer-local-edit:") -> {
+                        val value = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),row.json)
+                        val id = row.key.substringAfter("|$owner|")
+                        app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,"Unsubmitted edit",id,messageDao.byId(id)?.conversationId ?: "",value.text,"Kept on this device. Reopen the message to edit; typing is never sent automatically.")
+                    }
+                    row.key.startsWith("composer-schedule-ack:") -> {
+                        val cancel = row.json == "cancelled"
+                        val value = if (cancel) null else app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledItemDto.serializer(),row.json)
+                        app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,"Schedule receipt",value?.id ?: "",value?.conversationId ?: "",value?.content ?: "",if (cancel) "Cancellation was confirmed." else "Scheduled for ${value?.scheduledAt}. Check Scheduled messages for its current status.")
+                    }
+                    row.key.startsWith("composer-schedule") -> {
+                        val value = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandDto.serializer(),row.json)
+                        check(value.owner == owner)
+                        app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,if (value.kind == "cancel") "Pending cancellation" else "Pending schedule",value.clientId,value.conversationId,value.text,
+                            value.notice ?: if (value.kind == "cancel") "NOT cancelled yet. It may still send before cancellation arrives." else "Not confirmed. Retrying the original time: ${value.scheduledAt}.",canRetry=row.key.startsWith("composer-schedule-blocked:"))
+                    }
+                    else -> {
+                        val value = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerIntentDto.serializer(),row.json)
+                        check(value.owner == owner)
+                        app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,if (value.kind == "edit") "Saved edit" else if (value.rootId != null) "Thread draft" else "Draft mirror",value.targetId,value.conversationId,value.text,
+                            value.blocked ?: "Waiting for server confirmation.",canRetry=value.blocked != null,canReplace=value.blocked != null && value.flight == null)
+                    }
+                }
+            } catch (_: Exception) { app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,"Unreadable recovery","","","","Original recovery bytes are kept on this device. Nothing has been sent or discarded.") }
+        }
+        Result.success(app.pulse.domain.model.ComposerRecoveryPage(items,rows.getOrNull(100)?.let { rows[99].key }))
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+    catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun recoverComposer(entry: app.pulse.domain.model.ComposerRecoveryEntry, action: String): Result<Unit> = try {
+        val owner = viewerId ?: error("No active account")
+        val epoch = attachmentSession
+        check(entry.key.startsWith(entry.key.substringBefore('|') + "|$owner|")) { "Recovery belongs to another account" }
+        val row = wave7Dao.get(entry.key) ?: error("Already resolved; refresh this list")
+        check(recoveryVersion(row.json) == entry.version) { "Recovery changed; refresh this list" }
+        if (action == "remove") database.withTransaction {
+            requireConversationOwner(owner,epoch)
+            check(wave7Dao.get(row.key)?.json == row.json) { "Recovery changed; refresh this list" }
+            if (row.key.startsWith("composer-schedule:") || row.key.startsWith("composer-schedule-blocked:")) {
+                val command = runCatching { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandDto.serializer(),row.json) }.getOrNull()
+                if (command?.owner == owner && command.kind == "create") wave7Dao.acknowledgeReadIntent("composer-schedule-head:v1|$owner|${command.conversationId}",command.clientId)
+            }
+            wave7Dao.acknowledgeReadIntent(row.key,row.json)
+        } else if (row.key.startsWith("composer-schedule-blocked:") && action == "retry") {
+            val command = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandDto.serializer(),row.json)
+            check(command.owner == owner); scheduledJournal.stage(command.copy(notice=null))
+        } else {
+            check(action == "retry" || action == "replace")
+            composerJournal.recover(row,action == "replace",api) { viewerId == owner && attachmentSession == epoch }
+        }
+        if (action != "remove") scope.launch { flushComposerIntents() }
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+    catch (error: Exception) { Result.failure(error) }
 
     private suspend fun persistDraftWithMirror(key: String, text: String) = database.withTransaction {
         val before = draftDao.get(key)?.text ?: ""
@@ -2912,14 +2983,12 @@ class PulseRepositoryImpl constructor(
             val intent = scheduledCreationIntent(owner, conversationId, content, scheduledAtIso)
             val id = prefsLocalStore.beginRoomCreation(intent)
             requireConversationOwner(owner, epoch)
-            when (val result = api.scheduleMessage(conversationId, owner, content, scheduledAtIso, id)) {
-                is PulseResult.Success -> {
-                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                    requireConversationOwner(owner, epoch)
-                    Result.success(result.value.toDomainScheduled().copy(creationClientId = id))
-                }
-                is PulseResult.Failure -> Result.failure(IllegalStateException(result.message ?: "Schedule was not confirmed. Retry the same details."))
-            }
+            val command = app.pulse.protocol.ScheduledCommandDto(owner,id,"create",conversationId,content.trim(),java.time.Instant.parse(scheduledAtIso).toString())
+            scheduledJournal.stage(command)
+            scheduledJournal.flush(owner,api) { viewerId == owner && attachmentSession == epoch }
+            requireConversationOwner(owner,epoch)
+            val item = scheduledJournal.result(command) ?: error("Your scheduling request is saved on this device but is not confirmed. Its original time and text will be retried; review it in Drafts & outbox.")
+            Result.success(item.toDomainScheduled().copy(creationClientId=id))
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (error: Exception) { Result.failure(error) }
     }
@@ -2931,14 +3000,30 @@ class PulseRepositoryImpl constructor(
         return try {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             requireConversationOwner(owner, epoch)
+            val pending = draftMutex.withLock { threadDraftBuffers[item.conversationId] }
+            if (pending != null) check(writeLocalDraft(item.conversationId,pending.second,pending.first)) {
+                "Scheduled, but the newer draft is still saving. The original schedule identity is retained."
+            }
+            requireConversationOwner(owner,epoch)
             prefsLocalStore.finishRoomCreation(scheduledCreationIntent(owner, item.conversationId, item.content, item.scheduledAtIso), id)
             Result.success(Unit)
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (error: Exception) { Result.failure(error) }
     }
 
-    override suspend fun cancelScheduled(scheduledId: String): Result<Unit> =
-        ownedAccountRequest { api.cancelScheduled(scheduledId, it) }.map { Unit }
+    override suspend fun cancelScheduled(scheduledId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            val command = app.pulse.protocol.ScheduledCommandDto(owner,scheduledId,"cancel")
+            scheduledJournal.stage(command)
+            scheduledJournal.flush(owner,api) { viewerId == owner && attachmentSession == epoch }
+            requireConversationOwner(owner,epoch)
+            check(scheduledJournal.cancelled(command)) { "Cancellation is saved for retry but is NOT confirmed. The server may still send this message before cancellation reaches it." }
+            Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { Result.failure(error) }
+    }
 
     // offline outbox engine (Wave 0 - web pulse-outbox parity)
 

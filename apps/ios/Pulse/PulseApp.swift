@@ -107,7 +107,12 @@ struct PulseApp: App {
             }
             let engine = PulseOutboxEngine(store: store, isCurrent: ownsColdWake) { api }
             engine.onComposerJournalFlush = {
-                do { return try await PulseComposerReplay.flush(store: store,client: api,current: ownsColdWake) == 0 }
+                do {
+                    async let drafts = PulseComposerReplay.flush(store: store,client: api,current: ownsColdWake)
+                    async let schedules = PulseScheduledReplay.flush(store: store,client: api,current: ownsColdWake)
+                    let remaining = try await drafts + schedules
+                    return remaining == 0
+                }
                 catch { return false }
             }
             engine.onSavedJournalFlush = {

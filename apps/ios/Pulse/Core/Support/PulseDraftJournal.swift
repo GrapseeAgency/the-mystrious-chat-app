@@ -29,6 +29,17 @@ final class PulseDraftJournal {
             try store.saveDraftSnapshot(conversationId: room, text: text, expectedRevision: writeRevision)
         }
     }
+    /// A schedule identity cannot retire before its local clear/newer draft is
+    /// durable. The finite writer may otherwise still be queued when the UI ACKs.
+    static func flushPending(store: PulseStore, conversationId: String) async throws {
+        let key = store.storageIdentity + "\u{0}" + conversationId
+        guard let pending = snapshots[key], let text = pending.text else { return }
+        try await writer.save(text,revision: pending.revision,owner: pending.owner,store: store,
+            room: conversationId,writeRevision: pending.storageRevision)
+        guard store.captureDraftConsumption(conversationId: conversationId).revision == pending.storageRevision else {
+            throw CocoaError(.userCancelled)
+        }
+    }
     private static let writer = Writer()
     private let store: PulseStore
     private let room: String

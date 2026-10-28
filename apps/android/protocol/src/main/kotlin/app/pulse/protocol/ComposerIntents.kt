@@ -9,13 +9,13 @@ data class ComposerReceiptDto(
     val editedAt: String? = null, val clientId: String? = null, val outcome: String? = null,
 )
 @Serializable
-data class ComposerFlight(val clientId: String, val text: String, val expectedRevision: String)
+data class ComposerFlight(val clientId: String, val text: String, val expectedRevision: String, val localEditRevision: String? = null)
 @Serializable
 data class ComposerIntentDto(
     val owner: String, val kind: String, val targetId: String, val conversationId: String,
     val rootId: String? = null, val desiredId: String, val text: String,
     val baseText: String, val baseEditedAt: String? = null, val ready: Boolean = true,
-    val flight: ComposerFlight? = null, val blocked: String? = null, val baseRevision: String? = null,
+    val flight: ComposerFlight? = null, val blocked: String? = null, val baseRevision: String? = null, val localEditRevision: String? = null,
 )
 fun ComposerReceiptDto.validateComposer(intent: ComposerIntentDto, flight: ComposerFlight? = null) {
     require(composerVersion == 1 && userId == intent.owner && kind == intent.kind && targetId == intent.targetId &&
@@ -28,6 +28,10 @@ fun ComposerReceiptDto.validateComposer(intent: ComposerIntentDto, flight: Compo
 }
 
 @Serializable
-data class ComposerLocalEditDto(val text: String, val baseText: String, val baseEditedAt: String? = null)
+data class ComposerLocalEditDto(val text: String, val baseText: String, val baseEditedAt: String? = null, val revision: String = java.util.UUID.randomUUID().toString())
 
 fun validateComposerReceipt(receipt: ComposerReceiptDto, intent: ComposerIntentDto) = receipt.validateComposer(intent)
+
+@Serializable
+data class ScheduledCommandDto(val owner: String, val clientId: String, val kind: String,
+    val conversationId: String = "", val text: String = "", val scheduledAt: String = "", val notice: String? = null)

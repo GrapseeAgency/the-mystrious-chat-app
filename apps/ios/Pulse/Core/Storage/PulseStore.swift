@@ -668,6 +668,7 @@ public final class PulseStore: Sendable {
     @discardableResult
     func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
                         consumingDraft token: PulseDraftConsumption?, forwarding source: WireChatMessage? = nil) throws -> Bool {
+        guard composerOwner == nil || composerOwner == message.senderId else { throw CocoaError(.coderInvalidValue) }
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
         if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId || token.parentId != message.parentId || token.parentId != envelope.parentId {
             throw CocoaError(.userCancelled)
@@ -2044,16 +2045,17 @@ extension PulseStore {
         let json = String(decoding: try JSONEncoder().encode(value),as: UTF8.self)
         try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt",arguments: [key,json,order])
     }
-    private static func stageComposer(_ db: Database, owner: String, kind: String, target: String, room: String, root: String?, text: String, baseText: String, editedAt: String?) throws {
+    private static func stageComposer(_ db: Database, owner: String, kind: String, target: String, room: String, root: String?, text: String, baseText: String, editedAt: String?, localEditRevision: String? = nil) throws {
         let key = composerKey(owner: owner,kind: kind,target: target,root: root)
         let previous = try composer(db,key: key) ?? composer(db,key: heldComposer(key))
         if let previous, previous.text.utf16.elementsEqual(text.utf16), previous.blocked == nil { return }
         let baseline = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [composerHead(key)])
             .map { try JSONDecoder().decode(PulseComposerReceipt.self,from: Data($0.utf8)) }
         let value = PulseComposerIntent(owner: owner,kind: kind,targetId: target,conversationId: room,rootId: root,
-            desiredId: UUID().uuidString.lowercased(),text: text,baseText: previous?.baseText ?? baseText,
-            baseEditedAt: previous != nil ? previous!.baseEditedAt : editedAt,
-            baseRevision: previous != nil ? previous!.baseRevision : baseline?.revision,flight: previous?.flight,blocked: nil)
+            desiredId: UUID().uuidString.lowercased(),text: text,baseText: kind == "edit" ? baseText : previous?.baseText ?? baseText,
+            baseEditedAt: kind == "edit" ? editedAt : previous != nil ? previous!.baseEditedAt : editedAt,
+            baseRevision: kind == "edit" ? (baseline?.text.utf16.elementsEqual(baseText.utf16) == true && PulseFormat.date(baseline?.editedAt) == PulseFormat.date(editedAt) ? baseline?.revision : nil) : previous != nil ? previous!.baseRevision : baseline?.revision,
+            localEditRevision: localEditRevision,flight: previous?.flight,blocked: nil)
         try putComposer(db,key: key,value: value)
         try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [heldComposer(key)])
     }
@@ -2062,7 +2064,7 @@ extension PulseStore {
         try dbQueue.write { db in
             let local = try Self.localEdit(db,owner: owner,id: message.id)
             try Self.stageComposer(db,owner: owner,kind: "edit",target: message.id,room: message.conversationId,root: nil,
-                text: text,baseText: local?.baseText ?? message.content,editedAt: local != nil ? local!.baseEditedAt : message.editedAt)
+                text: text,baseText: local?.baseText ?? message.content,editedAt: local != nil ? local!.baseEditedAt : message.editedAt,localEditRevision: local?.revision)
         }
     }
     func composerEditPending(owner: String, id: String) throws -> Bool {
@@ -2101,7 +2103,7 @@ extension PulseStore {
         try dbQueue.write { db in
             let key = Self.composerKey(desired)
             guard var latest = try Self.composer(db,key: key), latest.desiredId == desired.desiredId, latest.flight == nil else { return nil }
-            latest.flight = PulseComposerFlight(clientId: latest.desiredId,text: latest.text,expectedRevision: revision)
+            latest.flight = PulseComposerFlight(clientId: latest.desiredId,text: latest.text,expectedRevision: revision,localEditRevision: latest.localEditRevision)
             try Self.putComposer(db,key: key,value: latest)
             return latest
         }
@@ -2134,6 +2136,11 @@ extension PulseStore {
                 try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [key])
             } else {
                 try Self.recordComposerBaseline(db,receipt: receipt)
+                if requested.kind == "edit", let version = flight.localEditRevision,
+                   let local = try Self.localEdit(db,owner: requested.owner,id: requested.targetId),
+                   local.revision == version, local.text.trimmingCharacters(in: .whitespacesAndNewlines).utf16.elementsEqual(flight.text.utf16) {
+                    try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [Self.localEditKey(owner: requested.owner,id: requested.targetId)])
+                }
                 if requested.kind == "edit", let row = try Row.fetchOne(db,sql: "SELECT * FROM message WHERE id=?",arguments: [requested.targetId]),
                    var current = Self.messageRow(from: row), current.senderId == requested.owner, current.deletedAt == nil,
                    (PulseFormat.date(current.editedAt) ?? .distantPast) <= (PulseFormat.date(receipt.editedAt) ?? .distantPast) {
@@ -2143,7 +2150,8 @@ extension PulseStore {
                 }
                 if latest.desiredId == flight.clientId { try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [key]) }
                 else {
-                    latest.flight = nil; latest.baseText = receipt.text; latest.baseEditedAt = receipt.editedAt; latest.baseRevision = receipt.revision
+                    latest.flight = nil
+                    if latest.kind == "draft" { latest.baseText = receipt.text; latest.baseEditedAt = receipt.editedAt; latest.baseRevision = receipt.revision }
                     try Self.putComposer(db,key: key,value: latest)
                 }
             }
@@ -2190,13 +2198,173 @@ extension PulseStore {
         return try draftFence.removeIfCurrent(token.storageKey,expected: token.revision) {
             try dbQueue.write { db in
                 let key = Self.composerKey(owner: state.userId,kind: "draft",target: state.targetId,root: state.rootId)
-                guard try Self.composer(db,key: key) == nil, Self.composer(db,key: Self.heldComposer(key)) == nil else { return false }
+                guard try Self.composer(db,key: key) == nil, try Self.composer(db,key: Self.heldComposer(key)) == nil else { return false }
                 let current = try String.fetchOne(db,sql: "SELECT text FROM draft WHERE conversationId=?",arguments: [token.storageKey])
                 guard current == previous else { return false }
                 try db.execute(sql: "INSERT INTO draft(conversationId,text,updatedAt) VALUES(?,?,?) ON CONFLICT(conversationId) DO UPDATE SET text=excluded.text,updatedAt=excluded.updatedAt",arguments: [token.storageKey,state.text,PulseOutboxClock.now()])
                 try Self.recordComposerBaseline(db,receipt: state)
                 return true
             }
+        }
+    }
+}
+
+extension PulseStore {
+    private static func scheduledCommand(_ db: Database, key: String) throws -> PulseScheduledCommand? {
+        guard let raw = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [key]) else { return nil }
+        let value = try JSONDecoder().decode(PulseScheduledCommand.self,from: Data(raw.utf8))
+        guard ["create","cancel"].contains(value.kind), !value.owner.isEmpty, !value.clientId.isEmpty,
+              key == value.key || key == value.heldKey else { throw CocoaError(.coderInvalidValue) }
+        return value
+    }
+    private static func putScheduledCommand(_ db: Database, command: PulseScheduledCommand, held: Bool = false) throws {
+        let json = String(decoding: try JSONEncoder().encode(command),as: UTF8.self)
+        let prefix = "composer-schedule:v1|\(command.owner)|"
+        let order = try Double.fetchOne(db,sql: "SELECT COALESCE(MAX(updatedAt),0)+1 FROM wave7Cache WHERE substr(key,1,length(?))=?",arguments: [prefix,prefix]) ?? 1
+        try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt",arguments: [held ? command.heldKey : command.key,json,order])
+    }
+    func stageScheduledCommand(_ command: PulseScheduledCommand) throws {
+        guard composerOwner == nil || composerOwner == command.owner else { throw CocoaError(.coderInvalidValue) }
+        try dbQueue.write { db in
+            if try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [command.ackKey]) != nil { return }
+            let previous = try Self.scheduledCommand(db,key: command.key) ?? Self.scheduledCommand(db,key: command.heldKey)
+            guard previous == nil || previous!.sameInstructions(command) else { throw CocoaError(.coderInvalidValue) }
+            if command.kind == "create" {
+                let prior = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [command.headKey])
+                guard prior == nil || prior == command.clientId else {
+                    throw PulseAPIClient.Failure(kind: .validation,message: "An earlier schedule in this chat still needs confirmation. Resolve it in Drafts & outbox before choosing another time.")
+                }
+                try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET json=excluded.json",arguments: [command.headKey,command.clientId])
+            }
+            try Self.putScheduledCommand(db,command: command)
+            try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [command.heldKey])
+        }
+    }
+    func scheduledCommandResult(_ command: PulseScheduledCommand) throws -> String? {
+        try dbQueue.read { db in try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [command.ackKey]) }
+    }
+    func pendingSchedules(owner: String) throws -> Int {
+        try dbQueue.read { db in
+            let prefix = "composer-schedule:v1|\(owner)|"
+            return try Int.fetchOne(db,sql: "SELECT COUNT(*) FROM wave7Cache WHERE substr(key,1,length(?))=?",arguments: [prefix,prefix]) ?? 0
+        }
+    }
+    func scheduledCommandPage(owner: String) throws -> [PulseScheduledCommand] {
+        try dbQueue.write { db in
+            let prefix = "composer-schedule:v1|\(owner)|"
+            let rows = try Row.fetchAll(db,sql: "SELECT key,json,updatedAt FROM wave7Cache WHERE substr(key,1,length(?))=? ORDER BY updatedAt,key LIMIT 100",arguments: [prefix,prefix])
+            var commands: [PulseScheduledCommand] = []
+            for row in rows {
+                let key: String = row["key"], json: String = row["json"]
+                do { if let value = try Self.scheduledCommand(db,key: key) { commands.append(value) } }
+                catch {
+                    let held = key.replacingOccurrences(of: "composer-schedule:",with: "composer-schedule-blocked:")
+                    let order: Double = row["updatedAt"]
+                    try db.execute(sql: "INSERT OR IGNORE INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?)",arguments: [held,json,order])
+                    try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [key,json])
+                }
+            }
+            return commands
+        }
+    }
+    func finishScheduledCommand(_ command: PulseScheduledCommand, result: String) throws {
+        try dbQueue.write { db in
+            guard let current = try Self.scheduledCommand(db,key: command.key), current.sameInstructions(command) else { return }
+            try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",arguments: [command.ackKey,result,Date().timeIntervalSince1970])
+            try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [command.key])
+            if command.kind == "create" { try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [command.headKey,command.clientId]) }
+        }
+    }
+    func deferScheduledCommand(_ command: PulseScheduledCommand, notice: String? = nil) throws {
+        try dbQueue.write { db in
+            guard var current = try Self.scheduledCommand(db,key: command.key), current.sameInstructions(command) else { return }
+            current.notice = notice
+            try Self.putScheduledCommand(db,command: current,held: notice != nil)
+            if notice != nil { try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [command.key]) }
+        }
+    }
+}
+
+extension PulseStore {
+    private static func recoveryVersion(_ json: String) -> String { SHA256.hash(data: Data(json.utf8)).map { String(format: "%02x",$0) }.joined() }
+    func composerRecoveryPage(owner: String, after: String? = nil) throws -> PulseComposerRecoveryPage {
+        guard composerOwner == nil || composerOwner == owner else { throw CocoaError(.coderInvalidValue) }
+        let pattern = owner.map { $0 == "[" ? "[[]" : $0 == "*" ? "[*]" : $0 == "?" ? "[?]" : String($0) }.joined()
+        return try dbQueue.read { db in
+            let patterns = ["composer-intent","composer-blocked","composer-local-edit","composer-schedule","composer-schedule-blocked","composer-schedule-ack"].map { "\($0):v1|\(pattern)|*" }
+            let rows = try Row.fetchAll(db,sql: "SELECT key,json FROM wave7Cache WHERE key>? AND (key GLOB ? OR key GLOB ? OR key GLOB ? OR key GLOB ? OR key GLOB ? OR key GLOB ?) ORDER BY key LIMIT 101",arguments: StatementArguments([after ?? ""] + patterns))
+            let items = rows.prefix(100).map { row -> PulseComposerRecovery in
+                let key: String = row["key"], json: String = row["json"]
+                let version = Self.recoveryVersion(json)
+                do {
+                    if key.hasPrefix("composer-local-edit:") {
+                        let value = try JSONDecoder().decode(PulseComposerLocalEdit.self,from: Data(json.utf8))
+                        let id = String(key.dropFirst("composer-local-edit:v1|\(owner)|".count))
+                        let room = try String.fetchOne(db,sql: "SELECT conversationId FROM message WHERE id=?",arguments: [id]) ?? ""
+                        return PulseComposerRecovery(id: key,version: version,kind: "Unsubmitted edit",targetId: id,conversationId: room,text: value.text,notice: "Kept on this device. Reopen the message to edit; typing is never sent automatically.")
+                    }
+                    if key.hasPrefix("composer-schedule-ack:") {
+                        let value = json == "cancelled" ? nil : try JSONDecoder().decode(WireScheduledItem.self,from: Data(json.utf8))
+                        return PulseComposerRecovery(id: key,version: version,kind: "Schedule receipt",targetId: value?.id ?? "",conversationId: value?.conversationId ?? "",text: value?.content ?? "",notice: value.map { "Scheduled for \($0.scheduledAt). Check Scheduled messages for its current status." } ?? "Cancellation was confirmed.")
+                    }
+                    if key.hasPrefix("composer-schedule") {
+                        let value = try JSONDecoder().decode(PulseScheduledCommand.self,from: Data(json.utf8))
+                        guard value.owner == owner else { throw CocoaError(.coderInvalidValue) }
+                        return PulseComposerRecovery(id: key,version: version,kind: value.kind == "cancel" ? "Pending cancellation" : "Pending schedule",targetId: value.clientId,conversationId: value.conversationId,text: value.text,
+                            notice: value.notice ?? (value.kind == "cancel" ? "NOT cancelled yet. It may still send before cancellation arrives." : "Not confirmed. Retrying the original time: \(value.scheduledAt)."),canRetry: key.hasPrefix("composer-schedule-blocked:"))
+                    }
+                    let value = try Self.decodeComposer(json,key: key)
+                    guard value.owner == owner else { throw CocoaError(.coderInvalidValue) }
+                    return PulseComposerRecovery(id: key,version: version,kind: value.kind == "edit" ? "Saved edit" : value.rootId == nil ? "Draft mirror" : "Thread draft",targetId: value.targetId,conversationId: value.conversationId,text: value.text,
+                        notice: value.blocked ?? "Waiting for server confirmation.",canRetry: value.blocked != nil,canReplace: value.blocked != nil && value.flight == nil)
+                } catch { return PulseComposerRecovery(id: key,version: version,kind: "Unreadable recovery",targetId: "",conversationId: "",text: "",notice: "Original recovery bytes are kept on this device. Nothing has been sent or discarded.") }
+            }
+            return PulseComposerRecoveryPage(items: items,nextCursor: rows.count > 100 ? rows[99]["key"] : nil)
+        }
+    }
+    private static func recoveryJSON(_ db: Database, row: PulseComposerRecovery, owner: String) throws -> String {
+        guard row.id.hasPrefix(String(row.id.prefix { $0 != "|" }) + "|\(owner)|"),
+              let json = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [row.id]),
+              Self.recoveryVersion(json) == row.version else { throw CocoaError(.fileReadUnknown) }
+        return json
+    }
+    func recoveryIntent(_ row: PulseComposerRecovery, owner: String) throws -> PulseComposerIntent {
+        try dbQueue.read { db in
+            let value = try Self.decodeComposer(Self.recoveryJSON(db,row: row,owner: owner),key: row.id)
+            guard value.owner == owner, row.id.hasPrefix("composer-blocked:"), value.flight == nil else { throw CocoaError(.coderInvalidValue) }
+            return value
+        }
+    }
+    func recoverComposer(_ row: PulseComposerRecovery, owner: String, action: String, state: PulseComposerReceipt? = nil) throws {
+        guard composerOwner == nil || composerOwner == owner else { throw CocoaError(.coderInvalidValue) }
+        try dbQueue.write { db in
+            let json = try Self.recoveryJSON(db,row: row,owner: owner)
+            if action == "remove" {
+                if row.id.hasPrefix("composer-schedule:") || row.id.hasPrefix("composer-schedule-blocked:"),
+                   let command = try? JSONDecoder().decode(PulseScheduledCommand.self,from: Data(json.utf8)), command.owner == owner, command.kind == "create" {
+                    try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [command.headKey,command.clientId])
+                }
+                try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [row.id,json]); return
+            }
+            if row.id.hasPrefix("composer-schedule-blocked:"), action == "retry" {
+                var command = try JSONDecoder().decode(PulseScheduledCommand.self,from: Data(json.utf8))
+                guard command.owner == owner else { throw CocoaError(.coderInvalidValue) }
+                command.notice = nil
+                try Self.putScheduledCommand(db,command: command)
+                try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [row.id]); return
+            }
+            guard row.id.hasPrefix("composer-blocked:"), ["replace","retry"].contains(action) else { throw CocoaError(.coderInvalidValue) }
+            var value = try Self.decodeComposer(json,key: row.id)
+            guard value.owner == owner else { throw CocoaError(.coderInvalidValue) }
+            if action == "replace" {
+                guard value.flight == nil, let state else { throw CocoaError(.coderInvalidValue) }
+                try state.validate(value)
+                value.desiredId = UUID().uuidString.lowercased(); value.baseText = state.text; value.baseEditedAt = state.editedAt; value.baseRevision = state.revision
+                try Self.recordComposerBaseline(db,receipt: state)
+            }
+            value.blocked = nil
+            try Self.putComposer(db,key: Self.composerKey(value),value: value)
+            try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [row.id])
         }
     }
 }

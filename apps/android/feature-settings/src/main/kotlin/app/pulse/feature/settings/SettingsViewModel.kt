@@ -396,6 +396,37 @@ class SettingsViewModel @Inject constructor(
     private val _outboxNotice = MutableStateFlow<String?>(null)
     val outboxNotice: StateFlow<String?> = _outboxNotice.asStateFlow()
 
+    private val _composerRecovery = MutableStateFlow<List<app.pulse.domain.model.ComposerRecoveryEntry>>(emptyList())
+    val composerRecovery = _composerRecovery.asStateFlow()
+    private val _composerRecoveryCursor = MutableStateFlow<String?>(null)
+    val composerRecoveryCursor = _composerRecoveryCursor.asStateFlow()
+    private var recoveryRequest = 0L
+    fun refreshComposerRecovery(more: Boolean = false) {
+        val target = repo.boundToCurrentAccount()
+        val epoch = target.attachmentSessionKey()
+        val ticket = ++recoveryRequest
+        val after = if (more) _composerRecoveryCursor.value else null
+        if (!more) { _composerRecovery.value = emptyList(); _composerRecoveryCursor.value = null }
+        viewModelScope.launch {
+            val result = target.composerRecoveryPage(after)
+            if (ticket != recoveryRequest || epoch != repo.attachmentSessionKey()) return@launch
+            result.onSuccess { page ->
+                _composerRecovery.value = (if (more) _composerRecovery.value else emptyList()) + page.items
+                _composerRecoveryCursor.value = page.nextCursor
+            }.onFailure { _outboxNotice.value = it.message ?: "Recovery could not be loaded. No text was discarded." }
+        }
+    }
+    fun recoverComposer(entry: app.pulse.domain.model.ComposerRecoveryEntry, action: String) {
+        val target = repo.boundToCurrentAccount()
+        val epoch = target.attachmentSessionKey()
+        viewModelScope.launch {
+            val result = target.recoverComposer(entry,action)
+            if (epoch != repo.attachmentSessionKey()) return@launch
+            _outboxNotice.value = result.fold({ if (action == "remove") "Local recovery copy removed; this does not undo server actions." else "Original text retained while the request is reconciled." },{ it.message ?: "Recovery changed. Refresh before trying again." })
+            refreshComposerRecovery()
+        }
+    }
+
     private val retryingOutbox = mutableSetOf<String>()
     fun retryOutboxEntry(clientId: String) {
         if (!retryingOutbox.add(clientId)) return

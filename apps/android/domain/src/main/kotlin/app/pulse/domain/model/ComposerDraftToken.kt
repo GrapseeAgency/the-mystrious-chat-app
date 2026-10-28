@@ -30,3 +30,8 @@ fun composerDraftScope(key: String): Pair<String, String?> {
     val root = field(); require(offset == key.length)
     return room to root
 }
+
+/** A bounded recovery page; a version fences actions against background ACKs. */
+data class ComposerRecoveryEntry(val key: String, val version: String, val kind: String, val targetId: String,
+    val conversationId: String, val text: String, val notice: String, val canRetry: Boolean = false, val canReplace: Boolean = false)
+data class ComposerRecoveryPage(val items: List<ComposerRecoveryEntry>, val nextCursor: String? = null)

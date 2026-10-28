@@ -232,7 +232,7 @@ struct ScheduledManagerSheet: View {
         Task {
             defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
-                try await api.cancelScheduled(item.id)
+                try await session.cancelScheduled(item.id)
                 guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 withAnimation { items.removeAll { $0.id == item.id } }
                 PulseHaptics.tap()

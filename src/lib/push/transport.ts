@@ -223,11 +223,11 @@ async function onlineUserIds(): Promise<Set<string>> {
 
 // per-platform senders 
 
-type SendResult = { ok: boolean; pruneToken: boolean; skipped?: boolean; invalidatedAt?: number }
+type SendResult = { ok: boolean; pruneToken: boolean; skipped?: boolean; retryable?: boolean; invalidatedAt?: number }
 
 async function sendWeb(token: string, payload: PushPayload): Promise<SendResult> {
   const lib = await webPushSender()
-  if (!lib) return { ok: false, pruneToken: false, skipped: true }
+  if (!lib) return { ok: false, pruneToken: false, skipped: true, retryable: true }
   // Registry stores the FULL PushSubscription JSON (endpoint + keys.p256dh/auth).
   // Payload encryption needs the keys; a keys-less row still gets a payload-less
   // notification (the service worker renders a default message - never silent).
@@ -282,7 +282,7 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
 
 async function sendAndroid(token: string, payload: PushPayload): Promise<SendResult> {
   const bearer = await fcmBearer()
-  if (!bearer) return { ok: false, pruneToken: false, skipped: true }
+  if (!bearer) return { ok: false, pruneToken: false, skipped: true, retryable: true }
   const projectId = fcmCredentials()?.projectId ?? ''
   const window = pushDeliveryWindow(payload)
   if (!window) return { ok: false, pruneToken: false, skipped: true }
@@ -329,7 +329,7 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
 
 async function sendIos(token: string, payload: PushPayload): Promise<SendResult> {
   const bearer = await apnsBearer()
-  if (!bearer) return { ok: false, pruneToken: false, skipped: true }
+  if (!bearer) return { ok: false, pruneToken: false, skipped: true, retryable: true }
   const window = pushDeliveryWindow(payload)
   if (!window) return { ok: false, pruneToken: false, skipped: true }
   try {
@@ -380,9 +380,15 @@ export interface FanoutReport {
   sent: number
   pruned: number
   skipped: number
+  failed?: number
+  nextCursor?: string | null
 }
 
 export interface FanoutOptions {
+  afterTokenId?: string | null
+  limit?: number
+  alreadyDelivered?: (bindingHash: string) => Promise<boolean>
+  recordDelivered?: (bindingHash: string) => Promise<void>
   /**
    * Per-recipient body override (privacy gates like notifPreviews are a
    * property of the RECEIVER, so the body must be built per user).
@@ -411,7 +417,12 @@ export async function fanoutPush(
     report.users = targets.length
     if (targets.length === 0) return report
     const capability = payload.kind === 'read-state' ? { readStateCapability: { is: { version: 1 } } } : {}
-    const tokens = await db.pushToken.findMany({ where: { userId: { in: targets }, ...capability } })
+    const limit = options?.limit === undefined ? undefined : Math.max(1,Math.min(100,options.limit))
+    const candidates = await db.pushToken.findMany({ where: { userId: { in: targets }, ...capability,
+      ...(options?.afterTokenId ? { id: { gt: options.afterTokenId } } : {}) },
+      ...(limit === undefined ? {} : { orderBy: { id: 'asc' as const }, take: limit + 1 }) })
+    const tokens = limit === undefined ? candidates : candidates.slice(0,limit)
+    if (limit !== undefined) report.nextCursor = candidates.length > limit ? tokens.at(-1)!.id : null
     report.devices = tokens.length
     for (const row of tokens) {
       // Web Push requires a visible notification; never turn a read hint into a banner.
@@ -427,6 +438,8 @@ export async function fanoutPush(
       const expectedCapability = nativeReadStateHints ? { readStateCapability: { is: { version: 1 } } } : capability
       const binding = { id: row.id, userId: row.userId, platform: row.platform, token: row.token, updatedAt: row.updatedAt }
       if (!await db.pushToken.findFirst({ where: { ...binding, ...expectedCapability }, select: { id: true } })) { report.skipped += 1; continue }
+      const bindingHash = crypto.createHash('sha256').update(JSON.stringify([row.id,row.userId,row.platform,row.token,row.updatedAt.toISOString()])).digest('hex')
+      if (await options?.alreadyDelivered?.(bindingHash)) { report.skipped += 1; continue }
       const perUser: PushPayload = {
         ...payload,
         recipientUserId: row.userId,
@@ -441,6 +454,8 @@ export async function fanoutPush(
             : row.platform === 'ios'
               ? await sendIos(row.token, perUser)
               : { ok: false, pruneToken: false, skipped: true }
+      if (result.retryable || (!result.ok && !result.pruneToken && !result.skipped)) report.failed = (report.failed ?? 0) + 1
+      if (result.ok || result.pruneToken || (result.skipped && !result.retryable)) await options?.recordDelivered?.(bindingHash)
       if (result.skipped) report.skipped += 1
       else if (result.ok) report.sent += 1
       if (result.pruneToken && (result.invalidatedAt === undefined || result.invalidatedAt > row.updatedAt.getTime())) {
@@ -459,6 +474,7 @@ export async function fanoutPush(
     }
     return report
   } catch (err) {
+    report.failed = (report.failed ?? 0) + 1
     console.warn('[push] fanout failed (never fatal):', err instanceof Error ? err.message : err)
     return report
   }

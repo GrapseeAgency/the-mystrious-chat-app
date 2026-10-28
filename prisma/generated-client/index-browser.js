@@ -669,6 +669,24 @@ exports.Prisma.ThreadDraftStateScalarFieldEnum = {
   revision: 'revision'
 };
 
+exports.Prisma.ScheduledDeliveryNoticeScalarFieldEnum = {
+  messageId: 'messageId',
+  createdAtMs: 'createdAtMs',
+  nextAttemptMs: 'nextAttemptMs',
+  attempts: 'attempts',
+  leaseToken: 'leaseToken',
+  leaseUntilMs: 'leaseUntilMs',
+  socketDone: 'socketDone',
+  pushDone: 'pushDone',
+  pushCursor: 'pushCursor',
+  completedAtMs: 'completedAtMs'
+};
+
+exports.Prisma.ScheduledPushReceiptScalarFieldEnum = {
+  messageId: 'messageId',
+  bindingHash: 'bindingHash'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -736,7 +754,9 @@ exports.Prisma.ModelName = {
   SavedMessageState: 'SavedMessageState',
   SavedMessageOperation: 'SavedMessageOperation',
   ComposerOperation: 'ComposerOperation',
-  ThreadDraftState: 'ThreadDraftState'
+  ThreadDraftState: 'ThreadDraftState',
+  ScheduledDeliveryNotice: 'ScheduledDeliveryNotice',
+  ScheduledPushReceipt: 'ScheduledPushReceipt'
 };
 
 /**

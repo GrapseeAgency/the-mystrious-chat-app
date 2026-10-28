@@ -9,6 +9,7 @@ import { fanoutPush } from '@/lib/push/transport'
 import { db } from '@/lib/db'
 import { scheduledDeliveryDecision } from '@/lib/scheduled-delivery'
 import { scheduledDispatchPage, scheduledErrorResponse } from '@/lib/scheduled-operation'
+import { enqueueScheduledNotice, drainScheduledNotices, scheduledPushDelivered, recordScheduledPush } from '@/lib/scheduled-notice'
 import { mapMessage, memberIdsOf, notifySocket, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -67,32 +68,35 @@ export async function POST(req: Request) {
           where: { conversationId: row.conversationId, userId: { not: row.senderId }, archivedAt: { not: null } },
           data: { archivedAt: null },
         })
+        await enqueueScheduledNotice(tx,created.id,now.getTime())
         return created
       }, { isolationLevel: 'Serializable' })
       if (!result) continue
       // Count durable message commits, not best-effort transport successes.
       dispatched += 1
-      // Same current-policy planner as manual sends, including per-viewer
-      // preview/mute/block/expiry rules. Do not wait for providers or replay the
-      // message when a push fails. This remains best-effort, not an outbox.
-      void deliverMessageNotification(db, fanoutPush, result.id).catch(error => {
-        console.error('[dispatch] notification failed for', result.id, error instanceof Error ? error.message : error)
-      })
-
-      // No live send response reaches the sender when the scheduler fires.
-      // Include the sender's devices or their own message stays invisible until refresh.
-      const recipients = await memberIdsOf(result.conversationId)
-      const mapped = mapMessage(result)
-      await notifySocket('message:new', recipients, {
-        type: 'message:new',
-        message: mapped,
-        recipientIds: recipients,
-        conversationId: result.conversationId,
-      })
     } catch (error) {
       console.error('[dispatch] failed for', id, error instanceof Error ? error.message : error)
     }
   }
+
+  await drainScheduledNotices(db, async id => {
+    const message = await db.message.findUnique({ where: { id }, include: MESSAGE_FULL_INCLUDE })
+    if (!message || message.deletedAt || (message.expiresAt && message.expiresAt <= new Date())) return
+    const recipients = await memberIdsOf(message.conversationId)
+    await notifySocket('message:new',recipients,{ type: 'message:new',message: mapMessage(message),
+      recipientIds: recipients,conversationId: message.conversationId },true)
+  }, async (id,cursor) => {
+    let next: string | null = null
+    await deliverMessageNotification(db,async (recipients,payload,options) => {
+      const report = await fanoutPush(recipients,payload,{ ...options,limit: 25,afterTokenId: cursor,
+        alreadyDelivered: binding => scheduledPushDelivered(db,id,binding),
+        recordDelivered: binding => recordScheduledPush(db,id,binding) })
+      if (report?.failed) throw new Error('Scheduled push delivery remains pending')
+      next = report?.nextCursor ?? null
+      return report
+    },id)
+    return next
+  })
 
   return NextResponse.json({ dispatched, nextCursor: page.nextCursor })
 }

@@ -1,4 +1,5 @@
 import test from 'node:test'
+import { enqueueScheduledNotice, drainScheduledNotices, scheduledPushDelivered, recordScheduledPush } from '../../src/lib/scheduled-notice.ts'
 import { createHash } from 'node:crypto'
 import { deliverMessageNotification } from '../../src/lib/message-notification.ts'
 import assert from 'node:assert/strict'
@@ -33,6 +34,7 @@ async function fixture(run) {
    await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
   }
   await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261024_scheduled_creation_operations.sql',import.meta.url),'utf8'))
+  for(const sql of (await readFile(new URL('../../prisma/patches/20261028_scheduled_delivery_notices.sql',import.meta.url),'utf8')).split(';').filter(s=>s.trim())) await db.$executeRawUnsafe(sql)
   for(const id of ['me','other']) await db.$executeRawUnsafe('INSERT INTO User(id,name,sessionTokenHash,legacyTokenHashes) VALUES(?,?,?,?)',id,'Name '+id,hashSessionToken(`synthetic-${id}`),'[]')
   for(const id of ['room','second']) await db.conversation.create({data:{id,isGroup:true}})
   for(const [id,userId,conversationId]of [['p1','me','room'],['p2','other','room'],['p3','other','second']]) await db.conversationParticipant.create({data:{id,userId,conversationId,lastReadAt:new Date('2026-01-01')}})
@@ -45,7 +47,7 @@ async function fixture(run) {
   const cancel=await load('src/app/api/scheduled/[id]/route.ts',bindings,'DELETE')
   const events=[], pushes=[], faults={socket:false,push:false}
   const flushNotifications=()=>Promise.all(notificationWork)
-  const dispatch=await load('src/app/api/maintenance/dispatch/route.ts',{...bindings,scheduledDeliveryDecision,process:{env:{CRON_SECRET:'synthetic'}},MESSAGE_FULL_INCLUDE:{},
+  const dispatch=await load('src/app/api/maintenance/dispatch/route.ts',{...bindings,enqueueScheduledNotice,drainScheduledNotices,scheduledPushDelivered,recordScheduledPush,scheduledDeliveryDecision,process:{env:{CRON_SECRET:'synthetic'}},MESSAGE_FULL_INCLUDE:{},
    mapMessage:row=>row, memberIdsOf:room=>db.conversationParticipant.findMany({where:{conversationId:room}}).then(rows=>rows.map(r=>r.userId)),
    notifySocket:async(...args)=>{if(faults.socket)throw Error('socket failed');events.push(args)},
    deliverMessageNotification:(...args)=>{const work=deliverMessageNotification(...args);notificationWork.push(work.catch(()=>false));return work},
@@ -280,4 +282,54 @@ test('socket or push failure does not change committed dispatch counts or resend
  await h.flushNotifications();assert.equal(h.events.length,1)
  assert.equal(await db.message.count(),2)
  assert.equal((await(await h.dispatch(tick())).json()).dispatched,0)
+}))
+
+test('scheduled notification receipts retry only unfinished channels after a lost provider or relay response',()=>fixture(async(db,h)=>{
+ h.faults.socket=true
+ await h.create({id:'one',scheduledAt:new Date(Date.now()-1000)})
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,1)
+ assert.equal(h.pushes.length,1)
+ const [pending]=await db.$queryRawUnsafe('SELECT socketDone,pushDone,completedAtMs FROM ScheduledDeliveryNotice')
+ assert.equal(Boolean(pending.socketDone),false);assert.equal(Boolean(pending.pushDone),true);assert.equal(pending.completedAtMs,null)
+ h.faults.socket=false
+ await db.$executeRawUnsafe('UPDATE ScheduledDeliveryNotice SET nextAttemptMs=0')
+ assert.equal((await(await h.dispatch(tick())).json()).dispatched,0)
+ assert.equal(h.events.length,1);assert.equal(h.pushes.length,1);assert.equal(await db.message.count(),1)
+ h.faults.push=true
+ await h.create({id:'two',scheduledAt:new Date(Date.now()-1000)})
+ await h.dispatch(tick());assert.equal(h.events.length,2)
+ h.faults.push=false
+ await db.$executeRawUnsafe('UPDATE ScheduledDeliveryNotice SET nextAttemptMs=0')
+ await h.dispatch(tick())
+ assert.equal(h.events.length,2);assert.equal(h.pushes.length,2);assert.equal(await db.message.count(),2)
+ const unfinished=await db.$queryRawUnsafe('SELECT messageId FROM ScheduledDeliveryNotice WHERE completedAtMs IS NULL')
+ assert.deepEqual(unfinished,[])
+}))
+test('scheduled notice leases exclude another dispatcher and expired messages suppress late retries',()=>fixture(async(db,h)=>{
+ h.faults.socket=true;h.faults.push=true
+ await h.create({scheduledAt:new Date(Date.now()-1000)})
+ await h.dispatch(tick())
+ await db.$executeRawUnsafe('UPDATE ScheduledDeliveryNotice SET nextAttemptMs=0')
+ let enter,release
+ const entered=new Promise(r=>enter=r),blocked=new Promise(r=>release=r)
+ let sockets=0,pushes=0
+ const first=drainScheduledNotices(db,async()=>{sockets++;enter();await blocked},async()=>{pushes++;return null})
+ await entered
+ assert.equal(await drainScheduledNotices(db,async()=>{sockets++},async()=>{pushes++;return null}),0)
+ release();assert.equal(await first,1);assert.equal(sockets,1);assert.equal(pushes,1)
+ h.faults.socket=false
+ await h.create({id:'expires',scheduledAt:new Date(Date.now()-1000)})
+ await h.dispatch(tick())
+ await db.message.updateMany({data:{expiresAt:new Date(Date.now()-1)}})
+ h.faults.push=false
+ await db.$executeRawUnsafe('UPDATE ScheduledDeliveryNotice SET nextAttemptMs=0')
+ await h.dispatch(tick())
+ assert.equal(h.pushes.length,0)
+ assert.deepEqual(await db.$queryRawUnsafe('SELECT messageId FROM ScheduledDeliveryNotice WHERE completedAtMs IS NULL'),[])
+}))
+test('scheduled identities reject trailing newline and completed cancellation has a machine-readable terminal outcome',()=>fixture(async(db,h)=>{
+ assert.equal((await h.POSTv2(req('POST','me','synthetic-me',{clientId:'scheduled-operation-001\n'}),ctx())).status,400)
+ await h.create({sentAt:new Date()})
+ const result=await h.DELETE(req('DELETE'),ctx('queued'))
+ assert.equal(result.status,409);assert.equal((await result.json()).code,'schedule_already_sent')
 }))

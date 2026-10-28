@@ -474,6 +474,7 @@ internal fun MirrorSettingsScreen(
                             onRetry = { row -> recover(row, retry = true) },
                             busy = recoveryBusy.keys.toSet(),
                             recoveryNotice = recoveryNotice,
+                            composerRecovery = { MirrorComposerRecovery(repository,viewerId) },
                             onPrefs = { savePrefs(it) },
                             onListFilter = { value -> session.setChatsListFilter(value) },
                         )
@@ -1315,6 +1316,7 @@ private fun ChatSection(
     onRetry: (app.pulse.domain.model.OutboxEntry) -> Unit,
     busy: Set<String>,
     recoveryNotice: String?,
+    composerRecovery: @Composable () -> Unit,
     onPrefs: (WirePulsePrefs) -> Unit,
     onListFilter: (String) -> Unit,
 ) {
@@ -1397,6 +1399,7 @@ private fun ChatSection(
         }
     }
 
+    composerRecovery()
     SettingsGroup("Drafts & outbox") {
         recoveryNotice?.let { Text(it, fontSize = 12.sp, color = SubPageInk.Zinc500) }
         if (discardArmed != null) Text("Confirm to discard this recovery copy. An in-flight send may still arrive.",
@@ -2228,5 +2231,65 @@ private fun AboutSection() {
             color = SubPageInk.Zinc600,
             fontSize = 11.sp,
         )
+    }
+}
+
+@Composable
+private fun MirrorComposerRecovery(repository: PulseRepository, owner: String) {
+    val epoch = repository.attachmentSessionKey()
+    val target = remember(repository,owner,epoch) { repository.boundToCurrentAccount() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var rows by remember(owner,epoch) { mutableStateOf<List<app.pulse.domain.model.ComposerRecoveryEntry>>(emptyList()) }
+    var cursor by remember(owner,epoch) { mutableStateOf<String?>(null) }
+    var busy by remember(owner,epoch) { mutableStateOf(false) }
+    var notice by remember(owner,epoch) { mutableStateOf<String?>(null) }
+    var armed by remember(owner,epoch) { mutableStateOf<Pair<app.pulse.domain.model.ComposerRecoveryEntry,String>?>(null) }
+    fun load(more: Boolean = false) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                val page = target.composerRecoveryPage(if (more) cursor else null).getOrThrow()
+                if (epoch == target.attachmentSessionKey() && target.viewerId == owner) {
+                    rows = (if (more) rows else emptyList()) + page.items; cursor = page.nextCursor
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { notice = "Could not load recovery. Your original text has not been discarded." }
+            finally { busy = false }
+        }
+    }
+    fun act(row: app.pulse.domain.model.ComposerRecoveryEntry, action: String) {
+        if (busy) return
+        if (action != "retry" && armed != (row to action)) { armed = row to action; return }
+        armed = null; busy = true
+        scope.launch {
+            try {
+                target.recoverComposer(row,action).getOrThrow()
+                if (epoch == target.attachmentSessionKey()) notice = if (action == "remove") "Local copy removed; server actions were not undone." else "Original text retained while the request is reconciled."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { notice = error.message ?: "Recovery changed. Refresh before trying again." }
+            finally { busy = false }
+            load()
+        }
+    }
+    LaunchedEffect(owner,epoch) { load() }
+    SettingsGroup("Composer recovery") {
+        androidx.compose.material3.TextButton(enabled=!busy,onClick={ load() }) { Text("Refresh recovery") }
+        notice?.let { Text(it,fontSize=12.sp,color=SubPageInk.Zinc500) }
+        armed?.let { (_,action) -> Text(if (action == "replace") "Confirm to replace the server draft/edit with this saved version. A further server change still causes a conflict."
+            else "Removing a local copy does NOT cancel a scheduled message or undo a send/edit already accepted by the server.",fontSize=12.sp,color=SubPageInk.Amber400) }
+        rows.forEach { row ->
+            Column(Modifier.fillMaxWidth().padding(vertical=8.dp)) {
+                Text(row.kind,fontSize=13.sp,color=SubPageInk.Amber400)
+                if (row.text.isNotEmpty()) Text(row.text,fontSize=12.sp,maxLines=3)
+                Text(row.notice,fontSize=11.sp,color=SubPageInk.Zinc500)
+                if (row.text.isNotEmpty()) androidx.compose.material3.TextButton(onClick={ clipboard.setText(androidx.compose.ui.text.AnnotatedString(row.text)) }) { Text("Copy text") }
+                if (row.canRetry) androidx.compose.material3.TextButton(enabled=!busy,onClick={ act(row,"retry") }) { Text("Retry original") }
+                if (row.canReplace) androidx.compose.material3.TextButton(enabled=!busy,onClick={ act(row,"replace") }) { Text(if (armed == (row to "replace")) "Confirm replacement" else "Use this version") }
+                androidx.compose.material3.TextButton(enabled=!busy,onClick={ act(row,"remove") }) { Text(if (armed == (row to "remove")) "Confirm removal" else "Remove local copy") }
+            }
+        }
+        if (cursor != null) androidx.compose.material3.TextButton(enabled=!busy,onClick={ load(true) }) { Text("Load more recovery") }
     }
 }

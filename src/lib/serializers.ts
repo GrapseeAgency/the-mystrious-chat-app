@@ -638,18 +638,29 @@ export async function notifySocket(
   event: PulseSocketEvent,
   recipientIds: string[],
   payload: unknown,
+  requireAcknowledgement = false,
 ): Promise<void> {
   if (recipientIds.length === 0) return
   const secret = process.env.CRON_SECRET
-  if (!secret) return
+  if (!secret) {
+    if (requireAcknowledgement) throw new Error("Socket relay is not configured")
+    return
+  }
   try {
-    await fetch(`${SOCKET_URL}/notify`, {
+    const response = await fetch(`${SOCKET_URL}/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-pulse-key': secret },
       body: JSON.stringify({ event, recipients: recipientIds, payload }),
       signal: AbortSignal.timeout(2500),
     })
-  } catch {
+    if (requireAcknowledgement) {
+      if (!response.ok) throw new Error('Socket relay refused delivery')
+      const receipt = await response.json() as { ok?: unknown; delivered?: unknown }
+      if (receipt.ok !== true || typeof receipt.delivered !== 'number' || !Number.isInteger(receipt.delivered) || receipt.delivered < 0)
+        throw new Error('Socket relay acknowledgement is invalid')
+    }
+  } catch (error) {
+    if (requireAcknowledgement) throw error
     // Socket mini-service may be down; realtime delivery is best-effort.
   }
 }

@@ -26,6 +26,9 @@ struct PipPaneHostView: View {
 
     @State private var dragOffset: CGSize = .zero
     @State private var paneDraft = ""
+    @State private var paneJournal: PulseDraftJournal?
+    @State private var paneRoom: String?
+    @State private var paneEpoch: UUID?
     @State private var snapshots: [String: WireConversationSummary] = [:]
 
     var body: some View {
@@ -39,9 +42,10 @@ struct PipPaneHostView: View {
             }
         }
         .allowsHitTesting(pip.isOpen)
-        .onAppear { reloadSnapshots() }
+        .onAppear { reloadSnapshots(); restorePaneDraft() }
         .onChange(of: pip.panes.map(\.conversationId)) { _, _ in reloadSnapshots() }
-        .onChange(of: session.sessionGeneration) { _, _ in snapshots = [:]; reloadSnapshots() }
+        .onChange(of: pip.conversationId) { _, _ in restorePaneDraft() }
+        .onChange(of: session.sessionGeneration) { _, _ in snapshots = [:]; paneDraft = ""; paneJournal = nil; paneRoom = nil; reloadSnapshots(); restorePaneDraft() }
         .onReceive(session.messageVisibilityClock) { _ in if pip.isOpen { reloadSnapshots() } }
 
         .animation(reduceMotion ? nil : .pulse(.pulseSnappy, reduceMotion: reduceMotion), value: pip.panes)
@@ -98,7 +102,13 @@ struct PipPaneHostView: View {
                 }
                 Spacer(minLength: 0)
                 PipPaneComposer(
-                    draft: $paneDraft,
+                    draft: Binding(get: { paneDraft },set: { text in
+                        guard paneRoom == pane.conversationId, paneEpoch == session.sessionGeneration, let journal = paneJournal else { return }
+                        paneDraft = text
+                        let epoch = session.sessionGeneration
+                        let write = journal.submit(text,revision: DispatchTime.now().uptimeNanoseconds)
+                        Task { do { try await write.value } catch { if session.sessionGeneration == epoch { session.toasts.show("Mini-chat draft could not be saved. Keep it open and check storage.") } } }
+                    }),
                     onSend: { sendFromPane(pane.conversationId) },
                 )
             }
@@ -170,39 +180,27 @@ struct PipPaneHostView: View {
         if snapshots != next { snapshots = next }
     }
 
-    private func sendFromPane(_ conversationId: String) {
-        let body = paneDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty else { return }
-        paneDraft = ""
-        PulseHaptics.tap()
-        let clientId = UUID().uuidString
-        Task {
-            do {
-                _ = try await session.api.sendMessage(
-                    conversationId: conversationId,
-                    clientId: clientId,
-                    content: body,
-                    replyToId: nil,
-                    topicId: nil,
-                    anon: false,
-                )
-            } catch {
-                // Network-class failure → the outbox queue (same contract as
-                // the room composer); hard failures restore the draft.
-                if PulseOutboxEngine.isDroppable(error) {
-                    session.toasts.show("Couldn't send from the mini chat - kept as draft")
-                    paneDraft = body
-                } else {
-                    if session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body) {
-                        session.toasts.show("Message queued - sends when you're back online")
-                    } else {
-                        paneDraft = body
-                        session.toasts.show("Message was not queued: your draft is kept")
-                    }
-                }
-            }
+    private func restorePaneDraft() {
+        guard let room = pip.conversationId, let store = session.store, session.ready else {
+            paneDraft = ""; paneRoom = nil; paneJournal = nil; paneEpoch = nil; return
         }
+        let journal = PulseDraftJournal(store: store,conversationId: room)
+        paneRoom = room; paneEpoch = session.sessionGeneration; paneJournal = journal
+        paneDraft = journal.snapshot ?? ""
     }
+    private func sendFromPane(_ conversationId: String) {
+        guard paneRoom == conversationId, paneEpoch == session.sessionGeneration, session.ready,
+              let store = session.store, let viewer = session.viewer, let journal = paneJournal else { return }
+        do {
+            _ = try PulseTextDelivery.enqueue(store: store,viewer: viewer,conversationId: conversationId,
+                content: paneDraft,draftJournal: journal)
+            paneDraft = ""
+            PulseHaptics.tap()
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch { session.toasts.show("Message was not queued. Your mini-chat draft is kept.") }
+    }
+
 }
 
 // pieces

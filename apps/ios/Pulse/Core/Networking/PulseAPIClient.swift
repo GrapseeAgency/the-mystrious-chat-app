@@ -2324,9 +2324,13 @@ public struct PulseAPIClient: Sendable {
             content.trimmingCharacters(in: .whitespacesAndNewlines), String(Int64(millis.rounded(.towardZero)))]
     }
 
-    public func scheduleMessage(conversationId: String, content: String, scheduledAtIso: String) async throws -> WireScheduledItem {
-        let intent = try scheduledCreationIntent(conversationId: conversationId, content: content, when: scheduledAtIso)
-        let id = try await creationOperations.begin(intent)
+    func prepareScheduledCreation(conversationId: String, content: String, scheduledAtIso: String) async throws -> String {
+        try await creationOperations.begin(try scheduledCreationIntent(conversationId: conversationId,content: content,when: scheduledAtIso))
+    }
+    public func scheduleMessage(conversationId: String, content: String, scheduledAtIso: String, clientId: String? = nil) async throws -> WireScheduledItem {
+        let id: String
+        if let clientId { id = clientId }
+        else { id = try await prepareScheduledCreation(conversationId: conversationId,content: content,scheduledAtIso: scheduledAtIso) }
         // Do not retire on terminal refusal: retry must never resurrect a cancelled/delivered schedule.
         let data = try await postRaw("/api/conversations/\(q(conversationId))/scheduled/create-v2",
             body: ["senderId": userId, "content": content, "scheduledAt": scheduledAtIso, "clientId": id])

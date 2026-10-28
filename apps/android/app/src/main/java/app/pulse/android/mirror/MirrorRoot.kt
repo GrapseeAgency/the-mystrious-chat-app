@@ -1372,7 +1372,20 @@ private fun MirrorPipChat(
     modifier: Modifier = Modifier,
 ) {
     val messages by repository.observeRiverMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
-    var draft by remember { mutableStateOf("") }
+    val epoch = repository.attachmentSessionKey()
+    val target = remember(repository,viewerId,epoch) { repository.boundToCurrentAccount() }
+    val sendScope = androidx.compose.runtime.rememberCoroutineScope()
+    var draft by remember(convo.id,viewerId,epoch) { mutableStateOf("") }
+    var revision by remember(convo.id,viewerId,epoch) { mutableStateOf(0L) }
+    var sending by remember(convo.id,viewerId,epoch) { mutableStateOf(false) }
+    var sendError by remember(convo.id,viewerId,epoch) { mutableStateOf<String?>(null) }
+    LaunchedEffect(convo.id,viewerId,epoch) {
+        val captured = revision
+        val local = runCatching { target.observeDraft(convo.id).first() }.getOrNull()
+        if (revision == captured && local != null) draft = local
+        val remote = target.refreshComposerDraft(convo.id).getOrNull()
+        if (revision == captured && remote != null) draft = remote
+    }
     // R72 - channel truth: the pip window cannot send into a broadcast room
     // either (the server would 403 - mirror the locked composer honestly)
     val pipLocked = convo.isGroupish &&
@@ -1456,6 +1469,7 @@ private fun MirrorPipChat(
                 }
             }
         }
+        sendError?.let { Text(it,color=MirrorArt.Dim,fontSize=11.sp,modifier=Modifier.padding(horizontal=10.dp)) }
         Row(
             Modifier
                 .fillMaxWidth()
@@ -1476,7 +1490,7 @@ private fun MirrorPipChat(
             } else {
             BasicTextField(
                 value = draft,
-                onValueChange = { draft = it },
+                onValueChange = { draft = it; revision++; target.stageDraft(convo.id,it) },
                 singleLine = true,
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 12.sp),
                 cursorBrush = SolidColor(MirrorArt.Accent2),
@@ -1499,13 +1513,18 @@ private fun MirrorPipChat(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable(enabled = draft.isNotBlank()) {
+                    .clickable(enabled = draft.isNotBlank() && !sending) {
                         val text = draft.trim()
-                        draft = ""
-                        if (viewerId.isNotBlank() && text.isNotEmpty()) {
-                            CoroutineScope(Dispatchers.IO).launch {
-                                runCatching { repository.sendMessage(convo.id, text) }
-                            }
+                        val captured = revision
+                        val token = target.captureDraftToken(convo.id)
+                        sending = true
+                        sendScope.launch {
+                            try {
+                                val result = target.sendMessage(convo.id,text,draftToken=token)
+                                if (epoch != target.attachmentSessionKey()) return@launch
+                                result.onSuccess { if (revision == captured) draft = ""; sendError = null }
+                                    .onFailure { sendError = it.message ?: "Message was not confirmed. Your text is retained." }
+                            } finally { sending = false }
                         }
                     }
                     .padding(horizontal = 8.dp, vertical = 6.dp),

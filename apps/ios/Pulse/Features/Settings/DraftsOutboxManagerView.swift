@@ -19,6 +19,10 @@ struct DraftsOutboxManagerView: View {
     @State private var loadedOwner: UUID?
     @State private var draftRevisions: [String: UInt64] = [:]
     @State private var loadError: String?
+    @State private var recovery: [PulseComposerRecovery] = []
+    @State private var recoveryCursor: String?
+    @State private var recoveryConfirmation: PulseComposerRecovery?
+    @State private var recoveryAction = "remove"
     @State private var actionNotice: String?
 
     var body: some View {
@@ -33,6 +37,7 @@ struct DraftsOutboxManagerView: View {
                             Button("Retry loading saved messages") { reload() }
                         }
                         if let actionNotice { Text(actionNotice).font(.footnote).foregroundStyle(PulseTheme.titleOnPanel) }
+                        recoveryCard
                         draftsCard
                         outboxCard
                     }
@@ -56,7 +61,52 @@ struct DraftsOutboxManagerView: View {
         .presentationDragIndicator(.visible)
         .onAppear { reload() }
         .onReceive(session.outboxEvents) { _ in reload() }
+        .onChange(of: session.scheduledRecoveryRevision) { _, _ in reloadRecovery() }
+        .alert(recoveryAction == "replace" ? "Use this saved version?" : "Remove local recovery?",isPresented: Binding(get: { recoveryConfirmation != nil },set: { if !$0 { recoveryConfirmation = nil } })) {
+            Button("Keep it",role: .cancel) { recoveryConfirmation = nil }
+            Button("Confirm") { if let row = recoveryConfirmation { performRecovery(row,action: recoveryAction) }; recoveryConfirmation = nil }
+        } message: {
+            Text(recoveryAction == "replace" ? "Replace the current server draft or edit with this saved text? A further server change will still cause a conflict rather than being overwritten." : "This removes only the local recovery copy. It does NOT cancel a scheduled message or undo a send or edit already accepted by the server.")
+        }
         .onChange(of: session.sessionGeneration) { _, _ in dismiss() }
+    }
+
+    private var recoveryCard: some View {
+        settingsCard(title: "Composer recovery",icon: "arrow.clockwise",count: recovery.count) {
+            Button("Refresh recovery") { reloadRecovery() }
+            ForEach(recovery) { row in
+                VStack(alignment: .leading,spacing: 6) {
+                    Text(row.kind).font(.subheadline.weight(.semibold))
+                    if !row.text.isEmpty { Text(row.text).font(.footnote).lineLimit(3) }
+                    Text(row.notice).font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        if !row.text.isEmpty { Button("Copy text") { UIPasteboard.general.string = row.text } }
+                        if row.canRetry { Button("Retry original") { performRecovery(row,action: "retry") } }
+                    }.font(.caption)
+                    if row.canReplace { Button("Use this version") { recoveryAction = "replace"; recoveryConfirmation = row }.font(.caption) }
+                    Button("Remove local copy") { recoveryAction = "remove"; recoveryConfirmation = row }.font(.caption)
+                }.padding(10).background(rowPanel)
+            }
+            if recoveryCursor != nil { Button("Load more recovery") { reloadRecovery(more: true) } }
+        }
+    }
+    private func reloadRecovery(more: Bool = false) {
+        guard let store = ownedStore(), let owner = session.viewer?.id else { return }
+        do {
+            let page = try store.composerRecoveryPage(owner: owner,after: more ? recoveryCursor : nil)
+            recovery = (more ? recovery : []) + page.items; recoveryCursor = page.nextCursor
+        } catch { actionNotice = "Recovery could not be loaded. Original text has not been discarded." }
+    }
+    private func performRecovery(_ row: PulseComposerRecovery, action: String) {
+        let epoch = session.sessionGeneration
+        Task {
+            do {
+                try await session.recoverComposer(row,action: action)
+                guard session.sessionGeneration == epoch else { return }
+                actionNotice = action == "remove" ? "Local copy removed. Server actions were not undone." : "Original text retained while the request is reconciled."
+            } catch { if session.sessionGeneration == epoch { actionNotice = "Recovery changed or could not be confirmed. Refresh before trying again." } }
+            if session.sessionGeneration == epoch { reloadRecovery() }
+        }
     }
 
     // drafts
@@ -299,6 +349,7 @@ struct DraftsOutboxManagerView: View {
         let epoch = session.sessionGeneration
         if loadedOwner != epoch { drafts = []; queued = []; conversationNames = [:]; draftRevisions = [:] }
         loadedOwner = epoch
+        reloadRecovery()
         clearDraftsArmed = false
         discardQueueArmed = false
         guard let store = session.store else { loadError = "Saved messages are unavailable on this session."; return }

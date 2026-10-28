@@ -931,3 +931,23 @@ model ThreadDraftState {
   revision String
   @@id([userId, conversationId, rootId])
 }
+
+// Durable post-commit scheduling hints; creation/sent identity remains separate.
+model ScheduledDeliveryNotice {
+  messageId     String  @id
+  createdAtMs   BigInt
+  nextAttemptMs BigInt
+  attempts      Int     @default(0)
+  leaseToken    String?
+  leaseUntilMs  BigInt?
+  socketDone    Boolean @default(false)
+  pushDone      Boolean @default(false)
+  pushCursor    String?
+  completedAtMs BigInt?
+  @@index([completedAtMs, nextAttemptMs, messageId], map: "ScheduledDeliveryNotice_ready")
+}
+model ScheduledPushReceipt {
+  messageId   String
+  bindingHash String
+  @@id([messageId, bindingHash])
+}

@@ -717,6 +717,20 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
     val drafts by viewModel.drafts.collectAsStateWithLifecycle()
     val outbox by viewModel.outbox.collectAsStateWithLifecycle()
     val outboxNotice by viewModel.outboxNotice.collectAsStateWithLifecycle()
+    val recovery by viewModel.composerRecovery.collectAsStateWithLifecycle()
+    val recoveryCursor by viewModel.composerRecoveryCursor.collectAsStateWithLifecycle()
+    val owner by viewModel.viewerId.collectAsStateWithLifecycle()
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var recoveryConfirmation by remember(owner) { mutableStateOf<Pair<app.pulse.domain.model.ComposerRecoveryEntry,String>?>(null) }
+    LaunchedEffect(owner) { viewModel.refreshComposerRecovery() }
+    recoveryConfirmation?.let { (entry,action) ->
+        androidx.compose.material3.AlertDialog(onDismissRequest = { recoveryConfirmation = null },
+            title = { Text(if (action == "replace") "Use this saved version?" else "Remove local recovery?") },
+            text = { Text(if (action == "replace") "Replace the current server draft or edit with this saved text? A further server change will still cause a conflict rather than being overwritten."
+                else "This removes only the local recovery copy. It does NOT cancel a scheduled message or undo a send or edit already accepted by the server.") },
+            confirmButton = { TextButton(onClick = { recoveryConfirmation = null; viewModel.recoverComposer(entry,action) }) { Text("Confirm") } },
+            dismissButton = { TextButton(onClick = { recoveryConfirmation = null }) { Text("Keep it") } })
+    }
     // R14 gap 10 - the default list filter (web settings-screen.tsx:1065-1083
     // "Default list filter" picker): same device key the chats chips write.
     val listFilter by viewModel.chatsListFilter.collectAsStateWithLifecycle()
@@ -743,7 +757,25 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
         Text("Drafts & Outbox", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
         Text("Drafts live on this device; outbox messages flush when Pulse reconnects.", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
         outboxNotice?.let { Text(it, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp)) }
-        if (drafts.isEmpty() && outbox.isEmpty()) {
+        Row(Modifier.fillMaxWidth(),verticalAlignment = Alignment.CenterVertically) {
+            Text("Composer recovery",fontSize=13.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f))
+            TextButton(onClick={ viewModel.refreshComposerRecovery() }) { Text("Refresh") }
+        }
+        recovery.forEach { entry ->
+            Column(Modifier.fillMaxWidth().padding(vertical=8.dp)) {
+                Text(entry.kind,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                if (entry.text.isNotEmpty()) Text(entry.text,fontSize=12.sp,maxLines=3)
+                Text(entry.notice,fontSize=11.5.sp,color=Color.White.copy(alpha=0.6f))
+                Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                    if (entry.text.isNotEmpty()) TextButton(onClick={ clipboard.setText(androidx.compose.ui.text.AnnotatedString(entry.text)) }) { Text("Copy text") }
+                    if (entry.canRetry) TextButton(onClick={ viewModel.recoverComposer(entry,"retry") }) { Text("Retry original") }
+                    if (entry.canReplace) TextButton(onClick={ recoveryConfirmation=entry to "replace" }) { Text("Use this version") }
+                }
+                TextButton(onClick={ recoveryConfirmation=entry to "remove" }) { Text("Remove local copy") }
+            }
+        }
+        if (recoveryCursor != null) TextButton(onClick={ viewModel.refreshComposerRecovery(more=true) }) { Text("Load more recovery") }
+        if (drafts.isEmpty() && outbox.isEmpty() && recovery.isEmpty()) {
             Text("Nothing queued - all clear.", fontSize = 13.sp, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 12.dp))
         }
         if (drafts.isNotEmpty()) {

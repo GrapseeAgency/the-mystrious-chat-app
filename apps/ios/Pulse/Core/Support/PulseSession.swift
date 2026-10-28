@@ -521,6 +521,57 @@ public final class PulseSession: ObservableObject {
         requestSavedSync(ids: [requested.id])
     }
 
+    @Published private(set) var scheduledRecoveryRevision: UInt64 = 0
+    func scheduleMessage(conversationId: String, content: String, scheduledAtIso: String) async throws -> WireScheduledItem {
+        guard ready, let store, let owner = viewer?.id else { throw CancellationError() }
+        let epoch = generation, client = api
+        let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let date = PulseFormat.date(scheduledAtIso) else { throw CocoaError(.coderInvalidValue) }
+        let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
+        let at = formatter.string(from: date)
+        let id = try await client.prepareScheduledCreation(conversationId: conversationId,content: text,scheduledAtIso: at)
+        guard generation == epoch else { throw CancellationError() }
+        let command = PulseScheduledCommand(owner: owner,clientId: id,kind: "create",conversationId: conversationId,text: text,scheduledAt: at)
+        try store.stageScheduledCommand(command)
+        _ = try await PulseScheduledReplay.flush(store: store,client: client,current: { self.generation == epoch && self.viewer?.id == owner })
+        guard generation == epoch else { throw CancellationError() }
+        scheduledRecoveryRevision &+= 1
+        guard let result = try store.scheduledCommandResult(command) else {
+            throw PulseAPIClient.Failure(kind: .network,message: "Your scheduling request is saved on this device but is not confirmed. Its original time and text will be retried; review it in Drafts & outbox.")
+        }
+        var item = try JSONDecoder().decode(WireScheduledItem.self,from: Data(result.utf8)); item.creationClientId = id
+        return item
+    }
+    func acknowledgeScheduledCreation(_ item: WireScheduledItem) async throws {
+        guard ready, let store else { throw CancellationError() }
+        let epoch = generation, client = api
+        try await PulseDraftJournal.flushPending(store: store,conversationId: item.conversationId)
+        guard generation == epoch else { throw CancellationError() }
+        try await client.acknowledgeScheduledCreation(item)
+    }
+    func cancelScheduled(_ id: String) async throws {
+        guard ready, let store, let owner = viewer?.id else { throw CancellationError() }
+        let epoch = generation, client = api
+        let command = PulseScheduledCommand(owner: owner,clientId: id,kind: "cancel")
+        try store.stageScheduledCommand(command)
+        _ = try await PulseScheduledReplay.flush(store: store,client: client,current: { self.generation == epoch && self.viewer?.id == owner })
+        guard generation == epoch else { throw CancellationError() }
+        scheduledRecoveryRevision &+= 1
+        guard try store.scheduledCommandResult(command) == "cancelled" else {
+            throw PulseAPIClient.Failure(kind: .network,message: "Cancellation is saved for retry but is NOT confirmed. The server may still send this message before cancellation reaches it.")
+        }
+    }
+
+    func recoverComposer(_ row: PulseComposerRecovery, action: String) async throws {
+        guard ready, let store, let owner = viewer?.id else { throw CancellationError() }
+        let epoch = generation, client = api
+        var state: PulseComposerReceipt?
+        if action == "replace" { state = try await client.composerState(store.recoveryIntent(row,owner: owner)) }
+        guard generation == epoch else { throw CancellationError() }
+        try store.recoverComposer(row,owner: owner,action: action,state: state)
+        if action != "remove" { requestComposerSync() }
+    }
+
     func refreshComposerDraft(room: String, root: String? = nil) async throws -> String? {
         guard ready, let store, let owner = viewer?.id else { return nil }
         let epoch = generation, client = api
@@ -548,11 +599,14 @@ public final class PulseSession: ObservableObject {
         guard ready, let store, let owner = viewer?.id else { return false }
         let epoch = generation, client = api
         do {
+            async let schedules = PulseScheduledReplay.flush(store: store,client: client,current: { self.generation == epoch && self.viewer?.id == owner })
             let remaining = try await PulseComposerReplay.flush(store: store,client: client,
                 current: { self.generation == epoch && self.viewer?.id == owner }) { intent, _ in
                     if intent.kind == "edit", let current = try store.message(id: intent.targetId) { try self.recordMessageMutation(current) }
                 }
-            return remaining == 0 && generation == epoch
+            let scheduled = try await schedules
+            if generation == epoch { scheduledRecoveryRevision &+= 1 }
+            return remaining == 0 && scheduled == 0 && generation == epoch
         } catch { return false }
     }
 

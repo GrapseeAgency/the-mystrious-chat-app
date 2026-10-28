@@ -4,6 +4,7 @@ struct PulseComposerFlight: Codable, Equatable, Sendable {
     let clientId: String
     let text: String
     let expectedRevision: String
+    var localEditRevision: String? = nil
 }
 struct PulseComposerIntent: Codable, Equatable, Sendable {
     let owner: String
@@ -16,10 +17,12 @@ struct PulseComposerIntent: Codable, Equatable, Sendable {
     var baseText: String
     var baseEditedAt: String?
     var baseRevision: String? = nil
+    var localEditRevision: String? = nil
     var flight: PulseComposerFlight?
     var blocked: String?
 }
 struct PulseComposerLocalEdit: Codable, Sendable {
+    var revision: String? = UUID().uuidString
     let text: String
     let baseText: String
     let baseEditedAt: String?
@@ -97,4 +100,20 @@ enum PulseComposerReplay {
         }
         return try store.pendingComposerCount(owner: client.userId)
     }
+}
+
+struct PulseComposerRecovery: Identifiable, Sendable {
+    let id: String
+    let version: String
+    let kind: String
+    let targetId: String
+    let conversationId: String
+    let text: String
+    let notice: String
+    var canRetry = false
+    var canReplace = false
+}
+struct PulseComposerRecoveryPage {
+    let items: [PulseComposerRecovery]
+    let nextCursor: String?
 }

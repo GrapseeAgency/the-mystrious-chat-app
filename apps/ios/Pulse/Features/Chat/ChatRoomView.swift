@@ -4144,6 +4144,10 @@ final class RoomViewModel: ObservableObject {
         self.session = session
         cancellables.removeAll()
         let readRoom = conversationId
+        session.$scheduledRecoveryRevision.dropFirst().sink { [weak self] _ in
+            guard let self, session.sessionGeneration == self.readSessionGeneration else { return }
+            self.loadScheduled(session: session)
+        }.store(in: &cancellables)
         session.$readStateRevisions
             .map { $0[readRoom] ?? 0 }
             .removeDuplicates()
@@ -5178,7 +5182,7 @@ final class RoomViewModel: ObservableObject {
         defer { if session.sessionGeneration == epoch { scheduling = false } }
         var accepted = false
         do {
-            let item = try await client.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
+            let item = try await session.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
             if draftEditRevision == revision, let draftReceipt, draftJournal?.matches(draftReceipt) == true {
                 draft = ""
@@ -5187,7 +5191,7 @@ final class RoomViewModel: ObservableObject {
             scheduledItems.removeAll { $0.id == item.id }
             scheduledItems.append(item)
             accepted = true
-            try await client.acknowledgeScheduledCreation(item)
+            try await session.acknowledgeScheduledCreation(item)
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
             PulseHaptics.success()
             session.toasts.show("Scheduled - \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")

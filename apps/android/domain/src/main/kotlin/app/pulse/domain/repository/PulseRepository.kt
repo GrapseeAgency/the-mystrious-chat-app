@@ -547,6 +547,8 @@ interface PulseRepository {
     suspend fun flushComposerIntents(): Result<Int> = Result.success(0)
     suspend fun refreshComposerDraft(conversationId: String, rootId: String? = null): Result<String?> = Result.success(null)
     fun observePendingComposer(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    suspend fun composerRecoveryPage(after: String? = null): Result<app.pulse.domain.model.ComposerRecoveryPage> = Result.success(app.pulse.domain.model.ComposerRecoveryPage(emptyList()))
+    suspend fun recoverComposer(entry: app.pulse.domain.model.ComposerRecoveryEntry, action: String): Result<Unit> = Result.failure(UnsupportedOperationException("Recovery is unavailable"))
 
     suspend fun editMessage(messageId: String, content: String): Result<Message>
 

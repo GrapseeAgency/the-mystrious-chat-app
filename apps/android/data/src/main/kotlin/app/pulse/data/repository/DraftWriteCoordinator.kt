@@ -19,6 +19,7 @@ internal class DraftWriteCoordinator internal constructor() {
     val threadFailures = MutableStateFlow<Map<String, Long>>(emptyMap())
     val localMutex = Mutex()
     val serverMutex = Mutex()
+    val scheduleMutex = Mutex()
     val bufferChanges = MutableStateFlow(0L)
 
     fun bufferSnapshot(key: String, revision: Long, text: String): Pair<Long, String> {

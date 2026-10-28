@@ -66,3 +66,37 @@ final class ComposerJournalTests: XCTestCase {
         XCTAssertEqual(store.draftSnapshot(conversationId: key),"thread")
     }
 }
+
+@MainActor
+final class ScheduledCommandJournalTests: XCTestCase {
+    func testOriginalScheduleInstructionsPersistAndUncertainRoomHeadCannotBeReplaced() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+        defer { for suffix in ["","-wal","-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let command = PulseScheduledCommand(owner: "me",clientId: "immutable-operation",kind: "create",conversationId: "room",text: "original",scheduledAt: "2030-01-01T00:00:00.000Z")
+        var store: PulseStore? = try PulseStore(path: path,composerOwner: "me")
+        try store!.stageScheduledCommand(command)
+        store = nil
+        let reopened = try PulseStore(path: path,composerOwner: "me")
+        XCTAssertEqual(try reopened.scheduledCommandPage(owner: "me").first?.text,"original")
+        var changed = command; changed.text = "changed"
+        XCTAssertThrowsError(try reopened.stageScheduledCommand(changed))
+        let replacement = PulseScheduledCommand(owner: "me",clientId: "different-operation",kind: "create",conversationId: "room",text: "other",scheduledAt: "2030-01-02T00:00:00.000Z")
+        XCTAssertThrowsError(try reopened.stageScheduledCommand(replacement))
+        try reopened.deferScheduledCommand(command,notice: "Original time is no longer valid")
+        XCTAssertEqual(try reopened.pendingSchedules(owner: "me"),0)
+        let recovery = try XCTUnwrap(reopened.composerRecoveryPage(owner: "me").items.first)
+        XCTAssertEqual(recovery.text,"original")
+        XCTAssertTrue(recovery.canRetry)
+        XCTAssertThrowsError(try reopened.composerRecoveryPage(owner: "other"))
+    }
+    func testCancellationAcknowledgementIsDurableAndNeverRequeued() throws {
+        let store = try PulseStore(owner: "me")
+        let command = PulseScheduledCommand(owner: "me",clientId: "scheduled-id",kind: "cancel")
+        try store.stageScheduledCommand(command)
+        try store.finishScheduledCommand(command,result: "cancelled")
+        try store.stageScheduledCommand(command)
+        XCTAssertEqual(try store.pendingSchedules(owner: "me"),0)
+        XCTAssertEqual(try store.scheduledCommandResult(command),"cancelled")
+        XCTAssertThrowsError(try store.composerRecoveryPage(owner: "other"))
+    }
+}

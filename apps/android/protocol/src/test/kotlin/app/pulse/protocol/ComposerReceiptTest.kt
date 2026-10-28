@@ -1,7 +1,7 @@
 package app.pulse.protocol
 
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
 
 class ComposerReceiptTest {
     private val intent = ComposerIntentDto("me","draft","room","room",null,"00000000-0000-4000-8000-000000000001","mine","")
