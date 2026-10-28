@@ -1952,12 +1952,13 @@ class PulseRepositoryImpl constructor(
     override suspend fun editMessage(messageId: String, content: String): Result<Message> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
+        val key = localEditKey(owner,messageId)
+        val requestedVersion = draftWrites.editVersions[key]?.get()
         return try {
             val message = messageDao.byId(messageId)?.toDomain() ?: error("Refresh this message before editing")
             requireConversationOwner(owner,epoch)
             check(message.authorId == owner && !message.id.startsWith("local_")) { "Only a delivered message from this account can be edited" }
             draftMutex.withLock {
-                val key = localEditKey(owner,messageId)
                 val buffered = draftWrites.editBuffers[key]
                 database.withTransaction {
                     requireConversationOwner(owner,epoch)
@@ -1976,7 +1977,7 @@ class PulseRepositoryImpl constructor(
                         app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local),System.currentTimeMillis()))
                     checkpoint?.let { wave7Dao.upsert(Wave7CacheEntity(draftCheckpoints.receiptKey(key),it.id,0)) }
                     composerJournal.stage(owner,"edit",message.id,message.conversationId,null,content.trim(),local?.baseText ?: message.body,
-                        if (local != null) local.baseEditedAt else message.editedAt,localEditRevision=local?.revision)
+                        if (local != null) local.baseEditedAt else message.editedAt,localEditRevision=draftWrites.acknowledgedEditRevision(key,requestedVersion,local))
                 }
                 if (buffered != null) {
                     // Invalidate an older finite typing writer too: it must not

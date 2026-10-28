@@ -36,6 +36,11 @@ internal class DraftWriteCoordinator internal constructor() {
         if (snapshot.first == revision && threadBuffers.remove(key, snapshot)) bufferChanges.update { it + 1 }
     }
 
+    /** Capture expected before any suspend: edit-away/edit-back during a message
+     * read is a new draft, even when its text matches the older submitted body. */
+    fun acknowledgedEditRevision(key: String, expected: Long?, snapshot: app.pulse.protocol.ComposerLocalEditDto?): String? =
+        snapshot?.revision?.takeIf { editVersions[key]?.get() == expected }
+
     /** Caller holds localMutex while reading SQLite and this buffer together. */
     fun currentSnapshot(key: String, persisted: String?): String? =
         threadBuffers[key]?.takeIf { it.first == versions[key]?.get() }?.second ?: persisted

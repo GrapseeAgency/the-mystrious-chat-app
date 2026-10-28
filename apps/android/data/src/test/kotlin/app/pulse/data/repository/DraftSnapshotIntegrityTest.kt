@@ -5,6 +5,21 @@ import org.junit.Test
 import kotlinx.coroutines.test.runTest
 
 class DraftSnapshotIntegrityTest {
+    @Test fun anOlderEditCannotAcknowledgeTypingDuringItsSuspendedMessageRead() {
+        val writes = DraftWriteCoordinator()
+        val key = "composer-local-edit:v1|owner|message"
+        val counter = java.util.concurrent.atomic.AtomicLong(1)
+        writes.editVersions[key] = counter
+        val submitted = app.pulse.protocol.ComposerLocalEditDto("same", "original")
+        val captured = counter.get()
+        assertEquals(submitted.revision, writes.acknowledgedEditRevision(key,captured,submitted))
+        counter.incrementAndGet() // Edit away while messageDao.byId is suspended.
+        counter.incrementAndGet() // Edit back to identical text, but a newer intent.
+        val newer = app.pulse.protocol.ComposerLocalEditDto("same", "original")
+        assertNull(writes.acknowledgedEditRevision(key,captured,newer))
+        assertEquals(newer.revision,writes.acknowledgedEditRevision(key,counter.get(),newer))
+    }
+
     @Test fun recoverySnapshotsAreNotClippedToTheMessageOrMirrorLimit() {
         for (text in listOf("a".repeat(1999) + "🌿" + " tail".repeat(100), "🌿".repeat(1200), "  keep whitespace  ")) {
             assertEquals(text, DraftWriteCoordinator.localSnapshot(text))
