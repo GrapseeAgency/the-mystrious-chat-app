@@ -889,3 +889,21 @@ model PushReadStateCapability {
   token PushToken @relation(fields: [tokenId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   version Int @default(1)
 }
+
+// Causal bookmark versions and immutable replay verdicts survive unsave/deletion.
+// No message/user cascade: a delayed offline retry must never resurrect intent.
+model SavedMessageState {
+  userId String
+  messageId String
+  revision String
+  @@id([userId, messageId])
+}
+model SavedMessageOperation {
+  userId String
+  clientId String
+  messageId String
+  requestHash String
+  revision String
+  outcome String
+  @@id([userId, clientId])
+}

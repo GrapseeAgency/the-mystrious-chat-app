@@ -396,6 +396,9 @@ public struct WireSavedStateReceipt: Codable, Sendable {
     public let messageId: String
     public let saved: Bool
     public let savedAt: String?
+    public var revision: String? = nil
+    public var clientId: String? = nil
+    public var outcome: String? = nil
 }
 
 /// POST /api/uploads {dataUrl} - media upload verdict (JSON, NOT multipart).
@@ -458,12 +461,12 @@ public struct WireSavedConversation: Codable, Hashable, Sendable {
     public let name: String?
 }
 
-/// GET /api/users/{id}/saved item - newest-first, cap 100, NO server
-/// pagination/search (local filter/search is the native capability).
+/// One saved-library result; the server and offline cache both page by stable tuples.
 public struct WireSavedItem: Codable, Hashable, Sendable {
     public let savedAt: String
     public let conversation: WireSavedConversation
     public let message: WireChatMessage
+    public var revision: String? = nil
 }
 
 public struct WireSavedPage: Codable, Hashable, Sendable {

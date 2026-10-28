@@ -26,7 +26,9 @@ struct SavedLibraryView: View {
     @State private var nextCursor: String?
     @State private var previous: [String?] = []
     @State private var selectedIds: [String]?
+    @State private var liveRefresh = PulseCoalescedRefresh()
     @State private var pageLoading = false
+    @State private var cachedPage = false
     @State private var libraryObservation: AnyCancellable?
     @Environment(\.dismiss) private var dismiss
 
@@ -34,6 +36,8 @@ struct SavedLibraryView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 searchField
+                if let status = session.savedSyncStatus { Text(status).font(.footnote).padding(10) }
+                if cachedPage { Text("Cached saved messages · reopen to refresh online").font(.footnote).padding(10) }
                 if nextCursor != nil || !previous.isEmpty {
                     HStack {
                         Button("Newer results") { movePage(older: false) }.disabled(pageLoading || previous.isEmpty)
@@ -67,7 +71,12 @@ struct SavedLibraryView: View {
             libraryObservation?.cancel(); libraryObservation = nil
             loadGeneration = UUID(); items = []; cursor = nil; nextCursor = nil; previous = []; selectedIds = nil; phase = .failed("Reopen Saved messages for the current account")
         }
-        .onDisappear { libraryObservation?.cancel(); libraryObservation = nil; loadGeneration = UUID() }
+        .onReceive(session.signals) { signal in
+            if case .savedChanged(let owner, _) = signal, owner == session.viewer?.id, cursor == nil {
+                liveRefresh.request { await load() }
+            }
+        }
+        .onDisappear { liveRefresh.cancel(); libraryObservation?.cancel(); libraryObservation = nil; loadGeneration = UUID() }
         .onReceive(session.messageVisibilityClock) { now in
             let visible = visibleItems(items, now: now)
             if visible.count != items.count { items = visible }
@@ -117,22 +126,33 @@ struct SavedLibraryView: View {
         }
         let watermark = session.messageRevision
         let snapshotRequest = store.beginMessageSnapshot()
-        let savedWatermark = session.savedRevision
+        let savedSnapshot = store.beginSavedSnapshot()
         if items.isEmpty, let cached = try? store.cachedSavedPage(ids: selectedIds) { items = visibleItems(cached) }
         phase = items.isEmpty ? .loading : .loaded
         do {
+            if cursor?.hasPrefix("local-saved:") == true {
+                let page = try store.cachedSavedOfflinePage(owner: viewer.id, cursor: cursor)
+                selectedIds = page.items.map { $0.message.id }; nextCursor = page.nextCursor; cachedPage = true
+                observePage(); items = visibleItems(page.items); phase = .loaded
+                return
+            }
             let page = try await api.savedPage(userId: viewer.id, cursor: cursor)
             let fresh = page.items ?? []
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
-            guard savedWatermark == session.savedRevision else { phase = .loaded; return }
             let changed = Set(fresh.filter { !session.acceptsSyncMessage($0.message.id, startedAt: watermark) }.map { $0.message.id })
-            try store.upsert(savedItems: fresh, replacingSnapshot: false, preservingMessageIds: changed, snapshotRequest: snapshotRequest)
-            selectedIds = fresh.map { $0.message.id }; nextCursor = page.nextCursor
+            try store.upsert(savedItems: fresh, replacingSnapshot: false, preservingMessageIds: changed, snapshotRequest: snapshotRequest, savedOwner: viewer.id, savedSnapshot: savedSnapshot)
+            selectedIds = fresh.map { $0.message.id }; nextCursor = page.nextCursor; cachedPage = false
             observePage()
             items = visibleItems(try store.cachedSavedPage(ids: selectedIds))
             phase = .loaded
         } catch {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
+            if (error as? PulseAPIClient.Failure)?.kind == .network, cursor == nil,
+               let page = try? store.cachedSavedOfflinePage(owner: viewer.id, cursor: nil) {
+                selectedIds = page.items.map { $0.message.id }; nextCursor = page.nextCursor; cachedPage = true
+                observePage(); items = visibleItems(page.items); phase = .loaded
+                return
+            }
             // Never call an empty rendered list "loaded" merely because marker IDs exist.
             if !items.isEmpty {
                 phase = .loaded

@@ -26,6 +26,7 @@ public final class PulseSocketClient {
         /// is the same SocketMessageEvent envelope; features decode it later.
         case messageEnvelope(event: String, conversationId: String, raw: [String: Any])
         /// Wave 0 - { conversationId, conversation?: WireConversationSummary }.
+        case savedChanged(userId: String, messageId: String)
         case conversationUpdated(conversationId: String, raw: [String: Any])
         case typing(conversationId: String, userId: String, userName: String, isTyping: Bool)
         // Voice rooms (R21-b).
@@ -158,6 +159,11 @@ public final class PulseSocketClient {
                 guard let obj = data.first as? [String: Any] else { return }
                 self?.signals?(.messageEnvelope(event: relayEvent, conversationId: Self.conversationId(in: obj), raw: obj))
             }
+        }
+        socket.on("saved:changed") { [weak self] data, _ in
+            guard let obj = data.first as? [String: Any], let owner = obj["userId"] as? String,
+                  let id = obj["messageId"] as? String, !id.isEmpty else { return }
+            self?.signals?(.savedChanged(userId: owner, messageId: id))
         }
         socket.on("conversation:updated") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any] else { return }

@@ -46,6 +46,7 @@ public final class PulseStore: Sendable {
     }
 
     private let dbQueue: DatabaseQueue
+    private let savedSnapshotVersions = MessageSnapshotVersions()
     private let messageSnapshotVersions = MessageSnapshotVersions()
 
     func messageSnapshotVersion(_ id: String) -> UInt64 { messageSnapshotVersions.version(id) }
@@ -1079,7 +1080,7 @@ public final class PulseStore: Sendable {
 
     /// Saved-library sync: upserts every item's message row (full fidelity,
     /// shared writer) AND its savedMessages marker (savedAt ISO from wire).
-    public func upsert(savedItems: [WireSavedItem], replacingSnapshot: Bool = false, preservingMessageIds: Set<String> = [], snapshotRequest: UInt64? = nil) throws {
+    public func upsert(savedItems: [WireSavedItem], replacingSnapshot: Bool = false, preservingMessageIds: Set<String> = [], snapshotRequest: UInt64? = nil, savedOwner: String? = nil, savedSnapshot: UInt64? = nil) throws {
         try dbQueue.write { db in
             if replacingSnapshot { try db.execute(sql: "DELETE FROM savedMessages") }
             var accepted: [String] = []
@@ -1088,6 +1089,12 @@ public final class PulseStore: Sendable {
                     try Self.writeMessage(item.message, db: db)
                     accepted.append(item.message.id)
                 }
+                guard savedSnapshotVersions.accepts(item.message.id, request: savedSnapshot) else { continue }
+                if let owner = savedOwner {
+                    if let revision = item.revision { try Self.savedMetadata(db, key: Self.savedVersionKey(owner,item.message.id), json: revision) }
+                    if try Self.savedPending(db, owner: owner, id: item.message.id) { continue }
+                }
+                savedSnapshotVersions.note([item.message.id], request: savedSnapshot)
                 try db.execute(
                     sql: """
                     INSERT INTO savedMessages (messageId, conversationId, savedAt)
@@ -1176,7 +1183,13 @@ public final class PulseStore: Sendable {
 
     /// Every currently-saved message id (row-check + dock badge source).
     public func savedIds() throws -> Set<String> {
-        Set(try cachedSavedItems().map { $0.message.id })
+        var ids = Set<String>()
+        var cursor: String?
+        repeat {
+            let page = try cachedSavedOfflinePage(owner: "local-id-index", cursor: cursor)
+            ids.formUnion(page.items.map { $0.message.id }); cursor = page.nextCursor
+        } while cursor != nil
+        return ids
     }
 
     /// Unsave one message locally (row action "Unsave").
@@ -1823,6 +1836,122 @@ private final class MessageSnapshotVersions: @unchecked Sendable {
         for id in Set(ids) {
             versions[id, default: 0] &+= 1
             if let request { requests[id] = request }
+        }
+    }
+}
+
+// Bookmark journals share the account-owned durable metadata table. They are
+// not feature caches: never retire an intent from an unbound HTTP error.
+extension PulseStore {
+    private static func savedPrefix(_ owner: String, _ id: String? = nil) -> String {
+        "saved-intent:v1|\(owner)|" + (id.map { "\($0)|" } ?? "")
+    }
+    private static func savedVersionKey(_ owner: String, _ id: String) -> String { "saved-version:v1|\(owner)|\(id)" }
+    private static func savedPending(_ db: Database, owner: String, id: String) throws -> Bool {
+        let prefix = savedPrefix(owner, id)
+        return try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM wave7Cache WHERE substr(key,1,length(?)) = ?)", arguments: [prefix, prefix]) ?? false
+    }
+    private static func savedMetadata(_ db: Database, key: String, json: String, order: Int64 = 0) throws {
+        try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt", arguments: [key,json,order])
+    }
+    func beginSavedSnapshot() -> UInt64 { savedSnapshotVersions.begin() }
+
+    func enqueueSavedIntent(owner: String, message: WireChatMessage, saved: Bool) throws {
+        let request = beginSavedSnapshot()
+        try dbQueue.write { db in
+            let prefix = Self.savedPrefix(owner, message.id)
+            let head = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: ["saved-head:v1|\(owner)|\(message.id)"])
+            let previous = try head.flatMap { id in try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [prefix + id]) }
+                .map { try JSONDecoder().decode(PulseSavedIntent.self, from: Data($0.utf8)) }
+            let version = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [Self.savedVersionKey(owner,message.id)]) ?? "0"
+            let intent = PulseSavedIntent(owner: owner, messageId: message.id, conversationId: message.conversationId, saved: saved,
+                clientId: UUID().uuidString, expectedRevision: previous == nil ? version : nil, predecessorClientId: previous?.clientId)
+            let all = Self.savedPrefix(owner)
+            let order = try Int64.fetchOne(db, sql: "SELECT COALESCE(MAX(updatedAt),0)+1 FROM wave7Cache WHERE substr(key,1,length(?))=?", arguments: [all,all]) ?? 1
+            try Self.savedMetadata(db, key: intent.key, json: String(decoding: JSONEncoder().encode(intent), as: UTF8.self), order: order)
+            try Self.savedMetadata(db, key: "saved-head:v1|\(owner)|\(message.id)", json: intent.clientId)
+            try Self.savedMetadata(db, key: Self.savedVersionKey(owner,message.id), json: version)
+            try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?", arguments: ["saved-sync-notice:v1|\(owner)"])
+            if saved {
+                try db.execute(sql: "INSERT INTO savedMessages(messageId,conversationId,savedAt) VALUES (?,?,?) ON CONFLICT(messageId) DO UPDATE SET savedAt=excluded.savedAt",
+                    arguments: [message.id,message.conversationId,Self.savedStamp()])
+            } else { try db.execute(sql: "DELETE FROM savedMessages WHERE messageId=?", arguments: [message.id]) }
+            savedSnapshotVersions.note([message.id], request: request)
+        }
+    }
+    private static func savedStamp() -> String {
+        let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
+        return formatter.string(from: Date())
+    }
+    func pendingSaved(owner: String) throws -> [PulseSavedIntent] {
+        try dbQueue.read { db in
+            let prefix = Self.savedPrefix(owner)
+            return try String.fetchAll(db, sql: "SELECT json FROM wave7Cache WHERE substr(key,1,length(?))=? ORDER BY updatedAt,key LIMIT 100", arguments: [prefix,prefix])
+                .map { try JSONDecoder().decode(PulseSavedIntent.self, from: Data($0.utf8)) }
+        }
+    }
+    func acceptSavedState(_ state: WireSavedStateReceipt, intent: PulseSavedIntent? = nil, snapshot: UInt64) throws {
+        try state.validate(owner: intent?.owner ?? state.userId, id: intent?.messageId ?? state.messageId, intent: intent)
+        try dbQueue.write { db in
+            if let intent { try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?", arguments: [intent.key]) }
+            guard savedSnapshotVersions.accepts(state.messageId, request: snapshot) else { return }
+            try Self.savedMetadata(db, key: Self.savedVersionKey(state.userId,state.messageId), json: state.revision!)
+            if try !Self.savedPending(db, owner: state.userId, id: state.messageId) {
+                if state.saved {
+                    try db.execute(sql: "INSERT INTO savedMessages(messageId,conversationId,savedAt) SELECT id,conversationId,? FROM message WHERE id=? ON CONFLICT(messageId) DO UPDATE SET savedAt=excluded.savedAt", arguments: [state.savedAt,state.messageId])
+                } else { try db.execute(sql: "DELETE FROM savedMessages WHERE messageId=?", arguments: [state.messageId]) }
+            }
+            if intent != nil, ["conflict", "rejected"].contains(state.outcome ?? "") {
+                let text = state.outcome == "conflict" ? "Saved state changed on another device. Review it before trying again." : "A saved change was refused because the message or access changed."
+                try Self.savedMetadata(db, key: "saved-sync-notice:v1|\(state.userId)", json: text)
+            }
+            savedSnapshotVersions.note([state.messageId], request: snapshot)
+        }
+    }
+    func deferSavedIntent(_ intent: PulseSavedIntent) throws {
+        try dbQueue.write { db in
+            let prefix = Self.savedPrefix(intent.owner)
+            try db.execute(sql: "UPDATE wave7Cache SET updatedAt=(SELECT COALESCE(MAX(updatedAt),0)+1 FROM wave7Cache WHERE substr(key,1,length(?))=?) WHERE key=?", arguments: [prefix,prefix,intent.key])
+        }
+    }
+    func seedSavedVersions(owner: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "INSERT OR IGNORE INTO wave7Cache(key,json,updatedAt) SELECT ? || messageId,'0',0 FROM savedMessages", arguments: ["saved-version:v1|\(owner)|"])
+        }
+    }
+    func savedVersionPage(owner: String, after: String) throws -> [String] {
+        try dbQueue.read { db in
+            let prefix = "saved-version:v1|\(owner)|"
+            return try String.fetchAll(db, sql: "SELECT key FROM wave7Cache WHERE substr(key,1,length(?))=? AND key>? ORDER BY key LIMIT 100", arguments: [prefix,prefix,after])
+        }
+    }
+    private static func savedStatus(_ db: Database, owner: String) throws -> String? {
+        let prefix = savedPrefix(owner)
+        let pending = try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM wave7Cache WHERE substr(key,1,length(?))=?)", arguments: [prefix,prefix]) ?? false
+        let notice = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: ["saved-sync-notice:v1|\(owner)"])
+        let text = [pending ? "Saved changes are waiting to sync." : nil, notice].compactMap { $0 }.joined(separator: " ")
+        return text.isEmpty ? nil : text
+    }
+    func observeSavedSyncStatus(owner: String) -> DatabasePublishers.Value<String?> {
+        ValueObservation.tracking { db in try Self.savedStatus(db, owner: owner) }.publisher(in: dbQueue)
+    }
+    func cachedSavedOfflinePage(owner: String, cursor: String?) throws -> PulseSavedCachedPage {
+        var edge: PulseSavedOfflineCursor?
+        if let cursor {
+            guard cursor.hasPrefix("local-saved:"), let data = Data(base64Encoded: String(cursor.dropFirst(12))) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Invalid cached saved page.")
+            }
+            edge = try JSONDecoder().decode(PulseSavedOfflineCursor.self, from: data)
+            guard edge?.owner == owner else { throw CancellationError() }
+        }
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT messageId,savedAt FROM savedMessages WHERE ? IS NULL OR savedAt<? OR (savedAt=? AND messageId<?) ORDER BY savedAt DESC,messageId DESC LIMIT 101", arguments: [edge?.at,edge?.at,edge?.at,edge?.id])
+            let page = Array(rows.prefix(100))
+            var next: String?
+            if rows.count > 100, let last = page.last {
+                next = "local-saved:" + (try JSONEncoder().encode(PulseSavedOfflineCursor(owner: owner, at: last["savedAt"], id: last["messageId"]))).base64EncodedString()
+            }
+            return PulseSavedCachedPage(items: try Self.savedItems(in: db, now: Date(), selectedIds: page.map { $0["messageId"] }, limit: 100), nextCursor: next)
         }
     }
 }

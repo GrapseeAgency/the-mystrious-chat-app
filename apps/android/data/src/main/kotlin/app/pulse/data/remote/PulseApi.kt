@@ -1,5 +1,7 @@
 package app.pulse.data.remote
 
+import app.pulse.protocol.validateSavedState
+
 import app.pulse.protocol.objectPayloadText
 import app.pulse.protocol.GamePayloadDto
 import app.pulse.protocol.TournamentPayloadDto
@@ -791,6 +793,21 @@ class PulseApi(
             if (!ack.unpinned) throw kotlinx.serialization.SerializationException("Unpin was not acknowledged")
             Unit
         }
+
+    suspend fun savedStates(owner: String, ids: List<String>): PulseResult<app.pulse.protocol.SavedStatesDto> =
+        post("/api/users/$owner/saved-state", buildJsonObject { put("ids", kotlinx.serialization.json.JsonArray(ids.map { kotlinx.serialization.json.JsonPrimitive(it) })) }) { raw ->
+            PulseJson.decodeFromString(app.pulse.protocol.SavedStatesDto.serializer(), raw).also { page ->
+                require(page.savedStateVersion == 2 && page.userId == owner && page.states.size == ids.size && page.states.map { it.messageId }.toSet() == ids.toSet())
+                page.states.forEach { it.validateSavedState(owner, it.messageId) }
+            }
+        }
+
+    suspend fun applySavedIntent(intent: app.pulse.protocol.SavedIntentDto): PulseResult<app.pulse.protocol.SavedStateReceiptDto> =
+        post("/api/messages/${intent.messageId}/save-state", buildJsonObject {
+            put("userId", intent.owner); put("saved", intent.saved); put("clientId", intent.clientId)
+            intent.expectedRevision?.let { put("expectedRevision", it) }
+            intent.predecessorClientId?.let { put("predecessorClientId", it) }
+        }) { raw -> PulseJson.decodeFromString(app.pulse.protocol.SavedStateReceiptDto.serializer(), raw).also { it.validateSavedState(intent.owner, intent.messageId, intent) } }
 
     /** Explicit state only; never fall back to a toggle after response loss. */
     suspend fun setMessageSaved(messageId: String, userId: String, saved: Boolean): PulseResult<app.pulse.protocol.SavedStateReceiptDto> =

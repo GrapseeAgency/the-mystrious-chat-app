@@ -38,6 +38,7 @@ class ConversationActionOwnershipTest {
                 method.name == "getViewerId" -> bound ?: epoch
                 method.name == "observeConversations" -> flowOf(emptyList<Conversation>())
                 method.name == "observeDrafts" -> flowOf(emptyMap<String, String>())
+                method.name == "observeMentionBadge" -> flowOf<Int?>(null)
                 method.name == "observePresence" -> flowOf(emptySet<String>())
                 method.name == "events" -> emptyFlow<PulseEvent>()
                 method.name.startsWith("archive") || method.name.startsWith("markRead") || method.name.startsWith("setMutedUntil") -> {

@@ -54,12 +54,12 @@ internal class AccountRepositoryRouter(
                             // not a synthetic null that would erase restored drafts.
                             if (!initial) when (method.name) {
                                 "events" -> Unit
-                                "observeConnected", "observePendingSettings", "observePendingReads" -> emit(false)
+                                "observeConnected", "observePendingSettings", "observePendingReads", "observePendingSaved" -> emit(false)
                                 "observeThreadAccessDenied" -> emit(true)
                                 "observeReadStateRevision" -> emit(0L)
                                 "observePersonalScreenPrivacy" -> emit(app.pulse.domain.model.PersonalScreenPrivacy())
                                 "observePresence" -> emit(emptySet<String>())
-                                "observeMentionBadge", "observeDraft", "observeMessage" -> emit(null)
+                                "observeSavedSyncStatus", "observeMentionBadge", "observeDraft", "observeMessage" -> emit(null)
                                 "observeSearchPage" -> emit(Result.success(app.pulse.domain.model.FeedPage<app.pulse.domain.model.MessageHit>(emptyList(), null, false)))
                                 "observeMessageSearch" -> emit(Result.success(emptyList<app.pulse.domain.model.MessageHit>()))
                                 "observeThreadDraft" -> emit(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))

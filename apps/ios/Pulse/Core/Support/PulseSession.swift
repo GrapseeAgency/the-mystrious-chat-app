@@ -416,6 +416,77 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    @Published public private(set) var savedSyncStatus: String?
+    private var savedSyncObservation: AnyCancellable?
+    private let savedRefresh = PulseCoalescedRefresh(initialDelay: 0)
+    private var savedSyncTimer: Task<Void, Never>?
+    private var savedRefreshIds = Set<String>()
+    private var savedFullRefresh = true
+    private var savedReplayBusy = false
+
+    private func startSavedSynchronization() {
+        guard let store, let owner = viewer?.id else { return }
+        let epoch = generation
+        savedSyncObservation = store.observeSavedSyncStatus(owner: owner).sink(receiveCompletion: { _ in }, receiveValue: { [weak self] status in
+            guard let self, self.generation == epoch else { return }; self.savedSyncStatus = status
+        })
+        savedSyncTimer?.cancel()
+        savedSyncTimer = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.generation == epoch else { return }
+                self.requestSavedSync()
+                do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
+            }
+        }
+    }
+    func requestSavedSync(ids: [String]? = nil) {
+        if let ids {
+            if savedRefreshIds.count + ids.count <= 100 { savedRefreshIds.formUnion(ids) }
+            else { savedFullRefresh = true }
+        } else { savedFullRefresh = true }
+        guard ready, isForeground else { return }
+        savedRefresh.request { [weak self] in
+            guard let self, self.ready, let store = self.store, let owner = self.viewer?.id else { return }
+            let epoch = self.generation, client = self.api
+            _ = await self.flushSavedIntentsNow()
+            guard !Task.isCancelled, self.generation == epoch else { return }
+            let ids = Array(self.savedRefreshIds); self.savedRefreshIds.removeAll()
+            let full = self.savedFullRefresh; self.savedFullRefresh = false
+            do {
+                if !ids.isEmpty { try await self.refreshSavedStates(ids, store: store, client: client, epoch: epoch) }
+                if full {
+                    try store.seedSavedVersions(owner: owner)
+                    let prefix = "saved-version:v1|\(owner)|"
+                    var after = ""
+                    while true {
+                        guard !Task.isCancelled, self.generation == epoch else { return }
+                        let keys = try store.savedVersionPage(owner: owner, after: after)
+                        if keys.isEmpty { break }
+                        try await self.refreshSavedStates(keys.map { String($0.dropFirst(prefix.count)) }, store: store, client: client, epoch: epoch)
+                        after = keys.last!
+                    }
+                }
+            } catch { if self.generation == epoch { self.savedFullRefresh = true } }
+        }
+    }
+    private func refreshSavedStates(_ ids: [String], store: PulseStore, client: PulseAPIClient, epoch: UUID) async throws {
+        let snapshot = store.beginSavedSnapshot()
+        let states = try await client.savedStates(ids: ids)
+        try Task.checkCancellation()
+        guard generation == epoch else { throw CancellationError() }
+        for state in states { try store.acceptSavedState(state, snapshot: snapshot) }
+        noteSavedMutation()
+    }
+    private func flushSavedIntentsNow() async -> Bool {
+        guard ready, !savedReplayBusy, let store, let owner = viewer?.id else { return false }
+        let epoch = generation, client = api
+        savedReplayBusy = true
+        defer { if generation == epoch { savedReplayBusy = false; noteSavedMutation() } }
+        return await PulseSavedReplay.flush(store: store, owner: owner,
+            isCurrent: { self.generation == epoch && self.viewer?.id == owner },
+            send: { try await client.applySavedIntent($0) })
+    }
+
     private var savedActions: [String: UUID] = [:]
 
     /// Shared by room Save and library Unsave. A receipt is not UI success until
@@ -435,25 +506,9 @@ public final class PulseSession: ObservableObject {
                 throw PulseAPIClient.Failure(kind: .forbidden, message: "Reopen this thread to check access before saving.")
             }
         }
-        let epoch = sessionGeneration, client = api, ticket = UUID()
-        savedActions[requested.id] = ticket
+        try store.enqueueSavedIntent(owner: viewer.id, message: requested, saved: saved)
         noteSavedMutation()
-        defer {
-            if savedActions[requested.id] == ticket { savedActions.removeValue(forKey: requested.id) }
-            if sessionGeneration == epoch { noteSavedMutation() }
-        }
-        let receipt = try await client.setMessageSaved(id: requested.id, userId: viewer.id, saved: saved)
-        try Task.checkCancellation()
-        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
-        if saved {
-            guard let savedAt = receipt.savedAt, let current = try store.message(id: requested.id),
-                  current.conversationId == requested.conversationId else {
-                throw PulseAPIClient.Failure(kind: .validation, message: "Saved message is no longer cached. Refresh the library.")
-            }
-            let item = WireSavedItem(savedAt: savedAt,
-                conversation: WireSavedConversation(id: current.conversationId, isGroup: nil, name: nil), message: current)
-            try store.upsert(savedItems: [item], preservingMessageIds: [current.id])
-        } else { try store.deleteSaved(messageId: requested.id) }
+        requestSavedSync(ids: [requested.id])
     }
 
     public enum MessageAction { case edit(String), pin, unpin, delete }
@@ -628,6 +683,7 @@ public final class PulseSession: ObservableObject {
             readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
         }
         if active {
+            requestSavedSync()
             reconcileMessageNotifications()
             messageVisibilityClock.send(Date())
             if changed {
@@ -1030,6 +1086,9 @@ public final class PulseSession: ObservableObject {
         voiceRooms?.leaveSpace()
         PulsePushNotifications.deactivate()
         generation = UUID()
+        savedRefresh.cancel(); savedSyncTimer?.cancel(); savedSyncTimer = nil
+        savedSyncObservation?.cancel(); savedSyncObservation = nil; savedSyncStatus = nil
+        savedRefreshIds.removeAll(); savedFullRefresh = true; savedReplayBusy = false
         notificationRefreshTask?.cancel(); notificationRefreshTask = nil
         readReplayID = UUID()
         readReplayTask?.cancel()
@@ -1186,6 +1245,7 @@ public final class PulseSession: ObservableObject {
         startVoiceRooms(viewer: viewer)
         startReminderDueLoop(viewer: viewer)
         ready = true
+        startSavedSynchronization()
         PulsePushRegistrationCenter.shared.noteViewerChanged()
         PulsePushNotifications.activate()
 
@@ -1314,6 +1374,10 @@ public final class PulseSession: ObservableObject {
         engine.onReadStateInvalidation = { [weak self] room in
             guard let self, self.ready, self.generation == readHintEpoch else { return }
             self.noteReadStateChanged(room)
+        }
+        engine.onSavedJournalFlush = { [weak self] in
+            guard let self, self.generation == readHintEpoch else { return false }
+            return await self.flushSavedIntentsNow()
         }
         engine.onReadJournalFlush = { [weak self] in
             guard let self, self.ready, self.generation == readHintEpoch,
@@ -1608,6 +1672,7 @@ public final class PulseSession: ObservableObject {
             connected = isOn
             // Flush trigger: socket connect / reconnect.
             if isOn {
+                requestSavedSync()
                 // An accepted join is a resync trigger, not replay of missed
                 // events and not new read authority for the mounted visit.
                 realtimeRefreshTick += 1
@@ -1655,6 +1720,8 @@ public final class PulseSession: ObservableObject {
             // Includes the viewer's other devices, even with receipt privacy on.
             realtimeRefreshTick += 1
             noteInboxChanged()
+        case .savedChanged(let owner, let messageId):
+            if owner == viewer?.id { requestSavedSync(ids: [messageId]) }
         case .conversationUpdated:
             realtimeRefreshTick += 1
             noteInboxChanged()

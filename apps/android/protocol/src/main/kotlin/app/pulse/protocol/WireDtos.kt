@@ -184,6 +184,9 @@ data class SavedStateReceiptDto(
     val messageId: String,
     val saved: Boolean,
     val savedAt: String? = null,
+    val revision: String? = null,
+    val clientId: String? = null,
+    val outcome: String? = null,
 )
 
 // R5-B: POST /api/conversations/[id]/messages response envelope
@@ -609,6 +612,7 @@ data class SavedConversationDto(
 /** GET /api/users/{id}/saved → items[] rows: { savedAt, conversation, message }. */
 @Serializable
 data class SavedItemDto(
+    val revision: String? = null,
     val savedAt: String,
     val conversation: SavedConversationDto = SavedConversationDto(id = ""),
     val message: ChatMessageDto,

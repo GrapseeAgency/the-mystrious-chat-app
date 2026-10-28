@@ -1,0 +1,23 @@
+package app.pulse.protocol
+
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+
+class SavedIntentReceiptTest {
+    private val intent = SavedIntentDto("owner", "m", "r", true, "operation", expectedRevision = "0")
+    private val accepted = SavedStateReceiptDto(2, "owner", "m", true, "2026-10-28T00:00:00.000Z", "v1", "operation", "applied")
+    @Test fun `receipt binds actor identity and verdict while conflict can return different canonical state`() {
+        accepted.validateSavedState("owner", "m", intent)
+        accepted.copy(saved = false, savedAt = null, outcome = "conflict").validateSavedState("owner", "m", intent)
+        for (bad in listOf(accepted.copy(userId = "other"), accepted.copy(messageId = "other"),
+            accepted.copy(clientId = "other"), accepted.copy(savedReceiptVersion = 1), accepted.copy(revision = ""),
+            accepted.copy(savedAt = "bad"), accepted.copy(outcome = "unknown"), accepted.copy(saved = false, savedAt = null))) {
+            assertThrows(Exception::class.java) { bad.validateSavedState("owner", "m", intent) }
+        }
+    }
+    @Test fun `journal round trips without changing causal identity`() {
+        val json = PulseJson.encodeToString(SavedIntentDto.serializer(), intent)
+        assertEquals(intent, PulseJson.decodeFromString(SavedIntentDto.serializer(), json))
+        assertEquals("saved-intent:v1|owner|m|operation", intent.key)
+    }
+}

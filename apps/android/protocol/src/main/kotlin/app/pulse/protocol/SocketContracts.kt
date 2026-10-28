@@ -52,6 +52,7 @@ object SocketEvents {
     const val POLL_VOTED = "poll:voted"
     const val LINK_PREVIEW = "link:preview"
     const val TRANSLATION_ADDED = "translation:added"
+    const val SAVED_CHANGED = "saved:changed"
     const val CONVERSATION_UPDATED = "conversation:updated"
 
     /** Wave 8 - join refused: a PRESENTED token failed server verification. */
@@ -75,7 +76,7 @@ object SocketEvents {
         JOINED, PRESENCE_SNAPSHOT, TYPING,
         MESSAGE_NEW, MESSAGE_DELETED, MESSAGE_READ,
         MESSAGE_REACT, MESSAGE_EDITED, MESSAGE_PINNED, MESSAGE_VIEWED,
-        POLL_VOTED, LINK_PREVIEW, TRANSLATION_ADDED, CONVERSATION_UPDATED,
+        POLL_VOTED, LINK_PREVIEW, TRANSLATION_ADDED, CONVERSATION_UPDATED, SAVED_CHANGED,
         VOICE_ROSTER, VOICE_PTT, VOICE_CHUNK, VOICE_TRANSCRIPT,
         STAGE_STATE, STAGE_ENDED,
         SPACE_STATE,
@@ -86,7 +87,7 @@ object SocketEvents {
     val NOTIFY_EVENTS: List<String> = listOf(
         MESSAGE_NEW, MESSAGE_DELETED, MESSAGE_READ,
         MESSAGE_REACT, MESSAGE_EDITED, MESSAGE_PINNED, MESSAGE_VIEWED,
-        POLL_VOTED, LINK_PREVIEW, TRANSLATION_ADDED, CONVERSATION_UPDATED,
+        POLL_VOTED, LINK_PREVIEW, TRANSLATION_ADDED, CONVERSATION_UPDATED, SAVED_CHANGED,
     )
 
     /** Every S→C event that carries a fresh message row in its envelope. */

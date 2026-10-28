@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -50,7 +51,11 @@ class OutboxWorker(
             inputData.getString("readStateRoom")?.takeIf { it.isNotBlank() && it.length <= 128 }
                 ?.let(target::invalidateReadProjections)
             val complete = app.pulse.domain.sync.flushBackgroundQueues(
-                messages = { target.flushOutbox().pending == 0 },
+                messages = { kotlinx.coroutines.coroutineScope {
+                    val bookmarks = async { target.flushSavedIntents().getOrThrow() == 0 }
+                    val messages = async { target.flushOutbox().pending == 0 }
+                    bookmarks.await() && messages.await()
+                } },
                 readState = {
                     val pendingReads = target.flushReadReceipts().getOrThrow()
                     // No count from a push is trusted. Replay, then fetch the

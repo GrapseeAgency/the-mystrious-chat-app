@@ -17,7 +17,7 @@ class MentionRequestOwnershipTest {
     @Test fun oldOwnerAndSupersededRefreshCannotReplaceTheCurrentFeed() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var owner = "first"
-        val calls = mutableListOf<Pair<String, Continuation<Result<List<MentionItem>>>>>()
+        val calls = mutableListOf<Pair<String, Continuation<Result<app.pulse.domain.model.FeedPage<MentionItem>>>>>()
         @Suppress("UNCHECKED_CAST")
         fun repository(bound: String? = null): PulseRepository = Proxy.newProxyInstance(PulseRepository::class.java.classLoader,
             arrayOf(PulseRepository::class.java)) { proxy, method, args ->
@@ -25,7 +25,7 @@ class MentionRequestOwnershipTest {
                 method.name == "boundToCurrentAccount" -> repository(owner)
                 method.name == "attachmentSessionKey" -> bound ?: owner
                 method.name.startsWith("mentions") -> {
-                    calls += requireNotNull(bound) to (args!!.last() as Continuation<Result<List<MentionItem>>>)
+                    calls += requireNotNull(bound) to (args!!.last() as Continuation<Result<app.pulse.domain.model.FeedPage<MentionItem>>>)
                     COROUTINE_SUSPENDED
                 }
                 method.name == "equals" -> proxy === args?.firstOrNull()
@@ -36,8 +36,8 @@ class MentionRequestOwnershipTest {
         val vm = MentionsViewModel(repository())
         try {
             runCurrent(); owner = "second"; vm.refresh(); runCurrent()
-            calls[1].second.resume(Result.success(listOf(MentionItem("current", "room")))); runCurrent()
-            calls[0].second.resume(Result.success(listOf(MentionItem("old", "room")))); runCurrent()
+            calls[1].second.resume(Result.success(app.pulse.domain.model.FeedPage(listOf(MentionItem("current", "room")), null, false))); runCurrent()
+            calls[0].second.resume(Result.success(app.pulse.domain.model.FeedPage(listOf(MentionItem("old", "room")), null, false))); runCurrent()
             assertEquals(listOf("current"), vm.state.value.items.map { it.messageId })
             vm.refresh(); runCurrent(); calls[2].second.resume(Result.failure(IllegalStateException("offline"))); runCurrent()
             assertTrue(vm.state.value.error)

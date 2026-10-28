@@ -589,6 +589,26 @@ public struct PulseAPIClient: Sendable {
         }
     }
 
+    func savedStates(ids: [String]) async throws -> [WireSavedStateReceipt] {
+        guard ids.count <= 100, Set(ids).count == ids.count else { throw Failure(kind: .validation, message: "Invalid saved-state batch.") }
+        let data = try await postRaw("/api/users/\(q(userId))/saved-state", body: ["ids": ids])
+        let page = try decoder.decode(PulseSavedStates.self, from: data)
+        guard page.savedStateVersion == 2, page.userId == userId, page.states.count == ids.count,
+              Set(page.states.map(\.messageId)) == Set(ids) else { throw Failure(kind: .validation, message: "Saved states were not confirmed.") }
+        for state in page.states { try state.validate(owner: userId, id: state.messageId) }
+        return page.states
+    }
+    func applySavedIntent(_ intent: PulseSavedIntent) async throws -> WireSavedStateReceipt {
+        guard intent.owner == userId else { throw CancellationError() }
+        var body: [String: Any] = ["userId": userId, "saved": intent.saved, "clientId": intent.clientId]
+        if let version = intent.expectedRevision { body["expectedRevision"] = version }
+        if let prior = intent.predecessorClientId { body["predecessorClientId"] = prior }
+        let data = try await postRaw("/api/messages/\(q(intent.messageId))/save-state", body: body)
+        let receipt = try decoder.decode(WireSavedStateReceipt.self, from: data)
+        try receipt.validate(owner: userId, id: intent.messageId, intent: intent)
+        return receipt
+    }
+
     /// Explicit save/remove only; no fallback to a legacy toggle.
     public func setMessageSaved(id: String, userId: String, saved: Bool) async throws -> WireSavedStateReceipt {
         let data = try await postRaw("/api/messages/\(id)/save-state", body: ["userId": userId, "saved": saved])

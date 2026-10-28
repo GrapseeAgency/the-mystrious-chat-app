@@ -2699,6 +2699,7 @@ final class ChatsViewModel: ObservableObject {
     @Published private(set) var mentionCount: Int?
     private var mentionBadgeRefresh = PulseCoalescedRefresh()
     private var mentionBadgeTicket = UUID()
+    private var mentionBadgeExpiryTask: Task<Void, Never>?
     private var mentionBadgeDeadline: Date?
     private var mentionBadgeRetry = Date.distantPast
     private var mentionBadgeActive = false
@@ -2958,7 +2959,8 @@ final class ChatsViewModel: ObservableObject {
 
     func stop() {
         mentionBadgeActive = false
-        mentionBadgeRefresh.cancel(); mentionBadgeTicket = UUID(); mentionBadgeDeadline = nil
+        mentionBadgeRefresh.cancel(); mentionBadgeExpiryTask?.cancel(); mentionBadgeExpiryTask = nil
+        mentionBadgeTicket = UUID(); mentionBadgeDeadline = nil
         cancelSelfOpening()
         resetConversationActions(epoch: nil)
         sideQueryTask?.cancel(); sideQueryTask = nil; sideQueryGeneration = UUID(); folderReadGeneration &+= 1
@@ -3041,6 +3043,7 @@ final class ChatsViewModel: ObservableObject {
     }
 
     private func invalidateMentionBadge(session: PulseSession) {
+        mentionBadgeExpiryTask?.cancel(); mentionBadgeExpiryTask = nil
         mentionBadgeTicket = UUID(); mentionCount = nil; mentionBadgeDeadline = nil
         mentionBadgeRetry = Date().addingTimeInterval(30)
         guard mentionBadgeActive, session.isForeground else { return }
@@ -3055,6 +3058,15 @@ final class ChatsViewModel: ObservableObject {
                 let snapshot = try await PulseMentionBadgeSnapshot.load { try await api.mentionPage(cursor: $0) }
                 guard !Task.isCancelled, self.mentionBadgeActive, session.sessionGeneration == epoch, self.mentionBadgeTicket == ticket else { return }
                 self.mentionCount = snapshot.count; self.mentionBadgeDeadline = snapshot.expiresAt
+                if let deadline = snapshot.expiresAt {
+                    self.mentionBadgeExpiryTask = Task { [weak self, weak session] in
+                        while !Task.isCancelled, Date() < deadline {
+                            do { try await Task.sleep(nanoseconds: UInt64(max(0.001, min(1, deadline.timeIntervalSinceNow)) * 1_000_000_000)) } catch { return }
+                        }
+                        guard !Task.isCancelled, let self, let session, session.sessionGeneration == epoch, self.mentionBadgeTicket == ticket else { return }
+                        self.invalidateMentionBadge(session: session)
+                    }
+                }
                 self.mentionBadgeRetry = Date().addingTimeInterval(30)
             } catch { /* keep unknown, not a false zero; next hint/reconnect retries */ }
         }

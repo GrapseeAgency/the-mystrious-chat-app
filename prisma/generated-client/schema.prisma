@@ -459,6 +459,9 @@ model Message {
   readObservations MessageReadObservation[]
 
   @@index([conversationId, createdAt])
+  @@index([conversationId, createdAt, id], map: "Message_room_order")
+  @@index([parentId, createdAt, id], map: "Message_thread_order")
+  @@index([createdAt, id], map: "Message_history_order")
   @@index([replyToId])
   @@index([parentId])
 }
@@ -511,6 +514,7 @@ model SavedMessage {
 
   @@unique([userId, messageId])
   @@index([userId, savedAt])
+  @@index([userId, savedAt, messageId], map: "SavedMessage_owner_order")
 }
 
 /**
@@ -883,4 +887,25 @@ model PushReadStateCapability {
   tokenId String    @id
   token   PushToken @relation(fields: [tokenId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   version Int       @default(1)
+}
+
+// Causal bookmark versions and immutable replay verdicts survive unsave/deletion.
+// No message/user cascade: a delayed offline retry must never resurrect intent.
+model SavedMessageState {
+  userId    String
+  messageId String
+  revision  String
+
+  @@id([userId, messageId])
+}
+
+model SavedMessageOperation {
+  userId      String
+  clientId    String
+  messageId   String
+  requestHash String
+  revision    String
+  outcome     String
+
+  @@id([userId, clientId])
 }

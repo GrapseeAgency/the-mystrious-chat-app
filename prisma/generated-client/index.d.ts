@@ -332,6 +332,16 @@ export type ReadLedgerMigration = $Result.DefaultSelection<Prisma.$ReadLedgerMig
  *
  */
 export type PushReadStateCapability = $Result.DefaultSelection<Prisma.$PushReadStateCapabilityPayload>
+/**
+ * Model SavedMessageState
+ *
+ */
+export type SavedMessageState = $Result.DefaultSelection<Prisma.$SavedMessageStatePayload>
+/**
+ * Model SavedMessageOperation
+ *
+ */
+export type SavedMessageOperation = $Result.DefaultSelection<Prisma.$SavedMessageOperationPayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -970,6 +980,26 @@ export class PrismaClient<
     * ```
     */
   get pushReadStateCapability(): Prisma.PushReadStateCapabilityDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.savedMessageState`: Exposes CRUD operations for the **SavedMessageState** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more SavedMessageStates
+    * const savedMessageStates = await prisma.savedMessageState.findMany()
+    * ```
+    */
+  get savedMessageState(): Prisma.SavedMessageStateDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.savedMessageOperation`: Exposes CRUD operations for the **SavedMessageOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more SavedMessageOperations
+    * const savedMessageOperations = await prisma.savedMessageOperation.findMany()
+    * ```
+    */
+  get savedMessageOperation(): Prisma.SavedMessageOperationDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1462,7 +1492,9 @@ export namespace Prisma {
     ReadIntentState: 'ReadIntentState',
     MessageReadObservation: 'MessageReadObservation',
     ReadLedgerMigration: 'ReadLedgerMigration',
-    PushReadStateCapability: 'PushReadStateCapability'
+    PushReadStateCapability: 'PushReadStateCapability',
+    SavedMessageState: 'SavedMessageState',
+    SavedMessageOperation: 'SavedMessageOperation'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1481,7 +1513,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -5333,6 +5365,154 @@ export namespace Prisma {
           }
         }
       }
+      SavedMessageState: {
+        payload: Prisma.$SavedMessageStatePayload<ExtArgs>
+        fields: Prisma.SavedMessageStateFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.SavedMessageStateFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.SavedMessageStateFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>
+          }
+          findFirst: {
+            args: Prisma.SavedMessageStateFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.SavedMessageStateFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>
+          }
+          findMany: {
+            args: Prisma.SavedMessageStateFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>[]
+          }
+          create: {
+            args: Prisma.SavedMessageStateCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>
+          }
+          createMany: {
+            args: Prisma.SavedMessageStateCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.SavedMessageStateCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>[]
+          }
+          delete: {
+            args: Prisma.SavedMessageStateDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>
+          }
+          update: {
+            args: Prisma.SavedMessageStateUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>
+          }
+          deleteMany: {
+            args: Prisma.SavedMessageStateDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.SavedMessageStateUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.SavedMessageStateUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>[]
+          }
+          upsert: {
+            args: Prisma.SavedMessageStateUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageStatePayload>
+          }
+          aggregate: {
+            args: Prisma.SavedMessageStateAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateSavedMessageState>
+          }
+          groupBy: {
+            args: Prisma.SavedMessageStateGroupByArgs<ExtArgs>
+            result: $Utils.Optional<SavedMessageStateGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.SavedMessageStateCountArgs<ExtArgs>
+            result: $Utils.Optional<SavedMessageStateCountAggregateOutputType> | number
+          }
+        }
+      }
+      SavedMessageOperation: {
+        payload: Prisma.$SavedMessageOperationPayload<ExtArgs>
+        fields: Prisma.SavedMessageOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.SavedMessageOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.SavedMessageOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.SavedMessageOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.SavedMessageOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>
+          }
+          findMany: {
+            args: Prisma.SavedMessageOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>[]
+          }
+          create: {
+            args: Prisma.SavedMessageOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>
+          }
+          createMany: {
+            args: Prisma.SavedMessageOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.SavedMessageOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.SavedMessageOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>
+          }
+          update: {
+            args: Prisma.SavedMessageOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.SavedMessageOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.SavedMessageOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.SavedMessageOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.SavedMessageOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SavedMessageOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.SavedMessageOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateSavedMessageOperation>
+          }
+          groupBy: {
+            args: Prisma.SavedMessageOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<SavedMessageOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.SavedMessageOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<SavedMessageOperationCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -5481,6 +5661,8 @@ export namespace Prisma {
     messageReadObservation?: MessageReadObservationOmit
     readLedgerMigration?: ReadLedgerMigrationOmit
     pushReadStateCapability?: PushReadStateCapabilityOmit
+    savedMessageState?: SavedMessageStateOmit
+    savedMessageOperation?: SavedMessageOperationOmit
   }
 
   /* Types for Logging */
@@ -64308,6 +64490,1979 @@ export namespace Prisma {
 
 
   /**
+   * Model SavedMessageState
+   */
+
+  export type AggregateSavedMessageState = {
+    _count: SavedMessageStateCountAggregateOutputType | null
+    _min: SavedMessageStateMinAggregateOutputType | null
+    _max: SavedMessageStateMaxAggregateOutputType | null
+  }
+
+  export type SavedMessageStateMinAggregateOutputType = {
+    userId: string | null
+    messageId: string | null
+    revision: string | null
+  }
+
+  export type SavedMessageStateMaxAggregateOutputType = {
+    userId: string | null
+    messageId: string | null
+    revision: string | null
+  }
+
+  export type SavedMessageStateCountAggregateOutputType = {
+    userId: number
+    messageId: number
+    revision: number
+    _all: number
+  }
+
+
+  export type SavedMessageStateMinAggregateInputType = {
+    userId?: true
+    messageId?: true
+    revision?: true
+  }
+
+  export type SavedMessageStateMaxAggregateInputType = {
+    userId?: true
+    messageId?: true
+    revision?: true
+  }
+
+  export type SavedMessageStateCountAggregateInputType = {
+    userId?: true
+    messageId?: true
+    revision?: true
+    _all?: true
+  }
+
+  export type SavedMessageStateAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SavedMessageState to aggregate.
+     */
+    where?: SavedMessageStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of SavedMessageStates to fetch.
+     */
+    orderBy?: SavedMessageStateOrderByWithRelationInput | SavedMessageStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: SavedMessageStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` SavedMessageStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` SavedMessageStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned SavedMessageStates
+    **/
+    _count?: true | SavedMessageStateCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: SavedMessageStateMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: SavedMessageStateMaxAggregateInputType
+  }
+
+  export type GetSavedMessageStateAggregateType<T extends SavedMessageStateAggregateArgs> = {
+        [P in keyof T & keyof AggregateSavedMessageState]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateSavedMessageState[P]>
+      : GetScalarType<T[P], AggregateSavedMessageState[P]>
+  }
+
+
+
+
+  export type SavedMessageStateGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: SavedMessageStateWhereInput
+    orderBy?: SavedMessageStateOrderByWithAggregationInput | SavedMessageStateOrderByWithAggregationInput[]
+    by: SavedMessageStateScalarFieldEnum[] | SavedMessageStateScalarFieldEnum
+    having?: SavedMessageStateScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: SavedMessageStateCountAggregateInputType | true
+    _min?: SavedMessageStateMinAggregateInputType
+    _max?: SavedMessageStateMaxAggregateInputType
+  }
+
+  export type SavedMessageStateGroupByOutputType = {
+    userId: string
+    messageId: string
+    revision: string
+    _count: SavedMessageStateCountAggregateOutputType | null
+    _min: SavedMessageStateMinAggregateOutputType | null
+    _max: SavedMessageStateMaxAggregateOutputType | null
+  }
+
+  type GetSavedMessageStateGroupByPayload<T extends SavedMessageStateGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<SavedMessageStateGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof SavedMessageStateGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], SavedMessageStateGroupByOutputType[P]>
+            : GetScalarType<T[P], SavedMessageStateGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type SavedMessageStateSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    messageId?: boolean
+    revision?: boolean
+  }, ExtArgs["result"]["savedMessageState"]>
+
+  export type SavedMessageStateSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    messageId?: boolean
+    revision?: boolean
+  }, ExtArgs["result"]["savedMessageState"]>
+
+  export type SavedMessageStateSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    messageId?: boolean
+    revision?: boolean
+  }, ExtArgs["result"]["savedMessageState"]>
+
+  export type SavedMessageStateSelectScalar = {
+    userId?: boolean
+    messageId?: boolean
+    revision?: boolean
+  }
+
+  export type SavedMessageStateOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "messageId" | "revision", ExtArgs["result"]["savedMessageState"]>
+
+  export type $SavedMessageStatePayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "SavedMessageState"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      messageId: string
+      revision: string
+    }, ExtArgs["result"]["savedMessageState"]>
+    composites: {}
+  }
+
+  type SavedMessageStateGetPayload<S extends boolean | null | undefined | SavedMessageStateDefaultArgs> = $Result.GetResult<Prisma.$SavedMessageStatePayload, S>
+
+  type SavedMessageStateCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<SavedMessageStateFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: SavedMessageStateCountAggregateInputType | true
+    }
+
+  export interface SavedMessageStateDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['SavedMessageState'], meta: { name: 'SavedMessageState' } }
+    /**
+     * Find zero or one SavedMessageState that matches the filter.
+     * @param {SavedMessageStateFindUniqueArgs} args - Arguments to find a SavedMessageState
+     * @example
+     * // Get one SavedMessageState
+     * const savedMessageState = await prisma.savedMessageState.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends SavedMessageStateFindUniqueArgs>(args: SelectSubset<T, SavedMessageStateFindUniqueArgs<ExtArgs>>): Prisma__SavedMessageStateClient<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one SavedMessageState that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {SavedMessageStateFindUniqueOrThrowArgs} args - Arguments to find a SavedMessageState
+     * @example
+     * // Get one SavedMessageState
+     * const savedMessageState = await prisma.savedMessageState.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends SavedMessageStateFindUniqueOrThrowArgs>(args: SelectSubset<T, SavedMessageStateFindUniqueOrThrowArgs<ExtArgs>>): Prisma__SavedMessageStateClient<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SavedMessageState that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageStateFindFirstArgs} args - Arguments to find a SavedMessageState
+     * @example
+     * // Get one SavedMessageState
+     * const savedMessageState = await prisma.savedMessageState.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends SavedMessageStateFindFirstArgs>(args?: SelectSubset<T, SavedMessageStateFindFirstArgs<ExtArgs>>): Prisma__SavedMessageStateClient<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SavedMessageState that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageStateFindFirstOrThrowArgs} args - Arguments to find a SavedMessageState
+     * @example
+     * // Get one SavedMessageState
+     * const savedMessageState = await prisma.savedMessageState.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends SavedMessageStateFindFirstOrThrowArgs>(args?: SelectSubset<T, SavedMessageStateFindFirstOrThrowArgs<ExtArgs>>): Prisma__SavedMessageStateClient<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more SavedMessageStates that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageStateFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all SavedMessageStates
+     * const savedMessageStates = await prisma.savedMessageState.findMany()
+     *
+     * // Get first 10 SavedMessageStates
+     * const savedMessageStates = await prisma.savedMessageState.findMany({ take: 10 })
+     *
+     * // Only select the `userId`
+     * const savedMessageStateWithUserIdOnly = await prisma.savedMessageState.findMany({ select: { userId: true } })
+     *
+     */
+    findMany<T extends SavedMessageStateFindManyArgs>(args?: SelectSubset<T, SavedMessageStateFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a SavedMessageState.
+     * @param {SavedMessageStateCreateArgs} args - Arguments to create a SavedMessageState.
+     * @example
+     * // Create one SavedMessageState
+     * const SavedMessageState = await prisma.savedMessageState.create({
+     *   data: {
+     *     // ... data to create a SavedMessageState
+     *   }
+     * })
+     *
+     */
+    create<T extends SavedMessageStateCreateArgs>(args: SelectSubset<T, SavedMessageStateCreateArgs<ExtArgs>>): Prisma__SavedMessageStateClient<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many SavedMessageStates.
+     * @param {SavedMessageStateCreateManyArgs} args - Arguments to create many SavedMessageStates.
+     * @example
+     * // Create many SavedMessageStates
+     * const savedMessageState = await prisma.savedMessageState.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends SavedMessageStateCreateManyArgs>(args?: SelectSubset<T, SavedMessageStateCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many SavedMessageStates and returns the data saved in the database.
+     * @param {SavedMessageStateCreateManyAndReturnArgs} args - Arguments to create many SavedMessageStates.
+     * @example
+     * // Create many SavedMessageStates
+     * const savedMessageState = await prisma.savedMessageState.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many SavedMessageStates and only return the `userId`
+     * const savedMessageStateWithUserIdOnly = await prisma.savedMessageState.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends SavedMessageStateCreateManyAndReturnArgs>(args?: SelectSubset<T, SavedMessageStateCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a SavedMessageState.
+     * @param {SavedMessageStateDeleteArgs} args - Arguments to delete one SavedMessageState.
+     * @example
+     * // Delete one SavedMessageState
+     * const SavedMessageState = await prisma.savedMessageState.delete({
+     *   where: {
+     *     // ... filter to delete one SavedMessageState
+     *   }
+     * })
+     *
+     */
+    delete<T extends SavedMessageStateDeleteArgs>(args: SelectSubset<T, SavedMessageStateDeleteArgs<ExtArgs>>): Prisma__SavedMessageStateClient<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one SavedMessageState.
+     * @param {SavedMessageStateUpdateArgs} args - Arguments to update one SavedMessageState.
+     * @example
+     * // Update one SavedMessageState
+     * const savedMessageState = await prisma.savedMessageState.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends SavedMessageStateUpdateArgs>(args: SelectSubset<T, SavedMessageStateUpdateArgs<ExtArgs>>): Prisma__SavedMessageStateClient<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more SavedMessageStates.
+     * @param {SavedMessageStateDeleteManyArgs} args - Arguments to filter SavedMessageStates to delete.
+     * @example
+     * // Delete a few SavedMessageStates
+     * const { count } = await prisma.savedMessageState.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends SavedMessageStateDeleteManyArgs>(args?: SelectSubset<T, SavedMessageStateDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SavedMessageStates.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageStateUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many SavedMessageStates
+     * const savedMessageState = await prisma.savedMessageState.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends SavedMessageStateUpdateManyArgs>(args: SelectSubset<T, SavedMessageStateUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SavedMessageStates and returns the data updated in the database.
+     * @param {SavedMessageStateUpdateManyAndReturnArgs} args - Arguments to update many SavedMessageStates.
+     * @example
+     * // Update many SavedMessageStates
+     * const savedMessageState = await prisma.savedMessageState.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more SavedMessageStates and only return the `userId`
+     * const savedMessageStateWithUserIdOnly = await prisma.savedMessageState.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends SavedMessageStateUpdateManyAndReturnArgs>(args: SelectSubset<T, SavedMessageStateUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one SavedMessageState.
+     * @param {SavedMessageStateUpsertArgs} args - Arguments to update or create a SavedMessageState.
+     * @example
+     * // Update or create a SavedMessageState
+     * const savedMessageState = await prisma.savedMessageState.upsert({
+     *   create: {
+     *     // ... data to create a SavedMessageState
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the SavedMessageState we want to update
+     *   }
+     * })
+     */
+    upsert<T extends SavedMessageStateUpsertArgs>(args: SelectSubset<T, SavedMessageStateUpsertArgs<ExtArgs>>): Prisma__SavedMessageStateClient<$Result.GetResult<Prisma.$SavedMessageStatePayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of SavedMessageStates.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageStateCountArgs} args - Arguments to filter SavedMessageStates to count.
+     * @example
+     * // Count the number of SavedMessageStates
+     * const count = await prisma.savedMessageState.count({
+     *   where: {
+     *     // ... the filter for the SavedMessageStates we want to count
+     *   }
+     * })
+    **/
+    count<T extends SavedMessageStateCountArgs>(
+      args?: Subset<T, SavedMessageStateCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], SavedMessageStateCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a SavedMessageState.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageStateAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends SavedMessageStateAggregateArgs>(args: Subset<T, SavedMessageStateAggregateArgs>): Prisma.PrismaPromise<GetSavedMessageStateAggregateType<T>>
+
+    /**
+     * Group by SavedMessageState.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageStateGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends SavedMessageStateGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: SavedMessageStateGroupByArgs['orderBy'] }
+        : { orderBy?: SavedMessageStateGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, SavedMessageStateGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetSavedMessageStateGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the SavedMessageState model
+   */
+  readonly fields: SavedMessageStateFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for SavedMessageState.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__SavedMessageStateClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the SavedMessageState model
+   */
+  interface SavedMessageStateFieldRefs {
+    readonly userId: FieldRef<"SavedMessageState", 'String'>
+    readonly messageId: FieldRef<"SavedMessageState", 'String'>
+    readonly revision: FieldRef<"SavedMessageState", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * SavedMessageState findUnique
+   */
+  export type SavedMessageStateFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageState to fetch.
+     */
+    where: SavedMessageStateWhereUniqueInput
+  }
+
+  /**
+   * SavedMessageState findUniqueOrThrow
+   */
+  export type SavedMessageStateFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageState to fetch.
+     */
+    where: SavedMessageStateWhereUniqueInput
+  }
+
+  /**
+   * SavedMessageState findFirst
+   */
+  export type SavedMessageStateFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageState to fetch.
+     */
+    where?: SavedMessageStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of SavedMessageStates to fetch.
+     */
+    orderBy?: SavedMessageStateOrderByWithRelationInput | SavedMessageStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for SavedMessageStates.
+     */
+    cursor?: SavedMessageStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` SavedMessageStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` SavedMessageStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of SavedMessageStates.
+     */
+    distinct?: SavedMessageStateScalarFieldEnum | SavedMessageStateScalarFieldEnum[]
+  }
+
+  /**
+   * SavedMessageState findFirstOrThrow
+   */
+  export type SavedMessageStateFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageState to fetch.
+     */
+    where?: SavedMessageStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of SavedMessageStates to fetch.
+     */
+    orderBy?: SavedMessageStateOrderByWithRelationInput | SavedMessageStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for SavedMessageStates.
+     */
+    cursor?: SavedMessageStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` SavedMessageStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` SavedMessageStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of SavedMessageStates.
+     */
+    distinct?: SavedMessageStateScalarFieldEnum | SavedMessageStateScalarFieldEnum[]
+  }
+
+  /**
+   * SavedMessageState findMany
+   */
+  export type SavedMessageStateFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageStates to fetch.
+     */
+    where?: SavedMessageStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of SavedMessageStates to fetch.
+     */
+    orderBy?: SavedMessageStateOrderByWithRelationInput | SavedMessageStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing SavedMessageStates.
+     */
+    cursor?: SavedMessageStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` SavedMessageStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` SavedMessageStates.
+     */
+    skip?: number
+    distinct?: SavedMessageStateScalarFieldEnum | SavedMessageStateScalarFieldEnum[]
+  }
+
+  /**
+   * SavedMessageState create
+   */
+  export type SavedMessageStateCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * The data needed to create a SavedMessageState.
+     */
+    data: XOR<SavedMessageStateCreateInput, SavedMessageStateUncheckedCreateInput>
+  }
+
+  /**
+   * SavedMessageState createMany
+   */
+  export type SavedMessageStateCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many SavedMessageStates.
+     */
+    data: SavedMessageStateCreateManyInput | SavedMessageStateCreateManyInput[]
+  }
+
+  /**
+   * SavedMessageState createManyAndReturn
+   */
+  export type SavedMessageStateCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * The data used to create many SavedMessageStates.
+     */
+    data: SavedMessageStateCreateManyInput | SavedMessageStateCreateManyInput[]
+  }
+
+  /**
+   * SavedMessageState update
+   */
+  export type SavedMessageStateUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * The data needed to update a SavedMessageState.
+     */
+    data: XOR<SavedMessageStateUpdateInput, SavedMessageStateUncheckedUpdateInput>
+    /**
+     * Choose, which SavedMessageState to update.
+     */
+    where: SavedMessageStateWhereUniqueInput
+  }
+
+  /**
+   * SavedMessageState updateMany
+   */
+  export type SavedMessageStateUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update SavedMessageStates.
+     */
+    data: XOR<SavedMessageStateUpdateManyMutationInput, SavedMessageStateUncheckedUpdateManyInput>
+    /**
+     * Filter which SavedMessageStates to update
+     */
+    where?: SavedMessageStateWhereInput
+    /**
+     * Limit how many SavedMessageStates to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SavedMessageState updateManyAndReturn
+   */
+  export type SavedMessageStateUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * The data used to update SavedMessageStates.
+     */
+    data: XOR<SavedMessageStateUpdateManyMutationInput, SavedMessageStateUncheckedUpdateManyInput>
+    /**
+     * Filter which SavedMessageStates to update
+     */
+    where?: SavedMessageStateWhereInput
+    /**
+     * Limit how many SavedMessageStates to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SavedMessageState upsert
+   */
+  export type SavedMessageStateUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * The filter to search for the SavedMessageState to update in case it exists.
+     */
+    where: SavedMessageStateWhereUniqueInput
+    /**
+     * In case the SavedMessageState found by the `where` argument doesn't exist, create a new SavedMessageState with this data.
+     */
+    create: XOR<SavedMessageStateCreateInput, SavedMessageStateUncheckedCreateInput>
+    /**
+     * In case the SavedMessageState was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<SavedMessageStateUpdateInput, SavedMessageStateUncheckedUpdateInput>
+  }
+
+  /**
+   * SavedMessageState delete
+   */
+  export type SavedMessageStateDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+    /**
+     * Filter which SavedMessageState to delete.
+     */
+    where: SavedMessageStateWhereUniqueInput
+  }
+
+  /**
+   * SavedMessageState deleteMany
+   */
+  export type SavedMessageStateDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SavedMessageStates to delete
+     */
+    where?: SavedMessageStateWhereInput
+    /**
+     * Limit how many SavedMessageStates to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * SavedMessageState without action
+   */
+  export type SavedMessageStateDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageState
+     */
+    select?: SavedMessageStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageState
+     */
+    omit?: SavedMessageStateOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model SavedMessageOperation
+   */
+
+  export type AggregateSavedMessageOperation = {
+    _count: SavedMessageOperationCountAggregateOutputType | null
+    _min: SavedMessageOperationMinAggregateOutputType | null
+    _max: SavedMessageOperationMaxAggregateOutputType | null
+  }
+
+  export type SavedMessageOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    messageId: string | null
+    requestHash: string | null
+    revision: string | null
+    outcome: string | null
+  }
+
+  export type SavedMessageOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    messageId: string | null
+    requestHash: string | null
+    revision: string | null
+    outcome: string | null
+  }
+
+  export type SavedMessageOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    messageId: number
+    requestHash: number
+    revision: number
+    outcome: number
+    _all: number
+  }
+
+
+  export type SavedMessageOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    messageId?: true
+    requestHash?: true
+    revision?: true
+    outcome?: true
+  }
+
+  export type SavedMessageOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    messageId?: true
+    requestHash?: true
+    revision?: true
+    outcome?: true
+  }
+
+  export type SavedMessageOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    messageId?: true
+    requestHash?: true
+    revision?: true
+    outcome?: true
+    _all?: true
+  }
+
+  export type SavedMessageOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SavedMessageOperation to aggregate.
+     */
+    where?: SavedMessageOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of SavedMessageOperations to fetch.
+     */
+    orderBy?: SavedMessageOperationOrderByWithRelationInput | SavedMessageOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: SavedMessageOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` SavedMessageOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` SavedMessageOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned SavedMessageOperations
+    **/
+    _count?: true | SavedMessageOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: SavedMessageOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: SavedMessageOperationMaxAggregateInputType
+  }
+
+  export type GetSavedMessageOperationAggregateType<T extends SavedMessageOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateSavedMessageOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateSavedMessageOperation[P]>
+      : GetScalarType<T[P], AggregateSavedMessageOperation[P]>
+  }
+
+
+
+
+  export type SavedMessageOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: SavedMessageOperationWhereInput
+    orderBy?: SavedMessageOperationOrderByWithAggregationInput | SavedMessageOperationOrderByWithAggregationInput[]
+    by: SavedMessageOperationScalarFieldEnum[] | SavedMessageOperationScalarFieldEnum
+    having?: SavedMessageOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: SavedMessageOperationCountAggregateInputType | true
+    _min?: SavedMessageOperationMinAggregateInputType
+    _max?: SavedMessageOperationMaxAggregateInputType
+  }
+
+  export type SavedMessageOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    messageId: string
+    requestHash: string
+    revision: string
+    outcome: string
+    _count: SavedMessageOperationCountAggregateOutputType | null
+    _min: SavedMessageOperationMinAggregateOutputType | null
+    _max: SavedMessageOperationMaxAggregateOutputType | null
+  }
+
+  type GetSavedMessageOperationGroupByPayload<T extends SavedMessageOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<SavedMessageOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof SavedMessageOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], SavedMessageOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], SavedMessageOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type SavedMessageOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    messageId?: boolean
+    requestHash?: boolean
+    revision?: boolean
+    outcome?: boolean
+  }, ExtArgs["result"]["savedMessageOperation"]>
+
+  export type SavedMessageOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    messageId?: boolean
+    requestHash?: boolean
+    revision?: boolean
+    outcome?: boolean
+  }, ExtArgs["result"]["savedMessageOperation"]>
+
+  export type SavedMessageOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    messageId?: boolean
+    requestHash?: boolean
+    revision?: boolean
+    outcome?: boolean
+  }, ExtArgs["result"]["savedMessageOperation"]>
+
+  export type SavedMessageOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    messageId?: boolean
+    requestHash?: boolean
+    revision?: boolean
+    outcome?: boolean
+  }
+
+  export type SavedMessageOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "messageId" | "requestHash" | "revision" | "outcome", ExtArgs["result"]["savedMessageOperation"]>
+
+  export type $SavedMessageOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "SavedMessageOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      messageId: string
+      requestHash: string
+      revision: string
+      outcome: string
+    }, ExtArgs["result"]["savedMessageOperation"]>
+    composites: {}
+  }
+
+  type SavedMessageOperationGetPayload<S extends boolean | null | undefined | SavedMessageOperationDefaultArgs> = $Result.GetResult<Prisma.$SavedMessageOperationPayload, S>
+
+  type SavedMessageOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<SavedMessageOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: SavedMessageOperationCountAggregateInputType | true
+    }
+
+  export interface SavedMessageOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['SavedMessageOperation'], meta: { name: 'SavedMessageOperation' } }
+    /**
+     * Find zero or one SavedMessageOperation that matches the filter.
+     * @param {SavedMessageOperationFindUniqueArgs} args - Arguments to find a SavedMessageOperation
+     * @example
+     * // Get one SavedMessageOperation
+     * const savedMessageOperation = await prisma.savedMessageOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends SavedMessageOperationFindUniqueArgs>(args: SelectSubset<T, SavedMessageOperationFindUniqueArgs<ExtArgs>>): Prisma__SavedMessageOperationClient<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one SavedMessageOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {SavedMessageOperationFindUniqueOrThrowArgs} args - Arguments to find a SavedMessageOperation
+     * @example
+     * // Get one SavedMessageOperation
+     * const savedMessageOperation = await prisma.savedMessageOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends SavedMessageOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, SavedMessageOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__SavedMessageOperationClient<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SavedMessageOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageOperationFindFirstArgs} args - Arguments to find a SavedMessageOperation
+     * @example
+     * // Get one SavedMessageOperation
+     * const savedMessageOperation = await prisma.savedMessageOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends SavedMessageOperationFindFirstArgs>(args?: SelectSubset<T, SavedMessageOperationFindFirstArgs<ExtArgs>>): Prisma__SavedMessageOperationClient<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SavedMessageOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageOperationFindFirstOrThrowArgs} args - Arguments to find a SavedMessageOperation
+     * @example
+     * // Get one SavedMessageOperation
+     * const savedMessageOperation = await prisma.savedMessageOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends SavedMessageOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, SavedMessageOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__SavedMessageOperationClient<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more SavedMessageOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all SavedMessageOperations
+     * const savedMessageOperations = await prisma.savedMessageOperation.findMany()
+     *
+     * // Get first 10 SavedMessageOperations
+     * const savedMessageOperations = await prisma.savedMessageOperation.findMany({ take: 10 })
+     *
+     * // Only select the `userId`
+     * const savedMessageOperationWithUserIdOnly = await prisma.savedMessageOperation.findMany({ select: { userId: true } })
+     *
+     */
+    findMany<T extends SavedMessageOperationFindManyArgs>(args?: SelectSubset<T, SavedMessageOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a SavedMessageOperation.
+     * @param {SavedMessageOperationCreateArgs} args - Arguments to create a SavedMessageOperation.
+     * @example
+     * // Create one SavedMessageOperation
+     * const SavedMessageOperation = await prisma.savedMessageOperation.create({
+     *   data: {
+     *     // ... data to create a SavedMessageOperation
+     *   }
+     * })
+     *
+     */
+    create<T extends SavedMessageOperationCreateArgs>(args: SelectSubset<T, SavedMessageOperationCreateArgs<ExtArgs>>): Prisma__SavedMessageOperationClient<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many SavedMessageOperations.
+     * @param {SavedMessageOperationCreateManyArgs} args - Arguments to create many SavedMessageOperations.
+     * @example
+     * // Create many SavedMessageOperations
+     * const savedMessageOperation = await prisma.savedMessageOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends SavedMessageOperationCreateManyArgs>(args?: SelectSubset<T, SavedMessageOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many SavedMessageOperations and returns the data saved in the database.
+     * @param {SavedMessageOperationCreateManyAndReturnArgs} args - Arguments to create many SavedMessageOperations.
+     * @example
+     * // Create many SavedMessageOperations
+     * const savedMessageOperation = await prisma.savedMessageOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many SavedMessageOperations and only return the `userId`
+     * const savedMessageOperationWithUserIdOnly = await prisma.savedMessageOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends SavedMessageOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, SavedMessageOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a SavedMessageOperation.
+     * @param {SavedMessageOperationDeleteArgs} args - Arguments to delete one SavedMessageOperation.
+     * @example
+     * // Delete one SavedMessageOperation
+     * const SavedMessageOperation = await prisma.savedMessageOperation.delete({
+     *   where: {
+     *     // ... filter to delete one SavedMessageOperation
+     *   }
+     * })
+     *
+     */
+    delete<T extends SavedMessageOperationDeleteArgs>(args: SelectSubset<T, SavedMessageOperationDeleteArgs<ExtArgs>>): Prisma__SavedMessageOperationClient<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one SavedMessageOperation.
+     * @param {SavedMessageOperationUpdateArgs} args - Arguments to update one SavedMessageOperation.
+     * @example
+     * // Update one SavedMessageOperation
+     * const savedMessageOperation = await prisma.savedMessageOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends SavedMessageOperationUpdateArgs>(args: SelectSubset<T, SavedMessageOperationUpdateArgs<ExtArgs>>): Prisma__SavedMessageOperationClient<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more SavedMessageOperations.
+     * @param {SavedMessageOperationDeleteManyArgs} args - Arguments to filter SavedMessageOperations to delete.
+     * @example
+     * // Delete a few SavedMessageOperations
+     * const { count } = await prisma.savedMessageOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends SavedMessageOperationDeleteManyArgs>(args?: SelectSubset<T, SavedMessageOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SavedMessageOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many SavedMessageOperations
+     * const savedMessageOperation = await prisma.savedMessageOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends SavedMessageOperationUpdateManyArgs>(args: SelectSubset<T, SavedMessageOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SavedMessageOperations and returns the data updated in the database.
+     * @param {SavedMessageOperationUpdateManyAndReturnArgs} args - Arguments to update many SavedMessageOperations.
+     * @example
+     * // Update many SavedMessageOperations
+     * const savedMessageOperation = await prisma.savedMessageOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more SavedMessageOperations and only return the `userId`
+     * const savedMessageOperationWithUserIdOnly = await prisma.savedMessageOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends SavedMessageOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, SavedMessageOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one SavedMessageOperation.
+     * @param {SavedMessageOperationUpsertArgs} args - Arguments to update or create a SavedMessageOperation.
+     * @example
+     * // Update or create a SavedMessageOperation
+     * const savedMessageOperation = await prisma.savedMessageOperation.upsert({
+     *   create: {
+     *     // ... data to create a SavedMessageOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the SavedMessageOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends SavedMessageOperationUpsertArgs>(args: SelectSubset<T, SavedMessageOperationUpsertArgs<ExtArgs>>): Prisma__SavedMessageOperationClient<$Result.GetResult<Prisma.$SavedMessageOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of SavedMessageOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageOperationCountArgs} args - Arguments to filter SavedMessageOperations to count.
+     * @example
+     * // Count the number of SavedMessageOperations
+     * const count = await prisma.savedMessageOperation.count({
+     *   where: {
+     *     // ... the filter for the SavedMessageOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends SavedMessageOperationCountArgs>(
+      args?: Subset<T, SavedMessageOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], SavedMessageOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a SavedMessageOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends SavedMessageOperationAggregateArgs>(args: Subset<T, SavedMessageOperationAggregateArgs>): Prisma.PrismaPromise<GetSavedMessageOperationAggregateType<T>>
+
+    /**
+     * Group by SavedMessageOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SavedMessageOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends SavedMessageOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: SavedMessageOperationGroupByArgs['orderBy'] }
+        : { orderBy?: SavedMessageOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, SavedMessageOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetSavedMessageOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the SavedMessageOperation model
+   */
+  readonly fields: SavedMessageOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for SavedMessageOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__SavedMessageOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the SavedMessageOperation model
+   */
+  interface SavedMessageOperationFieldRefs {
+    readonly userId: FieldRef<"SavedMessageOperation", 'String'>
+    readonly clientId: FieldRef<"SavedMessageOperation", 'String'>
+    readonly messageId: FieldRef<"SavedMessageOperation", 'String'>
+    readonly requestHash: FieldRef<"SavedMessageOperation", 'String'>
+    readonly revision: FieldRef<"SavedMessageOperation", 'String'>
+    readonly outcome: FieldRef<"SavedMessageOperation", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * SavedMessageOperation findUnique
+   */
+  export type SavedMessageOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageOperation to fetch.
+     */
+    where: SavedMessageOperationWhereUniqueInput
+  }
+
+  /**
+   * SavedMessageOperation findUniqueOrThrow
+   */
+  export type SavedMessageOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageOperation to fetch.
+     */
+    where: SavedMessageOperationWhereUniqueInput
+  }
+
+  /**
+   * SavedMessageOperation findFirst
+   */
+  export type SavedMessageOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageOperation to fetch.
+     */
+    where?: SavedMessageOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of SavedMessageOperations to fetch.
+     */
+    orderBy?: SavedMessageOperationOrderByWithRelationInput | SavedMessageOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for SavedMessageOperations.
+     */
+    cursor?: SavedMessageOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` SavedMessageOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` SavedMessageOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of SavedMessageOperations.
+     */
+    distinct?: SavedMessageOperationScalarFieldEnum | SavedMessageOperationScalarFieldEnum[]
+  }
+
+  /**
+   * SavedMessageOperation findFirstOrThrow
+   */
+  export type SavedMessageOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageOperation to fetch.
+     */
+    where?: SavedMessageOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of SavedMessageOperations to fetch.
+     */
+    orderBy?: SavedMessageOperationOrderByWithRelationInput | SavedMessageOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for SavedMessageOperations.
+     */
+    cursor?: SavedMessageOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` SavedMessageOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` SavedMessageOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of SavedMessageOperations.
+     */
+    distinct?: SavedMessageOperationScalarFieldEnum | SavedMessageOperationScalarFieldEnum[]
+  }
+
+  /**
+   * SavedMessageOperation findMany
+   */
+  export type SavedMessageOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SavedMessageOperations to fetch.
+     */
+    where?: SavedMessageOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of SavedMessageOperations to fetch.
+     */
+    orderBy?: SavedMessageOperationOrderByWithRelationInput | SavedMessageOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing SavedMessageOperations.
+     */
+    cursor?: SavedMessageOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` SavedMessageOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` SavedMessageOperations.
+     */
+    skip?: number
+    distinct?: SavedMessageOperationScalarFieldEnum | SavedMessageOperationScalarFieldEnum[]
+  }
+
+  /**
+   * SavedMessageOperation create
+   */
+  export type SavedMessageOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a SavedMessageOperation.
+     */
+    data: XOR<SavedMessageOperationCreateInput, SavedMessageOperationUncheckedCreateInput>
+  }
+
+  /**
+   * SavedMessageOperation createMany
+   */
+  export type SavedMessageOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many SavedMessageOperations.
+     */
+    data: SavedMessageOperationCreateManyInput | SavedMessageOperationCreateManyInput[]
+  }
+
+  /**
+   * SavedMessageOperation createManyAndReturn
+   */
+  export type SavedMessageOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many SavedMessageOperations.
+     */
+    data: SavedMessageOperationCreateManyInput | SavedMessageOperationCreateManyInput[]
+  }
+
+  /**
+   * SavedMessageOperation update
+   */
+  export type SavedMessageOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a SavedMessageOperation.
+     */
+    data: XOR<SavedMessageOperationUpdateInput, SavedMessageOperationUncheckedUpdateInput>
+    /**
+     * Choose, which SavedMessageOperation to update.
+     */
+    where: SavedMessageOperationWhereUniqueInput
+  }
+
+  /**
+   * SavedMessageOperation updateMany
+   */
+  export type SavedMessageOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update SavedMessageOperations.
+     */
+    data: XOR<SavedMessageOperationUpdateManyMutationInput, SavedMessageOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which SavedMessageOperations to update
+     */
+    where?: SavedMessageOperationWhereInput
+    /**
+     * Limit how many SavedMessageOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SavedMessageOperation updateManyAndReturn
+   */
+  export type SavedMessageOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update SavedMessageOperations.
+     */
+    data: XOR<SavedMessageOperationUpdateManyMutationInput, SavedMessageOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which SavedMessageOperations to update
+     */
+    where?: SavedMessageOperationWhereInput
+    /**
+     * Limit how many SavedMessageOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SavedMessageOperation upsert
+   */
+  export type SavedMessageOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the SavedMessageOperation to update in case it exists.
+     */
+    where: SavedMessageOperationWhereUniqueInput
+    /**
+     * In case the SavedMessageOperation found by the `where` argument doesn't exist, create a new SavedMessageOperation with this data.
+     */
+    create: XOR<SavedMessageOperationCreateInput, SavedMessageOperationUncheckedCreateInput>
+    /**
+     * In case the SavedMessageOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<SavedMessageOperationUpdateInput, SavedMessageOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * SavedMessageOperation delete
+   */
+  export type SavedMessageOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+    /**
+     * Filter which SavedMessageOperation to delete.
+     */
+    where: SavedMessageOperationWhereUniqueInput
+  }
+
+  /**
+   * SavedMessageOperation deleteMany
+   */
+  export type SavedMessageOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SavedMessageOperations to delete
+     */
+    where?: SavedMessageOperationWhereInput
+    /**
+     * Limit how many SavedMessageOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * SavedMessageOperation without action
+   */
+  export type SavedMessageOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SavedMessageOperation
+     */
+    select?: SavedMessageOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SavedMessageOperation
+     */
+    omit?: SavedMessageOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -64987,6 +67142,27 @@ export namespace Prisma {
   };
 
   export type PushReadStateCapabilityScalarFieldEnum = (typeof PushReadStateCapabilityScalarFieldEnum)[keyof typeof PushReadStateCapabilityScalarFieldEnum]
+
+
+  export const SavedMessageStateScalarFieldEnum: {
+    userId: 'userId',
+    messageId: 'messageId',
+    revision: 'revision'
+  };
+
+  export type SavedMessageStateScalarFieldEnum = (typeof SavedMessageStateScalarFieldEnum)[keyof typeof SavedMessageStateScalarFieldEnum]
+
+
+  export const SavedMessageOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    messageId: 'messageId',
+    requestHash: 'requestHash',
+    revision: 'revision',
+    outcome: 'outcome'
+  };
+
+  export type SavedMessageOperationScalarFieldEnum = (typeof SavedMessageOperationScalarFieldEnum)[keyof typeof SavedMessageOperationScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -68634,6 +70810,107 @@ export namespace Prisma {
     NOT?: PushReadStateCapabilityScalarWhereWithAggregatesInput | PushReadStateCapabilityScalarWhereWithAggregatesInput[]
     tokenId?: StringWithAggregatesFilter<"PushReadStateCapability"> | string
     version?: IntWithAggregatesFilter<"PushReadStateCapability"> | number
+  }
+
+  export type SavedMessageStateWhereInput = {
+    AND?: SavedMessageStateWhereInput | SavedMessageStateWhereInput[]
+    OR?: SavedMessageStateWhereInput[]
+    NOT?: SavedMessageStateWhereInput | SavedMessageStateWhereInput[]
+    userId?: StringFilter<"SavedMessageState"> | string
+    messageId?: StringFilter<"SavedMessageState"> | string
+    revision?: StringFilter<"SavedMessageState"> | string
+  }
+
+  export type SavedMessageStateOrderByWithRelationInput = {
+    userId?: SortOrder
+    messageId?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type SavedMessageStateWhereUniqueInput = Prisma.AtLeast<{
+    userId_messageId?: SavedMessageStateUserIdMessageIdCompoundUniqueInput
+    AND?: SavedMessageStateWhereInput | SavedMessageStateWhereInput[]
+    OR?: SavedMessageStateWhereInput[]
+    NOT?: SavedMessageStateWhereInput | SavedMessageStateWhereInput[]
+    userId?: StringFilter<"SavedMessageState"> | string
+    messageId?: StringFilter<"SavedMessageState"> | string
+    revision?: StringFilter<"SavedMessageState"> | string
+  }, "userId_messageId">
+
+  export type SavedMessageStateOrderByWithAggregationInput = {
+    userId?: SortOrder
+    messageId?: SortOrder
+    revision?: SortOrder
+    _count?: SavedMessageStateCountOrderByAggregateInput
+    _max?: SavedMessageStateMaxOrderByAggregateInput
+    _min?: SavedMessageStateMinOrderByAggregateInput
+  }
+
+  export type SavedMessageStateScalarWhereWithAggregatesInput = {
+    AND?: SavedMessageStateScalarWhereWithAggregatesInput | SavedMessageStateScalarWhereWithAggregatesInput[]
+    OR?: SavedMessageStateScalarWhereWithAggregatesInput[]
+    NOT?: SavedMessageStateScalarWhereWithAggregatesInput | SavedMessageStateScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"SavedMessageState"> | string
+    messageId?: StringWithAggregatesFilter<"SavedMessageState"> | string
+    revision?: StringWithAggregatesFilter<"SavedMessageState"> | string
+  }
+
+  export type SavedMessageOperationWhereInput = {
+    AND?: SavedMessageOperationWhereInput | SavedMessageOperationWhereInput[]
+    OR?: SavedMessageOperationWhereInput[]
+    NOT?: SavedMessageOperationWhereInput | SavedMessageOperationWhereInput[]
+    userId?: StringFilter<"SavedMessageOperation"> | string
+    clientId?: StringFilter<"SavedMessageOperation"> | string
+    messageId?: StringFilter<"SavedMessageOperation"> | string
+    requestHash?: StringFilter<"SavedMessageOperation"> | string
+    revision?: StringFilter<"SavedMessageOperation"> | string
+    outcome?: StringFilter<"SavedMessageOperation"> | string
+  }
+
+  export type SavedMessageOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    messageId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+  }
+
+  export type SavedMessageOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: SavedMessageOperationUserIdClientIdCompoundUniqueInput
+    AND?: SavedMessageOperationWhereInput | SavedMessageOperationWhereInput[]
+    OR?: SavedMessageOperationWhereInput[]
+    NOT?: SavedMessageOperationWhereInput | SavedMessageOperationWhereInput[]
+    userId?: StringFilter<"SavedMessageOperation"> | string
+    clientId?: StringFilter<"SavedMessageOperation"> | string
+    messageId?: StringFilter<"SavedMessageOperation"> | string
+    requestHash?: StringFilter<"SavedMessageOperation"> | string
+    revision?: StringFilter<"SavedMessageOperation"> | string
+    outcome?: StringFilter<"SavedMessageOperation"> | string
+  }, "userId_clientId">
+
+  export type SavedMessageOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    messageId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+    _count?: SavedMessageOperationCountOrderByAggregateInput
+    _max?: SavedMessageOperationMaxOrderByAggregateInput
+    _min?: SavedMessageOperationMinOrderByAggregateInput
+  }
+
+  export type SavedMessageOperationScalarWhereWithAggregatesInput = {
+    AND?: SavedMessageOperationScalarWhereWithAggregatesInput | SavedMessageOperationScalarWhereWithAggregatesInput[]
+    OR?: SavedMessageOperationScalarWhereWithAggregatesInput[]
+    NOT?: SavedMessageOperationScalarWhereWithAggregatesInput | SavedMessageOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"SavedMessageOperation"> | string
+    clientId?: StringWithAggregatesFilter<"SavedMessageOperation"> | string
+    messageId?: StringWithAggregatesFilter<"SavedMessageOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"SavedMessageOperation"> | string
+    revision?: StringWithAggregatesFilter<"SavedMessageOperation"> | string
+    outcome?: StringWithAggregatesFilter<"SavedMessageOperation"> | string
   }
 
   export type UserCreateInput = {
@@ -72400,6 +74677,111 @@ export namespace Prisma {
     version?: IntFieldUpdateOperationsInput | number
   }
 
+  export type SavedMessageStateCreateInput = {
+    userId: string
+    messageId: string
+    revision: string
+  }
+
+  export type SavedMessageStateUncheckedCreateInput = {
+    userId: string
+    messageId: string
+    revision: string
+  }
+
+  export type SavedMessageStateUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SavedMessageStateUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SavedMessageStateCreateManyInput = {
+    userId: string
+    messageId: string
+    revision: string
+  }
+
+  export type SavedMessageStateUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SavedMessageStateUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SavedMessageOperationCreateInput = {
+    userId: string
+    clientId: string
+    messageId: string
+    requestHash: string
+    revision: string
+    outcome: string
+  }
+
+  export type SavedMessageOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    messageId: string
+    requestHash: string
+    revision: string
+    outcome: string
+  }
+
+  export type SavedMessageOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+    outcome?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SavedMessageOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+    outcome?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SavedMessageOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    messageId: string
+    requestHash: string
+    revision: string
+    outcome: string
+  }
+
+  export type SavedMessageOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+    outcome?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SavedMessageOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+    outcome?: StringFieldUpdateOperationsInput | string
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -74918,6 +77300,61 @@ export namespace Prisma {
 
   export type PushReadStateCapabilitySumOrderByAggregateInput = {
     version?: SortOrder
+  }
+
+  export type SavedMessageStateUserIdMessageIdCompoundUniqueInput = {
+    userId: string
+    messageId: string
+  }
+
+  export type SavedMessageStateCountOrderByAggregateInput = {
+    userId?: SortOrder
+    messageId?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type SavedMessageStateMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    messageId?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type SavedMessageStateMinOrderByAggregateInput = {
+    userId?: SortOrder
+    messageId?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type SavedMessageOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type SavedMessageOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    messageId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+  }
+
+  export type SavedMessageOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    messageId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+  }
+
+  export type SavedMessageOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    messageId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {

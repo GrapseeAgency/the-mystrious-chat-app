@@ -1067,9 +1067,12 @@ data class SavedLibraryRow(
     }
 }
 
-/** Saved-library index (Wave 2) - server cap 100, newest first, no pagination. */
+/** Saved-library index; bounded online and offline keyset windows. */
 @Dao
 interface SavedDao {
+    @Query("SELECT * FROM savedMessages WHERE :beforeAt IS NULL OR savedAt < :beforeAt OR (savedAt = :beforeAt AND messageId < :beforeId) ORDER BY savedAt DESC, messageId DESC LIMIT 101")
+    suspend fun offlinePage(beforeAt: String?, beforeId: String?): List<SavedMessageEntity>
+
     @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind, p.payloadJson AS savedRootPayload FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId LEFT JOIN messages p ON p.id = m.threadRootId WHERE m.deletedAt IS NULL AND m.viewOnce = 0 AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.key = 'thread-access-denied:v1|' || m.threadRootId) AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.threadRootId IS NULL AND p.deletedAt IS NULL)) AND (s.messageId IN (:ids) OR (:latest = 1 AND s.messageId IN (SELECT messageId FROM savedMessages ORDER BY savedAt DESC, messageId DESC LIMIT 100))) ORDER BY s.savedAt DESC, s.messageId DESC")
     fun observePage(ids: List<String>, latest: Boolean): Flow<List<SavedLibraryRow>>
 
@@ -1154,6 +1157,18 @@ data class Wave7CacheEntity(
 
 @Dao
 interface Wave7Dao {
+    @Query("INSERT OR IGNORE INTO wave7_cache (`key`, json, updatedAt) SELECT :prefix || messageId, '0', 0 FROM savedMessages")
+    suspend fun seedSavedVersions(prefix: String)
+
+    @Query("SELECT * FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix ORDER BY updatedAt, `key` LIMIT 100")
+    suspend fun savedJournalPage(prefix: String): List<Wave7CacheEntity>
+    @Query("SELECT * FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix ORDER BY updatedAt DESC, `key` DESC LIMIT 1")
+    suspend fun lastSavedIntent(prefix: String): Wave7CacheEntity?
+    @Query("SELECT COALESCE(MAX(updatedAt), 0) + 1 FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix")
+    suspend fun nextSavedOrder(prefix: String): Long
+    @Query("SELECT `key` FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix AND `key` > :after ORDER BY `key` LIMIT 100")
+    suspend fun savedVersionKeys(prefix: String, after: String): List<String>
+
     @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
     suspend fun insertReadIntent(item: Wave7CacheEntity)
 
@@ -1184,7 +1199,7 @@ interface Wave7Dao {
     suspend fun delete(key: String)
 
     // Access refusals are durable metadata, not disposable feature snapshots.
-    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|' AND substr(`key`, 1, 16) != 'read-journal:v1|' AND substr(`key`, 1, 14) != 'read-fence:v1|'")
+    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|' AND substr(`key`, 1, 16) != 'read-journal:v1|' AND substr(`key`, 1, 14) != 'read-fence:v1|' AND `key` NOT LIKE 'saved-intent:v1|%' AND `key` NOT LIKE 'saved-version:v1|%' AND `key` NOT LIKE 'saved-head:v1|%' AND `key` NOT LIKE 'saved-sync-notice:v1|%'")
     suspend fun clearAll()
 }
 

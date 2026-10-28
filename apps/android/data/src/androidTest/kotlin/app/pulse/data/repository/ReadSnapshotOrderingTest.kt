@@ -30,6 +30,31 @@ import org.junit.runner.RunWith
  * unrelated inbox/demo/background work. No production credentials or network. */
 @RunWith(AndroidJUnit4::class)
 class ReadSnapshotOrderingTest {
+    @Test fun savedIntentsCommitOfflineBeforeHTTPAndKeepImmutableCausalOrder() = runBlocking {
+        exerciseReadOrdering(cached = true, onReady = { repo, db, _ ->
+            assertTrue(repo.setMessageSaved("anchor", true).getOrThrow())
+            assertEquals(1, db.savedDao().count())
+            val firstRows = db.wave7Dao().savedJournalPage("saved-intent:v1|owner|")
+            assertEquals(1, firstRows.size)
+            val first = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.SavedIntentDto.serializer(), firstRows.single().json)
+            assertEquals("0", first.expectedRevision)
+            assertFalse(repo.setMessageSaved("anchor", false).getOrThrow())
+            assertEquals(0, db.savedDao().count())
+            val secondId = db.wave7Dao().get("saved-head:v1|owner|anchor")!!.json
+            val secondRow = db.wave7Dao().get("saved-intent:v1|owner|anchor|$secondId")!!
+            val second = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.SavedIntentDto.serializer(), secondRow.json)
+            assertEquals(first.clientId, second.predecessorClientId)
+            db.wave7Dao().deferReadIntent(firstRows.single().key, firstRows.single().json, "saved-intent:v1|owner|")
+            repo.setMessageSaved("anchor", true).getOrThrow()
+            val lastId = db.wave7Dao().get("saved-head:v1|owner|anchor")!!.json
+            val last = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.SavedIntentDto.serializer(), db.wave7Dao().get("saved-intent:v1|owner|anchor|$lastId")!!.json)
+            assertEquals(second.clientId, last.predecessorClientId)
+            db.wave7Dao().clearAll()
+            assertEquals(3, db.wave7Dao().savedJournalPage("saved-intent:v1|owner|").size)
+            assertEquals(lastId, db.wave7Dao().get("saved-head:v1|owner|anchor")!!.json)
+        })
+    }
+
     @Test fun unchangedNegativeProofRetiresOlderPageWithoutDroppingOtherMessages() = runBlocking {
         exerciseReadOrdering(cached = true)
     }

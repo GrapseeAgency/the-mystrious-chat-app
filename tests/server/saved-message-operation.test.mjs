@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
-import { mutateSavedMessage, SavedMessageError } from '../../src/lib/saved-message-operation.ts'
+import { mutateSavedMessage, mutateSavedIntent, readSavedMessageStates, SavedMessageError } from '../../src/lib/saved-message-operation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 const now = new Date('2026-10-22T00:00:00Z')
 async function fixture(run) {
@@ -12,6 +12,8 @@ async function fixture(run) {
   const db = new PrismaClient({ datasourceUrl: `file:${join(dir, 'test.sqlite')}` })
   try {
     for (const sql of [
+      'CREATE TABLE SavedMessageState(userId TEXT,messageId TEXT,revision TEXT NOT NULL,PRIMARY KEY(userId,messageId))',
+      'CREATE TABLE SavedMessageOperation(userId TEXT,clientId TEXT,messageId TEXT,requestHash TEXT,revision TEXT,outcome TEXT,PRIMARY KEY(userId,clientId))',
       'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,deletedAt DATETIME,expiresAt DATETIME,viewOnce BOOLEAN NOT NULL DEFAULT false,parentId TEXT)',
       'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY,userId TEXT,conversationId TEXT,UNIQUE(userId,conversationId))',
       'CREATE TABLE SavedMessage(id TEXT PRIMARY KEY,userId TEXT,messageId TEXT,savedAt DATETIME NOT NULL,UNIQUE(userId,messageId))',
@@ -72,6 +74,7 @@ test('state route rejects omitted desired state and wrong owner before calling t
     .replace(/^import .*$/gm, '').replace(/export /g, '')
   const calls = []; let denied = false
   const dependencies = { NextResponse: { json: Response.json }, db: {}, safeJson: req => req.json(),
+    notifySocket: async () => {},
     strField: value => typeof value === 'string' ? value.trim() : '', SavedMessageError,
     requireActionOwner: async () => denied ? Response.json({}, { status: 403 }) : null,
     mutateSavedMessage: async (_, userId, messageId, saved) => { calls.push({ userId, messageId, saved }); return { saved } } }
@@ -82,3 +85,74 @@ test('state route rejects omitted desired state and wrong owner before calling t
   denied = false
   for (const saved of [true, false]) { assert.equal((await request(saved)).status, 200); assert.deepEqual(calls.at(-1), { userId: 'me', messageId: 'reply', saved }) }
 })
+
+test('offline intent replay never re-applies an old save after another device removes it', () => fixture(async db => {
+  const first = { clientId: 'deviceA-save', expectedRevision: '0' }
+  const saved = await mutateSavedIntent(db, 'me', 'reply', true, first)
+  const removed = await mutateSavedIntent(db, 'me', 'reply', false, { clientId: 'deviceB-remove', expectedRevision: saved.revision })
+  assert.equal(removed.saved, false)
+  const replay = await mutateSavedIntent(db, 'me', 'reply', true, first)
+  assert.equal(replay.saved, false); assert.equal(replay.revision, removed.revision); assert.equal(replay.outcome, 'superseded')
+  assert.equal(await db.savedMessage.count(), 0)
+  await assert.rejects(mutateSavedIntent(db, 'me', 'reply', false, first), { status: 409 })
+}))
+test('same-device durable predecessors order save-unsave-save despite lost responses', () => fixture(async db => {
+  const a = { clientId: 'first', expectedRevision: '0' }
+  const b = { clientId: 'second', predecessorClientId: 'first' }
+  const c = { clientId: 'third', predecessorClientId: 'second' }
+  await assert.rejects(mutateSavedIntent(db, 'me', 'reply', false, b), { status: 409 })
+  await mutateSavedIntent(db, 'me', 'reply', true, a)
+  await mutateSavedIntent(db, 'me', 'reply', false, b)
+  const final = await mutateSavedIntent(db, 'me', 'reply', true, c)
+  for (const [state, intent] of [[true,a],[false,b],[true,c]]) {
+    const replay = await mutateSavedIntent(db, 'me', 'reply', state, intent)
+    assert.equal(replay.saved, true); assert.equal(replay.revision, final.revision)
+  }
+  assert.equal(await db.savedMessageOperation.count(), 3)
+}))
+test('cross-device stale branches are explicit durable conflicts, including their queued descendants', () => fixture(async db => {
+  const a = await mutateSavedIntent(db, 'me', 'reply', true, { clientId: 'a', expectedRevision: '0' })
+  const stale = { clientId: 'b', expectedRevision: '0' }
+  const conflict = await mutateSavedIntent(db, 'me', 'reply', false, stale)
+  assert.equal(conflict.outcome, 'conflict'); assert.equal(conflict.saved, true)
+  const descendant = await mutateSavedIntent(db, 'me', 'reply', false, { clientId: 'c', predecessorClientId: 'b' })
+  assert.equal(descendant.outcome, 'conflict')
+  const explicit = await mutateSavedIntent(db, 'me', 'reply', false, { clientId: 'd', expectedRevision: a.revision })
+  assert.equal(explicit.outcome, 'applied'); assert.equal(explicit.saved, false)
+  assert.equal((await mutateSavedIntent(db, 'me', 'reply', false, stale)).outcome, 'conflict')
+}))
+test('legacy writes advance causal state; snapshots are owner-bound and bounded', () => fixture(async (db, act) => {
+  await act(true)
+  const snapshot = (await readSavedMessageStates(db, 'me', ['reply']))[0]
+  assert.notEqual(snapshot.revision, '0'); assert.equal(snapshot.saved, true)
+  assert.equal((await readSavedMessageStates(db, 'peer', ['reply']))[0].revision, '0')
+  const late = await mutateSavedIntent(db, 'me', 'reply', false, { clientId: 'old-offline', expectedRevision: '0' })
+  assert.equal(late.outcome, 'conflict')
+  for (const ids of [Array.from({length:101},(_,i)=>String(i)), ['reply','reply'], ['']]) {
+    await assert.rejects(readSavedMessageStates(db, 'me', ids), { status: 400 })
+  }
+}))
+test('deleted-message tombstones and durable bound rejections prevent resurrection', () => fixture(async db => {
+  const intent = { clientId: 'save-retry', expectedRevision: '0' }
+  await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId='me'`
+  assert.equal((await mutateSavedIntent(db, 'me', 'reply', true, intent)).outcome, 'rejected')
+  assert.equal(await db.savedMessageOperation.count(), 1)
+  await db.$executeRaw`INSERT INTO ConversationParticipant VALUES ('p','me','room')`
+  assert.equal((await mutateSavedIntent(db, 'me', 'reply', true, intent)).outcome, 'rejected')
+  intent.clientId = 'new-after-access-restored'
+  const saved = await mutateSavedIntent(db, 'me', 'reply', true, intent)
+  await mutateSavedIntent(db, 'me', 'reply', false, { clientId: 'remove', expectedRevision: saved.revision })
+  await db.$executeRaw`DELETE FROM Message WHERE id='reply'`
+  assert.equal((await mutateSavedIntent(db, 'me', 'reply', true, intent)).saved, false)
+}))
+
+test('saved state reconciliation withdraws unavailable bodies even when the bookmark marker remains', () => fixture(async db => {
+  await mutateSavedIntent(db, 'me', 'reply', true, { clientId: 'save-visible', expectedRevision: '0' })
+  assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].saved, true)
+  await db.$executeRaw`UPDATE Message SET expiresAt=0 WHERE id='root'`
+  assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].saved, false)
+  assert.equal(await db.savedMessage.count(), 1)
+  await db.$executeRaw`UPDATE Message SET expiresAt=NULL WHERE id='root'`
+  await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId='me'`
+  assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].saved, false)
+}))

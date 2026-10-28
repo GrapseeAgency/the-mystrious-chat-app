@@ -14,7 +14,7 @@ interface RouteCtx {
 }
 
 /**
- * GET /api/users/[id]/saved → { items: SavedItem[] } (newest first, cap 100)
+ * GET /api/users/[id]/saved → { items: SavedItem[] } (newest first, 100 per page)
  * Each item carries its message + resolved conversation display info
  * (DMs resolve to the partner's name server-side).
  */
@@ -32,7 +32,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
 
   const items = await db.$transaction(async tx => {
     const now = new Date()
-    return scanFeed({ cursor: new URL(req.url).searchParams.get('cursor'), scope: feedScope('saved', userId), limit: 100,
+    const page = await scanFeed({ cursor: new URL(req.url).searchParams.get('cursor'), scope: feedScope('saved', userId), limit: 100,
       load: (before, upper, take) => tx.savedMessage.findMany({
       where: { AND: [savedMessagesWhere(userId, now), ...feedBounds(before, upper, 'savedAt', 'messageId')] },
       orderBy: [{ savedAt: 'desc' }, { messageId: 'desc' }], take,
@@ -72,7 +72,9 @@ export async function GET(req: Request, { params }: RouteCtx) {
         message: mapMessage(visible, userId),
       }
     } })
-
+    const states = await tx.savedMessageState.findMany({ where: { userId, messageId: { in: page.items.map(item => item.message.id) } } })
+    const revisions = new Map(states.map(state => [state.messageId, state.revision]))
+    return { ...page, items: page.items.map(item => ({ ...item, revision: revisions.get(item.message.id) ?? '0' })) }
   }, { isolationLevel: 'Serializable', timeout: 15000 })
   return NextResponse.json(items, { headers })
   } catch (error) {

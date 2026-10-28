@@ -633,6 +633,21 @@ exports.Prisma.PushReadStateCapabilityScalarFieldEnum = {
   version: 'version'
 };
 
+exports.Prisma.SavedMessageStateScalarFieldEnum = {
+  userId: 'userId',
+  messageId: 'messageId',
+  revision: 'revision'
+};
+
+exports.Prisma.SavedMessageOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  messageId: 'messageId',
+  requestHash: 'requestHash',
+  revision: 'revision',
+  outcome: 'outcome'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -696,7 +711,9 @@ exports.Prisma.ModelName = {
   ReadIntentState: 'ReadIntentState',
   MessageReadObservation: 'MessageReadObservation',
   ReadLedgerMigration: 'ReadLedgerMigration',
-  PushReadStateCapability: 'PushReadStateCapability'
+  PushReadStateCapability: 'PushReadStateCapability',
+  SavedMessageState: 'SavedMessageState',
+  SavedMessageOperation: 'SavedMessageOperation'
 };
 
 /**

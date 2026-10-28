@@ -22,6 +22,31 @@ class SavedLibraryObservationTest {
     private fun message(id: String) = Message(id = id, conversationId = "room", authorId = "peer", authorName = "Peer",
         kind = Message.Kind.TEXT, body = "original", createdAt = "2026-10-20T00:00:00Z")
 
+    @Test fun offlineSavedPagesCrossThousandsOfTiedMarkersAndSelectedObserversStayBounded() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
+        try {
+            repeat(24) { batch ->
+                val messages = (0 until 100).map { message("m%05d".format(batch * 100 + it)) }
+                db.withTransaction {
+                    db.messageDao().upsertAll(messages.map(MessageEntity::from))
+                    db.savedDao().upsertAll(messages.map { SavedMessageEntity(it.id, it.conversationId, it.createdAt) })
+                }
+            }
+            var at: String? = null; var id: String? = null; var count = 0
+            do {
+                val rows = db.savedDao().offlinePage(at, id)
+                val page = rows.take(100)
+                assertTrue(page.size <= 100)
+                assertEquals(page.size, db.savedDao().page(page.map { it.messageId }, false).size)
+                count += page.size
+                at = page.lastOrNull()?.savedAt; id = page.lastOrNull()?.messageId
+            } while (rows.size > 100)
+            assertEquals(2400, count)
+            db.wave7Dao().seedSavedVersions("saved-version:v1|owner|")
+            assertEquals(100, db.wave7Dao().savedVersionKeys("saved-version:v1|owner|", "").size)
+        } finally { db.close() }
+    }
+
     @Test fun savedRepliesRespectKnownAncestorsDenialAndPreviewDeadline() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
         try {

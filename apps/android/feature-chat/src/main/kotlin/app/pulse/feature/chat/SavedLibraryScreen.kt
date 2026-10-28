@@ -84,11 +84,13 @@ class SavedLibraryViewModel @Inject constructor(
         val query: String = "",
         val previous: Boolean = false,
         val next: Boolean = false,
+        val cached: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    val syncStatus = repo.observeSavedSyncStatus()
     val viewerId: String? get() = repo.viewerId
 
     private var all: List<SavedItem> = emptyList()
@@ -102,10 +104,18 @@ class SavedLibraryViewModel @Inject constructor(
         if (_state.value.loading) return
         if (older) { val next = nextCursor ?: return; previous.add(cursor); cursor = next }
         else { if (previous.isEmpty()) return; cursor = previous.removeAt(previous.lastIndex) }
+        _state.value = _state.value.copy(loading = true)
         selected.value = emptyList(); all = emptyList(); applyFilter(); refresh()
     }
 
+    private var loadJob: kotlinx.coroutines.Job? = null
+    private val liveRefresh = app.pulse.domain.sync.CoalescedRefresh(viewModelScope) { if (cursor == null) { refresh(); loadJob?.join() } }
     init {
+        viewModelScope.launch {
+            repo.events().collect { event ->
+                if (event is app.pulse.domain.repository.PulseEvent.SavedChanged && cursor == null) liveRefresh.request()
+            }
+        }
         refresh()
         viewModelScope.launch {
             selected.flatMapLatest { repo.observeSavedPage(it) }.collect { rows ->
@@ -120,7 +130,7 @@ class SavedLibraryViewModel @Inject constructor(
         val owned = repo.boundToCurrentAccount()
         if (ownerEpoch != epoch) { cursor = null; nextCursor = null; previous.clear(); selected.value = null; ownerEpoch = epoch }
         val ticket = ++request
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             if (repo.attachmentSessionKey() != epoch) return@launch
             _state.value = _state.value.copy(loading = true, error = null)
             try {
@@ -129,7 +139,7 @@ class SavedLibraryViewModel @Inject constructor(
                     nextCursor = page.nextCursor
                     selected.value = page.items.map { it.message.id }
                     all = page.items; applyFilter()
-                    _state.value = _state.value.copy(loading = false, previous = previous.isNotEmpty(), next = page.hasMore)
+                    _state.value = _state.value.copy(loading = false, previous = previous.isNotEmpty(), next = page.hasMore, cached = page.cached)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
                 if (repo.attachmentSessionKey() == epoch && request == ticket) _state.value = _state.value.copy(
@@ -187,6 +197,7 @@ fun SavedLibraryScreen(
     viewModel: SavedLibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle(initialValue = null)
 
     var unsaveTarget by remember { mutableStateOf<SavedItem?>(null) }
 
@@ -197,6 +208,8 @@ fun SavedLibraryScreen(
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
+        if (state.cached) Text("Cached saved messages · reopen to refresh online", modifier = Modifier.padding(12.dp))
+        syncStatus?.let { Text(it, modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Surface(color = Color.Transparent) {
             Column(Modifier.fillMaxWidth()) {
                 Row(

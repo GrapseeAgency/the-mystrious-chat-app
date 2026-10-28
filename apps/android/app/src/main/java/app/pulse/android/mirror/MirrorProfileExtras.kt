@@ -153,6 +153,9 @@ internal fun MirrorSavedSheet(
 ) {
     val epoch = repository.attachmentSessionKey()
     val account = remember(repository, epoch) { repository.boundToCurrentAccount() }
+    val syncStatusFlow = remember(account) { account.observeSavedSyncStatus() }
+    val syncStatus by syncStatusFlow.collectAsStateWithLifecycle(initialValue = null)
+    var cachedPage by remember(epoch) { mutableStateOf(false) }
     var cursor by remember(epoch) { mutableStateOf<String?>(null) }
     var next by remember(epoch) { mutableStateOf<String?>(null) }
     var previous by remember(epoch) { mutableStateOf(emptyList<String?>()) }
@@ -162,6 +165,14 @@ internal fun MirrorSavedSheet(
     var loading by remember(viewerId) { mutableStateOf(true) }
     var error by remember(viewerId) { mutableStateOf<String?>(null) }
     var retry by remember(viewerId) { mutableStateOf(0) }
+    var refreshAfterLoad by remember(epoch) { mutableStateOf(false) }
+    LaunchedEffect(account) {
+        account.events().collect { event ->
+            if (event is app.pulse.domain.repository.PulseEvent.SavedChanged && cursor == null) {
+                if (loading) refreshAfterLoad = true else retry++
+            }
+        }
+    }
     LaunchedEffect(repository, viewerId, retry, cursor, epoch) {
         loading = true
         error = null
@@ -169,12 +180,15 @@ internal fun MirrorSavedSheet(
             val page = account.savedLibraryPage(cursor).getOrThrow()
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
-            selected = page.items.map { it.message.id }; next = page.nextCursor
+            selected = page.items.map { it.message.id }; next = page.nextCursor; cachedPage = page.cached
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             error = failure.message ?: "Saved messages could not be refreshed"
-        } finally { loading = false }
+        } finally {
+            loading = false
+            if (refreshAfterLoad) { refreshAfterLoad = false; retry++ }
+        }
     }
 
     Box(
@@ -214,6 +228,8 @@ internal fun MirrorSavedSheet(
                     fontWeight = FontWeight.Bold,
                 )
             }
+            syncStatus?.let { Text(it, color = MirrorArt.Dim, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
+            if (cachedPage) Text("Cached saved messages · reopen to refresh online", color = MirrorArt.Dim, fontSize = 12.sp)
             app.pulse.feature.chat.FeedPageButtons(previous.isNotEmpty(), next != null, loading,
                 onPrevious = { loading = true; selected = emptyList(); cursor = previous.last(); previous = previous.dropLast(1) },
                 onNext = { next?.let { value -> loading = true; selected = emptyList(); previous = previous + listOf(cursor); cursor = value } })

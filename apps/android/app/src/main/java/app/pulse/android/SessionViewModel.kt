@@ -123,8 +123,8 @@ class SessionViewModel @Inject constructor(
         // Observe both durable queues across hydration and account changes.
         // Empty-to-pending edges append work without cancelling a running delivery.
         viewModelScope.launch {
-            kotlinx.coroutines.flow.combine(repo.observeOutbox(), repo.observePendingReads()) { entries, reads ->
-                reads || entries.any { it.failureReason == null }
+            kotlinx.coroutines.flow.combine(repo.observeOutbox(), repo.observePendingReads(), repo.observePendingSaved()) { entries, reads, saved ->
+                saved || reads || entries.any { it.failureReason == null }
             }.distinctUntilChanged().collect { pending ->
                 if (pending) OutboxWorker.enqueue(appContext)
             }

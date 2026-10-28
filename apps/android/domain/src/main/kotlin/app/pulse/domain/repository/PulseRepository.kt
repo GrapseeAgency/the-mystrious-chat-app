@@ -94,6 +94,8 @@ import kotlinx.coroutines.flow.Flow
 /** Live events pushed by the relay - the UDF event side of the repository. */
 sealed interface PulseEvent {
     data object PrivateFeedsChanged : PulseEvent
+    data class SavedSyncNotice(val message: String) : PulseEvent
+    data class SavedChanged(val messageId: String) : PulseEvent
     data class MessageReceived(val conversationId: String, val message: Message) : PulseEvent
     /** Existing row changed; never an arrival, sound, effect or unread increment. */
     data class MessageUpdated(val conversationId: String, val message: Message) : PulseEvent
@@ -545,6 +547,10 @@ interface PulseRepository {
     suspend fun pinMessage(messageId: String): Result<Message>
 
     /** Explicit desired bookmark state; retrying Save must never remove it. */
+    fun observeSavedSyncStatus(): Flow<String?> = kotlinx.coroutines.flow.flowOf(null)
+    fun observePendingSaved(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+    suspend fun flushSavedIntents(): Result<Int> = Result.success(0)
+    suspend fun refreshSavedStates(ids: List<String>): Result<Unit> = Result.success(Unit)
     suspend fun setMessageSaved(messageId: String, saved: Boolean): Result<Boolean>
 
     /** GET /api/conversations/{id}/pinned?userId= - pinned rows, pinnedAt asc (also upserts Room). */
