@@ -34,6 +34,22 @@ class NativeSendEntrypoints(unittest.TestCase):
         self.assertIn('paneMayClearAfterSend(result, text, paneDraft, token, draftToken)', source)
         self.assertNotRegex(source, r'paneDraft\s*=\s*""\s*\n\s*onSend\(')
 
+    def test_alternate_schedulers_capture_owner_before_async_submission(self):
+        android = (ROOT / 'apps/android/app/src/main/java/app/pulse/android/mirror/MirrorRoom.kt').read_text()
+        section = android[android.index('private fun MirrorOwnedScheduleComposerSheet('):]
+        section = section[:section.index('    MirrorSheet(title = "Schedule message"')]
+        self.assertLess(section.index('val owned = repository.boundToCurrentAccount()'), section.index('scope.launch'))
+        self.assertIn('owned.attachmentSessionKey() != epoch', section)
+        self.assertIn('owned.scheduleMessage(', section)
+        self.assertIn('owned.acknowledgeScheduledCreation(item)', section)
+        self.assertNotIn('repository.scheduleMessage(', section)
+        ios = (ROOT / 'apps/ios/Pulse/Features/Mirror/MirrorRootView.swift').read_text()
+        section = ios[ios.index('private struct MirrorScheduleBuilder: View'):]
+        section = section[:section.index('private struct MirrorPhrasesBuilder:')]
+        launched = section[section.index('        Task {'):]
+        self.assertLess(launched.index('guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket'),
+                        launched.index('try await session.scheduleMessage('))
+
     def test_small_rich_pickers_do_not_discard_before_local_acceptance(self):
         source = (ROOT / 'apps/android/app/src/main/java/app/pulse/android/mirror/MirrorRoom.kt').read_text()
         start = source.index('    if (stickerOpen) {', source.index('    if (pollOpen) {'))

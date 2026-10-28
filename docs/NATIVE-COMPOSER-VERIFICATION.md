@@ -190,3 +190,28 @@ Android stale-failure ownership repair. It does **not** establish equivalence to
 the then-unavailable original eleven-item list. That list has since been supplied; current closure remains open pending the new native implementation and verification, not missing wording.
 The unrelated full-suite read-presentation failure, deployment and comprehensive
 physical-device acceptance are not waived by these scoped successes.
+
+
+## Original-list reconciliation — 2026-10-28 continuation (not closure)
+
+- The original eleven items are now recorded in
+  `NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md`; no missing-list blocker remains.
+- Local server suite at `a83af64`: **535 passed, zero failed/skipped** (523
+  top-level tests), including 31 settings/draft contract tests and six browser
+  mirror behaviors. The legacy endpoint no longer bypasses native draft CAS.
+  Standalone strict TypeScript checking of `draft-mirror.ts` passed; this is not
+  a successful whole-project TypeScript check.
+- Scoped iOS source `3e2bf73115d6da90c1afd06eab2b6f5f1b4164f6`, run
+  [40713513438](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40713513438),
+  check `122904849816`: explicit **107 expected / 107 passed / 0 unverified**,
+  `verified=true`; case-map digest
+  `8e002b708c19cf6de839857063ea75fe7321a3317a204a97980874bc29c7bf53`.
+  This predates the later file-only recovery, PiP and edit-launch changes.
+- Android `c6565c2`, run
+  [40716277261](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40716277261):
+  JVM test step and both API30/API34 instrumentation steps succeeded. This
+  executes the corrected failed-SQL checkpoint fixtures; it does not verify
+  the later edit-generation or alternate schedule submission changes.
+- Latest local Python contracts: **18 passed**. Source tripwires include
+  alternate-scheduler pre-dispatch account ownership. Source checks are not
+  native UI runtime proof. Current hosted native outcomes remain pending.

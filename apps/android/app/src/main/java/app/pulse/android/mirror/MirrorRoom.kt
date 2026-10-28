@@ -4705,6 +4705,8 @@ private fun MirrorOwnedScheduleComposerSheet(
 
     fun scheduleAt(preset: java.time.Instant?) {
         if (busy) return
+        val owned = repository.boundToCurrentAccount()
+        if (epoch == null || owned.attachmentSessionKey() != epoch) return
         val text = body.trim()
         if (text.isEmpty()) {
             error = "Write the message first"
@@ -4730,11 +4732,11 @@ private fun MirrorOwnedScheduleComposerSheet(
         scope.launch {
             try {
                 if (epoch == null || repository.attachmentSessionKey() != epoch) return@launch
-                val item = repository.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
+                val item = owned.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repository.attachmentSessionKey() != epoch) return@launch
                 onConsumedDraft(text)
-                repository.acknowledgeScheduledCreation(item).getOrThrow()
+                owned.acknowledgeScheduledCreation(item).getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repository.attachmentSessionKey() != epoch) return@launch
                 onDismiss()

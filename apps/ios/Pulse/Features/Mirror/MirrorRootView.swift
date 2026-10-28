@@ -3162,7 +3162,7 @@ private struct MirrorScheduleBuilder: View {
 
     private func send() {
         guard !busy, valid else { return }
-        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        let epoch = session.sessionGeneration, ticket = UUID()
         request = ticket; busy = true
         let iso = ISO8601DateFormatter().string(from: when)
         let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3171,6 +3171,8 @@ private struct MirrorScheduleBuilder: View {
         Task {
             defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
+                // A task queued by the old sheet must never submit under a new account.
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 let item = try await session.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
                 guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 onScheduled(body, draftReceipt)

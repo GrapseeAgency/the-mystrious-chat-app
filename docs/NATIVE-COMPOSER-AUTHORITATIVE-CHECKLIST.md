@@ -32,9 +32,15 @@ file-only recovery, mini-chat hydration and exact-revision restoration changes
 still require their own hosted result. Android checkpoint fault fixtures exposed
 two fixture defects (duplicate DataStore instances, then the iOS spelling of the
 Android cache table); both corrected, without removing the failed-storage tests.
-Local contracts now 17/17. No native SDK builds run in the sandbox.
+Local contracts now 18/18. No native SDK builds run in the sandbox.
 
 Compatibility note: old unconditional web draft PATCH clients now receive 428
 and must upgrade; allowing them to overwrite a protected native draft would
 leave item 1 open. Current web client was updated alongside the endpoint. This
 is a targeted safety migration, not a whole-web-app audit.
+
+Additional producer review: main/alternate edit launch checks now reject displaced
+composer revisions, and Android edit ACK ownership captures the typing generation
+before the first suspended read. Alternate schedule submission also captures the
+Android account receiver and checks the Swift sheet/session before async dispatch.
+These latest producer changes still need their own hosted native verification.
