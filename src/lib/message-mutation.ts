@@ -51,9 +51,12 @@ export async function mutateMessage<T>(db: PrismaClient, id: string, owner: stri
             ? { pinnedAt: now, pinnedBy: owner } : { pinnedAt: null, pinnedBy: null }, select: { id: true } })
           break
         }
-        case 'edit':
-          await tx.message.update({ where: { id }, data: { content: action.content, editedAt: now }, select: { id: true } })
+        case 'edit': {
+          const previous = await tx.message.findUniqueOrThrow({ where: { id }, select: { editedAt: true } })
+          await tx.message.update({ where: { id }, data: { content: action.content,
+            editedAt: new Date(Math.max(now.getTime(), (previous.editedAt?.getTime() ?? -1) + 1)) }, select: { id: true } })
           break
+        }
         case 'delete':
           await tx.message.update({ where: { id }, data: { deletedAt: now, pinnedAt: null, pinnedBy: null }, select: { id: true } })
           break

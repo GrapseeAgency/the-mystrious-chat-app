@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/messages/[id] - edit (sender only) + soft-delete (sender only)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -43,6 +44,8 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   const body = await safeJson(req)
   const userId = strField(body.userId)
   if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, userId, 'message edit')
+  if (denied) return denied
   const content = strField(body.content)
   if (!content.length || content.length > MESSAGE_MAX) {
     return NextResponse.json({ error: `content must contain 1..${MESSAGE_MAX} characters.` }, { status: 400 })
@@ -55,5 +58,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   const body = await safeJson(req)
   const requesterId = strField(body.requesterId)
   if (!requesterId) return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, requesterId, 'message deletion')
+  if (denied) return denied
   return perform(id, requesterId, { kind: 'delete' })
 }

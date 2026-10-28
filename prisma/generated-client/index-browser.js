@@ -336,6 +336,7 @@ exports.Prisma.ConversationParticipantScalarFieldEnum = {
   handRaisedAt: 'handRaisedAt',
   screenPrivacy: 'screenPrivacy',
   manualUnread: 'manualUnread',
+  draftRevision: 'draftRevision',
   draft: 'draft'
 };
 
@@ -648,6 +649,26 @@ exports.Prisma.SavedMessageOperationScalarFieldEnum = {
   outcome: 'outcome'
 };
 
+exports.Prisma.ComposerOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  kind: 'kind',
+  targetId: 'targetId',
+  rootId: 'rootId',
+  requestHash: 'requestHash',
+  revision: 'revision',
+  outcome: 'outcome',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.ThreadDraftStateScalarFieldEnum = {
+  userId: 'userId',
+  conversationId: 'conversationId',
+  rootId: 'rootId',
+  draft: 'draft',
+  revision: 'revision'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -713,7 +734,9 @@ exports.Prisma.ModelName = {
   ReadLedgerMigration: 'ReadLedgerMigration',
   PushReadStateCapability: 'PushReadStateCapability',
   SavedMessageState: 'SavedMessageState',
-  SavedMessageOperation: 'SavedMessageOperation'
+  SavedMessageOperation: 'SavedMessageOperation',
+  ComposerOperation: 'ComposerOperation',
+  ThreadDraftState: 'ThreadDraftState'
 };
 
 /**

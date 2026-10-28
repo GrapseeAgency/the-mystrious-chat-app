@@ -400,6 +400,7 @@ model ConversationParticipant {
   handRaisedAt     DateTime? // Clubhouse-style raised hand (null = lowered)
   screenPrivacy    Boolean                  @default(false) // R42: per-VIEWER screen security (personal veil, OR'd with the conversation-wide flag)
   manualUnread     Boolean                  @default(false) // R44: mark-as-unread — row badge dot until the room is opened again
+  draftRevision    String                   @default("0")
   draft            String? // R45: server-synced composer draft (cross-device; null/'' = no draft)
   user             User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation     Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -909,4 +910,29 @@ model SavedMessageOperation {
   outcome     String
 
   @@id([userId, clientId])
+}
+
+// Private composer commands retain identities independently of message deletion.
+model ComposerOperation {
+  userId      String
+  clientId    String
+  kind        String
+  targetId    String
+  rootId      String   @default("")
+  requestHash String
+  revision    String
+  outcome     String
+  createdAt   DateTime @default(now())
+
+  @@id([userId, clientId])
+}
+
+model ThreadDraftState {
+  userId         String
+  conversationId String
+  rootId         String
+  draft          String
+  revision       String
+
+  @@id([userId, conversationId, rootId])
 }

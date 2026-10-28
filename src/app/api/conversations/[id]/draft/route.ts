@@ -89,11 +89,11 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
         return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
       }
       const participant = await tx.conversationParticipant.findUnique({
-        where: { userId_conversationId: { userId, conversationId: id } }, select: { id: true },
+        where: { userId_conversationId: { userId, conversationId: id } }, select: { id: true, draft: true, draftRevision: true },
       })
       if (!participant) return NextResponse.json({ error: 'You are not a participant of this conversation.' }, { status: 403 })
       const saved = await tx.conversationParticipant.update({
-        where: { id: participant.id }, data: { draft: draft.length > 0 ? draft : null }, select: { draft: true },
+        where: { id: participant.id }, data: { draft: draft.length > 0 ? draft : null, draftRevision: (BigInt(participant.draftRevision === "0" && participant.draft ? "1" : participant.draftRevision) + BigInt(1)).toString() }, select: { draft: true },
       })
       return NextResponse.json({ ok: true, draftReceiptVersion: 1, conversationId: id, userId, draft: saved.draft ?? '' },
         { headers: { 'Cache-Control': 'private, no-store' } })

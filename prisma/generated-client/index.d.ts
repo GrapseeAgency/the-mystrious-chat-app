@@ -342,6 +342,16 @@ export type SavedMessageState = $Result.DefaultSelection<Prisma.$SavedMessageSta
  *
  */
 export type SavedMessageOperation = $Result.DefaultSelection<Prisma.$SavedMessageOperationPayload>
+/**
+ * Model ComposerOperation
+ *
+ */
+export type ComposerOperation = $Result.DefaultSelection<Prisma.$ComposerOperationPayload>
+/**
+ * Model ThreadDraftState
+ *
+ */
+export type ThreadDraftState = $Result.DefaultSelection<Prisma.$ThreadDraftStatePayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -1000,6 +1010,26 @@ export class PrismaClient<
     * ```
     */
   get savedMessageOperation(): Prisma.SavedMessageOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.composerOperation`: Exposes CRUD operations for the **ComposerOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ComposerOperations
+    * const composerOperations = await prisma.composerOperation.findMany()
+    * ```
+    */
+  get composerOperation(): Prisma.ComposerOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.threadDraftState`: Exposes CRUD operations for the **ThreadDraftState** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ThreadDraftStates
+    * const threadDraftStates = await prisma.threadDraftState.findMany()
+    * ```
+    */
+  get threadDraftState(): Prisma.ThreadDraftStateDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1494,7 +1524,9 @@ export namespace Prisma {
     ReadLedgerMigration: 'ReadLedgerMigration',
     PushReadStateCapability: 'PushReadStateCapability',
     SavedMessageState: 'SavedMessageState',
-    SavedMessageOperation: 'SavedMessageOperation'
+    SavedMessageOperation: 'SavedMessageOperation',
+    ComposerOperation: 'ComposerOperation',
+    ThreadDraftState: 'ThreadDraftState'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1513,7 +1545,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -5513,6 +5545,154 @@ export namespace Prisma {
           }
         }
       }
+      ComposerOperation: {
+        payload: Prisma.$ComposerOperationPayload<ExtArgs>
+        fields: Prisma.ComposerOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ComposerOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ComposerOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.ComposerOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ComposerOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>
+          }
+          findMany: {
+            args: Prisma.ComposerOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>[]
+          }
+          create: {
+            args: Prisma.ComposerOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>
+          }
+          createMany: {
+            args: Prisma.ComposerOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ComposerOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.ComposerOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>
+          }
+          update: {
+            args: Prisma.ComposerOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.ComposerOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ComposerOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ComposerOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.ComposerOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ComposerOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.ComposerOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateComposerOperation>
+          }
+          groupBy: {
+            args: Prisma.ComposerOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ComposerOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ComposerOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<ComposerOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      ThreadDraftState: {
+        payload: Prisma.$ThreadDraftStatePayload<ExtArgs>
+        fields: Prisma.ThreadDraftStateFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ThreadDraftStateFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ThreadDraftStateFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>
+          }
+          findFirst: {
+            args: Prisma.ThreadDraftStateFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ThreadDraftStateFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>
+          }
+          findMany: {
+            args: Prisma.ThreadDraftStateFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>[]
+          }
+          create: {
+            args: Prisma.ThreadDraftStateCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>
+          }
+          createMany: {
+            args: Prisma.ThreadDraftStateCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ThreadDraftStateCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>[]
+          }
+          delete: {
+            args: Prisma.ThreadDraftStateDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>
+          }
+          update: {
+            args: Prisma.ThreadDraftStateUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>
+          }
+          deleteMany: {
+            args: Prisma.ThreadDraftStateDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ThreadDraftStateUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ThreadDraftStateUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>[]
+          }
+          upsert: {
+            args: Prisma.ThreadDraftStateUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ThreadDraftStatePayload>
+          }
+          aggregate: {
+            args: Prisma.ThreadDraftStateAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateThreadDraftState>
+          }
+          groupBy: {
+            args: Prisma.ThreadDraftStateGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ThreadDraftStateGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ThreadDraftStateCountArgs<ExtArgs>
+            result: $Utils.Optional<ThreadDraftStateCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -5663,6 +5843,8 @@ export namespace Prisma {
     pushReadStateCapability?: PushReadStateCapabilityOmit
     savedMessageState?: SavedMessageStateOmit
     savedMessageOperation?: SavedMessageOperationOmit
+    composerOperation?: ComposerOperationOmit
+    threadDraftState?: ThreadDraftStateOmit
   }
 
   /* Types for Logging */
@@ -29409,6 +29591,7 @@ export namespace Prisma {
     handRaisedAt: Date | null
     screenPrivacy: boolean | null
     manualUnread: boolean | null
+    draftRevision: string | null
     draft: string | null
   }
 
@@ -29425,6 +29608,7 @@ export namespace Prisma {
     handRaisedAt: Date | null
     screenPrivacy: boolean | null
     manualUnread: boolean | null
+    draftRevision: string | null
     draft: string | null
   }
 
@@ -29441,6 +29625,7 @@ export namespace Prisma {
     handRaisedAt: number
     screenPrivacy: number
     manualUnread: number
+    draftRevision: number
     draft: number
     _all: number
   }
@@ -29459,6 +29644,7 @@ export namespace Prisma {
     handRaisedAt?: true
     screenPrivacy?: true
     manualUnread?: true
+    draftRevision?: true
     draft?: true
   }
 
@@ -29475,6 +29661,7 @@ export namespace Prisma {
     handRaisedAt?: true
     screenPrivacy?: true
     manualUnread?: true
+    draftRevision?: true
     draft?: true
   }
 
@@ -29491,6 +29678,7 @@ export namespace Prisma {
     handRaisedAt?: true
     screenPrivacy?: true
     manualUnread?: true
+    draftRevision?: true
     draft?: true
     _all?: true
   }
@@ -29580,6 +29768,7 @@ export namespace Prisma {
     handRaisedAt: Date | null
     screenPrivacy: boolean
     manualUnread: boolean
+    draftRevision: string
     draft: string | null
     _count: ConversationParticipantCountAggregateOutputType | null
     _min: ConversationParticipantMinAggregateOutputType | null
@@ -29613,6 +29802,7 @@ export namespace Prisma {
     handRaisedAt?: boolean
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: boolean
     draft?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -29634,6 +29824,7 @@ export namespace Prisma {
     handRaisedAt?: boolean
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: boolean
     draft?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -29652,6 +29843,7 @@ export namespace Prisma {
     handRaisedAt?: boolean
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: boolean
     draft?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -29670,10 +29862,11 @@ export namespace Prisma {
     handRaisedAt?: boolean
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: boolean
     draft?: boolean
   }
 
-  export type ConversationParticipantOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "role" | "joinedAt" | "lastReadAt" | "pinnedAt" | "mutedUntil" | "archivedAt" | "handRaisedAt" | "screenPrivacy" | "manualUnread" | "draft", ExtArgs["result"]["conversationParticipant"]>
+  export type ConversationParticipantOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "role" | "joinedAt" | "lastReadAt" | "pinnedAt" | "mutedUntil" | "archivedAt" | "handRaisedAt" | "screenPrivacy" | "manualUnread" | "draftRevision" | "draft", ExtArgs["result"]["conversationParticipant"]>
   export type ConversationParticipantInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -29711,6 +29904,7 @@ export namespace Prisma {
       handRaisedAt: Date | null
       screenPrivacy: boolean
       manualUnread: boolean
+      draftRevision: string
       draft: string | null
     }, ExtArgs["result"]["conversationParticipant"]>
     composites: {}
@@ -30151,6 +30345,7 @@ export namespace Prisma {
     readonly handRaisedAt: FieldRef<"ConversationParticipant", 'DateTime'>
     readonly screenPrivacy: FieldRef<"ConversationParticipant", 'Boolean'>
     readonly manualUnread: FieldRef<"ConversationParticipant", 'Boolean'>
+    readonly draftRevision: FieldRef<"ConversationParticipant", 'String'>
     readonly draft: FieldRef<"ConversationParticipant", 'String'>
   }
     
@@ -66463,6 +66658,2044 @@ export namespace Prisma {
 
 
   /**
+   * Model ComposerOperation
+   */
+
+  export type AggregateComposerOperation = {
+    _count: ComposerOperationCountAggregateOutputType | null
+    _min: ComposerOperationMinAggregateOutputType | null
+    _max: ComposerOperationMaxAggregateOutputType | null
+  }
+
+  export type ComposerOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    kind: string | null
+    targetId: string | null
+    rootId: string | null
+    requestHash: string | null
+    revision: string | null
+    outcome: string | null
+    createdAt: Date | null
+  }
+
+  export type ComposerOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    kind: string | null
+    targetId: string | null
+    rootId: string | null
+    requestHash: string | null
+    revision: string | null
+    outcome: string | null
+    createdAt: Date | null
+  }
+
+  export type ComposerOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    kind: number
+    targetId: number
+    rootId: number
+    requestHash: number
+    revision: number
+    outcome: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type ComposerOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    kind?: true
+    targetId?: true
+    rootId?: true
+    requestHash?: true
+    revision?: true
+    outcome?: true
+    createdAt?: true
+  }
+
+  export type ComposerOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    kind?: true
+    targetId?: true
+    rootId?: true
+    requestHash?: true
+    revision?: true
+    outcome?: true
+    createdAt?: true
+  }
+
+  export type ComposerOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    kind?: true
+    targetId?: true
+    rootId?: true
+    requestHash?: true
+    revision?: true
+    outcome?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type ComposerOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ComposerOperation to aggregate.
+     */
+    where?: ComposerOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ComposerOperations to fetch.
+     */
+    orderBy?: ComposerOperationOrderByWithRelationInput | ComposerOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: ComposerOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ComposerOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ComposerOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned ComposerOperations
+    **/
+    _count?: true | ComposerOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: ComposerOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: ComposerOperationMaxAggregateInputType
+  }
+
+  export type GetComposerOperationAggregateType<T extends ComposerOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateComposerOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateComposerOperation[P]>
+      : GetScalarType<T[P], AggregateComposerOperation[P]>
+  }
+
+
+
+
+  export type ComposerOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ComposerOperationWhereInput
+    orderBy?: ComposerOperationOrderByWithAggregationInput | ComposerOperationOrderByWithAggregationInput[]
+    by: ComposerOperationScalarFieldEnum[] | ComposerOperationScalarFieldEnum
+    having?: ComposerOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ComposerOperationCountAggregateInputType | true
+    _min?: ComposerOperationMinAggregateInputType
+    _max?: ComposerOperationMaxAggregateInputType
+  }
+
+  export type ComposerOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    kind: string
+    targetId: string
+    rootId: string
+    requestHash: string
+    revision: string
+    outcome: string
+    createdAt: Date
+    _count: ComposerOperationCountAggregateOutputType | null
+    _min: ComposerOperationMinAggregateOutputType | null
+    _max: ComposerOperationMaxAggregateOutputType | null
+  }
+
+  type GetComposerOperationGroupByPayload<T extends ComposerOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ComposerOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ComposerOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ComposerOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], ComposerOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ComposerOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    kind?: boolean
+    targetId?: boolean
+    rootId?: boolean
+    requestHash?: boolean
+    revision?: boolean
+    outcome?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["composerOperation"]>
+
+  export type ComposerOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    kind?: boolean
+    targetId?: boolean
+    rootId?: boolean
+    requestHash?: boolean
+    revision?: boolean
+    outcome?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["composerOperation"]>
+
+  export type ComposerOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    kind?: boolean
+    targetId?: boolean
+    rootId?: boolean
+    requestHash?: boolean
+    revision?: boolean
+    outcome?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["composerOperation"]>
+
+  export type ComposerOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    kind?: boolean
+    targetId?: boolean
+    rootId?: boolean
+    requestHash?: boolean
+    revision?: boolean
+    outcome?: boolean
+    createdAt?: boolean
+  }
+
+  export type ComposerOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "kind" | "targetId" | "rootId" | "requestHash" | "revision" | "outcome" | "createdAt", ExtArgs["result"]["composerOperation"]>
+
+  export type $ComposerOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ComposerOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      kind: string
+      targetId: string
+      rootId: string
+      requestHash: string
+      revision: string
+      outcome: string
+      createdAt: Date
+    }, ExtArgs["result"]["composerOperation"]>
+    composites: {}
+  }
+
+  type ComposerOperationGetPayload<S extends boolean | null | undefined | ComposerOperationDefaultArgs> = $Result.GetResult<Prisma.$ComposerOperationPayload, S>
+
+  type ComposerOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ComposerOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ComposerOperationCountAggregateInputType | true
+    }
+
+  export interface ComposerOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ComposerOperation'], meta: { name: 'ComposerOperation' } }
+    /**
+     * Find zero or one ComposerOperation that matches the filter.
+     * @param {ComposerOperationFindUniqueArgs} args - Arguments to find a ComposerOperation
+     * @example
+     * // Get one ComposerOperation
+     * const composerOperation = await prisma.composerOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ComposerOperationFindUniqueArgs>(args: SelectSubset<T, ComposerOperationFindUniqueArgs<ExtArgs>>): Prisma__ComposerOperationClient<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ComposerOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ComposerOperationFindUniqueOrThrowArgs} args - Arguments to find a ComposerOperation
+     * @example
+     * // Get one ComposerOperation
+     * const composerOperation = await prisma.composerOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ComposerOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, ComposerOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ComposerOperationClient<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ComposerOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ComposerOperationFindFirstArgs} args - Arguments to find a ComposerOperation
+     * @example
+     * // Get one ComposerOperation
+     * const composerOperation = await prisma.composerOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ComposerOperationFindFirstArgs>(args?: SelectSubset<T, ComposerOperationFindFirstArgs<ExtArgs>>): Prisma__ComposerOperationClient<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ComposerOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ComposerOperationFindFirstOrThrowArgs} args - Arguments to find a ComposerOperation
+     * @example
+     * // Get one ComposerOperation
+     * const composerOperation = await prisma.composerOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ComposerOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, ComposerOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__ComposerOperationClient<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ComposerOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ComposerOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ComposerOperations
+     * const composerOperations = await prisma.composerOperation.findMany()
+     *
+     * // Get first 10 ComposerOperations
+     * const composerOperations = await prisma.composerOperation.findMany({ take: 10 })
+     *
+     * // Only select the `userId`
+     * const composerOperationWithUserIdOnly = await prisma.composerOperation.findMany({ select: { userId: true } })
+     *
+     */
+    findMany<T extends ComposerOperationFindManyArgs>(args?: SelectSubset<T, ComposerOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ComposerOperation.
+     * @param {ComposerOperationCreateArgs} args - Arguments to create a ComposerOperation.
+     * @example
+     * // Create one ComposerOperation
+     * const ComposerOperation = await prisma.composerOperation.create({
+     *   data: {
+     *     // ... data to create a ComposerOperation
+     *   }
+     * })
+     *
+     */
+    create<T extends ComposerOperationCreateArgs>(args: SelectSubset<T, ComposerOperationCreateArgs<ExtArgs>>): Prisma__ComposerOperationClient<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ComposerOperations.
+     * @param {ComposerOperationCreateManyArgs} args - Arguments to create many ComposerOperations.
+     * @example
+     * // Create many ComposerOperations
+     * const composerOperation = await prisma.composerOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends ComposerOperationCreateManyArgs>(args?: SelectSubset<T, ComposerOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ComposerOperations and returns the data saved in the database.
+     * @param {ComposerOperationCreateManyAndReturnArgs} args - Arguments to create many ComposerOperations.
+     * @example
+     * // Create many ComposerOperations
+     * const composerOperation = await prisma.composerOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many ComposerOperations and only return the `userId`
+     * const composerOperationWithUserIdOnly = await prisma.composerOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends ComposerOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, ComposerOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ComposerOperation.
+     * @param {ComposerOperationDeleteArgs} args - Arguments to delete one ComposerOperation.
+     * @example
+     * // Delete one ComposerOperation
+     * const ComposerOperation = await prisma.composerOperation.delete({
+     *   where: {
+     *     // ... filter to delete one ComposerOperation
+     *   }
+     * })
+     *
+     */
+    delete<T extends ComposerOperationDeleteArgs>(args: SelectSubset<T, ComposerOperationDeleteArgs<ExtArgs>>): Prisma__ComposerOperationClient<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ComposerOperation.
+     * @param {ComposerOperationUpdateArgs} args - Arguments to update one ComposerOperation.
+     * @example
+     * // Update one ComposerOperation
+     * const composerOperation = await prisma.composerOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends ComposerOperationUpdateArgs>(args: SelectSubset<T, ComposerOperationUpdateArgs<ExtArgs>>): Prisma__ComposerOperationClient<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ComposerOperations.
+     * @param {ComposerOperationDeleteManyArgs} args - Arguments to filter ComposerOperations to delete.
+     * @example
+     * // Delete a few ComposerOperations
+     * const { count } = await prisma.composerOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends ComposerOperationDeleteManyArgs>(args?: SelectSubset<T, ComposerOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ComposerOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ComposerOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ComposerOperations
+     * const composerOperation = await prisma.composerOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends ComposerOperationUpdateManyArgs>(args: SelectSubset<T, ComposerOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ComposerOperations and returns the data updated in the database.
+     * @param {ComposerOperationUpdateManyAndReturnArgs} args - Arguments to update many ComposerOperations.
+     * @example
+     * // Update many ComposerOperations
+     * const composerOperation = await prisma.composerOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more ComposerOperations and only return the `userId`
+     * const composerOperationWithUserIdOnly = await prisma.composerOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends ComposerOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, ComposerOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ComposerOperation.
+     * @param {ComposerOperationUpsertArgs} args - Arguments to update or create a ComposerOperation.
+     * @example
+     * // Update or create a ComposerOperation
+     * const composerOperation = await prisma.composerOperation.upsert({
+     *   create: {
+     *     // ... data to create a ComposerOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ComposerOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ComposerOperationUpsertArgs>(args: SelectSubset<T, ComposerOperationUpsertArgs<ExtArgs>>): Prisma__ComposerOperationClient<$Result.GetResult<Prisma.$ComposerOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ComposerOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ComposerOperationCountArgs} args - Arguments to filter ComposerOperations to count.
+     * @example
+     * // Count the number of ComposerOperations
+     * const count = await prisma.composerOperation.count({
+     *   where: {
+     *     // ... the filter for the ComposerOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends ComposerOperationCountArgs>(
+      args?: Subset<T, ComposerOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ComposerOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ComposerOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ComposerOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ComposerOperationAggregateArgs>(args: Subset<T, ComposerOperationAggregateArgs>): Prisma.PrismaPromise<GetComposerOperationAggregateType<T>>
+
+    /**
+     * Group by ComposerOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ComposerOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends ComposerOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ComposerOperationGroupByArgs['orderBy'] }
+        : { orderBy?: ComposerOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ComposerOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetComposerOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ComposerOperation model
+   */
+  readonly fields: ComposerOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ComposerOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ComposerOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ComposerOperation model
+   */
+  interface ComposerOperationFieldRefs {
+    readonly userId: FieldRef<"ComposerOperation", 'String'>
+    readonly clientId: FieldRef<"ComposerOperation", 'String'>
+    readonly kind: FieldRef<"ComposerOperation", 'String'>
+    readonly targetId: FieldRef<"ComposerOperation", 'String'>
+    readonly rootId: FieldRef<"ComposerOperation", 'String'>
+    readonly requestHash: FieldRef<"ComposerOperation", 'String'>
+    readonly revision: FieldRef<"ComposerOperation", 'String'>
+    readonly outcome: FieldRef<"ComposerOperation", 'String'>
+    readonly createdAt: FieldRef<"ComposerOperation", 'DateTime'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * ComposerOperation findUnique
+   */
+  export type ComposerOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ComposerOperation to fetch.
+     */
+    where: ComposerOperationWhereUniqueInput
+  }
+
+  /**
+   * ComposerOperation findUniqueOrThrow
+   */
+  export type ComposerOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ComposerOperation to fetch.
+     */
+    where: ComposerOperationWhereUniqueInput
+  }
+
+  /**
+   * ComposerOperation findFirst
+   */
+  export type ComposerOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ComposerOperation to fetch.
+     */
+    where?: ComposerOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ComposerOperations to fetch.
+     */
+    orderBy?: ComposerOperationOrderByWithRelationInput | ComposerOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ComposerOperations.
+     */
+    cursor?: ComposerOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ComposerOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ComposerOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ComposerOperations.
+     */
+    distinct?: ComposerOperationScalarFieldEnum | ComposerOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ComposerOperation findFirstOrThrow
+   */
+  export type ComposerOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ComposerOperation to fetch.
+     */
+    where?: ComposerOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ComposerOperations to fetch.
+     */
+    orderBy?: ComposerOperationOrderByWithRelationInput | ComposerOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ComposerOperations.
+     */
+    cursor?: ComposerOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ComposerOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ComposerOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ComposerOperations.
+     */
+    distinct?: ComposerOperationScalarFieldEnum | ComposerOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ComposerOperation findMany
+   */
+  export type ComposerOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ComposerOperations to fetch.
+     */
+    where?: ComposerOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ComposerOperations to fetch.
+     */
+    orderBy?: ComposerOperationOrderByWithRelationInput | ComposerOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing ComposerOperations.
+     */
+    cursor?: ComposerOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ComposerOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ComposerOperations.
+     */
+    skip?: number
+    distinct?: ComposerOperationScalarFieldEnum | ComposerOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ComposerOperation create
+   */
+  export type ComposerOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ComposerOperation.
+     */
+    data: XOR<ComposerOperationCreateInput, ComposerOperationUncheckedCreateInput>
+  }
+
+  /**
+   * ComposerOperation createMany
+   */
+  export type ComposerOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ComposerOperations.
+     */
+    data: ComposerOperationCreateManyInput | ComposerOperationCreateManyInput[]
+  }
+
+  /**
+   * ComposerOperation createManyAndReturn
+   */
+  export type ComposerOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many ComposerOperations.
+     */
+    data: ComposerOperationCreateManyInput | ComposerOperationCreateManyInput[]
+  }
+
+  /**
+   * ComposerOperation update
+   */
+  export type ComposerOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ComposerOperation.
+     */
+    data: XOR<ComposerOperationUpdateInput, ComposerOperationUncheckedUpdateInput>
+    /**
+     * Choose, which ComposerOperation to update.
+     */
+    where: ComposerOperationWhereUniqueInput
+  }
+
+  /**
+   * ComposerOperation updateMany
+   */
+  export type ComposerOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ComposerOperations.
+     */
+    data: XOR<ComposerOperationUpdateManyMutationInput, ComposerOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which ComposerOperations to update
+     */
+    where?: ComposerOperationWhereInput
+    /**
+     * Limit how many ComposerOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ComposerOperation updateManyAndReturn
+   */
+  export type ComposerOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update ComposerOperations.
+     */
+    data: XOR<ComposerOperationUpdateManyMutationInput, ComposerOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which ComposerOperations to update
+     */
+    where?: ComposerOperationWhereInput
+    /**
+     * Limit how many ComposerOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ComposerOperation upsert
+   */
+  export type ComposerOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ComposerOperation to update in case it exists.
+     */
+    where: ComposerOperationWhereUniqueInput
+    /**
+     * In case the ComposerOperation found by the `where` argument doesn't exist, create a new ComposerOperation with this data.
+     */
+    create: XOR<ComposerOperationCreateInput, ComposerOperationUncheckedCreateInput>
+    /**
+     * In case the ComposerOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ComposerOperationUpdateInput, ComposerOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * ComposerOperation delete
+   */
+  export type ComposerOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+    /**
+     * Filter which ComposerOperation to delete.
+     */
+    where: ComposerOperationWhereUniqueInput
+  }
+
+  /**
+   * ComposerOperation deleteMany
+   */
+  export type ComposerOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ComposerOperations to delete
+     */
+    where?: ComposerOperationWhereInput
+    /**
+     * Limit how many ComposerOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ComposerOperation without action
+   */
+  export type ComposerOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ComposerOperation
+     */
+    select?: ComposerOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ComposerOperation
+     */
+    omit?: ComposerOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model ThreadDraftState
+   */
+
+  export type AggregateThreadDraftState = {
+    _count: ThreadDraftStateCountAggregateOutputType | null
+    _min: ThreadDraftStateMinAggregateOutputType | null
+    _max: ThreadDraftStateMaxAggregateOutputType | null
+  }
+
+  export type ThreadDraftStateMinAggregateOutputType = {
+    userId: string | null
+    conversationId: string | null
+    rootId: string | null
+    draft: string | null
+    revision: string | null
+  }
+
+  export type ThreadDraftStateMaxAggregateOutputType = {
+    userId: string | null
+    conversationId: string | null
+    rootId: string | null
+    draft: string | null
+    revision: string | null
+  }
+
+  export type ThreadDraftStateCountAggregateOutputType = {
+    userId: number
+    conversationId: number
+    rootId: number
+    draft: number
+    revision: number
+    _all: number
+  }
+
+
+  export type ThreadDraftStateMinAggregateInputType = {
+    userId?: true
+    conversationId?: true
+    rootId?: true
+    draft?: true
+    revision?: true
+  }
+
+  export type ThreadDraftStateMaxAggregateInputType = {
+    userId?: true
+    conversationId?: true
+    rootId?: true
+    draft?: true
+    revision?: true
+  }
+
+  export type ThreadDraftStateCountAggregateInputType = {
+    userId?: true
+    conversationId?: true
+    rootId?: true
+    draft?: true
+    revision?: true
+    _all?: true
+  }
+
+  export type ThreadDraftStateAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ThreadDraftState to aggregate.
+     */
+    where?: ThreadDraftStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ThreadDraftStates to fetch.
+     */
+    orderBy?: ThreadDraftStateOrderByWithRelationInput | ThreadDraftStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the start position
+     */
+    cursor?: ThreadDraftStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ThreadDraftStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ThreadDraftStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Count returned ThreadDraftStates
+    **/
+    _count?: true | ThreadDraftStateCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the minimum value
+    **/
+    _min?: ThreadDraftStateMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     *
+     * Select which fields to find the maximum value
+    **/
+    _max?: ThreadDraftStateMaxAggregateInputType
+  }
+
+  export type GetThreadDraftStateAggregateType<T extends ThreadDraftStateAggregateArgs> = {
+        [P in keyof T & keyof AggregateThreadDraftState]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateThreadDraftState[P]>
+      : GetScalarType<T[P], AggregateThreadDraftState[P]>
+  }
+
+
+
+
+  export type ThreadDraftStateGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ThreadDraftStateWhereInput
+    orderBy?: ThreadDraftStateOrderByWithAggregationInput | ThreadDraftStateOrderByWithAggregationInput[]
+    by: ThreadDraftStateScalarFieldEnum[] | ThreadDraftStateScalarFieldEnum
+    having?: ThreadDraftStateScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ThreadDraftStateCountAggregateInputType | true
+    _min?: ThreadDraftStateMinAggregateInputType
+    _max?: ThreadDraftStateMaxAggregateInputType
+  }
+
+  export type ThreadDraftStateGroupByOutputType = {
+    userId: string
+    conversationId: string
+    rootId: string
+    draft: string
+    revision: string
+    _count: ThreadDraftStateCountAggregateOutputType | null
+    _min: ThreadDraftStateMinAggregateOutputType | null
+    _max: ThreadDraftStateMaxAggregateOutputType | null
+  }
+
+  type GetThreadDraftStateGroupByPayload<T extends ThreadDraftStateGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ThreadDraftStateGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ThreadDraftStateGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ThreadDraftStateGroupByOutputType[P]>
+            : GetScalarType<T[P], ThreadDraftStateGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ThreadDraftStateSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    conversationId?: boolean
+    rootId?: boolean
+    draft?: boolean
+    revision?: boolean
+  }, ExtArgs["result"]["threadDraftState"]>
+
+  export type ThreadDraftStateSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    conversationId?: boolean
+    rootId?: boolean
+    draft?: boolean
+    revision?: boolean
+  }, ExtArgs["result"]["threadDraftState"]>
+
+  export type ThreadDraftStateSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    conversationId?: boolean
+    rootId?: boolean
+    draft?: boolean
+    revision?: boolean
+  }, ExtArgs["result"]["threadDraftState"]>
+
+  export type ThreadDraftStateSelectScalar = {
+    userId?: boolean
+    conversationId?: boolean
+    rootId?: boolean
+    draft?: boolean
+    revision?: boolean
+  }
+
+  export type ThreadDraftStateOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "conversationId" | "rootId" | "draft" | "revision", ExtArgs["result"]["threadDraftState"]>
+
+  export type $ThreadDraftStatePayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ThreadDraftState"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      conversationId: string
+      rootId: string
+      draft: string
+      revision: string
+    }, ExtArgs["result"]["threadDraftState"]>
+    composites: {}
+  }
+
+  type ThreadDraftStateGetPayload<S extends boolean | null | undefined | ThreadDraftStateDefaultArgs> = $Result.GetResult<Prisma.$ThreadDraftStatePayload, S>
+
+  type ThreadDraftStateCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ThreadDraftStateFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ThreadDraftStateCountAggregateInputType | true
+    }
+
+  export interface ThreadDraftStateDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ThreadDraftState'], meta: { name: 'ThreadDraftState' } }
+    /**
+     * Find zero or one ThreadDraftState that matches the filter.
+     * @param {ThreadDraftStateFindUniqueArgs} args - Arguments to find a ThreadDraftState
+     * @example
+     * // Get one ThreadDraftState
+     * const threadDraftState = await prisma.threadDraftState.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ThreadDraftStateFindUniqueArgs>(args: SelectSubset<T, ThreadDraftStateFindUniqueArgs<ExtArgs>>): Prisma__ThreadDraftStateClient<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ThreadDraftState that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ThreadDraftStateFindUniqueOrThrowArgs} args - Arguments to find a ThreadDraftState
+     * @example
+     * // Get one ThreadDraftState
+     * const threadDraftState = await prisma.threadDraftState.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ThreadDraftStateFindUniqueOrThrowArgs>(args: SelectSubset<T, ThreadDraftStateFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ThreadDraftStateClient<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ThreadDraftState that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ThreadDraftStateFindFirstArgs} args - Arguments to find a ThreadDraftState
+     * @example
+     * // Get one ThreadDraftState
+     * const threadDraftState = await prisma.threadDraftState.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ThreadDraftStateFindFirstArgs>(args?: SelectSubset<T, ThreadDraftStateFindFirstArgs<ExtArgs>>): Prisma__ThreadDraftStateClient<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ThreadDraftState that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ThreadDraftStateFindFirstOrThrowArgs} args - Arguments to find a ThreadDraftState
+     * @example
+     * // Get one ThreadDraftState
+     * const threadDraftState = await prisma.threadDraftState.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ThreadDraftStateFindFirstOrThrowArgs>(args?: SelectSubset<T, ThreadDraftStateFindFirstOrThrowArgs<ExtArgs>>): Prisma__ThreadDraftStateClient<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ThreadDraftStates that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ThreadDraftStateFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ThreadDraftStates
+     * const threadDraftStates = await prisma.threadDraftState.findMany()
+     *
+     * // Get first 10 ThreadDraftStates
+     * const threadDraftStates = await prisma.threadDraftState.findMany({ take: 10 })
+     *
+     * // Only select the `userId`
+     * const threadDraftStateWithUserIdOnly = await prisma.threadDraftState.findMany({ select: { userId: true } })
+     *
+     */
+    findMany<T extends ThreadDraftStateFindManyArgs>(args?: SelectSubset<T, ThreadDraftStateFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ThreadDraftState.
+     * @param {ThreadDraftStateCreateArgs} args - Arguments to create a ThreadDraftState.
+     * @example
+     * // Create one ThreadDraftState
+     * const ThreadDraftState = await prisma.threadDraftState.create({
+     *   data: {
+     *     // ... data to create a ThreadDraftState
+     *   }
+     * })
+     *
+     */
+    create<T extends ThreadDraftStateCreateArgs>(args: SelectSubset<T, ThreadDraftStateCreateArgs<ExtArgs>>): Prisma__ThreadDraftStateClient<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ThreadDraftStates.
+     * @param {ThreadDraftStateCreateManyArgs} args - Arguments to create many ThreadDraftStates.
+     * @example
+     * // Create many ThreadDraftStates
+     * const threadDraftState = await prisma.threadDraftState.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     */
+    createMany<T extends ThreadDraftStateCreateManyArgs>(args?: SelectSubset<T, ThreadDraftStateCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ThreadDraftStates and returns the data saved in the database.
+     * @param {ThreadDraftStateCreateManyAndReturnArgs} args - Arguments to create many ThreadDraftStates.
+     * @example
+     * // Create many ThreadDraftStates
+     * const threadDraftState = await prisma.threadDraftState.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Create many ThreadDraftStates and only return the `userId`
+     * const threadDraftStateWithUserIdOnly = await prisma.threadDraftState.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    createManyAndReturn<T extends ThreadDraftStateCreateManyAndReturnArgs>(args?: SelectSubset<T, ThreadDraftStateCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ThreadDraftState.
+     * @param {ThreadDraftStateDeleteArgs} args - Arguments to delete one ThreadDraftState.
+     * @example
+     * // Delete one ThreadDraftState
+     * const ThreadDraftState = await prisma.threadDraftState.delete({
+     *   where: {
+     *     // ... filter to delete one ThreadDraftState
+     *   }
+     * })
+     *
+     */
+    delete<T extends ThreadDraftStateDeleteArgs>(args: SelectSubset<T, ThreadDraftStateDeleteArgs<ExtArgs>>): Prisma__ThreadDraftStateClient<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ThreadDraftState.
+     * @param {ThreadDraftStateUpdateArgs} args - Arguments to update one ThreadDraftState.
+     * @example
+     * // Update one ThreadDraftState
+     * const threadDraftState = await prisma.threadDraftState.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    update<T extends ThreadDraftStateUpdateArgs>(args: SelectSubset<T, ThreadDraftStateUpdateArgs<ExtArgs>>): Prisma__ThreadDraftStateClient<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ThreadDraftStates.
+     * @param {ThreadDraftStateDeleteManyArgs} args - Arguments to filter ThreadDraftStates to delete.
+     * @example
+     * // Delete a few ThreadDraftStates
+     * const { count } = await prisma.threadDraftState.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     *
+     */
+    deleteMany<T extends ThreadDraftStateDeleteManyArgs>(args?: SelectSubset<T, ThreadDraftStateDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ThreadDraftStates.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ThreadDraftStateUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ThreadDraftStates
+     * const threadDraftState = await prisma.threadDraftState.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     *
+     */
+    updateMany<T extends ThreadDraftStateUpdateManyArgs>(args: SelectSubset<T, ThreadDraftStateUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ThreadDraftStates and returns the data updated in the database.
+     * @param {ThreadDraftStateUpdateManyAndReturnArgs} args - Arguments to update many ThreadDraftStates.
+     * @example
+     * // Update many ThreadDraftStates
+     * const threadDraftState = await prisma.threadDraftState.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *
+     * // Update zero or more ThreadDraftStates and only return the `userId`
+     * const threadDraftStateWithUserIdOnly = await prisma.threadDraftState.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     *
+     */
+    updateManyAndReturn<T extends ThreadDraftStateUpdateManyAndReturnArgs>(args: SelectSubset<T, ThreadDraftStateUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ThreadDraftState.
+     * @param {ThreadDraftStateUpsertArgs} args - Arguments to update or create a ThreadDraftState.
+     * @example
+     * // Update or create a ThreadDraftState
+     * const threadDraftState = await prisma.threadDraftState.upsert({
+     *   create: {
+     *     // ... data to create a ThreadDraftState
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ThreadDraftState we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ThreadDraftStateUpsertArgs>(args: SelectSubset<T, ThreadDraftStateUpsertArgs<ExtArgs>>): Prisma__ThreadDraftStateClient<$Result.GetResult<Prisma.$ThreadDraftStatePayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ThreadDraftStates.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ThreadDraftStateCountArgs} args - Arguments to filter ThreadDraftStates to count.
+     * @example
+     * // Count the number of ThreadDraftStates
+     * const count = await prisma.threadDraftState.count({
+     *   where: {
+     *     // ... the filter for the ThreadDraftStates we want to count
+     *   }
+     * })
+    **/
+    count<T extends ThreadDraftStateCountArgs>(
+      args?: Subset<T, ThreadDraftStateCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ThreadDraftStateCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ThreadDraftState.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ThreadDraftStateAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ThreadDraftStateAggregateArgs>(args: Subset<T, ThreadDraftStateAggregateArgs>): Prisma.PrismaPromise<GetThreadDraftStateAggregateType<T>>
+
+    /**
+     * Group by ThreadDraftState.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ThreadDraftStateGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     *
+    **/
+    groupBy<
+      T extends ThreadDraftStateGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ThreadDraftStateGroupByArgs['orderBy'] }
+        : { orderBy?: ThreadDraftStateGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ThreadDraftStateGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetThreadDraftStateGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ThreadDraftState model
+   */
+  readonly fields: ThreadDraftStateFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ThreadDraftState.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ThreadDraftStateClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ThreadDraftState model
+   */
+  interface ThreadDraftStateFieldRefs {
+    readonly userId: FieldRef<"ThreadDraftState", 'String'>
+    readonly conversationId: FieldRef<"ThreadDraftState", 'String'>
+    readonly rootId: FieldRef<"ThreadDraftState", 'String'>
+    readonly draft: FieldRef<"ThreadDraftState", 'String'>
+    readonly revision: FieldRef<"ThreadDraftState", 'String'>
+  }
+
+
+  // Custom InputTypes
+  /**
+   * ThreadDraftState findUnique
+   */
+  export type ThreadDraftStateFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * Filter, which ThreadDraftState to fetch.
+     */
+    where: ThreadDraftStateWhereUniqueInput
+  }
+
+  /**
+   * ThreadDraftState findUniqueOrThrow
+   */
+  export type ThreadDraftStateFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * Filter, which ThreadDraftState to fetch.
+     */
+    where: ThreadDraftStateWhereUniqueInput
+  }
+
+  /**
+   * ThreadDraftState findFirst
+   */
+  export type ThreadDraftStateFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * Filter, which ThreadDraftState to fetch.
+     */
+    where?: ThreadDraftStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ThreadDraftStates to fetch.
+     */
+    orderBy?: ThreadDraftStateOrderByWithRelationInput | ThreadDraftStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ThreadDraftStates.
+     */
+    cursor?: ThreadDraftStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ThreadDraftStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ThreadDraftStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ThreadDraftStates.
+     */
+    distinct?: ThreadDraftStateScalarFieldEnum | ThreadDraftStateScalarFieldEnum[]
+  }
+
+  /**
+   * ThreadDraftState findFirstOrThrow
+   */
+  export type ThreadDraftStateFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * Filter, which ThreadDraftState to fetch.
+     */
+    where?: ThreadDraftStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ThreadDraftStates to fetch.
+     */
+    orderBy?: ThreadDraftStateOrderByWithRelationInput | ThreadDraftStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for searching for ThreadDraftStates.
+     */
+    cursor?: ThreadDraftStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ThreadDraftStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ThreadDraftStates.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     *
+     * Filter by unique combinations of ThreadDraftStates.
+     */
+    distinct?: ThreadDraftStateScalarFieldEnum | ThreadDraftStateScalarFieldEnum[]
+  }
+
+  /**
+   * ThreadDraftState findMany
+   */
+  export type ThreadDraftStateFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * Filter, which ThreadDraftStates to fetch.
+     */
+    where?: ThreadDraftStateWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     *
+     * Determine the order of ThreadDraftStates to fetch.
+     */
+    orderBy?: ThreadDraftStateOrderByWithRelationInput | ThreadDraftStateOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     *
+     * Sets the position for listing ThreadDraftStates.
+     */
+    cursor?: ThreadDraftStateWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Take `±n` ThreadDraftStates from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     *
+     * Skip the first `n` ThreadDraftStates.
+     */
+    skip?: number
+    distinct?: ThreadDraftStateScalarFieldEnum | ThreadDraftStateScalarFieldEnum[]
+  }
+
+  /**
+   * ThreadDraftState create
+   */
+  export type ThreadDraftStateCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ThreadDraftState.
+     */
+    data: XOR<ThreadDraftStateCreateInput, ThreadDraftStateUncheckedCreateInput>
+  }
+
+  /**
+   * ThreadDraftState createMany
+   */
+  export type ThreadDraftStateCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ThreadDraftStates.
+     */
+    data: ThreadDraftStateCreateManyInput | ThreadDraftStateCreateManyInput[]
+  }
+
+  /**
+   * ThreadDraftState createManyAndReturn
+   */
+  export type ThreadDraftStateCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * The data used to create many ThreadDraftStates.
+     */
+    data: ThreadDraftStateCreateManyInput | ThreadDraftStateCreateManyInput[]
+  }
+
+  /**
+   * ThreadDraftState update
+   */
+  export type ThreadDraftStateUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ThreadDraftState.
+     */
+    data: XOR<ThreadDraftStateUpdateInput, ThreadDraftStateUncheckedUpdateInput>
+    /**
+     * Choose, which ThreadDraftState to update.
+     */
+    where: ThreadDraftStateWhereUniqueInput
+  }
+
+  /**
+   * ThreadDraftState updateMany
+   */
+  export type ThreadDraftStateUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ThreadDraftStates.
+     */
+    data: XOR<ThreadDraftStateUpdateManyMutationInput, ThreadDraftStateUncheckedUpdateManyInput>
+    /**
+     * Filter which ThreadDraftStates to update
+     */
+    where?: ThreadDraftStateWhereInput
+    /**
+     * Limit how many ThreadDraftStates to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ThreadDraftState updateManyAndReturn
+   */
+  export type ThreadDraftStateUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * The data used to update ThreadDraftStates.
+     */
+    data: XOR<ThreadDraftStateUpdateManyMutationInput, ThreadDraftStateUncheckedUpdateManyInput>
+    /**
+     * Filter which ThreadDraftStates to update
+     */
+    where?: ThreadDraftStateWhereInput
+    /**
+     * Limit how many ThreadDraftStates to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ThreadDraftState upsert
+   */
+  export type ThreadDraftStateUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ThreadDraftState to update in case it exists.
+     */
+    where: ThreadDraftStateWhereUniqueInput
+    /**
+     * In case the ThreadDraftState found by the `where` argument doesn't exist, create a new ThreadDraftState with this data.
+     */
+    create: XOR<ThreadDraftStateCreateInput, ThreadDraftStateUncheckedCreateInput>
+    /**
+     * In case the ThreadDraftState was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ThreadDraftStateUpdateInput, ThreadDraftStateUncheckedUpdateInput>
+  }
+
+  /**
+   * ThreadDraftState delete
+   */
+  export type ThreadDraftStateDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+    /**
+     * Filter which ThreadDraftState to delete.
+     */
+    where: ThreadDraftStateWhereUniqueInput
+  }
+
+  /**
+   * ThreadDraftState deleteMany
+   */
+  export type ThreadDraftStateDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ThreadDraftStates to delete
+     */
+    where?: ThreadDraftStateWhereInput
+    /**
+     * Limit how many ThreadDraftStates to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ThreadDraftState without action
+   */
+  export type ThreadDraftStateDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ThreadDraftState
+     */
+    select?: ThreadDraftStateSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ThreadDraftState
+     */
+    omit?: ThreadDraftStateOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -66751,6 +68984,7 @@ export namespace Prisma {
     handRaisedAt: 'handRaisedAt',
     screenPrivacy: 'screenPrivacy',
     manualUnread: 'manualUnread',
+    draftRevision: 'draftRevision',
     draft: 'draft'
   };
 
@@ -67163,6 +69397,32 @@ export namespace Prisma {
   };
 
   export type SavedMessageOperationScalarFieldEnum = (typeof SavedMessageOperationScalarFieldEnum)[keyof typeof SavedMessageOperationScalarFieldEnum]
+
+
+  export const ComposerOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    kind: 'kind',
+    targetId: 'targetId',
+    rootId: 'rootId',
+    requestHash: 'requestHash',
+    revision: 'revision',
+    outcome: 'outcome',
+    createdAt: 'createdAt'
+  };
+
+  export type ComposerOperationScalarFieldEnum = (typeof ComposerOperationScalarFieldEnum)[keyof typeof ComposerOperationScalarFieldEnum]
+
+
+  export const ThreadDraftStateScalarFieldEnum: {
+    userId: 'userId',
+    conversationId: 'conversationId',
+    rootId: 'rootId',
+    draft: 'draft',
+    revision: 'revision'
+  };
+
+  export type ThreadDraftStateScalarFieldEnum = (typeof ThreadDraftStateScalarFieldEnum)[keyof typeof ThreadDraftStateScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -68700,6 +70960,7 @@ export namespace Prisma {
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
     manualUnread?: BoolFilter<"ConversationParticipant"> | boolean
+    draftRevision?: StringFilter<"ConversationParticipant"> | string
     draft?: StringNullableFilter<"ConversationParticipant"> | string | null
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
@@ -68720,6 +70981,7 @@ export namespace Prisma {
     handRaisedAt?: SortOrderInput | SortOrder
     screenPrivacy?: SortOrder
     manualUnread?: SortOrder
+    draftRevision?: SortOrder
     draft?: SortOrderInput | SortOrder
     user?: UserOrderByWithRelationInput
     conversation?: ConversationOrderByWithRelationInput
@@ -68744,6 +71006,7 @@ export namespace Prisma {
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
     manualUnread?: BoolFilter<"ConversationParticipant"> | boolean
+    draftRevision?: StringFilter<"ConversationParticipant"> | string
     draft?: StringNullableFilter<"ConversationParticipant"> | string | null
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
@@ -68764,6 +71027,7 @@ export namespace Prisma {
     handRaisedAt?: SortOrderInput | SortOrder
     screenPrivacy?: SortOrder
     manualUnread?: SortOrder
+    draftRevision?: SortOrder
     draft?: SortOrderInput | SortOrder
     _count?: ConversationParticipantCountOrderByAggregateInput
     _max?: ConversationParticipantMaxOrderByAggregateInput
@@ -68786,6 +71050,7 @@ export namespace Prisma {
     handRaisedAt?: DateTimeNullableWithAggregatesFilter<"ConversationParticipant"> | Date | string | null
     screenPrivacy?: BoolWithAggregatesFilter<"ConversationParticipant"> | boolean
     manualUnread?: BoolWithAggregatesFilter<"ConversationParticipant"> | boolean
+    draftRevision?: StringWithAggregatesFilter<"ConversationParticipant"> | string
     draft?: StringNullableWithAggregatesFilter<"ConversationParticipant"> | string | null
   }
 
@@ -70913,6 +73178,132 @@ export namespace Prisma {
     outcome?: StringWithAggregatesFilter<"SavedMessageOperation"> | string
   }
 
+  export type ComposerOperationWhereInput = {
+    AND?: ComposerOperationWhereInput | ComposerOperationWhereInput[]
+    OR?: ComposerOperationWhereInput[]
+    NOT?: ComposerOperationWhereInput | ComposerOperationWhereInput[]
+    userId?: StringFilter<"ComposerOperation"> | string
+    clientId?: StringFilter<"ComposerOperation"> | string
+    kind?: StringFilter<"ComposerOperation"> | string
+    targetId?: StringFilter<"ComposerOperation"> | string
+    rootId?: StringFilter<"ComposerOperation"> | string
+    requestHash?: StringFilter<"ComposerOperation"> | string
+    revision?: StringFilter<"ComposerOperation"> | string
+    outcome?: StringFilter<"ComposerOperation"> | string
+    createdAt?: DateTimeFilter<"ComposerOperation"> | Date | string
+  }
+
+  export type ComposerOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    kind?: SortOrder
+    targetId?: SortOrder
+    rootId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ComposerOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: ComposerOperationUserIdClientIdCompoundUniqueInput
+    AND?: ComposerOperationWhereInput | ComposerOperationWhereInput[]
+    OR?: ComposerOperationWhereInput[]
+    NOT?: ComposerOperationWhereInput | ComposerOperationWhereInput[]
+    userId?: StringFilter<"ComposerOperation"> | string
+    clientId?: StringFilter<"ComposerOperation"> | string
+    kind?: StringFilter<"ComposerOperation"> | string
+    targetId?: StringFilter<"ComposerOperation"> | string
+    rootId?: StringFilter<"ComposerOperation"> | string
+    requestHash?: StringFilter<"ComposerOperation"> | string
+    revision?: StringFilter<"ComposerOperation"> | string
+    outcome?: StringFilter<"ComposerOperation"> | string
+    createdAt?: DateTimeFilter<"ComposerOperation"> | Date | string
+  }, "userId_clientId">
+
+  export type ComposerOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    kind?: SortOrder
+    targetId?: SortOrder
+    rootId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+    createdAt?: SortOrder
+    _count?: ComposerOperationCountOrderByAggregateInput
+    _max?: ComposerOperationMaxOrderByAggregateInput
+    _min?: ComposerOperationMinOrderByAggregateInput
+  }
+
+  export type ComposerOperationScalarWhereWithAggregatesInput = {
+    AND?: ComposerOperationScalarWhereWithAggregatesInput | ComposerOperationScalarWhereWithAggregatesInput[]
+    OR?: ComposerOperationScalarWhereWithAggregatesInput[]
+    NOT?: ComposerOperationScalarWhereWithAggregatesInput | ComposerOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"ComposerOperation"> | string
+    clientId?: StringWithAggregatesFilter<"ComposerOperation"> | string
+    kind?: StringWithAggregatesFilter<"ComposerOperation"> | string
+    targetId?: StringWithAggregatesFilter<"ComposerOperation"> | string
+    rootId?: StringWithAggregatesFilter<"ComposerOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"ComposerOperation"> | string
+    revision?: StringWithAggregatesFilter<"ComposerOperation"> | string
+    outcome?: StringWithAggregatesFilter<"ComposerOperation"> | string
+    createdAt?: DateTimeWithAggregatesFilter<"ComposerOperation"> | Date | string
+  }
+
+  export type ThreadDraftStateWhereInput = {
+    AND?: ThreadDraftStateWhereInput | ThreadDraftStateWhereInput[]
+    OR?: ThreadDraftStateWhereInput[]
+    NOT?: ThreadDraftStateWhereInput | ThreadDraftStateWhereInput[]
+    userId?: StringFilter<"ThreadDraftState"> | string
+    conversationId?: StringFilter<"ThreadDraftState"> | string
+    rootId?: StringFilter<"ThreadDraftState"> | string
+    draft?: StringFilter<"ThreadDraftState"> | string
+    revision?: StringFilter<"ThreadDraftState"> | string
+  }
+
+  export type ThreadDraftStateOrderByWithRelationInput = {
+    userId?: SortOrder
+    conversationId?: SortOrder
+    rootId?: SortOrder
+    draft?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type ThreadDraftStateWhereUniqueInput = Prisma.AtLeast<{
+    userId_conversationId_rootId?: ThreadDraftStateUserIdConversationIdRootIdCompoundUniqueInput
+    AND?: ThreadDraftStateWhereInput | ThreadDraftStateWhereInput[]
+    OR?: ThreadDraftStateWhereInput[]
+    NOT?: ThreadDraftStateWhereInput | ThreadDraftStateWhereInput[]
+    userId?: StringFilter<"ThreadDraftState"> | string
+    conversationId?: StringFilter<"ThreadDraftState"> | string
+    rootId?: StringFilter<"ThreadDraftState"> | string
+    draft?: StringFilter<"ThreadDraftState"> | string
+    revision?: StringFilter<"ThreadDraftState"> | string
+  }, "userId_conversationId_rootId">
+
+  export type ThreadDraftStateOrderByWithAggregationInput = {
+    userId?: SortOrder
+    conversationId?: SortOrder
+    rootId?: SortOrder
+    draft?: SortOrder
+    revision?: SortOrder
+    _count?: ThreadDraftStateCountOrderByAggregateInput
+    _max?: ThreadDraftStateMaxOrderByAggregateInput
+    _min?: ThreadDraftStateMinOrderByAggregateInput
+  }
+
+  export type ThreadDraftStateScalarWhereWithAggregatesInput = {
+    AND?: ThreadDraftStateScalarWhereWithAggregatesInput | ThreadDraftStateScalarWhereWithAggregatesInput[]
+    OR?: ThreadDraftStateScalarWhereWithAggregatesInput[]
+    NOT?: ThreadDraftStateScalarWhereWithAggregatesInput | ThreadDraftStateScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"ThreadDraftState"> | string
+    conversationId?: StringWithAggregatesFilter<"ThreadDraftState"> | string
+    rootId?: StringWithAggregatesFilter<"ThreadDraftState"> | string
+    draft?: StringWithAggregatesFilter<"ThreadDraftState"> | string
+    revision?: StringWithAggregatesFilter<"ThreadDraftState"> | string
+  }
+
   export type UserCreateInput = {
     id?: string
     name: string
@@ -72475,6 +74866,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     user: UserCreateNestedOneWithoutParticipationsInput
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
@@ -72495,6 +74887,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
     readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput
@@ -72511,6 +74904,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
@@ -72531,6 +74925,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
     readObservations?: MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput
@@ -72549,6 +74944,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
   }
 
@@ -72563,6 +74959,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
@@ -72579,6 +74976,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
@@ -74782,6 +77180,146 @@ export namespace Prisma {
     outcome?: StringFieldUpdateOperationsInput | string
   }
 
+  export type ComposerOperationCreateInput = {
+    userId: string
+    clientId: string
+    kind: string
+    targetId: string
+    rootId?: string
+    requestHash: string
+    revision: string
+    outcome: string
+    createdAt?: Date | string
+  }
+
+  export type ComposerOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    kind: string
+    targetId: string
+    rootId?: string
+    requestHash: string
+    revision: string
+    outcome: string
+    createdAt?: Date | string
+  }
+
+  export type ComposerOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    targetId?: StringFieldUpdateOperationsInput | string
+    rootId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+    outcome?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ComposerOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    targetId?: StringFieldUpdateOperationsInput | string
+    rootId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+    outcome?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ComposerOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    kind: string
+    targetId: string
+    rootId?: string
+    requestHash: string
+    revision: string
+    outcome: string
+    createdAt?: Date | string
+  }
+
+  export type ComposerOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    targetId?: StringFieldUpdateOperationsInput | string
+    rootId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+    outcome?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ComposerOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    targetId?: StringFieldUpdateOperationsInput | string
+    rootId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+    outcome?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type ThreadDraftStateCreateInput = {
+    userId: string
+    conversationId: string
+    rootId: string
+    draft: string
+    revision: string
+  }
+
+  export type ThreadDraftStateUncheckedCreateInput = {
+    userId: string
+    conversationId: string
+    rootId: string
+    draft: string
+    revision: string
+  }
+
+  export type ThreadDraftStateUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    rootId?: StringFieldUpdateOperationsInput | string
+    draft?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ThreadDraftStateUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    rootId?: StringFieldUpdateOperationsInput | string
+    draft?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ThreadDraftStateCreateManyInput = {
+    userId: string
+    conversationId: string
+    rootId: string
+    draft: string
+    revision: string
+  }
+
+  export type ThreadDraftStateUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    rootId?: StringFieldUpdateOperationsInput | string
+    draft?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ThreadDraftStateUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    conversationId?: StringFieldUpdateOperationsInput | string
+    rootId?: StringFieldUpdateOperationsInput | string
+    draft?: StringFieldUpdateOperationsInput | string
+    revision?: StringFieldUpdateOperationsInput | string
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -76030,6 +78568,7 @@ export namespace Prisma {
     handRaisedAt?: SortOrder
     screenPrivacy?: SortOrder
     manualUnread?: SortOrder
+    draftRevision?: SortOrder
     draft?: SortOrder
   }
 
@@ -76046,6 +78585,7 @@ export namespace Prisma {
     handRaisedAt?: SortOrder
     screenPrivacy?: SortOrder
     manualUnread?: SortOrder
+    draftRevision?: SortOrder
     draft?: SortOrder
   }
 
@@ -76062,6 +78602,7 @@ export namespace Prisma {
     handRaisedAt?: SortOrder
     screenPrivacy?: SortOrder
     manualUnread?: SortOrder
+    draftRevision?: SortOrder
     draft?: SortOrder
   }
 
@@ -77355,6 +79896,77 @@ export namespace Prisma {
     requestHash?: SortOrder
     revision?: SortOrder
     outcome?: SortOrder
+  }
+
+  export type ComposerOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type ComposerOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    kind?: SortOrder
+    targetId?: SortOrder
+    rootId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ComposerOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    kind?: SortOrder
+    targetId?: SortOrder
+    rootId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ComposerOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    kind?: SortOrder
+    targetId?: SortOrder
+    rootId?: SortOrder
+    requestHash?: SortOrder
+    revision?: SortOrder
+    outcome?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type ThreadDraftStateUserIdConversationIdRootIdCompoundUniqueInput = {
+    userId: string
+    conversationId: string
+    rootId: string
+  }
+
+  export type ThreadDraftStateCountOrderByAggregateInput = {
+    userId?: SortOrder
+    conversationId?: SortOrder
+    rootId?: SortOrder
+    draft?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type ThreadDraftStateMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    conversationId?: SortOrder
+    rootId?: SortOrder
+    draft?: SortOrder
+    revision?: SortOrder
+  }
+
+  export type ThreadDraftStateMinOrderByAggregateInput = {
+    userId?: SortOrder
+    conversationId?: SortOrder
+    rootId?: SortOrder
+    draft?: SortOrder
+    revision?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {
@@ -80763,6 +83375,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
     readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
@@ -80781,6 +83394,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
     readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput
@@ -81430,6 +84044,7 @@ export namespace Prisma {
     handRaisedAt?: DateTimeNullableFilter<"ConversationParticipant"> | Date | string | null
     screenPrivacy?: BoolFilter<"ConversationParticipant"> | boolean
     manualUnread?: BoolFilter<"ConversationParticipant"> | boolean
+    draftRevision?: StringFilter<"ConversationParticipant"> | string
     draft?: StringNullableFilter<"ConversationParticipant"> | string | null
   }
 
@@ -84538,6 +87153,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     user: UserCreateNestedOneWithoutParticipationsInput
     readIntentState?: ReadIntentStateCreateNestedOneWithoutParticipantInput
@@ -84556,6 +87172,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
     readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput
@@ -90775,6 +93392,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     user: UserCreateNestedOneWithoutParticipationsInput
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
@@ -90794,6 +93412,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     readObservations?: MessageReadObservationUncheckedCreateNestedManyWithoutParticipantInput
   }
@@ -90825,6 +93444,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
@@ -90844,6 +93464,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     readObservations?: MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput
   }
@@ -90859,6 +93480,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     user: UserCreateNestedOneWithoutParticipationsInput
     conversation: ConversationCreateNestedOneWithoutParticipantsInput
@@ -90878,6 +93500,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
     readIntentState?: ReadIntentStateUncheckedCreateNestedOneWithoutParticipantInput
   }
@@ -90996,6 +93619,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
@@ -91015,6 +93639,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
   }
@@ -91235,6 +93860,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
   }
 
@@ -91550,6 +94176,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     conversation?: ConversationUpdateOneRequiredWithoutParticipantsNestedInput
     readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
@@ -91568,6 +94195,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
     readObservations?: MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput
@@ -91585,6 +94213,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
@@ -92028,6 +94657,7 @@ export namespace Prisma {
     handRaisedAt?: Date | string | null
     screenPrivacy?: boolean
     manualUnread?: boolean
+    draftRevision?: string
     draft?: string | null
   }
 
@@ -92168,6 +94798,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutParticipationsNestedInput
     readIntentState?: ReadIntentStateUpdateOneWithoutParticipantNestedInput
@@ -92186,6 +94817,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
     readIntentState?: ReadIntentStateUncheckedUpdateOneWithoutParticipantNestedInput
     readObservations?: MessageReadObservationUncheckedUpdateManyWithoutParticipantNestedInput
@@ -92203,6 +94835,7 @@ export namespace Prisma {
     handRaisedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     screenPrivacy?: BoolFieldUpdateOperationsInput | boolean
     manualUnread?: BoolFieldUpdateOperationsInput | boolean
+    draftRevision?: StringFieldUpdateOperationsInput | string
     draft?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
