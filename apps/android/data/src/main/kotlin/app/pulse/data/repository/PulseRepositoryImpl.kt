@@ -1928,12 +1928,26 @@ class PulseRepositoryImpl constructor(
             val message = messageDao.byId(messageId)?.toDomain() ?: error("Refresh this message before editing")
             requireConversationOwner(owner,epoch)
             check(message.authorId == owner && !message.id.startsWith("local_")) { "Only a delivered message from this account can be edited" }
-            val local = draftMutex.withLock {
+            draftMutex.withLock {
                 val key = localEditKey(owner,messageId)
-                wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
-                    ?: draftWrites.editBuffers[key]?.second
+                val buffered = draftWrites.editBuffers[key]
+                database.withTransaction {
+                    requireConversationOwner(owner,epoch)
+                    val local = buffered?.second ?: wave7Dao.get(key)?.let {
+                        app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json)
+                    }
+                    if (buffered != null) wave7Dao.upsert(Wave7CacheEntity(key,
+                        app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),buffered.second),System.currentTimeMillis()))
+                    composerJournal.stage(owner,"edit",message.id,message.conversationId,null,content.trim(),local?.baseText ?: message.body,
+                        if (local != null) local.baseEditedAt else message.editedAt,localEditRevision=local?.revision)
+                }
+                if (buffered != null) {
+                    // Invalidate an older finite typing writer too: it must not
+                    // recreate the edit snapshot after a fast server ACK.
+                    draftWrites.editVersions[key]?.compareAndSet(buffered.first,buffered.first + 1)
+                    draftWrites.editBuffers.remove(key,buffered)
+                }
             }
-            composerJournal.stage(owner,"edit",message.id,message.conversationId,null,content.trim(),local?.baseText ?: message.body,if (local != null) local.baseEditedAt else message.editedAt,localEditRevision=local?.revision)
             flushComposerIntents().getOrThrow()
             requireConversationOwner(owner,epoch)
             check(composerJournal.editText(owner,messageId) == null) { "Your edit is saved on this device but is not confirmed. Reopen it to recover the text." }
