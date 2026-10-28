@@ -68,7 +68,7 @@ class ScheduledJournalTest {
 
     @Test fun composerAndScheduleRetryAfterSurvivesReopenAndDoesNotChangeInstructions() = runBlocking {
       val context = ApplicationProvider.getApplicationContext<Context>()
-      for (scheduleFirst in listOf(false, true)) for (status in listOf(429, 503)) {
+      for (kind in listOf("draft", "edit")) for (scheduleFirst in listOf(false, true)) for (status in listOf(429, 503)) {
         val name = "replay-admission-${java.util.UUID.randomUUID()}.db"
         var db = Room.databaseBuilder(context, PulseDatabase::class.java, name).build()
         val command = ScheduledCommandDto("me", "original-operation-001", "create", "room", "original schedule", "2030-01-01T09:00:00Z")
@@ -82,7 +82,7 @@ class ScheduledJournalTest {
             val api = PulseApi(http, gateway = { "https://replay-admission.test" })
             val schedules = ScheduledJournal(db); val composer = ComposerJournal(db)
             schedules.stage(command)
-            composer.stage("me", "draft", "draft-room", "draft-room", null, "original draft", "")
+            composer.stage("me", kind, if (kind == "edit") "message" else "draft-room", "draft-room", null, "original draft", "")
             if (scheduleFirst) schedules.flush("me", api) { true } else composer.flush("me", api, { true })
             assertEquals(1, requests)
             assertNotNull(db.wave7Dao().get("outbox-retry:v1|me|global"))

@@ -266,7 +266,7 @@ private final class ReplayRetryClock: @unchecked Sendable {
 @MainActor
 final class ComposerRetryAdmissionTests: XCTestCase {
     func testBothReplayLanesPersistServerAdmissionAcrossReopen() async throws {
-      for scheduleFirst in [false, true] { for status in [429, 503] {
+      for kind in ["draft", "edit"] { for scheduleFirst in [false, true] { for status in [429, 503] {
         let id = UUID().uuidString
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(id).path
         defer {
@@ -282,7 +282,11 @@ final class ComposerRetryAdmissionTests: XCTestCase {
         let command = PulseScheduledCommand(owner: "me", clientId: "original-operation-001", kind: "create",
             conversationId: "room", text: "original schedule", scheduledAt: "2030-01-01T09:00:00.000Z")
         try store.stageScheduledCommand(command)
-        try store.saveDraftSnapshot(conversationId: "draft-room", text: "original draft")
+        if kind == "draft" { try store.saveDraftSnapshot(conversationId: "draft-room", text: "original draft") }
+        else {
+            let message = try JSONDecoder().decode(WireChatMessage.self, from: Data(#"{"id":"message","conversationId":"draft-room","senderId":"me","kind":"text","content":"original","createdAt":"2026-10-28T00:00:00Z"}"#.utf8))
+            try store.enqueueComposerEdit(message, text: "original draft", owner: "me")
+        }
         if scheduleFirst { _ = try await PulseScheduledReplay.flush(store: store, client: api, current: { true }) }
         else { _ = try await PulseComposerReplay.flush(store: store, client: api, current: { true }) }
         XCTAssertEqual(ReplayRetryProtocol.counts.count(id), 1)
@@ -300,7 +304,7 @@ final class ComposerRetryAdmissionTests: XCTestCase {
         // Negative control: the HTTP fixture still permits a request when the replay gate is bypassed.
         do { try await api.cancelScheduled("control") } catch { }
         XCTAssertEqual(ReplayRetryProtocol.counts.count(id), 2)
-      } }
+      } } }
     }
 
     func testAdmissionRestoresOnceAndRoomSlowModeDoesNotBlockDrafts() throws {
