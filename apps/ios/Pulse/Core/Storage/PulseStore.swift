@@ -2292,6 +2292,15 @@ extension PulseStore {
             return commands
         }
     }
+    private static func unacknowledgedSchedule(owner: String, id: String) -> String { "composer-schedule-unack:v1|\(owner)|\(id)" }
+    private static func releaseScheduledHead(_ db: Database, owner: String, id: String) throws {
+        let key = unacknowledgedSchedule(owner: owner,id: id)
+        guard let raw = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [key]) else { return }
+        let reference = try JSONDecoder().decode(PulseScheduledCommand.self,from: Data(raw.utf8))
+        guard reference.owner == owner, reference.kind == "create", !reference.conversationId.isEmpty else { throw CocoaError(.coderInvalidValue) }
+        try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [reference.headKey,reference.clientId])
+        try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [key,raw])
+    }
     func finishScheduledCommand(_ command: PulseScheduledCommand, result: String) throws {
         try dbQueue.write { db in
             guard let current = try Self.scheduledCommand(db,key: command.key), current.sameInstructions(command) else { return }
@@ -2313,6 +2322,11 @@ extension PulseStore {
             let receipt = PulseScheduledCommandAck(owner: command.owner,clientId: command.clientId,kind: command.kind,requestHash: command.requestHash,item: item)
             let json = String(decoding: try JSONEncoder().encode(receipt),as: UTF8.self)
             try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json",arguments: [command.ackKey,json,Date().timeIntervalSince1970])
+            if let item {
+                var reference = command; reference.text = ""; reference.scheduledAt = ""; reference.notice = nil
+                let raw = String(decoding: try JSONEncoder().encode(reference),as: UTF8.self)
+                try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET json=excluded.json",arguments: [Self.unacknowledgedSchedule(owner: command.owner,id: item.id),raw])
+            } else if command.kind == "cancel" { try Self.releaseScheduledHead(db,owner: command.owner,id: command.clientId) }
             try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [command.key])
         }
     }
@@ -2325,6 +2339,7 @@ extension PulseStore {
             guard receipt.owner == owner, receipt.clientId == id, receipt.kind == "create",
                   receipt.item?.id == item.id, receipt.item?.conversationId == item.conversationId else { throw CocoaError(.coderInvalidValue) }
             try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [command.headKey,id])
+            try Self.releaseScheduledHead(db,owner: owner,id: item.id)
         }
     }
     func deferScheduledCommand(_ command: PulseScheduledCommand, notice: String? = nil) throws {
@@ -2414,6 +2429,7 @@ extension PulseStore {
                    receipt.owner == owner, receipt.kind == "create", let item = receipt.item {
                     let command = PulseScheduledCommand(owner: owner,clientId: receipt.clientId,kind: "create",conversationId: item.conversationId)
                     try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [command.headKey,command.clientId])
+                    try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [Self.unacknowledgedSchedule(owner: owner,id: item.id)])
                 }
                 try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [row.id,json]); return
             }

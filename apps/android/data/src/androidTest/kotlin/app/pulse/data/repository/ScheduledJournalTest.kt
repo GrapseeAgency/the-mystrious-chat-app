@@ -23,8 +23,11 @@ class ScheduledJournalTest {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
         val command = ScheduledCommandDto("me", "operation-000000001", "create", "room", "private-body", "2030-01-01T09:00:00Z")
         var requests = 0
-        val http = HttpClient(MockEngine {
+        val http = HttpClient(MockEngine { request ->
             requests++
+            if (request.method.value == "DELETE") return@MockEngine respond(
+                """{"scheduleVersion":1,"userId":"me","conversationId":"room","scheduledId":"accepted","ok":true,"cancelled":true}""",
+                HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
             respond("""{"scheduleVersion":1,"userId":"me","conversationId":"room","clientId":"operation-000000001","replayed":false,
                 "item":{"id":"accepted","conversationId":"room","content":"private-body","scheduledAt":"2030-01-01T09:00:00.000Z"}}""",
                 HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
@@ -44,8 +47,16 @@ class ScheduledJournalTest {
             assertEquals(0, journal.flush("me", api) { true })
             assertEquals(1, requests)
             assertTrue(runCatching { journal.acknowledge("me", command.clientId, "wrong", "room") }.isFailure)
-            journal.acknowledge("me", command.clientId, "accepted", "room")
+            val cancel = ScheduledCommandDto("me", "accepted", "cancel")
+            journal.stage(cancel)
+            assertEquals(0, journal.flush("me", api) { true })
+            assertTrue(journal.cancelled(cancel))
+            assertNull(db.wave7Dao().get("composer-schedule-head:v1|me|room"))
             journal.stage(next)
+            // A late acknowledgement of the cancelled predecessor cannot
+            // release the newly staged replacement's room fence.
+            journal.acknowledge("me", command.clientId, "accepted", "room")
+            assertEquals(next.clientId, db.wave7Dao().get("composer-schedule-head:v1|me|room")?.json)
             assertNotNull(db.wave7Dao().get("composer-schedule:v1|me|create|${next.clientId}"))
         } finally { http.close(); db.close() }
     }

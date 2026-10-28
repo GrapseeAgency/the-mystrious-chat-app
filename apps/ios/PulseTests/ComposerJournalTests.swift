@@ -158,12 +158,15 @@ final class ScheduledCommandJournalTests: XCTestCase {
         XCTAssertEqual(recovery.text, "")
         let replacement = PulseScheduledCommand(owner: "me",clientId: "new-operation",kind: "create",conversationId: "room",text: "new",scheduledAt: "2030-01-02T00:00:00.000Z")
         XCTAssertThrowsError(try store.stageScheduledCommand(replacement), "Background acceptance must still fence an unconsumed composer")
-        try store.acknowledgeScheduledCommand(item,owner: "me")
-        XCTAssertNil(try store.loadWave7Cache(key: command.headKey))
         let cancel = PulseScheduledCommand(owner: "me",clientId: "accepted",kind: "cancel")
         try store.stageScheduledCommand(cancel)
         XCTAssertThrowsError(try store.finishScheduledCommand(cancel,result: "pending"))
         XCTAssertEqual(try store.pendingSchedules(owner: "me"),1)
+        try store.finishScheduledCommand(cancel,result: "cancelled")
+        XCTAssertNil(try store.loadWave7Cache(key: command.headKey))
+        try store.stageScheduledCommand(replacement)
+        try store.acknowledgeScheduledCommand(item,owner: "me")
+        XCTAssertEqual(try store.loadWave7Cache(key: replacement.headKey)?.json,replacement.clientId)
     }
 
 }

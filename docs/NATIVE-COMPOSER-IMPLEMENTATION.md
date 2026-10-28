@@ -55,7 +55,7 @@ still in progress**, so this is not yet the section's completion declaration.
 | 8. Schedule identity | Original time/body/client ID are immutable and retained through uncertain responses. Accepted metadata receipts verify an instruction hash. UI acknowledgement waits for draft durability before retiring identity. An accepted but unconsumed background schedule keeps its room head fenced until acknowledgement or explicit recovery removal. |
 | 9. Schedule/cancel recovery | Pending, held and accepted namespaces survive restart and expose scoped paged recovery. Cancellation remains visibly unconfirmed until a strict cancellation receipt. Retry never moves the original time forward. Text-only scheduling refuses anonymous, reply, topic, edit and armed-effect contexts instead of silently losing their metadata. |
 | 10. Dispatch/notices | Execution rechecks membership/announcement/block/slow-mode/expiry policy. Message and notification work commit atomically. Socket and push channels retry independently; device-binding receipts and token pagination bound replay. Lease renewal before channels cannot revive expired ownership. `scheduled-access.test.mjs`, `push-delivery.test.mjs`. |
-| 11. Retention/recovery | Completed schedule rows scrub content; native accepted schedule receipts retain metadata/hash only. Recovery is owner-scoped, keyset paged and compare-and-swap protected, with explicit server-action warnings. Seven-day completed-notice cleanup removes at most 500 device receipts and 100 notice records per invocation; message/send identity receipts are not evicted. |
+| 11. Retention/recovery | Delivered and explicitly discarded schedule rows scrub content; native accepted schedule receipts retain metadata/hash only. Recovery is owner-scoped, keyset paged and compare-and-swap protected, with explicit server-action warnings. Seven-day completed-notice cleanup removes at most 500 device receipts and 100 notice records per invocation; message/send identity receipts are not evicted. |
 
 ### Verification and remaining acceptance boundary
 
@@ -68,3 +68,27 @@ still in progress**, so this is not yet the section's completion declaration.
 - Autumn styling is retained. SQL rollout, matching-backend deployment and
   comprehensive physical Android/iOS acceptance remain deferred as requested.
 - This ledger does not assert whole-app correctness or completion of sections 4–16.
+
+### Latest verification notes
+
+- Full backend suite, including execution of both native recovery pagination
+  queries against SQLite: **525 passed, 0 failed, 0 skipped** (513 top-level).
+  The added query test crosses every recovery namespace and wildcard-containing
+  owner IDs with 100-row keyset pages.
+- TypeScript 5.9.3 successfully checked all 13 changed backend source files and
+  their transitive imports with the project compiler settings (exit 0).
+- Full-repository TypeScript checking still reports 20 diagnostics outside this
+  section (web call/profile/icon code and auxiliary scripts/fixtures). That is
+  not represented as a full-repository typecheck pass.
+- Failed native edit writes now retain a shared per-store front buffer as well
+  as reporting the storage error. Enqueue commits that buffer and its original
+  baseline with the edit operation; obsolete Android typing writers are fenced
+  from recreating a snapshot after acceptance.
+
+- Execution-time rejected schedules intentionally retain their **unsent** text
+  for the existing failed-schedule review UI; explicit discard erases that text
+  and keeps the owner-bound terminal receipt. This is distinct from a delivered
+  message body, which is scrubbed from its scheduling row.
+- Confirmed cancellation also releases an unconsumed creation's room fence via
+  a direct metadata-only lookup. An older acknowledgement cannot release a newer
+  replacement's fence. Both native scheduled-journal tests exercise this order.

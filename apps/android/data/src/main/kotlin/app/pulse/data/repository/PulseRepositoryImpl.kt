@@ -2074,8 +2074,10 @@ class PulseRepositoryImpl constructor(
             if (row.key.startsWith("composer-schedule-ack:")) {
                 val receipt = runCatching { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandAckDto.serializer(),row.json) }.getOrNull()
                 val accepted = receipt?.item
-                if (receipt != null && receipt.owner == owner && receipt.kind == "create" && accepted != null)
+                if (receipt != null && receipt.owner == owner && receipt.kind == "create" && accepted != null) {
                     wave7Dao.acknowledgeReadIntent("composer-schedule-head:v1|$owner|${accepted.conversationId}",receipt.clientId)
+                    wave7Dao.delete("composer-schedule-unack:v1|$owner|${accepted.id}")
+                }
             }
             wave7Dao.acknowledgeReadIntent(row.key,row.json)
         } else if (row.key.startsWith("composer-schedule-blocked:") && action == "retry") {
