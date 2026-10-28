@@ -13,7 +13,7 @@ receipts are intentional; constant total metadata size is not promised.
 | Native accepted schedule/cancellation receipts and creation references | Metadata/hash and identity; no scheduled body. Keep head/reference fencing until consumption/cancellation or explicit checked removal. Server permanent receipts still prevent recreation after local removal. |
 | Active draft/edit snapshots and independent checkpoints | Keep user text, including explicit clears, until superseded, committed, consumed or explicitly discarded. Never expire by age. Unreadable recovery bytes are retained rather than guessed or discarded. File-only edits recover on message reopen and are rehydrated into the recovery manager by bounded maintenance. iOS displaced-window copies use the same independent path. Rehydration creates unsubmitted recovery, never a network intent. Normal/thread file-only drafts appear in the draft manager. |
 | Consumed checkpoint files | SQLite UUID ACK commits with save/send/clear/edit capture. Remove matching file only after that commit; mismatched/newer UUID survives. Successful save and recovery reads clean immediately. Background maintenance reads at most 100 file payloads per pass, removes at most 100 acknowledged files, and persists a lexical cursor across restarts. Directory name enumeration is not constant-memory. Compact per-scope ACKs are retained. |
-| Retry-admission deadlines | Expired wall-clock rows only, at most 500 deleted/pass; no user content or replay receipts share this prefix. During-process timing remains monotonic. |
+| Retry-admission deadlines | Shared global admission covers ordinary outbox, composer/edit and scheduled replay; message-room holds remain message-specific. Expired wall-clock rows only, at most 500 deleted/pass; no user content or replay receipts share this prefix. During-process timing remains monotonic. |
 | Scheduled message bodies | Scrub on sent or explicit discard/cancellation; refused instructions stay recoverable. Identity remains even if content is gone. |
 | Scheduled delivery hints and push binding receipts | Stop stale hint retries after 24h. Seven days after completion, delete at most 500 child receipts and 100 child-free parent notices/pass. This cannot recreate a scheduled message. |
 
@@ -26,12 +26,12 @@ loss are not solved by a second write path on the same device.
 
 Evidence: scheduled-access/push-delivery/composer-operation server contracts,
 native recovery SQL contracts, retry reopen tests, and new checkpoint bounded
-scan/consumption tests. The `6f87622` implementation passed Android JVM/API30/API34
-and all 108 selected iOS regressions; exact outcomes are recorded in
+scan/consumption tests. The recheck source passed Android JVM/API30/API34 instrumented tests
+and all 112 selected iOS regressions; exact outcomes are recorded in
 NATIVE-COMPOSER-VERIFICATION.md. Deployment and physical acceptance remain deferred.
 
 
-Item-6 recheck addition (native verification pending): the same compact global
+Item-6 recheck addition (native regressions passed): the same compact global
 admission record now gates composer/edit and scheduled-command replay, not only
 message outbox sends. Failed metadata commits retain a memory hold and retry the
 metadata write; this does not promise durability through process death while all

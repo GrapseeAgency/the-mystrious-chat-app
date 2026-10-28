@@ -1,20 +1,77 @@
 # Section 3 — source-to-regression reconciliation
 
-> **Current status:** The original eleven items have now been supplied and are
-> tracked in [the authoritative checklist](NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md).
-> The reconstructed grouping and older counts below are historical, not the
-> acceptance boundary. Latest local backend run: 528/528; current architectural /
-> SQL / reporter contracts: 16/16. Hosted scoped iOS at `f6f1e46`: 103/103,
-> zero unverified (run 40709607487). Independent checkpoints and later producer /
-> retention fixes are newer and still require native verification. Section 3
-> remains open; no advance to section 4.
+> **Current status — requested recheck:** Actual gaps in original items 6,
+> 7 and 8 were repaired and their scoped regressions passed. This is not an
+> exhaustive full-app/device correctness claim. The original list has been supplied;
+> [the authoritative checklist](NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md) is the
+> acceptance matrix. No section 4, deployment or PR merge is included.
 
+## Current recheck evidence — 2026-10-29
 
-Status: **scoped regression execution verified; original eleven-item checklist
-still required for closure**.
-This supplements `NATIVE-COMPOSER-IMPLEMENTATION.md`, whose previous blanket
-closure statement has been withdrawn. It does not substitute a new list and call
-it the recovered original. Deployment and physical-device acceptance stay deferred.
+### Behavior checked
+
+- Android manager rows freeze display-time draft revision/account, bulk actions
+  freeze the rendered collection, and recovery confirmation retains its page
+  owner. Negative controls demonstrate the old late-token/latest-owner guards
+  admitting stale actions. Swift manager callbacks carry a generation fence;
+  the store regression checks actual same-text ABA preservation. These are
+  helper/store regressions plus source wiring checks, not physical UI callbacks.
+- Same-instruction schedule creation had failed reproducibly with three busy
+  responses and no creation. The failed no-op-write experiment was removed;
+  bounded transaction budgets now survive contention. Original exact-one-creation
+  assertions remain intact, including independent Prisma clients. Both contention
+  tests additionally passed three repeated runs.
+- Draft/edit and scheduled-command replay now persist/restore global Retry-After
+  admission. HTTP fixtures check both replay lanes as first caller, draft and edit
+  separately, 429 and 503, repeated scans, reopened stores, unchanged instructions,
+  and a direct-transport negative control. Clock/room/owner isolation and metadata
+  commit failure/recovery are also tested. Android revalidates ownership after
+  the newly suspended admission read.
+
+### Exact results
+
+- **Backend:** full local rerun 536 passed, zero failed/skipped (524 top-level).
+  Backend source/tests are unchanged from that rerun through `b80f027`.
+- **Python:** 21 local SQL/source/reporter contracts passed.
+- **Android:** run [40750618074](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40750618074),
+  source `b80f02736bae9fe389f2b6d2e5a2b5b6df9fbb8a`. Build job `123036003728`
+  completed successfully, including all listed JVM modules and signed-release
+  assembly. API30/API34 instrumented test steps passed in jobs `123036003632`
+  and `123036003123`; their later release-smoke steps were still running at
+  observation. This is not a successful-whole-workflow claim.
+- **iOS scoped:** run [40750341613](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40750341613),
+  check `123035061509`, source `5faecb93f1a48edc3b2b75b296c885d0cdf00ed6`,
+  completed successfully. Retrieved annotation explicitly reports
+  **112 expected / 112 passed / 0 unverified**, `verified=true`.
+  Swift source, test source, selector and reporter are unchanged through `b80f027`.
+  Result digest: `ab6221357110551566b97e135fdf56ac7b250042bdbf27d93f68f7db638a6049`.
+
+| Selected Swift suite | Expected | Passed |
+| --- | ---: | ---: |
+| ComposerAttentionTests | 4 | 4 |
+| ComposerJournalTests | 9 | 9 |
+| ComposerRetryAdmissionTests | 3 | 3 |
+| DraftHandoffTests | 10 | 10 |
+| DraftJournalTests | 8 | 8 |
+| DraftReceiptTests | 1 | 1 |
+| PulseOutboxTests | 49 | 49 |
+| ScheduledAcceptanceTests | 6 | 6 |
+| ScheduledCommandJournalTests | 3 | 3 |
+| ScheduledCreationRetryTests | 3 | 3 |
+| TextDeliveryTests | 11 | 11 |
+| ThreadDraftHandoffTests | 5 | 5 |
+
+The separate full iOS workflow for `b80f027` (`40750618672`) was queued at this
+observation. The older ReadPresentation failure is not waived or declared fixed
+by these composer passes. Deployment, migrations and comprehensive physical/UI
+acceptance remain deferred as agreed. Checkpoints and admission metadata cannot
+promise persistence through process death before a successful storage write.
+
+## Historical investigation ledger
+
+The entries below preserve earlier findings and failed/partial verification.
+Their statements about an unavailable original list, pending tests or smaller
+counts describe those earlier checkpoints, **not the current status above**.
 
 ## Where the checklist comes from
 

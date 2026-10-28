@@ -1,12 +1,14 @@
 # Section 3 — drafts, outgoing messages, edits and scheduling
 
-> **Current status:** The recheck remains open for item 6: persisted
-> Retry-After admission was missing from composer/edit and scheduled-command
-> replay, despite existing ordinary-outbox coverage. Both native replay lanes
-> are now wired to durable global admission; new native tests await execution.
-> Earlier recheck fixes for manager authority and schedule contention have
-> 109-test scoped iOS / Android JVM+instrumentation / 536-server-test evidence.
-> These passes do not cover the newest retry changes. No section 4 or deployment.
+> **Current status:** The requested recheck found and repaired real gaps
+> in items 6 (replay admission), 7 (displayed manager authority) and 8 (scheduled
+> create contention). The new native tests now pass: Android JVM/API30/API34
+> instrumentation and 112/112 explicitly verified selected Swift tests. Server:
+> 536 passed; Python contracts: 21 passed. Android release assembly passed;
+> remaining release smoke and the separate full iOS workflow are not declared green.
+> The supplied original eleven-item acceptance matrix is in
+> NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md. The implementation history below is
+> not a replacement checklist. Autumn remains unchanged; no section 4 or deployment.
 
 
 **Historical scoped verification—not closure of the supplied original list.**
@@ -151,8 +153,11 @@ iOS run explicitly passed 102/102 methods. The user requires the original list,
 so these results do not authorize closing all eleven reconstructed rows.
 
 
-Recheck follow-through: Android bulk Clear also captures the collection rendered
-by Compose, rather than reading a possibly newer StateFlow value inside the tap.
-The complete local server rerun now passes **536 tests, zero failed/skipped**
-(including the new independent-client scheduling test). Native verification of
-these recheck changes remains pending; no earlier run is substituted for it.
+## Recheck follow-through
+
+Android bulk Clear freezes the rendered collection; recovery rows carry their
+page's captured owner through Copy/Retry/confirmation. Swift manager callbacks
+carry a generation fence. Draft/edit and scheduled replay now share durable
+global admission, with room-hold isolation and failed-metadata-write recovery.
+The current evidence and its UI/device/full-workflow limits are recorded in the
+authoritative checklist and verification ledger, not the historical counts above.
