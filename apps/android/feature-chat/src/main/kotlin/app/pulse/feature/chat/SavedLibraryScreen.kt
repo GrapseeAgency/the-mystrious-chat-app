@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -104,11 +105,16 @@ class SavedLibraryViewModel @Inject constructor(
     }
 
     private var loadJob: kotlinx.coroutines.Job? = null
-    private val liveRefresh = app.pulse.domain.sync.CoalescedRefresh(viewModelScope) { if (cursor == null) { refresh(); loadJob?.join() } }
+    private val liveRefresh = app.pulse.domain.sync.CoalescedRefresh(viewModelScope) { refresh(); loadJob?.join() }
     init {
         viewModelScope.launch {
             repo.events().collect { event ->
                 if (event is app.pulse.domain.repository.PulseEvent.SavedChanged && cursor == null) liveRefresh.request()
+                if (event is app.pulse.domain.repository.PulseEvent.PrivateFeedsChanged) {
+                    request++; selected.value = emptyList(); all = emptyList(); applyFilter()
+                    _state.value = _state.value.copy(loading = true)
+                    liveRefresh.request()
+                }
             }
         }
         refresh()
@@ -119,6 +125,8 @@ class SavedLibraryViewModel @Inject constructor(
             }
         }
     }
+
+    fun repairFirstPage() { if (cursor == null && !_state.value.loading) liveRefresh.request() }
 
     fun refresh() {
         val epoch = repo.attachmentSessionKey() ?: return
@@ -137,8 +145,12 @@ class SavedLibraryViewModel @Inject constructor(
                     _state.value = _state.value.copy(loading = false, previous = previous.isNotEmpty(), next = page.hasMore, cached = page.cached)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
-                if (repo.attachmentSessionKey() == epoch && request == ticket) _state.value = _state.value.copy(
-                    loading = false, previous = previous.isNotEmpty(), error = failure.message ?: "Couldn't load your saved messages")
+                if (repo.attachmentSessionKey() == epoch && request == ticket) {
+                    if ((failure as? app.pulse.domain.model.PulseApiException)?.status in listOf(401, 403, 404)) {
+                        selected.value = emptyList(); all = emptyList(); applyFilter()
+                    }
+                    _state.value = _state.value.copy(loading = false, previous = previous.isNotEmpty(), error = failure.message ?: "Couldn't load your saved messages")
+                }
             }
         }
     }
@@ -193,6 +205,15 @@ fun SavedLibraryScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle(initialValue = null)
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                viewModel.repairFirstPage()
+                kotlinx.coroutines.delay(30_000)
+            }
+        }
+    }
 
     var unsaveTarget by remember { mutableStateOf<SavedItem?>(null) }
 

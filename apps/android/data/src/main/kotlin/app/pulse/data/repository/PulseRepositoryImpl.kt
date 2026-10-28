@@ -301,6 +301,7 @@ class PulseRepositoryImpl constructor(
         scope.coroutineContext.cancelChildren()
         pumpStarted = false
         selfHealJob = null
+        savedScanAfter = ""
         onlineIds.value = emptySet()
         connectedFlow.value = false
     }
@@ -1929,6 +1930,8 @@ class PulseRepositoryImpl constructor(
     private val savedOperations = Mutex()
     private val savedTransport = Mutex()
     private val savedReplay = Mutex()
+    private val savedScan = Mutex()
+    private var savedScanAfter = ""
     private fun savedVersionKey(owner: String, id: String) = "saved-version:v1|$owner|$id"
     private fun savedIntentPrefix(owner: String, id: String? = null) = "saved-intent:v1|$owner|" + (id?.let { "$it|" } ?: "")
     private fun decodeSavedIntent(row: Wave7CacheEntity) = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.SavedIntentDto.serializer(), row.json)
@@ -1978,6 +1981,7 @@ class PulseRepositoryImpl constructor(
     private suspend fun acceptSavedState(owner: String, incoming: app.pulse.protocol.SavedStateReceiptDto) {
         val key = "saved-canonical:v1|$owner|${incoming.messageId}"
         val previous = wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.SavedStateReceiptDto.serializer(), it.json) }
+        previous?.validateSavedState(owner, incoming.messageId)
         val state = if (previous != null && app.pulse.protocol.compareSavedRevisions(checkNotNull(previous.revision), checkNotNull(incoming.revision)) > 0) previous else incoming
         wave7Dao.upsert(Wave7CacheEntity(key, app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.SavedStateReceiptDto.serializer(), state), 0))
         wave7Dao.upsert(Wave7CacheEntity(savedVersionKey(owner, state.messageId), checkNotNull(state.revision), System.currentTimeMillis()))
@@ -2071,16 +2075,23 @@ class PulseRepositoryImpl constructor(
     }
 
     private suspend fun synchronizeSavedCache(owner: String, epoch: String) {
-        var after = ""
-        val prefix = "saved-version:v1|$owner|"
-        wave7Dao.seedSavedVersions(prefix)
-        while (true) {
+        if (!savedScan.tryLock()) return
+        try {
             requireConversationOwner(owner, epoch)
-            val keys = wave7Dao.savedVersionKeys(prefix, after)
-            if (keys.isEmpty()) return
-            if (refreshSavedStates(keys.map { it.removePrefix(prefix) }).isFailure) return
-            after = keys.last()
-        }
+            val prefix = "saved-version:v1|$owner|"
+            if (savedScanAfter.isEmpty()) wave7Dao.seedSavedVersions(prefix)
+            repeat(10) {
+                requireConversationOwner(owner, epoch)
+                val keys = wave7Dao.savedVersionKeys(prefix, savedScanAfter)
+                if (keys.isEmpty()) { savedScanAfter = ""; return }
+                if (refreshSavedStates(keys.map { it.removePrefix(prefix) }).isFailure) return
+                requireConversationOwner(owner, epoch)
+                savedScanAfter = if (keys.size < 100) "" else keys.last()
+                if (savedScanAfter.isEmpty()) return
+            }
+            // The next repair pass resumes here. A large library cannot keep
+            // this worker inside a complete-history loop forever.
+        } finally { savedScan.unlock() }
     }
 
     private val pinRefreshLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()

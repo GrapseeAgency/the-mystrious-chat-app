@@ -1924,6 +1924,7 @@ extension PulseStore {
         let key = "saved-canonical:v1|\(incoming.userId)|\(incoming.messageId)"
         let previous = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [key])
             .map { try JSONDecoder().decode(WireSavedStateReceipt.self, from: Data($0.utf8)) }
+        if let previous { try previous.validate(owner: incoming.userId, id: incoming.messageId) }
         let comparison = previous.map { WireSavedStateReceipt.compareRevisions(incoming.revision!, $0.revision!) } ?? 1
         let accepts = comparison > 0 || (comparison == 0 && savedSnapshotVersions.accepts(incoming.messageId, request: snapshot))
         let state = accepts ? incoming : previous!

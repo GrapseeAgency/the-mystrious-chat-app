@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -162,32 +163,51 @@ internal fun MirrorSavedSheet(
     var selected by remember(epoch) { mutableStateOf<List<String>?>(null) }
     val libraryFlow = remember(account, selected) { account.observeSavedPage(selected) }
     val list by libraryFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    var loading by remember(viewerId) { mutableStateOf(true) }
-    var error by remember(viewerId) { mutableStateOf<String?>(null) }
-    var retry by remember(viewerId) { mutableStateOf(0) }
+    var loading by remember(epoch) { mutableStateOf(true) }
+    var error by remember(epoch) { mutableStateOf<String?>(null) }
+    var retry by remember(epoch) { mutableStateOf(0) }
+    var loadGeneration by remember(epoch) { mutableStateOf(0L) }
     var refreshAfterLoad by remember(epoch) { mutableStateOf(false) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(account, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                if (cursor == null && !loading) retry++
+                kotlinx.coroutines.delay(30_000)
+            }
+        }
+    }
     LaunchedEffect(account) {
         account.events().collect { event ->
+            if (event is app.pulse.domain.repository.PulseEvent.PrivateFeedsChanged) {
+                loadGeneration++; selected = emptyList(); retry++
+            }
             if (event is app.pulse.domain.repository.PulseEvent.SavedChanged && cursor == null) {
                 if (loading) refreshAfterLoad = true else retry++
             }
         }
     }
     LaunchedEffect(repository, viewerId, retry, cursor, epoch) {
+        val ticket = ++loadGeneration
         loading = true
         error = null
         try {
             val page = account.savedLibraryPage(cursor).getOrThrow()
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
+            if (repository.attachmentSessionKey() != epoch || ticket != loadGeneration) return@LaunchedEffect
             selected = page.items.map { it.message.id }; next = page.nextCursor; cachedPage = page.cached
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            error = failure.message ?: "Saved messages could not be refreshed"
+            if (repository.attachmentSessionKey() == epoch && ticket == loadGeneration) {
+                if ((failure as? app.pulse.domain.model.PulseApiException)?.status in listOf(401, 403, 404)) selected = emptyList()
+                error = failure.message ?: "Saved messages could not be refreshed"
+            }
         } finally {
-            loading = false
-            if (refreshAfterLoad) { refreshAfterLoad = false; retry++ }
+            if (repository.attachmentSessionKey() == epoch && ticket == loadGeneration) {
+                loading = false
+                if (refreshAfterLoad) { refreshAfterLoad = false; retry++ }
+            }
         }
     }
 

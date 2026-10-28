@@ -60,16 +60,31 @@ struct SavedLibraryView: View {
         }
         .presentationDetents([.large])
         .task {
+            let epoch = session.sessionGeneration
             observePage()
             await load()
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+                guard session.sessionGeneration == epoch else { return }
+                if session.isForeground, cursor == nil { liveRefresh.request { await load() } }
+            }
+        }
+        .onChange(of: session.isForeground) { _, foreground in
+            if foreground, cursor == nil { liveRefresh.request { await load() } }
         }
         .onChange(of: session.sessionGeneration) { _, _ in
             observationGeneration = UUID(); libraryObservation?.cancel(); libraryObservation = nil
             loadGeneration = UUID(); items = []; cursor = nil; nextCursor = nil; previous = []; selectedIds = nil; phase = .failed("Reopen Saved messages for the current account")
         }
         .onReceive(session.signals) { signal in
-            if case .savedChanged(let owner, _) = signal, owner == session.viewer?.id, cursor == nil {
+            switch signal {
+            case .savedChanged(let owner, _) where owner == session.viewer?.id && cursor == nil:
                 liveRefresh.request { await load() }
+            case .conversationUpdated, .privateFeedsChanged:
+                session.requestSavedSync(ids: selectedIds ?? [])
+                loadGeneration = UUID(); selectedIds = []; items = []; observePage()
+                liveRefresh.request { await load() }
+            default: break
             }
         }
         .onDisappear { observationGeneration = UUID(); liveRefresh.cancel(); libraryObservation?.cancel(); libraryObservation = nil; loadGeneration = UUID() }
@@ -154,6 +169,9 @@ struct SavedLibraryView: View {
                 selectedIds = page.items.map { $0.message.id }; nextCursor = page.nextCursor; cachedPage = true
                 observePage(); items = visibleItems(page.items); phase = .loaded
                 return
+            }
+            if let failure = error as? PulseAPIClient.Failure, [401, 403, 404].contains(failure.status ?? 0) {
+                selectedIds = []; items = []; observePage()
             }
             // Never call an empty rendered list "loaded" merely because marker IDs exist.
             if !items.isEmpty {

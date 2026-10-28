@@ -428,7 +428,10 @@ public final class PulseSession: ObservableObject {
     private func startSavedSynchronization() {
         guard let store, let owner = viewer?.id else { return }
         let epoch = generation
-        savedSyncObservation = store.observeSavedSyncStatus(owner: owner).sink(receiveCompletion: { _ in }, receiveValue: { [weak self] status in
+        savedSyncObservation = store.observeSavedSyncStatus(owner: owner).sink(receiveCompletion: { [weak self] completion in
+            guard let self, self.generation == epoch else { return }
+            if case .failure = completion { self.savedSyncStatus = "Saved changes could not be read from storage. Cloud synchronization is not confirmed." }
+        }, receiveValue: { [weak self] status in
             guard let self, self.generation == epoch else { return }; self.savedSyncStatus = status
         })
         savedSyncTimer?.cancel()
@@ -1726,8 +1729,11 @@ public final class PulseSession: ObservableObject {
             // Includes the viewer's other devices, even with receipt privacy on.
             realtimeRefreshTick += 1
             noteInboxChanged()
+        case .privateFeedsChanged(let owner):
+            guard owner == viewer?.id else { return }
         case .savedChanged(let owner, let messageId):
-            if owner == viewer?.id { requestSavedSync(ids: [messageId]) }
+            guard owner == viewer?.id else { return }
+            requestSavedSync(ids: [messageId])
         case .conversationUpdated:
             realtimeRefreshTick += 1
             noteInboxChanged()
