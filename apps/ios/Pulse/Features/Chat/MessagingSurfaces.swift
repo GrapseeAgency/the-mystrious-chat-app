@@ -227,11 +227,12 @@ struct ScheduledManagerSheet: View {
 
     private func cancel(_ item: WireScheduledItem) {
         guard !busy else { return }
-        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        let epoch = session.sessionGeneration, ticket = UUID()
         request = ticket; busy = true; loading = false
         Task {
             defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 try await session.cancelScheduled(item.id)
                 guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 withAnimation { items.removeAll { $0.id == item.id } }

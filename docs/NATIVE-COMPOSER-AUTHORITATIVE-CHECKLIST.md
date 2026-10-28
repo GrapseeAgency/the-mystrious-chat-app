@@ -32,7 +32,7 @@ file-only recovery, mini-chat hydration and exact-revision restoration changes
 still require their own hosted result. Android checkpoint fault fixtures exposed
 two fixture defects (duplicate DataStore instances, then the iOS spelling of the
 Android cache table); both corrected, without removing the failed-storage tests.
-Local contracts now 18/18. No native SDK builds run in the sandbox.
+Local contracts now 20/20. No native SDK builds run in the sandbox.
 
 Compatibility note: old unconditional web draft PATCH clients now receive 428
 and must upgrade; allowing them to overwrite a protected native draft would
@@ -44,3 +44,11 @@ composer revisions, and Android edit ACK ownership captures the typing generatio
 before the first suspended read. Alternate schedule submission also captures the
 Android account receiver and checks the Swift sheet/session before async dispatch.
 These latest producer changes still need their own hosted native verification.
+
+Recovery-manager follow-through: Android main-manager retry/discard/clear actions
+now bind the account before launch. Draft clears match captured revision and
+shown text; queue removal targets captured snapshots rather than whatever happens
+to exist when the coroutine runs. Swift recovery and schedule-cancel tasks reject
+retired sessions before mutation. Android checkpoint instrumentation now also
+covers same-text ABA, foreign-owner/wrong-text deletion, and failed-SQL deletion
+preserving the recovery snapshot. These additions await hosted native execution.

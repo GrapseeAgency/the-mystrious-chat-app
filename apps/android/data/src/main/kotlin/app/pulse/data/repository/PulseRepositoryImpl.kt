@@ -3470,6 +3470,26 @@ class PulseRepositoryImpl constructor(
         if (draftVersions[conversationId]?.get() == revision) flushComposerIntents()
     }
 
+    override suspend fun clearDraftIfUnchanged(token: app.pulse.domain.model.ComposerDraftToken, text: String): Boolean =
+        draftMutex.withLock {
+            if (token.ownerId != viewerId) return@withLock false
+            val counter = draftVersions[token.storageKey] ?: return@withLock false
+            val current = draftWrites.currentSnapshot(token.storageKey, null)
+                ?: persistedDraftOrCheckpoint(token.storageKey)
+            // Recheck after the disk read: staging a newer edit is synchronous.
+            if (counter.get() != token.revision || current != DraftWriteCoordinator.localSnapshot(text)) return@withLock false
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                database.withTransaction { persistDraftWithMirror(token.storageKey, "") }
+                threadDraftBuffers.computeIfPresent(token.storageKey) { _, buffered ->
+                    buffered.takeIf { it.first > token.revision }
+                }
+                if (counter.compareAndSet(token.revision, token.revision + 1)) {
+                    scope.launch { mirrorDraft(token.storageKey, "", token.revision + 1) }
+                }
+                true
+            }
+        }
+
     override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")
 
     override fun observeDraft(conversationId: String): Flow<String?> = recoveringDraftObservation(

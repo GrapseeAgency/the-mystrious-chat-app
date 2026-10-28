@@ -50,6 +50,34 @@ class NativeSendEntrypoints(unittest.TestCase):
         self.assertLess(launched.index('guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket'),
                         launched.index('try await session.scheduleMessage('))
 
+    def test_managers_keep_snapshot_and_account_ownership_for_queued_actions(self):
+        source = (ROOT / 'apps/android/feature-settings/src/main/kotlin/app/pulse/feature/settings/SettingsViewModel.kt').read_text()
+        section = source[source.index('    fun deleteDraft('):source.index('    // Data & Storage')]
+        self.assertNotIn('repo.clearDraft(', section)
+        self.assertNotIn('repo.clearAllDrafts(', section)
+        self.assertNotIn('repo.clearOutbox(', section)
+        self.assertNotIn('repo.retryOutboxEntry(', section)
+        self.assertIn('target.clearDraftIfUnchanged(token, row.text)', section)
+        self.assertIn('target.discardOutboxEntryIfUnchanged(it)', section)
+        self.assertIn('val snapshots = rows.mapNotNull', section)
+        self.assertIn('if (repo.attachmentSessionKey() != epoch) return@launch', section)
+        ios = (ROOT / 'apps/ios/Pulse/Features/Settings/DraftsOutboxManagerView.swift').read_text()
+        section = ios[ios.index('    private func performRecovery('):ios.index('    // drafts')]
+        self.assertIn('guard ownedStore() != nil else { return }', section)
+        self.assertLess(section.index('guard !Task.isCancelled, session.sessionGeneration == epoch'),
+                        section.index('try await session.recoverComposer('))
+
+    def test_schedule_cancellation_is_owned_before_launch(self):
+        android = (ROOT / 'apps/android/app/src/main/java/app/pulse/android/mirror/MirrorRoomTools.kt').read_text()
+        section = android[android.index('    fun cancel(id: String)'):]
+        section = section[:section.index('    val loaded = items')]
+        self.assertLess(section.index('val owned = repository.boundToCurrentAccount()'), section.index('scope.launch'))
+        self.assertIn('owned.cancelScheduled(id)', section)
+        ios = (ROOT / 'apps/ios/Pulse/Features/Chat/MessagingSurfaces.swift').read_text()
+        section = ios[ios.index('    private func cancel(_ item: WireScheduledItem)'):]
+        self.assertLess(section.index('guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket'),
+                        section.index('try await session.cancelScheduled('))
+
     def test_small_rich_pickers_do_not_discard_before_local_acceptance(self):
         source = (ROOT / 'apps/android/app/src/main/java/app/pulse/android/mirror/MirrorRoom.kt').read_text()
         start = source.index('    if (stickerOpen) {', source.index('    if (pollOpen) {'))

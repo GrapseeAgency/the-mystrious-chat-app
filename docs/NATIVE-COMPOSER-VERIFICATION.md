@@ -212,6 +212,6 @@ physical-device acceptance are not waived by these scoped successes.
   JVM test step and both API30/API34 instrumentation steps succeeded. This
   executes the corrected failed-SQL checkpoint fixtures; it does not verify
   the later edit-generation or alternate schedule submission changes.
-- Latest local Python contracts: **18 passed**. Source tripwires include
+- Latest local Python contracts: **20 passed**. Source tripwires include
   alternate-scheduler pre-dispatch account ownership. Source checks are not
   native UI runtime proof. Current hosted native outcomes remain pending.

@@ -793,7 +793,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                         Text(draft.title, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                         Text(draft.text, fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
                     }
-                    IconButton(onClick = { viewModel.deleteDraft(draft.conversationId) }) {
+                    IconButton(onClick = { viewModel.deleteDraft(draft) }) {
                         Icon(PulseIcons.Trash, contentDescription = "Delete draft in ${draft.title}", tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
                     }
                 }
@@ -817,7 +817,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                     if (row.failureReason != null) {
                         TextButton(onClick = { viewModel.retryOutboxEntry(row.clientId) }) { Text("Retry") }
                     }
-                    IconButton(onClick = { viewModel.deleteOutboxEntry(row.clientId) }) {
+                    IconButton(onClick = { viewModel.deleteOutboxEntry(row) }) {
                         Icon(PulseIcons.Trash, contentDescription = "Discard queued message", tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
                     }
                 }

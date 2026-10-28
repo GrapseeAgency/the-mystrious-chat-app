@@ -605,11 +605,13 @@ private fun MirrorOwnedScheduledSheet(repository: PulseRepository, conversationI
 
     fun cancel(id: String) {
         if (cancelling.isNotEmpty() || epoch == null) return
+        val owned = repository.boundToCurrentAccount()
+        if (owned.attachmentSessionKey() != epoch) return
         cancelError = null; cancelling = setOf(id); revision++
         scope.launch {
             try {
                 if (repository.attachmentSessionKey() != epoch) return@launch
-                repository.cancelScheduled(id).getOrThrow()
+                owned.cancelScheduled(id).getOrThrow()
                 currentCoroutineContext().ensureActive()
                 if (repository.attachmentSessionKey() != epoch) return@launch
                 items = items?.filterNot { it.id == id }

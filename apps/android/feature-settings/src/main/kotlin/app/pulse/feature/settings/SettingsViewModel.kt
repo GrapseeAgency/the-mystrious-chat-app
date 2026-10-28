@@ -358,6 +358,7 @@ class SettingsViewModel @Inject constructor(
         val content: String,
         val attempts: Int,
         val failureReason: String? = null,
+        val snapshot: app.pulse.domain.model.OutboxEntry? = null,
     )
 
     val drafts: StateFlow<List<DraftRow>> =
@@ -381,16 +382,30 @@ class SettingsViewModel @Inject constructor(
                     } },
                     attempts = entry.attempts,
                     failureReason = entry.failureReason,
+                    snapshot = entry,
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun deleteDraft(conversationId: String) {
-        viewModelScope.launch { repo.clearDraft(conversationId) }
-    }
+    fun deleteDraft(row: DraftRow) = deleteDraftSnapshots(listOf(row))
 
-    fun clearDrafts() {
-        viewModelScope.launch { repo.clearAllDrafts() }
+    fun clearDrafts() = deleteDraftSnapshots(drafts.value.toList())
+
+    private fun deleteDraftSnapshots(rows: List<DraftRow>) {
+        val target = repo.boundToCurrentAccount()
+        val epoch = target.attachmentSessionKey() ?: return
+        val snapshots = rows.mapNotNull { row -> target.captureDraftToken(row.conversationId)?.let { row to it } }
+        viewModelScope.launch {
+            var changed = 0
+            try {
+                for ((row, token) in snapshots) {
+                    if (repo.attachmentSessionKey() != epoch) return@launch
+                    if (target.clearDraftIfUnchanged(token, row.text)) changed++
+                }
+                if (repo.attachmentSessionKey() == epoch) _outboxNotice.value = "Cleared $changed draft(s). Changed drafts are kept."
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { if (repo.attachmentSessionKey() == epoch) _outboxNotice.value = "Some drafts could not be cleared. Review the remaining saved text." }
+        }
     }
 
     private val _outboxNotice = MutableStateFlow<String?>(null)
@@ -420,6 +435,7 @@ class SettingsViewModel @Inject constructor(
         val target = repo.boundToCurrentAccount()
         val epoch = target.attachmentSessionKey()
         viewModelScope.launch {
+            if (epoch == null || epoch != repo.attachmentSessionKey()) return@launch
             val result = target.recoverComposer(entry,action)
             if (epoch != repo.attachmentSessionKey()) return@launch
             _outboxNotice.value = result.fold({ if (action == "remove") "Local recovery copy removed; this does not undo server actions." else "Original text retained while the request is reconciled." },{ it.message ?: "Recovery changed. Refresh before trying again." })
@@ -427,24 +443,40 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private val retryingOutbox = mutableSetOf<String>()
+    private val retryingOutbox = mutableSetOf<Pair<String, String>>()
     fun retryOutboxEntry(clientId: String) {
-        if (!retryingOutbox.add(clientId)) return
+        val target = repo.boundToCurrentAccount()
+        val epoch = target.attachmentSessionKey() ?: return
+        val key = epoch to clientId
+        if (!retryingOutbox.add(key)) return
         viewModelScope.launch {
             try {
-                repo.retryOutboxEntry(clientId)
-                    .onSuccess { _outboxNotice.value = "Original message queued for retry" }
-                    .onFailure { _outboxNotice.value = it.message ?: "The saved message could not be retried" }
-            } finally { retryingOutbox.remove(clientId) }
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val result = target.retryOutboxEntry(clientId)
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                _outboxNotice.value = result.fold({ "Original message queued for retry" }, { it.message ?: "The saved message could not be retried" })
+            } finally { retryingOutbox.remove(key) }
         }
     }
 
-    fun deleteOutboxEntry(clientId: String) {
-        viewModelScope.launch { repo.discardOutboxEntry(clientId) }
-    }
+    fun deleteOutboxEntry(row: OutboxRow) = discardOutboxSnapshots(listOf(row))
 
-    fun clearOutbox() {
-        viewModelScope.launch { repo.clearOutbox() }
+    fun clearOutbox() = discardOutboxSnapshots(outbox.value.toList())
+
+    private fun discardOutboxSnapshots(rows: List<OutboxRow>) {
+        val target = repo.boundToCurrentAccount()
+        val epoch = target.attachmentSessionKey() ?: return
+        viewModelScope.launch {
+            var changed = 0
+            try {
+                for (row in rows) {
+                    if (repo.attachmentSessionKey() != epoch) return@launch
+                    if (row.snapshot?.let { target.discardOutboxEntryIfUnchanged(it) } == true) changed++
+                }
+                if (repo.attachmentSessionKey() == epoch) _outboxNotice.value = "Discarded $changed recovery copy/copies. Changed or new messages are kept; an in-flight send may still arrive."
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { if (repo.attachmentSessionKey() == epoch) _outboxNotice.value = "Some messages could not be discarded. Review the remaining queue." }
+        }
     }
 
     // Data & Storage - footprint + cleanup

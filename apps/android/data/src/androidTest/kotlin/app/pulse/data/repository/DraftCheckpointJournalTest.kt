@@ -67,12 +67,27 @@ class DraftCheckpointJournalTest {
         var connection: android.database.sqlite.SQLiteDatabase? = null
         try {
             withTimeout(30_000) {
+                first.saveDraft("manager", "same text")
+                val staleManagerToken = checkNotNull(first.captureDraftToken("manager"))
+                first.saveDraft("manager", "different text")
+                first.saveDraft("manager", "same text")
+                assertFalse(first.clearDraftIfUnchanged(staleManagerToken, "same text"))
+                val currentManagerToken = checkNotNull(first.captureDraftToken("manager"))
+                assertFalse(first.clearDraftIfUnchanged(currentManagerToken.copy(ownerId="another-owner"), "same text"))
+                assertFalse(first.clearDraftIfUnchanged(currentManagerToken, "stale displayed text"))
+                assertEquals("same text", first.observeDraft("manager").first())
+                assertTrue(first.clearDraftIfUnchanged(currentManagerToken, "same text"))
+                assertEquals("", first.observeDraft("manager").first())
                 first.saveDraft("room", "older disk text")
                 connection = android.database.sqlite.SQLiteDatabase.openDatabase(context.getDatabasePath("pulse-account-$key.db").path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE)
                 connection!!.execSQL("CREATE TRIGGER fail_draft BEFORE INSERT ON draft BEGIN SELECT RAISE(ABORT, 'SQLite cannot commit'); END")
                 assertTrue(runCatching { first.saveDraft("room", "last keystrokes") }.isFailure)
                 val checkpoint = checkNotNull(DraftCheckpointJournal(directory).read("room"))
                 assertEquals("last keystrokes", checkpoint.text)
+                val failedClearToken = checkNotNull(first.captureDraftToken("room"))
+                assertTrue(runCatching { first.clearDraftIfUnchanged(failedClearToken, "last keystrokes") }.isFailure)
+                assertEquals("last keystrokes", first.observeDraft("room").first())
+                assertEquals(failedClearToken, first.captureDraftToken("room"))
                 first.stop()
                 val next = repository()
                 try {

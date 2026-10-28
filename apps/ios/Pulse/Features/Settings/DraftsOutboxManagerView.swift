@@ -102,9 +102,11 @@ struct DraftsOutboxManagerView: View {
         } catch { actionNotice = "Recovery could not be loaded. Original text has not been discarded." }
     }
     private func performRecovery(_ row: PulseComposerRecovery, action: String) {
+        guard ownedStore() != nil else { return }
         let epoch = session.sessionGeneration
         Task {
             do {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 try await session.recoverComposer(row,action: action)
                 guard session.sessionGeneration == epoch else { return }
                 actionNotice = action == "remove" ? "Local copy removed. Server actions were not undone." : "Original text retained while the request is reconciled."

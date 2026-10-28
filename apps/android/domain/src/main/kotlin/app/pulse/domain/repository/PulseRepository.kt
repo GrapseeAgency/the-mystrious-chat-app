@@ -534,6 +534,9 @@ interface PulseRepository {
     /** Debounced mirror of an already-staged revision; must not reserve a new edit. */
     suspend fun saveStagedDraft(conversationId: String, text: String, token: app.pulse.domain.model.ComposerDraftToken) {}
 
+    /** Manager deletion may consume only the displayed text and captured revision. */
+    suspend fun clearDraftIfUnchanged(token: app.pulse.domain.model.ComposerDraftToken, text: String): Boolean = false
+
     /** Drop the local composer draft (send delivered / composer cleared). */
     suspend fun clearDraft(conversationId: String)
 
