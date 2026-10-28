@@ -780,7 +780,7 @@ internal fun MirrorRoom(
         }
     }
     // R76 - jump-to-message (web jumpToMessage, chat-room.tsx:1039-1120):
-    // page back through the real cache until the hit lands, scroll to it and
+    // resolve an exact server window when uncached, scroll to it and
     // flash the bubble - the Spotlight / home search / reminder links all
     // anchor the room this way.
     var jumpFlashId by remember { mutableStateOf<String?>(null) }
@@ -792,28 +792,10 @@ internal fun MirrorRoom(
         jumpFlashId = null
         activeTopicId = null // a search/quote jump must not remain hidden by a topic
         try {
-            var rawCursor: MessageHistoryCursor? = null
-            // A cold cache can request the latest page directly, without a polling race
-            // against refresh. Every subsequent request carries both timestamp and ID.
-            for (round in 0 until 14) {
-                ensureActive()
-                val current = repository.observeMessages(groupId).first()
-                if (current.any { it.id == target }) break
-                val cursor = rawCursor
-                val page = repository.historyPage(groupId, cursor, 60)
-                ensureActive()
-                if (!roomActionsLive.get()) return@LaunchedEffect
-                val next = page.nextCursor
-                if (next == null) { historyHasMore = false; break }
-                if (cursor != null && !next.precedes(cursor)) throw IllegalStateException("History returned a repeated page")
-                rawCursor = next
-                val previousBoundary = historyCursor
-                if (previousBoundary == null || next.precedes(previousBoundary)) {
-                    historyCursor = next
-                    historyHasMore = page.hasMore
-                }
-                if (!page.hasMore) break
-            }
+            val cached = repository.observeMessages(groupId).first()
+            if (cached.none { it.id == target }) repository.messageWindow(groupId, anchorId = target)
+            ensureActive()
+            if (!roomActionsLive.get()) return@LaunchedEffect
             val fresh = repository.observeMessages(groupId).first()
             val targetRow = fresh.firstOrNull { it.id == target }
             if (targetRow == null || targetRow.isDeleted || targetRow.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {

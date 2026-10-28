@@ -1091,17 +1091,11 @@ class ChatRoomViewModel @Inject constructor(
         historyJob = viewModelScope.launch {
             try {
                 var target = repo.observeMessages(conversationId).first().firstOrNull { it.id == messageId }
-                var rounds = 0
-                // A cold jump can cancel the initial load. It must seed a page
-                // rather than interpreting the initial hasMore=false as exhaustion.
-                if (target == null && historyCursor == null) {
-                    target = earlierPage().firstOrNull { it.id == messageId }
-                    rounds++
-                }
-                while (target == null && _state.value.hasMore && rounds < JUMP_MAX_ROUNDS) {
-                    val page = earlierPage()
-                    target = page.firstOrNull { it.id == messageId }
-                    rounds++
+                if (target == null) {
+                    val window = repo.messageWindow(conversationId, anchorId = messageId)
+                    target = window.messages.firstOrNull { it.id == messageId }
+                    // A jump is a sparse window, not consumption of the intervening
+                    // history. Keep the ordinary history cursor independent.
                 }
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (target == null || target.isDeleted || (target.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
@@ -2275,8 +2269,6 @@ class ChatRoomViewModel @Inject constructor(
         /** Older-page size - spec §1.1 pagination cursor rhythm. */
         const val PAGE_SIZE = 40
 
-        /** Bounded jump-window expansion - web parity (≤14 before= rounds). */
-        const val JUMP_MAX_ROUNDS = 14
 
         /** R1-W2F - one-shot location fix honesty timeout (web geolocation 9s). */
         const val LOCATION_FIX_TIMEOUT_MS = 12_000L

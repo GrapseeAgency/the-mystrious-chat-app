@@ -4510,7 +4510,7 @@ final class RoomViewModel: ObservableObject {
             if let target = (try? session.store?.message(id: messageId)) ?? messages.first(where: { $0.id == messageId }) {
                 await resolveJump(target, session: session)
             } else {
-                await expandForJump(messageId, session: session, rounds: 0)
+                await expandForJump(messageId, session: session)
             }
         }
     }
@@ -4564,56 +4564,30 @@ final class RoomViewModel: ObservableObject {
         jumpTo(target)
     }
 
-    /// Bounded expansion for out-of-window targets (web ≤14 rounds parity).
-    private func expandForJump(_ messageId: String, session: PulseSession, rounds: Int) async {
+    /// Exact server lookup: message age does not determine whether navigation succeeds.
+    private func expandForJump(_ messageId: String, session: PulseSession) async {
         guard !Task.isCancelled, session.ready else { return }
         let epoch = session.sessionGeneration, ticket = historyGeneration
         let client = session.api, store = session.store
-        let topic = activeTopicId
         let watermark = session.messageRevision
-        let snapshotRequest = session.store?.beginMessageSnapshot()
-        guard rounds < 14 else {
-            session.toasts.show("Couldn't reach that message in this chat's history")
-            return
-        }
-        guard historyWindow.canExpandForJump else {
-            session.toasts.show("Couldn't reach that message in this chat's history")
-            return
-        }
-        let oldest = historyCursor // nil intentionally requests a latest page for a cold jump
-        historyWindow.invalidateSeed()
+        let snapshotRequest = store?.beginMessageSnapshot()
         loadingOlder = true
         defer { if historyGeneration == ticket { loadingOlder = false } }
         do {
-            let page = try await client.messages(conversationId: conversationId, limit: 40,
-                before: oldest?.createdAt, query: nil, topicId: topic, beforeId: oldest?.id)
+            let page = try await client.messageWindow(conversationId: conversationId, anchorId: messageId)
             try Task.checkCancellation()
-            guard session.sessionGeneration == epoch, historyGeneration == ticket,
-                  activeTopicId == topic else { return }
-            let next = PulseHistoryCursor.oldest(page.messages)
-            if let next, let oldest {
-                guard next.precedes(oldest) else {
-                    session.toasts.show("History returned a repeated page")
-                    return
-                }
-            }
-            let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            guard session.sessionGeneration == epoch, historyGeneration == ticket else { return }
+            let rows = (page.parent.map { [$0] } ?? []) + page.messages
+            let eligible = rows.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
             let fresh = try store?.mergeMessages(eligible, snapshotRequest: snapshotRequest) ?? eligible
-            messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: topic)
-            historyWindow.record(cursor: next ?? oldest, hasMore: page.hasMore && next != nil)
-            if page.messages.contains(where: { $0.id == messageId }) {
-                if let target = fresh.first(where: { $0.id == messageId }) ?? (try? store?.message(id: messageId)) {
-                    await resolveJump(target, session: session)
-                } else { session.toasts.show("This message is no longer available") }
-            } else if page.messages.isEmpty {
-                session.toasts.show("Couldn't reach that message in this chat's history")
-            } else {
-                await expandForJump(messageId, session: session, rounds: rounds + 1)
-            }
+            messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: nil)
+            // Do not mistake an isolated jump window for consumed intervening pages.
+            if let target = fresh.first(where: { $0.id == messageId }) ?? (try? store?.message(id: messageId)) {
+                await resolveJump(target, session: session)
+            } else { session.toasts.show("This message is no longer available") }
         } catch {
-            guard !Task.isCancelled, session.sessionGeneration == epoch,
-                  historyGeneration == ticket else { return }
-            session.toasts.show("Couldn't reach that message in this chat's history")
+            guard !Task.isCancelled, session.sessionGeneration == epoch, historyGeneration == ticket else { return }
+            session.toasts.show("Couldn't open that message. Try again.")
         }
     }
 

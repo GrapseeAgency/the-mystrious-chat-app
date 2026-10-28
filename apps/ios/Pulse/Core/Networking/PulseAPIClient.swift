@@ -94,6 +94,29 @@ public struct PulseAPIClient: Sendable {
     /// D47 delta-sync refreshes via `since` (only rows strictly newer).
     /// Pure query building lives in messagesPath so unit tests can pin the
     /// wire shape without network.
+    public func messageWindow(conversationId: String, anchorId: String? = nil, threadId: String? = nil,
+                              before: WireMessageWindowPosition? = nil, after: WireMessageWindowPosition? = nil) async throws -> WireMessageWindow {
+        var query = URLComponents()
+        query.queryItems = [("messageId", anchorId), ("threadId", threadId),
+            ("before", before?.createdAt), ("beforeId", before?.id),
+            ("after", after?.createdAt), ("afterId", after?.id)].compactMap { key, value in
+                value.map { URLQueryItem(name: key, value: $0) }
+            }
+        let page: WireMessageWindow = try await get("/api/conversations/\(conversationId)/message-window?\(query.percentEncodedQuery ?? "")")
+        guard page.messageWindowVersion == 1, page.conversationId == conversationId, page.anchorId == anchorId,
+              threadId == nil || page.threadId == threadId, page.messages.count <= 200,
+              page.messages.allSatisfy({ $0.conversationId == conversationId && $0.parentId == page.threadId }),
+              anchorId == nil || page.messages.contains(where: { $0.id == anchorId }) else {
+            throw Failure(kind: .validation, message: "Unexpected message window.")
+        }
+        if let root = page.threadId {
+            guard page.parent?.id == root, page.parent?.conversationId == conversationId, page.parent?.parentId == nil else {
+                throw Failure(kind: .validation, message: "Unexpected thread parent.")
+            }
+        }
+        return page
+    }
+
     public func messages(
         conversationId: String,
         limit: Int = 200,

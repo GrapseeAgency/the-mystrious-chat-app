@@ -320,6 +320,20 @@ class PulseApi(
             PulseJson.decodeFromString(ConversationsPageDto.serializer(), it)
         }
 
+    suspend fun messageWindow(conversationId: String, anchorId: String?, threadId: String?,
+        before: app.pulse.domain.sync.MessageHistoryCursor?, after: app.pulse.domain.sync.MessageHistoryCursor?
+    ): PulseResult<app.pulse.protocol.MessageWindowDto> {
+        val query = listOf("messageId" to anchorId, "threadId" to threadId,
+            "before" to before?.createdAt, "beforeId" to before?.id,
+            "after" to after?.createdAt, "afterId" to after?.id)
+            .filter { it.second != null }.joinToString("&") { (key, value) ->
+                "$key=" + java.net.URLEncoder.encode(value, "UTF-8")
+            }
+        return get("/api/conversations/$conversationId/message-window?$query") {
+            PulseJson.decodeFromString(app.pulse.protocol.MessageWindowDto.serializer(), it)
+        }
+    }
+
     suspend fun messages(
         conversationId: String,
         limit: Int = 200,

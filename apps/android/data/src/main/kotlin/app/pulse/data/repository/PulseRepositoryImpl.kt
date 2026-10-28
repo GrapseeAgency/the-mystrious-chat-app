@@ -2130,6 +2130,27 @@ class PulseRepositoryImpl constructor(
         return app.pulse.domain.sync.MessageHistoryPage.fromResponse(raw, cacheFetchedMessages(raw, watermark), page.hasMore)
     }
 
+    override suspend fun messageWindow(conversationId: String, anchorId: String?, threadId: String?,
+        before: app.pulse.domain.sync.MessageHistoryCursor?, after: app.pulse.domain.sync.MessageHistoryCursor?
+    ): app.pulse.domain.sync.MessageWindow {
+        val watermark = messageFetchFence()
+        val page = when (val response = api.messageWindow(conversationId, anchorId, threadId, before, after)) {
+            is PulseResult.Success -> response.value
+            is PulseResult.Failure -> throw apiExceptionOf(response)
+        }
+        check(page.messageWindowVersion == 1 && page.conversationId == conversationId && page.anchorId == anchorId &&
+            (threadId == null || page.threadId == threadId) && page.messages.size <= 200 &&
+            page.messages.all { it.conversationId == conversationId && it.parentId == page.threadId } &&
+            (anchorId == null || page.messages.any { it.id == anchorId })) { "Unexpected message window" }
+        if (page.threadId != null) check(page.parent?.id == page.threadId && page.parent?.conversationId == conversationId && page.parent?.parentId == null) { "Unexpected thread parent" }
+        val incoming = (listOfNotNull(page.parent) + page.messages).map { it.toDomain() }
+        val current = cacheFetchedMessages(incoming, watermark)
+        return app.pulse.domain.sync.MessageWindow(
+            current.filter { it.threadRootId == page.threadId }, current.firstOrNull { it.id == page.threadId }, page.threadId,
+            page.olderCursor?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) },
+            page.newerCursor?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) }, page.hasOlder, page.hasNewer)
+    }
+
     override suspend fun searchInConversation(conversationId: String, query: String): List<Message> {
         val watermark = messageFetchFence()
         if (query.isBlank()) return emptyList()

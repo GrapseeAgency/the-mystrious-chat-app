@@ -31,3 +31,10 @@ data class MessageHistoryPage(
             MessageHistoryPage(merged, MessageHistoryCursor.oldest(raw), hasMore)
     }
 }
+
+/** A bounded, authorized neighborhood, not a claim that the entire room was loaded. */
+data class MessageWindow(
+    val messages: List<Message>, val parent: Message?, val threadId: String?,
+    val older: MessageHistoryCursor?, val newer: MessageHistoryCursor?,
+    val hasOlder: Boolean, val hasNewer: Boolean,
+)

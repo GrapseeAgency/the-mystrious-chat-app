@@ -573,6 +573,11 @@ interface PulseRepository {
         return app.pulse.domain.sync.MessageHistoryPage.fromResponse(rows, rows, more)
     }
 
+    suspend fun messageWindow(conversationId: String, anchorId: String? = null, threadId: String? = null,
+        before: app.pulse.domain.sync.MessageHistoryCursor? = null,
+        after: app.pulse.domain.sync.MessageHistoryCursor? = null): app.pulse.domain.sync.MessageWindow =
+        throw UnsupportedOperationException("Message-window navigation is unavailable")
+
     /** GET /api/conversations/{id}/messages?limit=100&q= - in-conversation search (hits upserted). */
     suspend fun searchInConversation(conversationId: String, query: String): List<Message>
 

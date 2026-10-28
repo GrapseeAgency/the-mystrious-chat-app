@@ -95,6 +95,23 @@ data class MessagesPageDto(
     val nextSyncCursor: String? = null,
 )
 
+@Serializable
+data class MessageWindowPositionDto(val id: String, val createdAt: String)
+
+@Serializable
+data class MessageWindowDto(
+    val messageWindowVersion: Int,
+    val conversationId: String,
+    val anchorId: String?,
+    val threadId: String?,
+    val parent: ChatMessageDto?,
+    val messages: List<ChatMessageDto>,
+    val hasOlder: Boolean,
+    val hasNewer: Boolean,
+    val olderCursor: MessageWindowPositionDto?,
+    val newerCursor: MessageWindowPositionDto?,
+)
+
 /** Missing consumed on older gateways must never grant a reveal. */
 @Serializable
 data class ViewOnceReceiptDto(val message: ChatMessageDto, val consumed: Boolean = false)

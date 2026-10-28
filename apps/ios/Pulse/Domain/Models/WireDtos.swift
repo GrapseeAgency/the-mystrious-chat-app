@@ -330,6 +330,24 @@ public struct WireMessagesPage: Codable, Sendable {
 }
 
 
+public struct WireMessageWindowPosition: Codable, Sendable {
+    public let id: String
+    public let createdAt: String
+}
+
+public struct WireMessageWindow: Codable, Sendable {
+    public let messageWindowVersion: Int
+    public let conversationId: String
+    public let anchorId: String?
+    public let threadId: String?
+    public let parent: WireChatMessage?
+    public let messages: [WireChatMessage]
+    public let hasOlder: Bool
+    public let hasNewer: Bool
+    public let olderCursor: WireMessageWindowPosition?
+    public let newerCursor: WireMessageWindowPosition?
+}
+
 /// Only consumed=true grants this request a reveal; legacy acknowledgements fail closed.
 public struct WireViewOnceReceipt: Codable, Sendable {
     public let message: WireChatMessage
