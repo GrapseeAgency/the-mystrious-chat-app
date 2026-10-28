@@ -132,7 +132,7 @@ class DraftCheckpointJournalTest {
                 val message = app.pulse.domain.model.Message(id="editable", conversationId="room", authorId=owner,
                     authorName="Sender", kind=app.pulse.domain.model.Message.Kind.TEXT, body="original", createdAt="2026-10-28T00:00:00Z")
                 database.messageDao().upsertAll(listOf(MessageEntity.from(message)))
-                database.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_edit BEFORE INSERT ON wave7Cache WHEN NEW.key LIKE 'composer-local-edit:%' BEGIN SELECT RAISE(ABORT, 'SQLite cannot commit'); END")
+                database.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_edit BEFORE INSERT ON wave7_cache WHEN NEW.key LIKE 'composer-local-edit:%' BEGIN SELECT RAISE(ABORT, 'SQLite cannot commit'); END")
                 val failed = async(start=kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
                     first.events().first { it is app.pulse.domain.repository.PulseEvent.ComposerSaveFailed && it.messageId == message.id }
                 }
