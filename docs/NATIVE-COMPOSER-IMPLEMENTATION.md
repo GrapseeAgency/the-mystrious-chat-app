@@ -1,7 +1,9 @@
 # Section 3 — drafts, outgoing messages, edits and scheduling
 
-In progress. Both native platforms and the backend are required. Autumn styling
-is unchanged; deployment and comprehensive physical-device auditing remain deferred.
+Implementation complete across the eleven tracked areas on Android, iOS and the
+backend. Autumn styling is unchanged; deployment and comprehensive physical-device
+auditing remain deferred. The full iOS test suite is **not green**: the exact
+candidate reports the existing hosted read-presentation failure described below.
 Existing repairs are retained, not counted as newly discovered missing features.
 
 ## Eleven acceptance areas
@@ -33,15 +35,13 @@ Swift's database remains account scoped.
 Added native engine regressions for large healthy backlogs and a failed head
 across consecutive passes. A local Python/SQLite regression executes the actual
 production Kotlin and Swift selection SQL and verifies fairness, FIFO and owner
-isolation. Native SDK execution of this section's changes remains pending.
-
-This document is a work ledger, not a declaration that all eleven areas are done.
+isolation. Native execution results and their limits are recorded below.
 
 ## Implementation reconciliation (2026-10-28)
 
-The eleven rows above remain the section boundary. Implementation is present in
-both apps and the backend; **native verification of the latest candidate is
-still in progress**, so this is not yet the section's completion declaration.
+The eleven rows above remain the implementation boundary. All eleven are
+implemented in both apps and the backend. This is a bounded implementation
+closure, not a zero-defect claim or a clean full-app validation declaration.
 
 | Area | Implemented behavior / principal evidence |
 | --- | --- |
@@ -60,9 +60,11 @@ still in progress**, so this is not yet the section's completion declaration.
 ### Verification and remaining acceptance boundary
 
 - Latest backend execution after poll, notice lease/retention and sent-content
-  changes: **524 passed, 0 failed, 0 skipped** (512 top-level tests).
-- Latest native source changes are being compiled/tested through the authorized
-  Android and iOS workflows. Older candidate failures are not described as passes.
+  changes and native recovery SQL coverage: **525 passed, 0 failed, 0 skipped**
+  (513 top-level tests).
+- Exact native candidate `adb34904c63c1f1af2a22cc86669374ffa19fce8` has
+  completed Android and iOS execution. See the exact outcomes below; the iOS
+  test-job failure is not described as a pass.
 - Notification hints are at-least-once: provider acceptance followed by a lost
   receipt can duplicate a hint, but cannot create another scheduled Message.
 - Autumn styling is retained. SQL rollout, matching-backend deployment and
@@ -95,3 +97,28 @@ still in progress**, so this is not yet the section's completion declaration.
 - Cancellation marks the original creation receipt terminal too, including
   cancellation after its composer was already acknowledged. Retrying the old
   body/time cannot return a cached “scheduled” success for a known cancellation.
+
+## Closure evidence — 2026-10-28
+
+Native production code and native test sources at closure are unchanged from
+`adb34904c63c1f1af2a22cc86669374ffa19fce8`.
+
+| Check | Actual result |
+| --- | --- |
+| Android run `40686534307` | **Success**: build `122810204821`, API 30 instrumented `122810205234`, API 34 instrumented `122810205245`. Publishing was skipped, not performed. |
+| iOS run `40686534406` | Archive `122810205602` **success**; simulator build **success**; build-test job `122810205100` **failure**. |
+| iOS failure review | All 25 check annotations were retrieved. The only named failing test is `ReadPresentationTests.testHostedSwiftUIRoomAndThreadHaveIndependentUnobscuredAnchors` at line 90: the hosted thread sheet remains presenting, with transition progress 0.0. No section 3 test failure is reported. This is not equivalent to a green complete iOS suite. |
+| Backend run `40686534225` | **Success** on the same candidate. Prior full local execution: 525 passed, 0 failed, 0 skipped. |
+| Closure SQL regression | **2 passed** locally: actual native recovery pagination and outbox fairness queries. Recovery coverage now also inserts internal schedule head/reference keys and proves neither is exposed as a user-removable recovery row. |
+
+The iOS read-presentation failure also occurred on preceding candidates and
+remains unresolved; its cause is not asserted to be a simulator-only flake.
+It remains in the concrete-failure/device-acceptance backlog, not silently
+waived or relabeled as a section 3 success. The full iOS run log could not be
+retrieved in this environment; the exact failure statements above are from
+GitHub check annotations, not an invented per-test pass count.
+
+All eleven implementation rows are closed within this section's defined scope.
+Deployment, schema-patch application, matching-backend/device acceptance,
+the unresolved broader iOS test failure, and sections 4–16 are not closed by
+this document. No release replacement or pull-request merge was performed.

@@ -21,7 +21,10 @@ for platform,table in [('android','wave7_cache'),('ios','wave7Cache')]:
   for prefix in prefixes:
    for n in range(113):
     db.execute('INSERT INTO '+table+' VALUES (?,?,0)',(prefix+':v1|'+owner+'|%05d'%n,'retained'))
-  db.execute('INSERT INTO '+table+' VALUES (?,?,0)',('composer-head:v1|'+owner+'|private','not a recovery row'))
+  # Internal fences/references must never appear as user-removable recovery
+  # records, even when their keys sort between real scheduled namespaces.
+  for internal in ['composer-head','composer-schedule-head','composer-schedule-reference']:
+   db.execute('INSERT INTO '+table+' VALUES (?,?,0)',(internal+':v1|'+owner+'|private','not a recovery row'))
  for owner in ['owner','owner*?[']:
   escaped=''.join({'[':'[[]','*':'[*]','?':'[?]'}.get(c,c) for c in owner)
   expected=sorted(prefix+':v1|'+owner+'|%05d'%n for prefix in prefixes for n in range(113))
