@@ -902,6 +902,39 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(try store.countPendingOutbox(), 0)
     }
 
+    func testRetryDeadlinesSurviveStoreAndEngineReopenWithoutBlockingHealthyRooms() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+        defer { for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path, composerOwner: "me")
+        let sender = StubSender(behaviors: [:])
+        var wall: TimeInterval = 1_000_000, monotonic: TimeInterval = 100
+        let first = PulseOutboxEngine(store: store, monitorNetwork: false, monotonicNow: { monotonic }, wallNow: { wall }, senderProvider: { sender })
+        first.holdRetries(seconds: 60, conversationId: "slow")
+        first.holdRetries(seconds: 20)
+        first.stop()
+        wall += 10; monotonic = 0
+        let reopened = try PulseStore(path: path, composerOwner: "me")
+        try reopened.appendOutbox(conversationId: "slow", clientId: "slow", content: "slow")
+        try reopened.appendOutbox(conversationId: "healthy", clientId: "healthy", content: "healthy")
+        let next = PulseOutboxEngine(store: reopened, monitorNetwork: false, monotonicNow: { monotonic }, wallNow: { wall }, senderProvider: { sender })
+        defer { next.stop() }
+        _ = await next.flush()
+        XCTAssertEqual(sender.attempts(of: "healthy"), 0, "Global cooldown survives restart")
+        monotonic = 10
+        _ = await next.flush()
+        XCTAssertEqual(sender.attempts(of: "healthy"), 1)
+        XCTAssertEqual(sender.attempts(of: "slow"), 0)
+        next.holdRetries(seconds: 1, conversationId: "slow")
+        monotonic = 49
+        _ = await next.flush()
+        XCTAssertEqual(sender.attempts(of: "slow"), 0)
+        monotonic = 50
+        _ = await next.flush()
+        XCTAssertEqual(sender.attempts(of: "slow"), 1, "Repeated reads do not restart the cooldown")
+        XCTAssertTrue(try reopened.outboxRetryDeadlines(now: wall + 86_401).isEmpty)
+        XCTAssertTrue(try PulseStore().outboxRetryDeadlines(now: wall).isEmpty)
+    }
+
     func testHealthyBacklogSharesEachDrainRoundWithOtherRooms() async throws {
         let store = try PulseStore()
         for i in 0..<80 { try store.appendOutbox(conversationId: "a", clientId: "a-\(i)", content: "a-\(i)") }

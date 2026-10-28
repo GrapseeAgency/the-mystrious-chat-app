@@ -72,6 +72,31 @@ public final class PulseStore: Sendable {
         try migrator.migrate(dbQueue)
     }
 
+    /// Retry metadata is account-scoped with the database. Terminal operation
+    /// receipts are deliberately not touched by expiry of these admission holds.
+    func holdOutboxRetry(scope: String, until: TimeInterval) throws -> TimeInterval {
+        guard until.isFinite else { throw CocoaError(.coderInvalidValue) }
+        let key = "outbox-retry:v1|" + SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
+        return try dbQueue.write { db in
+            let previous = try Double.fetchOne(db, sql: "SELECT updatedAt FROM wave7Cache WHERE key=?", arguments: [key]) ?? 0
+            let deadline = max(previous, until)
+            try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt", arguments: [key,scope,deadline])
+            return deadline
+        }
+    }
+    func outboxRetryDeadlines(now: TimeInterval) throws -> [String: TimeInterval] {
+        try dbQueue.write { db in
+            let prefix = "outbox-retry:v1|"
+            try db.execute(sql: "DELETE FROM wave7Cache WHERE key IN (SELECT key FROM wave7Cache WHERE substr(key,1,length(?))=? AND updatedAt<=? ORDER BY updatedAt LIMIT 500)", arguments: [prefix,prefix,now])
+            let rows = try Row.fetchAll(db, sql: "SELECT json,updatedAt FROM wave7Cache WHERE substr(key,1,length(?))=? AND updatedAt>?", arguments: [prefix,prefix,now])
+            return try Dictionary(rows.map { row in
+                let scope: String = row["json"], until: Double = row["updatedAt"]
+                guard until.isFinite else { throw CocoaError(.coderReadCorrupt) }
+                return (scope,until)
+            }, uniquingKeysWith: max)
+        }
+    }
+
     private var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
         m.registerMigration("v1") { db in

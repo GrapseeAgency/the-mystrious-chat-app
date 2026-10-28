@@ -224,6 +224,9 @@ public final class PulseOutboxEngine: ObservableObject {
     private var retryNotBefore: TimeInterval = 0
     private var roomRetryNotBefore: [String: TimeInterval] = [:]
     private let monotonicNow: () -> TimeInterval
+    private let wallNow: () -> TimeInterval
+    private var loadedRetryDeadlines: [String: TimeInterval] = [:]
+    private var unsavedRetryDeadlines: [String: TimeInterval] = [:]
     // R1-W2B D41 - NWPathMonitor flush trigger (spec F-OF-04). The monitor
     // lives as long as the engine (its handler only weakly references self,
     // so engine teardown releases it) and its satisfaction EDGE calls the
@@ -234,9 +237,11 @@ public final class PulseOutboxEngine: ObservableObject {
 
     public init(store: PulseStore, monitorNetwork: Bool = true,
                 monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+                wallNow: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 },
                 isCurrent: @escaping () -> Bool = { true }, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
         self.store = store
         self.monotonicNow = monotonicNow
+        self.wallNow = wallNow
         self.isCurrent = isCurrent
         self.senderProvider = senderProvider
         reloadPending()
@@ -294,9 +299,30 @@ public final class PulseOutboxEngine: ObservableObject {
         if let conversationId {
             roomRetryNotBefore[conversationId] = max(roomRetryNotBefore[conversationId] ?? 0, deadline)
         } else { retryNotBefore = max(retryNotBefore, deadline) }
+        let scope = conversationId ?? ""
+        let until = wallNow() + TimeInterval(min(86_400, max(1, seconds)))
+        unsavedRetryDeadlines[scope] = max(unsavedRetryDeadlines[scope] ?? 0, until)
+        do { try restoreRetryHolds() }
+        catch { storageUnavailable = true }
         // A short server cooldown must not wait behind the old 60s sweep.
         if healSleeping { stopHealTimer() }
         if canWork { startHealTimer() }
+    }
+
+    private func restoreRetryHolds() throws {
+        for (scope, until) in unsavedRetryDeadlines {
+            _ = try store.holdOutboxRetry(scope: scope, until: until)
+            unsavedRetryDeadlines.removeValue(forKey: scope)
+        }
+        for (scope, until) in try store.outboxRetryDeadlines(now: wallNow()) {
+            guard loadedRetryDeadlines[scope] != until else { continue }
+            loadedRetryDeadlines[scope] = until
+            let remaining = min(86_400, max(0, until - wallNow()))
+            guard remaining > 0 else { continue }
+            let deadline = monotonicNow() + remaining
+            if scope.isEmpty { retryNotBefore = max(retryNotBefore, deadline) }
+            else { roomRetryNotBefore[scope] = max(roomRetryNotBefore[scope] ?? 0, deadline) }
+        }
     }
 
     private func blockedConversations() -> Set<String> {
@@ -346,7 +372,10 @@ public final class PulseOutboxEngine: ObservableObject {
     /// re-entrant calls are ignored while a flush is running.
     @discardableResult
     public func flush() async -> Bool {
-        guard canWork, !working, !Task.isCancelled, monotonicNow() >= retryNotBefore else { return false }
+        guard canWork, !working, !Task.isCancelled else { return false }
+        do { try restoreRetryHolds() }
+        catch { storageUnavailable = true; startHealTimer(); return false }
+        guard monotonicNow() >= retryNotBefore else { startHealTimer(); return false }
         guard let sender = senderProvider() else { return false }
         guard refreshPendingCount() else { startHealTimer(); return false }
         guard pendingCount > 0 else {
@@ -439,7 +468,7 @@ public final class PulseOutboxEngine: ObservableObject {
             } catch {
                 if Task.isCancelled || !canWork { return false }
                 if let failure = error as? PulseAPIClient.Failure,
-                   failure.status == 429 || failure.kind == .rateLimited {
+                   failure.status == 429 || failure.kind == .rateLimited || (failure.status == 503 && failure.retryAfter != nil) {
                     let roomOnly = postingMessage && failure.status == 429 && failure.code == "slow_mode"
                     holdRetries(seconds: failure.retryAfter ?? 60, conversationId: roomOnly ? entry.conversationId : nil)
                     if roomOnly {

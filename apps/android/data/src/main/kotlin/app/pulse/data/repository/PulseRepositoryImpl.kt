@@ -290,6 +290,7 @@ class PulseRepositoryImpl constructor(
     @Volatile private var pumpStarted = false
 
     private val dispatchGate = app.pulse.domain.sync.MessageDispatchGate()
+    private val outboxRetryJournal = OutboxRetryJournal(database, dispatchGate)
     private var selfHealJob: Job? = null
 
     override fun stop() {
@@ -1563,6 +1564,7 @@ class PulseRepositoryImpl constructor(
     ): Result<SendReceipt> {
         val deliveryEpoch = attachmentSession
         val immediate = try {
+            outboxRetryJournal.restore(temp.authorId)
             dispatchGate.tryImmediate(
                 isHead = {
                     viewerId == temp.authorId &&
@@ -1621,10 +1623,12 @@ class PulseRepositoryImpl constructor(
         return Result.success(SendReceipt(message = temp, streak = null))
     }
 
-    private fun holdMessageRetries(failure: PulseResult.Failure, conversationId: String? = null) {
-        if (failure.status == 429 || failure.kind == PulseResult.Failure.Kind.RATE_LIMITED) {
+    private suspend fun holdMessageRetries(failure: PulseResult.Failure, conversationId: String? = null) {
+        if (failure.status == 429 || failure.kind == PulseResult.Failure.Kind.RATE_LIMITED ||
+            (failure.status == 503 && failure.retryAfter != null)) {
             val room = conversationId.takeIf { failure.status == 429 && failure.code == "slow_mode" }
-            dispatchGate.holdRetries(failure.retryAfter, room)
+            val owner = checkNotNull(viewerId) { "Account ended before retry admission could be saved" }
+            outboxRetryJournal.hold(owner, failure.retryAfter, room)
         }
     }
 
@@ -3234,6 +3238,7 @@ class PulseRepositoryImpl constructor(
             if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
                 return@serialized FlushReport(sent = 0, dropped = 0, pending = pendingOutboxCount())
             }
+            outboxRetryJournal.restore(checkNotNull(viewerId))
             if (dispatchGate.remainingDelayMillis() > 0L) {
                 scheduleSelfHeal()
                 return@serialized FlushReport(pending = pendingOutboxCount())
@@ -3297,7 +3302,12 @@ class PulseRepositoryImpl constructor(
 
     override fun observeThreadDraft(conversationId: String, rootId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> {
         val key = threadDraftKey(conversationId, rootId)
-        return kotlinx.coroutines.flow.combine(draftDao.observe(key), threadDraftFailures) { _, failures ->
+        return recoveringDraftObservation(
+            buffers = kotlinx.coroutines.flow.combine(draftWrites.bufferChanges, threadDraftFailures) { _, _ -> Unit },
+            database = { draftDao.observe(key) },
+            onFailure = { Log.w(TAG, "Thread draft observation will retry", it) },
+        ) {
+            val failures = threadDraftFailures.value
             draftMutex.withLock {
                 val revision = draftVersions[key]?.get() ?: 0L
                 val buffered = threadDraftBuffers[key]
@@ -3355,15 +3365,11 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")
 
-    override fun observeDraft(conversationId: String): Flow<String?> = kotlinx.coroutines.flow.flow {
-        suspend fun snapshot() = draftWrites.readSnapshot(conversationId) { draftDao.get(conversationId)?.text }
-        // Rapid reopen must not first wait for a Room query, especially after a
-        // local save error. A staged snapshot is already available in this account.
-        emit(snapshot())
-        emitAll(kotlinx.coroutines.flow.combine(draftDao.observe(conversationId), draftWrites.bufferChanges) { _, _ ->
-            snapshot()
-        })
-    }
+    override fun observeDraft(conversationId: String): Flow<String?> = recoveringDraftObservation(
+        buffers = draftWrites.bufferChanges,
+        database = { draftDao.observe(conversationId) },
+        onFailure = { Log.w(TAG, "Draft observation will retry", it) },
+    ) { draftWrites.readSnapshot(conversationId) { draftDao.get(conversationId)?.text } }
 
     override suspend fun markRead(conversationId: String): Result<Unit> = acknowledgeRead(conversationId, null)
 

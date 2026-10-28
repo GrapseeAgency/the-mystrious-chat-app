@@ -1196,6 +1196,9 @@ interface Wave7Dao {
     @Query("SELECT * FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix ORDER BY updatedAt, `key`")
     suspend fun readJournal(prefix: String): List<Wave7CacheEntity>
 
+    @Query("DELETE FROM wave7_cache WHERE `key` IN (SELECT `key` FROM wave7_cache WHERE substr(`key`,1,length(:prefix)) = :prefix AND updatedAt <= :now ORDER BY updatedAt LIMIT 500)")
+    suspend fun pruneExpiredRetryHolds(prefix: String, now: Long)
+
     @Query("SELECT COUNT(*) FROM wave7_cache WHERE substr(`key`, 1, length(:prefix)) = :prefix")
     fun observeReadJournalCount(prefix: String): Flow<Int>
 
