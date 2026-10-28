@@ -1,6 +1,7 @@
 package app.pulse.feature.settings
 
 import app.pulse.domain.model.ComposerDraftToken
+import app.pulse.domain.model.ComposerRecoveryEntry
 import app.pulse.domain.repository.PulseRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -51,4 +52,14 @@ fun <T> observeComposerManagerRows(
     val owner = ComposerManagerOwner.capture(bound)
     if (owner.sessionKey == null || owner.ownerId == null) flowOf(emptyList<T>())
     else observe(owner).onStart { emit(emptyList()) }
+}
+
+
+/** A refreshed page (even with identical payloads) cannot renew an older confirmation. */
+data class ComposerManagerRecoverySnapshot(
+    val owner: ComposerManagerOwner,
+    val entry: ComposerRecoveryEntry,
+) {
+    fun canAct(router: PulseRepository, displayed: List<ComposerManagerRecoverySnapshot>): Boolean =
+        owner.isCurrent(router) && this in displayed
 }

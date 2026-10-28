@@ -66,8 +66,12 @@ class NativeSendEntrypoints(unittest.TestCase):
         self.assertIn('row.snapshot.clearIfCurrent(repo)', section)
         self.assertIn('row.owner.repository.discardOutboxEntryIfUnchanged(row.snapshot)', section)
         self.assertIn('if (!owner.isCurrent(repo)) return@launch', section)
-        self.assertIn('val owner = recoveryOwner ?: return', section)
-        self.assertIn('entry !in _composerRecovery.value', section)
+        recovery_action = section[section.index('    fun recoverComposer(row:'):section.index('    private val retryingOutbox')]
+        self.assertNotIn('recoveryOwner', recovery_action)
+        self.assertEqual(recovery_action.count('row.canAct(repo, _composerRecovery.value)'), 2)
+        self.assertIn('target.recoverComposer(row.entry,action)', recovery_action)
+        self.assertIn('viewModel.recoveryText(row)', screen)
+        self.assertIn('Pair<ComposerManagerRecoverySnapshot,String>', screen)
         observed = source[source.index('    val drafts: StateFlow'):source.index('    fun deleteDraft(')]
         self.assertEqual(observed.count('observeComposerManagerRows(repo)'), 2)
         self.assertIn('owner.draft(conversationId, text)', observed)

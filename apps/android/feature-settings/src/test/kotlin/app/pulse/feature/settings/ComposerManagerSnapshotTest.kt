@@ -1,6 +1,7 @@
 package app.pulse.feature.settings
 
 import app.pulse.domain.model.ComposerDraftToken
+import app.pulse.domain.model.ComposerRecoveryEntry
 import app.pulse.domain.repository.PulseRepository
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -134,4 +135,29 @@ class ComposerManagerSnapshotTest {
         assertFalse(oldRow.owner.isCurrent(router.repo))
         assertTrue(newRow.owner.isCurrent(router.repo))
     }
+
+    @Test fun identicalRecoveryPayloadOnAnotherAccountCannotRenewAnOldConfirmation() {
+        val old = Account("origin-a"); val next = Account("origin-b")
+        val router = Router(old)
+        val entry = ComposerRecoveryEntry("key", "version", "draft", "room", "room", "same text", "recover")
+        val displayed = ComposerManagerRecoverySnapshot(ComposerManagerOwner.capture(old.repo), entry)
+        assertTrue(displayed.canAct(router.repo, listOf(displayed)))
+        router.switch(next)
+        val refreshed = ComposerManagerRecoverySnapshot(ComposerManagerOwner.capture(next.repo), entry.copy())
+        // Negative control: payload equality plus the latest page owner passes the old guard.
+        assertTrue(entry in listOf(refreshed.entry) && refreshed.owner.isCurrent(router.repo))
+        assertFalse(displayed.canAct(router.repo, listOf(refreshed)))
+        assertTrue(refreshed.canAct(router.repo, listOf(refreshed)))
+    }
+
+    @Test fun sameAccountRecoveryRefreshInvalidatesAnOlderConfirmationWithoutChangingItsText() {
+        val account = Account("session"); val router = Router(account)
+        val entry = ComposerRecoveryEntry("key", "version", "draft", "room", "room", "same text", "recover")
+        val displayed = ComposerManagerRecoverySnapshot(ComposerManagerOwner.capture(account.repo), entry)
+        val refreshed = ComposerManagerRecoverySnapshot(ComposerManagerOwner.capture(account.repo), entry.copy())
+        assertFalse(displayed.canAct(router.repo, emptyList()))
+        assertFalse(displayed.canAct(router.repo, listOf(refreshed)))
+        assertTrue(refreshed.canAct(router.repo, listOf(refreshed)))
+    }
+
 }

@@ -417,7 +417,7 @@ class SettingsViewModel @Inject constructor(
     private val _outboxNotice = MutableStateFlow<String?>(null)
     val outboxNotice: StateFlow<String?> = _outboxNotice.asStateFlow()
 
-    private val _composerRecovery = MutableStateFlow<List<app.pulse.domain.model.ComposerRecoveryEntry>>(emptyList())
+    private val _composerRecovery = MutableStateFlow<List<ComposerManagerRecoverySnapshot>>(emptyList())
     val composerRecovery = _composerRecovery.asStateFlow()
     private val _composerRecoveryCursor = MutableStateFlow<String?>(null)
     val composerRecoveryCursor = _composerRecoveryCursor.asStateFlow()
@@ -436,19 +436,22 @@ class SettingsViewModel @Inject constructor(
             if (ticket != recoveryRequest || epoch != repo.attachmentSessionKey()) return@launch
             result.onSuccess { page ->
                 recoveryOwner = owner
-                _composerRecovery.value = (if (more) _composerRecovery.value else emptyList()) + page.items
+                _composerRecovery.value = (if (more) _composerRecovery.value else emptyList()) + page.items.map { ComposerManagerRecoverySnapshot(owner, it) }
                 _composerRecoveryCursor.value = page.nextCursor
             }.onFailure { _outboxNotice.value = it.message ?: "Recovery could not be loaded. No text was discarded." }
         }
     }
-    fun recoverComposer(entry: app.pulse.domain.model.ComposerRecoveryEntry, action: String) {
-        val owner = recoveryOwner ?: return
-        if (!owner.isCurrent(repo) || entry !in _composerRecovery.value) return
+    fun recoveryText(row: ComposerManagerRecoverySnapshot): String? =
+        row.entry.text.takeIf { row.canAct(repo, _composerRecovery.value) }
+
+    fun recoverComposer(row: ComposerManagerRecoverySnapshot, action: String) {
+        val owner = row.owner
+        if (!row.canAct(repo, _composerRecovery.value)) return
         val target = owner.repository
         val epoch = owner.sessionKey
         viewModelScope.launch {
-            if (!owner.isCurrent(repo)) return@launch
-            val result = target.recoverComposer(entry,action)
+            if (!row.canAct(repo, _composerRecovery.value)) return@launch
+            val result = target.recoverComposer(row.entry,action)
             if (epoch != repo.attachmentSessionKey()) return@launch
             _outboxNotice.value = result.fold({ if (action == "remove") "Local recovery copy removed; this does not undo server actions." else "Original text retained while the request is reconciled." },{ it.message ?: "Recovery changed. Refresh before trying again." })
             refreshComposerRecovery()

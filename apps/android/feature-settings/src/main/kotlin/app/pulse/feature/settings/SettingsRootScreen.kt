@@ -724,7 +724,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
     val recoveryCursor by viewModel.composerRecoveryCursor.collectAsStateWithLifecycle()
     val owner by viewModel.viewerId.collectAsStateWithLifecycle()
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-    var recoveryConfirmation by remember(owner) { mutableStateOf<Pair<app.pulse.domain.model.ComposerRecoveryEntry,String>?>(null) }
+    var recoveryConfirmation by remember(owner) { mutableStateOf<Pair<ComposerManagerRecoverySnapshot,String>?>(null) }
     LaunchedEffect(owner) { viewModel.refreshComposerRecovery() }
     recoveryConfirmation?.let { (entry,action) ->
         androidx.compose.material3.AlertDialog(onDismissRequest = { recoveryConfirmation = null },
@@ -764,17 +764,18 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
             Text("Composer recovery",fontSize=13.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f))
             TextButton(onClick={ viewModel.refreshComposerRecovery() }) { Text("Refresh") }
         }
-        recovery.forEach { entry ->
+        recovery.forEach { row ->
+            val entry = row.entry
             Column(Modifier.fillMaxWidth().padding(vertical=8.dp)) {
                 Text(entry.kind,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
                 if (entry.text.isNotEmpty()) Text(entry.text,fontSize=12.sp,maxLines=3)
                 Text(entry.notice,fontSize=11.5.sp,color=Color.White.copy(alpha=0.6f))
                 Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                    if (entry.text.isNotEmpty()) TextButton(onClick={ clipboard.setText(androidx.compose.ui.text.AnnotatedString(entry.text)) }) { Text("Copy text") }
-                    if (entry.canRetry) TextButton(onClick={ viewModel.recoverComposer(entry,"retry") }) { Text("Retry original") }
-                    if (entry.canReplace) TextButton(onClick={ recoveryConfirmation=entry to "replace" }) { Text("Use this version") }
+                    if (entry.text.isNotEmpty()) TextButton(onClick={ viewModel.recoveryText(row)?.let { clipboard.setText(androidx.compose.ui.text.AnnotatedString(it)) } }) { Text("Copy text") }
+                    if (entry.canRetry) TextButton(onClick={ viewModel.recoverComposer(row,"retry") }) { Text("Retry original") }
+                    if (entry.canReplace) TextButton(onClick={ recoveryConfirmation=row to "replace" }) { Text("Use this version") }
                 }
-                TextButton(onClick={ recoveryConfirmation=entry to "remove" }) { Text("Remove local copy") }
+                TextButton(onClick={ recoveryConfirmation=row to "remove" }) { Text("Remove local copy") }
             }
         }
         if (recoveryCursor != null) TextButton(onClick={ viewModel.refreshComposerRecovery(more=true) }) { Text("Load more recovery") }

@@ -320,3 +320,12 @@ by Compose, rather than reading a possibly newer StateFlow value inside the tap.
 The complete local server rerun now passes **536 tests, zero failed/skipped**
 (including the new independent-client scheduling test). Native verification of
 these recheck changes remains pending; no earlier run is substituted for it.
+
+A further callback audit found the same freshness borrowing in Android recovery
+confirmations: the old code combined an old entry with the latest page owner.
+Identical recovery payloads on another account could pass structural membership.
+Recovery rows now retain their page's owner object through Copy, Retry and the
+confirmation dialog; refresh replaces that authority. Both before launch and
+inside the coroutine the original row must still belong to the displayed page.
+Two additional helper regressions include an explicit negative control for the
+old payload-equality guard. These additions still await hosted execution.
