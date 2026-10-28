@@ -1917,6 +1917,9 @@ class PulseRepositoryImpl constructor(
                 val previous = recoverableDraftCheckpoint(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.text) }
                     ?: wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
                 val local = app.pulse.protocol.ComposerLocalEditDto(text,previous?.baseText ?: snapshot.baseText,if (previous != null) previous.baseEditedAt else snapshot.baseEditedAt,snapshot.revision)
+                draftWrites.editBuffers.computeIfPresent(key) { _, current ->
+                    if (current.first == revision) revision to local else current
+                }
                 val raw = app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local)
                 val checkpoint = runCatching { draftCheckpoints.write(key,raw) }.getOrNull()
                 database.withTransaction {
@@ -1959,11 +1962,16 @@ class PulseRepositoryImpl constructor(
                 database.withTransaction {
                     requireConversationOwner(owner,epoch)
                     val checkpoint = recoverableDraftCheckpoint(key)
-                    val local = buffered?.second ?: checkpoint?.let {
+                    val durable = checkpoint?.let {
                         app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.text)
                     } ?: wave7Dao.get(key)?.let {
                         app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json)
                     }
+                    // A just-staged writer may not have loaded the original
+                    // baseline yet. Preserve durable baseline + newest text/UUID.
+                    val local = buffered?.second?.let { value ->
+                        if (durable == null) value else value.copy(baseText=durable.baseText,baseEditedAt=durable.baseEditedAt)
+                    } ?: durable
                     if (local != null) wave7Dao.upsert(Wave7CacheEntity(key,
                         app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local),System.currentTimeMillis()))
                     checkpoint?.let { wave7Dao.upsert(Wave7CacheEntity(draftCheckpoints.receiptKey(key),it.id,0)) }

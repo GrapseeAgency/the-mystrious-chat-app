@@ -7,6 +7,8 @@ import app.pulse.core.PulseEndpoints
 import app.pulse.data.local.*
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
@@ -17,6 +19,32 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class DraftCheckpointJournalTest {
+    /** Fresh Room handles model lost process buffers; a single fixture-owned
+     * DataStore avoids illegally constructing two writers for one preferences file. */
+    private class Repositories(val context: Context, val http: HttpClient, val owner: String, val tokens: SessionTokenStore) {
+        private val preferencesScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+        private val preferences = PulsePrefsLocalStore(androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope=preferencesScope) {
+            File(context.filesDir, "checkpoint-test-${UUID.randomUUID()}.preferences_pb")
+        })
+        private val handles = mutableListOf<PulseDatabase>()
+        private val repositories = mutableListOf<PulseRepositoryImpl>()
+        fun open(): PulseRepositoryImpl {
+            val key = AccountStorageKey.namespace(AccountStorageKey.origin(PulseEndpoints.gatewayHttpUrl), owner)
+            val db = androidx.room.Room.databaseBuilder(context, PulseDatabase::class.java, "pulse-account-$key.db").build()
+            handles += db
+            return PulseRepositoryImpl(app.pulse.data.remote.PulseApi(http, bearerToken={ null }, gateway={ "" }),
+                db,db.conversationDao(),db.messageDao(),db.outboxDao(),db.draftDao(),db.topicDao(),db.savedDao(),
+                db.callLogDao(),db.storyDao(),db.wave7Dao(),
+                app.pulse.data.remote.PulseSocketClient("", tokenProvider={ null }, allowEndpointFallback=false),
+                preferences,tokens,context,reminderOwner=app.pulse.domain.notify.ReminderOwner(owner,AccountStorageKey.origin(PulseEndpoints.gatewayHttpUrl)))
+                .also { repositories += it; it.start(owner) }
+        }
+        fun close() {
+            repositories.forEach { it.stop() }
+            preferencesScope.cancel()
+            handles.forEach { it.close() }
+        }
+    }
     @Test fun failedSQLiteDraftSurvivesNewRepositoryAndQueueConsumptionCannotReviveIt() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val oldGateway = PulseEndpoints.gatewayHttpUrl; val oldSocket = PulseEndpoints.socketUrl
@@ -34,7 +62,8 @@ class DraftCheckpointJournalTest {
         val owner = "checkpoint-${UUID.randomUUID()}"
         val key = AccountStorageKey.namespace(AccountStorageKey.origin(PulseEndpoints.gatewayHttpUrl), owner)
         val directory = File(context.noBackupFilesDir, "draft-checkpoints/pulse-account-$key.db")
-        fun repository() = AccountRepositories(context, http, SessionTokenStore(persistence, cipher)).repository.also { it.start(owner) }
+        val fixtures = Repositories(context,http,owner,SessionTokenStore(persistence,cipher))
+        fun repository() = fixtures.open()
         val first = repository()
         var connection: android.database.sqlite.SQLiteDatabase? = null
         try {
@@ -69,7 +98,69 @@ class DraftCheckpointJournalTest {
                 } finally { next.stop() }
             }
         } finally {
-            first.stop(); connection?.close(); http.close(); directory.deleteRecursively()
+            first.stop(); connection?.close(); fixtures.close(); http.close(); directory.deleteRecursively()
+            PulseEndpoints.gatewayHttpUrl = oldGateway; PulseEndpoints.socketUrl = oldSocket
+        }
+    }
+
+    @Test fun editCheckpointKeepsOriginalBaselineAfterLosingTheProcessBuffer() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val oldGateway = PulseEndpoints.gatewayHttpUrl; val oldSocket = PulseEndpoints.socketUrl
+        val http = HttpClient()
+        val persistence = object : SessionTokenPersistence {
+            override suspend fun read(): String? = null
+            override suspend fun write(value: String) {}
+            override suspend fun clear() {}
+        }
+        val cipher = object : SessionTokenCipher {
+            override fun encrypt(plain: String) = plain
+            override fun decryptOrNull(stored: String) = stored
+        }
+        PulseEndpoints.applyBase(null)
+        val owner = "edit-checkpoint-${UUID.randomUUID()}"
+        val key = AccountStorageKey.namespace(AccountStorageKey.origin(PulseEndpoints.gatewayHttpUrl), owner)
+        val name = "pulse-account-$key.db"
+        val directory = File(context.noBackupFilesDir, "draft-checkpoints/$name")
+        val fixtures = Repositories(context,http,owner,SessionTokenStore(persistence,cipher))
+        fun repository() = fixtures.open()
+        val first = repository()
+        val database = androidx.room.Room.databaseBuilder(context, PulseDatabase::class.java, name).build()
+        try {
+            withTimeout(30_000) {
+                val message = app.pulse.domain.model.Message(id="editable", conversationId="room", authorId=owner,
+                    authorName="Sender", kind=app.pulse.domain.model.Message.Kind.TEXT, body="original", createdAt="2026-10-28T00:00:00Z")
+                database.messageDao().upsertAll(listOf(MessageEntity.from(message)))
+                database.openHelper.writableDatabase.execSQL("CREATE TRIGGER fail_edit BEFORE INSERT ON wave7Cache WHEN NEW.key LIKE 'composer-local-edit:%' BEGIN SELECT RAISE(ABORT, 'SQLite cannot commit'); END")
+                val failed = async(start=kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    first.events().first { it is app.pulse.domain.repository.PulseEvent.ComposerSaveFailed && it.messageId == message.id }
+                }
+                first.stageEditDraft(message,"my retained edit")
+                failed.await()
+                assertNotNull(DraftCheckpointJournal(directory).read("composer-local-edit:v1|$owner|editable"))
+                first.stop()
+                val reopened = repository()
+                try {
+                    assertEquals("my retained edit", reopened.recoveredEditDraft(message.id))
+                    val remote = message.copy(body="new remote text")
+                    database.messageDao().upsertAll(listOf(MessageEntity.from(remote)))
+                    val failedAgain = async(start=kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                        reopened.events().first { it is app.pulse.domain.repository.PulseEvent.ComposerSaveFailed && it.messageId == message.id }
+                    }
+                    reopened.stageEditDraft(remote,"my next edit")
+                    failedAgain.await()
+                    database.openHelper.writableDatabase.execSQL("DROP TRIGGER fail_edit")
+                    // Offline edit reports unconfirmed but must retain the original baseline,
+                    // including the live buffer after another failed write on remote text.
+                    assertTrue(reopened.editMessage(message.id,"my next edit").isFailure)
+                    val rows = database.wave7Dao().readJournal("composer-intent:v1|$owner|")
+                    val intent = rows.map { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerIntentDto.serializer(),it.json) }.single { it.kind == "edit" }
+                    assertEquals("original", intent.baseText)
+                    assertEquals("my next edit", intent.text)
+                    assertEquals("my next edit", reopened.recoveredEditDraft(message.id))
+                } finally { reopened.stop() }
+            }
+        } finally {
+            first.stop(); database.close(); fixtures.close(); http.close(); directory.deleteRecursively()
             PulseEndpoints.gatewayHttpUrl = oldGateway; PulseEndpoints.socketUrl = oldSocket
         }
     }
