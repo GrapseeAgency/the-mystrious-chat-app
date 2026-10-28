@@ -29,6 +29,7 @@ struct PipPaneHostView: View {
     @State private var paneJournal: PulseDraftJournal?
     @State private var paneRoom: String?
     @State private var paneEpoch: UUID?
+    @State private var paneRevision: UInt64 = 0
     @State private var snapshots: [String: WireConversationSummary] = [:]
 
     var body: some View {
@@ -104,10 +105,13 @@ struct PipPaneHostView: View {
                 PipPaneComposer(
                     draft: Binding(get: { paneDraft },set: { text in
                         guard paneRoom == pane.conversationId, paneEpoch == session.sessionGeneration, let journal = paneJournal else { return }
-                        paneDraft = text
+                        paneDraft = text; paneRevision &+= 1
                         let epoch = session.sessionGeneration
                         let write = journal.submit(text,revision: DispatchTime.now().uptimeNanoseconds)
-                        Task { do { try await write.value } catch { if session.sessionGeneration == epoch { session.toasts.show("Mini-chat draft could not be saved. Keep it open and check storage.") } } }
+                        Task {
+                            do { try await write.value; if session.sessionGeneration == epoch { session.requestComposerSync() } }
+                            catch { if session.sessionGeneration == epoch { session.toasts.show("Mini-chat draft could not be saved. Keep it open and check storage.") } }
+                        }
                     }),
                     onSend: { sendFromPane(pane.conversationId) },
                 )
@@ -187,6 +191,14 @@ struct PipPaneHostView: View {
         let journal = PulseDraftJournal(store: store,conversationId: room)
         paneRoom = room; paneEpoch = session.sessionGeneration; paneJournal = journal
         paneDraft = journal.snapshot ?? ""
+        paneRevision &+= 1
+        let revision = paneRevision, epoch = session.sessionGeneration
+        Task {
+            if let text = try? await session.refreshComposerDraft(room: room),
+               session.sessionGeneration == epoch, paneRoom == room, paneRevision == revision, journal.isCurrentOwner {
+                paneDraft = text
+            }
+        }
     }
     private func sendFromPane(_ conversationId: String) {
         guard paneRoom == conversationId, paneEpoch == session.sessionGeneration, session.ready,
@@ -194,7 +206,7 @@ struct PipPaneHostView: View {
         do {
             _ = try PulseTextDelivery.enqueue(store: store,viewer: viewer,conversationId: conversationId,
                 content: paneDraft,draftJournal: journal)
-            paneDraft = ""
+            paneDraft = ""; paneRevision &+= 1
             PulseHaptics.tap()
             session.outbox?.reloadPending()
             session.flushOutbox()

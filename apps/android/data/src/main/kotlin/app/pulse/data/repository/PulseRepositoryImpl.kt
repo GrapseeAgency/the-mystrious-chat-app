@@ -3395,7 +3395,7 @@ class PulseRepositoryImpl constructor(
                 val buffered = threadDraftBuffers[conversationId]?.takeIf { it.first == revision }
                 app.pulse.domain.model.ThreadDraftSnapshot(buffered?.second ?: persistedDraftOrCheckpoint(conversationId),revision)
             }
-        }
+        }.onStart { scope.launch { refreshComposerDraft(conversationId,null) } }
 
     override fun observeThreadDraft(conversationId: String, rootId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> {
         val key = threadDraftKey(conversationId, rootId)
