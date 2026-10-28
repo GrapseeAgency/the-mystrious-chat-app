@@ -9,6 +9,7 @@ import { DirectConversationError, openSelfConversation } from '../../src/lib/dir
 import * as reminders from '../../src/lib/reminder-contract.ts'
 import * as reads from '../../src/lib/read-receipt.ts'
 import * as sync from '../../src/lib/message-sync.ts'
+import * as feedPagination from '../../src/lib/feed-pagination.ts'
 import * as visibility from '../../src/lib/message-visibility.ts'
 import { visibleSearchHit } from '../../src/lib/search-visibility.ts'
 import { clipUtf16 } from '../../src/lib/text-limits.ts'
@@ -29,7 +30,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'UserVerification', 'Message', 'Reminder']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'UserVerification', 'Message', 'SavedMessage', 'Reminder']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -154,12 +155,19 @@ async function fixture(run, database = db => db) {
     }),{params:Promise.resolve({id:'room'})})
     const feeds={}
     for(const kind of ['search','mentions']) feeds[kind]=await load(`src/app/api/${kind}/route.ts`,{
-      ...blockDeps,...visibility,clipUtf16,visibleSearchHit,MESSAGE_FULL_INCLUDE:{sender:true},
+      ...blockDeps,...visibility,...feedPagination,clipUtf16,visibleSearchHit,MESSAGE_FULL_INCLUDE:{sender:true},
       mapMessage:row=>({...row,createdAt:row.createdAt.toISOString(),expiresAt:row.expiresAt?.toISOString()??null}),
     },'GET')
-    const feed=(kind,token='synthetic-owner',q='private')=>feeds[kind](new Request(`https://settings.test/api/${kind}?userId=owner&q=${encodeURIComponent(q)}`,{
+    const feed=(kind,token='synthetic-owner',q='private',cursor=null)=>feeds[kind](new Request(`https://settings.test/api/${kind}?userId=owner&q=${encodeURIComponent(q)}${cursor?'&cursor='+encodeURIComponent(cursor):''}`,{
       headers:token?{authorization:`Bearer ${token}`}:{},
     }))
+    const savedRoute=await load('src/app/api/users/[id]/saved/route.ts',{
+      ...blockDeps,...visibility,...feedPagination,MESSAGE_FULL_INCLUDE:{sender:true},
+      mapMessage:row=>({...row,createdAt:row.createdAt.toISOString(),expiresAt:row.expiresAt?.toISOString()??null}),
+    },'GET')
+    const saved=(cursor=null,token='synthetic-owner')=>savedRoute(new Request(`https://settings.test/api/users/owner/saved${cursor?'?cursor='+encodeURIComponent(cursor):''}`,{
+      headers:token?{authorization:`Bearer ${token}`}:{},
+    }),{params:Promise.resolve({id:'owner'})})
     const readRoutes={}
     for (const [kind,method] of [['read-intent','GET'],['read-state','POST'],['mark-unread','PATCH']]) {
       readRoutes[kind]=await load(`src/app/api/conversations/[id]/${kind}/route.ts`,{
@@ -172,7 +180,7 @@ async function fixture(run, database = db => db) {
         headers:token?{authorization:`Bearer ${token}`}:{},
         ...(kind==='read-intent'?{}:{body:JSON.stringify({userId,...body})}),
       }),{params:Promise.resolve({id:'room'})})
-    await run({db,patch,get,setPrivacy,notices,readHints,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed,attention})
+    await run({db,patch,get,setPrivacy,notices,readHints,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed,saved,attention})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -599,4 +607,36 @@ test('archive badge invalidations reach only the committed owner, never failed o
     assert.deepEqual(readHints.pop(),['owner','room'])
   }
   assert.deepEqual(readHints,[])
+}))
+
+test('actual mentions and search routes expose all old matches across scan windows and timestamp ties',()=>fixture(async({db,feed})=>{
+  await db.message.createMany({data:Array.from({length:1250},(_,i)=>({id:`noise-${String(i).padStart(5,'0')}`,conversationId:'room',senderId:'other',content:'@someone unrelated',createdAt:new Date(2000)}))})
+  await db.message.createMany({data:Array.from({length:260},(_,i)=>({id:`old-${String(i).padStart(5,'0')}`,conversationId:'room',senderId:'other',content:'@owner private historical mention',createdAt:new Date(1000)}))})
+  for(const kind of ['search','mentions']) {
+    let cursor=null, ids=[]
+    do {
+      const response=await feed(kind,'synthetic-owner','private',cursor);assert.equal(response.status,200)
+      const page=await response.json();assert.equal(page.feedPageVersion,1)
+      ids.push(...(page.items??page.messages).map(row=>row.messageId??row.id));cursor=page.nextCursor
+      assert.equal(page.hasMore,cursor!==null)
+    }while(cursor)
+    assert.equal(ids.length,260);assert.equal(new Set(ids).size,260)
+  }
+  const first=await(await feed('mentions')).json();assert.ok(first.nextCursor)
+  await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
+  const revoked=await(await feed('mentions','synthetic-owner','private',first.nextCursor)).json()
+  assert.deepEqual(revoked.items,[]);assert.equal(revoked.hasMore,false)
+}))
+
+test('saved route requires identity without an optional-header bypass and pages past 100 tied saves',()=>fixture(async({db,saved})=>{
+  for(const token of [null,'invalid','synthetic-other']) assert.equal((await saved(null,token)).status,token?403:401)
+  await db.message.createMany({data:Array.from({length:230},(_,i)=>({id:`saved-${String(i).padStart(5,'0')}`,conversationId:'room',senderId:'other',content:'saved body'}))})
+  await db.savedMessage.createMany({data:Array.from({length:230},(_,i)=>({id:`marker-${i}`,userId:'owner',messageId:`saved-${String(i).padStart(5,'0')}`,savedAt:new Date(1000)}))})
+  let cursor=null, ids=[]
+  do {
+    const response=await saved(cursor);assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store')
+    const page=await response.json();assert.equal(page.feedPageVersion,1);assert.ok(page.items.length<=100)
+    ids.push(...page.items.map(row=>row.message.id));cursor=page.nextCursor
+  }while(cursor)
+  assert.equal(ids.length,230);assert.equal(new Set(ids).size,230)
 }))

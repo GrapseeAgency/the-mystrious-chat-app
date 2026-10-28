@@ -1070,6 +1070,12 @@ data class SavedLibraryRow(
 /** Saved-library index (Wave 2) - server cap 100, newest first, no pagination. */
 @Dao
 interface SavedDao {
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind, p.payloadJson AS savedRootPayload FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId LEFT JOIN messages p ON p.id = m.threadRootId WHERE m.deletedAt IS NULL AND m.viewOnce = 0 AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.key = 'thread-access-denied:v1|' || m.threadRootId) AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.threadRootId IS NULL AND p.deletedAt IS NULL)) AND (s.messageId IN (:ids) OR (:latest = 1 AND s.messageId IN (SELECT messageId FROM savedMessages ORDER BY savedAt DESC, messageId DESC LIMIT 100))) ORDER BY s.savedAt DESC, s.messageId DESC")
+    fun observePage(ids: List<String>, latest: Boolean): Flow<List<SavedLibraryRow>>
+
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind, p.payloadJson AS savedRootPayload FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId LEFT JOIN messages p ON p.id = m.threadRootId WHERE m.deletedAt IS NULL AND m.viewOnce = 0 AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.key = 'thread-access-denied:v1|' || m.threadRootId) AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.threadRootId IS NULL AND p.deletedAt IS NULL)) AND (s.messageId IN (:ids) OR (:latest = 1 AND s.messageId IN (SELECT messageId FROM savedMessages ORDER BY savedAt DESC, messageId DESC LIMIT 100))) ORDER BY s.savedAt DESC, s.messageId DESC")
+    suspend fun page(ids: List<String>, latest: Boolean): List<SavedLibraryRow>
+
     @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind, p.payloadJson AS savedRootPayload FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId LEFT JOIN messages p ON p.id = m.threadRootId WHERE m.deletedAt IS NULL AND m.viewOnce = 0 AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.key = 'thread-access-denied:v1|' || m.threadRootId) AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.threadRootId IS NULL AND p.deletedAt IS NULL)) ORDER BY s.savedAt DESC, s.messageId DESC")
     fun observeLibrary(): Flow<List<SavedLibraryRow>>
 

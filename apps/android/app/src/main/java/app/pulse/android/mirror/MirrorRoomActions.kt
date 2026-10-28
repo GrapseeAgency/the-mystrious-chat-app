@@ -126,7 +126,7 @@ internal fun MirrorMessageActionPanel(
     val deleted = message.deletedAt != null
     val isTextKind = message.kind == Message.Kind.TEXT
     // live saved-library truth (web isSaved = saved list contains the id)
-    val savedList by repository.observeSavedLibrary().collectAsState(initial = emptyList())
+    val savedList by repository.observeSavedPage(listOf(message.id)).collectAsState(initial = emptyList())
     val saved = savedList.any { it.message.id == message.id }
     // optimistic local overrides so the panel reacts on the same tap
     var savedLocal by remember(message.id) { mutableStateOf(saved) }

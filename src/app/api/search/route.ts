@@ -1,106 +1,47 @@
-// /api/search - global message search across ALL of a user's
-// conversations. Case-insensitive substring on non-deleted text
-// content AND document fileName (R41 - a kind 'file' message also
-// matches when its original filename contains the query; SQLite has
-// no ICU collation → match happens in Node).
-// GET /api/search?userId=<id>&q=<text>
-//   → { messages: SearchResultMessage[], total: number }
+// Unicode-insensitive substring search, exhaustively navigable by scan cursor.
 import { NextResponse } from 'next/server'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { db } from '@/lib/db'
 import { visibleSearchHit } from '@/lib/search-visibility'
 import { unexpiredMessages, visibleInboxPreview } from '@/lib/message-visibility'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
-import type { SearchResultMessage } from '@/lib/types'
-
+import { scanFeed, feedScope, feedBounds, FeedCursorError } from '@/lib/feed-pagination'
 export const dynamic = 'force-dynamic'
-
-/** How many newest rows we scan per query round (bounded work). */
-const SCAN_WINDOW = 1200
-/** Hard cap on returned hits. */
-const RESULT_CAP = 30
-const Q_MAX = 64
-
+const headers = { 'Cache-Control': 'private, no-store' }
 export async function GET(req: Request) {
-  const url = new URL(req.url)
-  const userId = (url.searchParams.get('userId') ?? '').trim()
-  const q = (url.searchParams.get('q') ?? '').trim()
-
-  if (userId.length === 0) {
-    return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
-  }
-  if (q.length === 0) {
-    return NextResponse.json({ error: 'q (search text) is required.' }, { status: 400 })
-  }
-
+  const query = new URL(req.url).searchParams
+  const userId = (query.get('userId') ?? '').trim(), q = (query.get('q') ?? '').trim()
+  if (!userId || !q || q.length > 64) return NextResponse.json({ error: 'A user and search text of 1–64 UTF-16 units are required.' }, { status: 400, headers })
   const denied = await requireActionOwner(req, userId, 'message search')
   if (denied) return denied
-  if (q.length > Q_MAX) return NextResponse.json({ error: `Search text must be ${Q_MAX} UTF-16 units or fewer.` }, { status: 400 })
-
-  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
-  if (!user) {
-    return NextResponse.json({ error: 'User not found.' }, { status: 404 })
-  }
-
-  // Every conversation the requester participates in.
-  const participations = await db.conversationParticipant.findMany({
-    where: { userId },
-    select: {
-      conversationId: true,
-      conversation: {
-        select: {
-          isGroup: true,
-          name: true,
-          participants: { select: { user: { select: { id: true, name: true } } } },
+  try {
+    const page = await db.$transaction(async tx => {
+      const now = new Date(), needle = q.toLowerCase()
+      return scanFeed({ cursor: query.get('cursor'), scope: feedScope('search', userId, needle), limit: 30,
+        load: (before, upper, take) => tx.message.findMany({
+          where: { deletedAt: null, viewOnce: false, ...unexpiredMessages(now),
+            conversation: { participants: { some: { userId } } },
+            AND: [...feedBounds(before, upper), { OR: [{ parentId: null }, { parent: { is: { parentId: null, deletedAt: null, ...unexpiredMessages(now) } } }] }],
+          }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take,
+          include: { ...MESSAGE_FULL_INCLUDE,
+            parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
+            conversation: { select: { name: true, isGroup: true, participants: { where: { userId: { not: userId } }, take: 1, select: { user: { select: { name: true } } } } } },
+          },
+        }), position: row => ({ id: row.id, at: row.createdAt.toISOString() }),
+        project: row => {
+          if (!(row.content.toLowerCase().includes(needle) || (row.fileName ?? '').toLowerCase().includes(needle))) return null
+          const visible = visibleInboxPreview(row, row.conversationId, new Date())
+          if (!visible) return null
+          return visibleSearchHit({ ...mapMessage(visible, userId),
+            conversationName: row.conversation.name?.trim() || (row.conversation.isGroup ? 'Group' : row.conversation.participants[0]?.user.name ?? 'Chat'),
+            isGroup: row.conversation.isGroup }, needle)
         },
-      },
-    },
-  })
-  if (participations.length === 0) {
-    return NextResponse.json({ messages: [], total: 0 }, { headers: { 'Cache-Control': 'private, no-store' } })
+      })
+    }, { isolationLevel: 'Serializable', timeout: 15000 })
+    const { items: messages, ...paging } = page
+    return NextResponse.json({ messages, total: messages.length, ...paging }, { headers })
+  } catch (error) {
+    if (error instanceof FeedCursorError) return NextResponse.json({ error: error.message }, { status: 400, headers })
+    throw error
   }
-
-  // Resolve a display title per conversation (group name / DM partner name).
-  const titleByConv = new Map<string, string>()
-  const groupByConv = new Map<string, boolean>()
-  for (const p of participations) {
-    titleByConv.set(p.conversationId, p.conversation.name?.trim() || 'Group')
-    groupByConv.set(p.conversationId, p.conversation.isGroup)
-    if (!p.conversation.isGroup) {
-      const other = p.conversation.participants.find((m) => m.user.id !== userId)
-      titleByConv.set(p.conversationId, other?.user.name ?? 'Chat')
-    }
-  }
-
-  const needle = q.toLowerCase()
-  const convIds = participations.map((p) => p.conversationId)
-
-  // Scan the newest rows once (bounded), filter in Node, keep the best hits.
-  const now = new Date()
-  const rows = await db.message.findMany({
-    where: { conversationId: { in: convIds }, deletedAt: null, viewOnce: false, ...unexpiredMessages(now),
-      conversation: { participants: { some: { userId } } },
-      AND: [{ OR: [{ parentId: null }, { parent: { is: { parentId: null, deletedAt: null, ...unexpiredMessages(now) } } }] }],
-    },
-    orderBy: { createdAt: 'desc' },
-    take: SCAN_WINDOW,
-    include: { ...MESSAGE_FULL_INCLUDE, parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } } },
-  })
-
-  const messages: SearchResultMessage[] = []
-  for (const row of rows) {
-    // Avoid serializing up to 1,200 rich messages when only 30 previews are needed.
-    if (messages.length === RESULT_CAP) break
-    if (row.viewOnce || !(row.content.toLowerCase().includes(needle) || (row.fileName ?? '').toLowerCase().includes(needle))) continue
-    const visible = visibleInboxPreview(row, row.conversationId, new Date())
-    if (!visible) continue
-    const hit = visibleSearchHit({
-      ...mapMessage(visible, userId),
-      conversationName: titleByConv.get(row.conversationId) ?? 'Chat',
-      isGroup: groupByConv.get(row.conversationId) ?? false,
-    }, needle)
-    if (hit) messages.push(hit)
-  }
-
-  return NextResponse.json({ messages, total: messages.length }, { headers: { 'Cache-Control': 'private, no-store' } })
 }

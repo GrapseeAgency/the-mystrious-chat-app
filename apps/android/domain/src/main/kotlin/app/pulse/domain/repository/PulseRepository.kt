@@ -93,6 +93,7 @@ import kotlinx.coroutines.flow.Flow
 
 /** Live events pushed by the relay - the UDF event side of the repository. */
 sealed interface PulseEvent {
+    data object PrivateFeedsChanged : PulseEvent
     data class MessageReceived(val conversationId: String, val message: Message) : PulseEvent
     /** Existing row changed; never an arrival, sound, effect or unread increment. */
     data class MessageUpdated(val conversationId: String, val message: Message) : PulseEvent
@@ -438,6 +439,14 @@ interface PulseRepository {
     fun observeMessageSearch(query: String): Flow<Result<List<MessageHit>>> = kotlinx.coroutines.flow.flow {
         emit(searchMessages(query))
     }
+
+    suspend fun searchMessagePage(query: String, cursor: String?): Result<app.pulse.domain.model.FeedPage<MessageHit>> =
+        searchMessages(query).map { app.pulse.domain.model.FeedPage(it, null, false) }
+    fun observeSearchPage(query: String, cursor: String?): Flow<Result<app.pulse.domain.model.FeedPage<MessageHit>>> =
+        kotlinx.coroutines.flow.flow { emit(searchMessagePage(query, cursor)) }
+    fun observeMentionBadge(): Flow<Int?> = kotlinx.coroutines.flow.flow { emit(mentions().getOrNull()?.size) }
+    suspend fun mentionsPage(cursor: String?): Result<app.pulse.domain.model.FeedPage<MentionItem>> =
+        mentions().map { app.pulse.domain.model.FeedPage(it, null, false) }
 
     /** Full paginated-ish history for export/clear (single bounded fetch). */
     suspend fun fullHistory(conversationId: String): Result<List<Message>>
@@ -797,6 +806,10 @@ interface PulseRepository {
     suspend fun refreshSavedLibrary(): Result<List<SavedItem>>
 
     /** Live saved library from the Room cache (skips messages missing from cache gracefully). */
+    suspend fun savedLibraryPage(cursor: String?): Result<app.pulse.domain.model.FeedPage<SavedItem>> =
+        refreshSavedLibrary().map { app.pulse.domain.model.FeedPage(it, null, false) }
+    fun observeSavedPage(selectedIds: List<String>?): Flow<List<SavedItem>> = observeSavedLibrary()
+
     fun observeSavedLibrary(): Flow<List<SavedItem>>
 
     /** POST /api/messages/{id}/save - reuse the toggle; unsaves (saved=false) also drops the local row. */

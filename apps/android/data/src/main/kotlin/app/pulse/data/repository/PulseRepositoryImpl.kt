@@ -3,6 +3,7 @@ package app.pulse.data.repository
 import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withSavedMessageExpiry
 import app.pulse.domain.sync.messageExpiryEpochMs
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.transformLatest
 import app.pulse.domain.sync.withMessageExpiry
 import app.pulse.domain.sync.withTopicUnreadExpiry
@@ -526,6 +527,7 @@ class PulseRepositoryImpl constructor(
                         }
                     }
                     is PulseSocketClient.Signal.SessionRejected -> {
+                        eventsBus.tryEmit(PulseEvent.PrivateFeedsChanged)
                         // Wave 8 - the relay verified our PRESENTED token and
                         // refused it (rotated/invalid). Clear the credential;
                         // the app layer routes to the honest re-login flow.
@@ -559,6 +561,7 @@ class PulseRepositoryImpl constructor(
                         PulseEvent.Typing(signal.conversationId, signal.userId, signal.userName, signal.isTyping),
                     )
                     is PulseSocketClient.Signal.ConversationUpdated -> {
+                        eventsBus.tryEmit(PulseEvent.PrivateFeedsChanged)
                         conversationSnapshots.invalidate(signal.conversationId)
                         inboxRefreshVersion.incrementAndGet()
                         scheduleConversationsRefresh()
@@ -3501,10 +3504,36 @@ class PulseRepositoryImpl constructor(
             }.filter { it.isVisible() }
         }
 
-    override suspend fun searchMessages(query: String): Result<List<MessageHit>> {
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    override fun observeMentionBadge(): Flow<Int?> = app.pulse.domain.sync.mentionBadgeFlow(
+        changes = kotlinx.coroutines.flow.merge(
+            events().filter { it is PulseEvent.MessageReceived || it is PulseEvent.MessageUpdated || it is PulseEvent.MessageDeleted || it is PulseEvent.PrivateFeedsChanged }.map { Unit },
+            observeConversations().map { rows -> rows.map { it.id }.toSet() }.distinctUntilChanged().map { Unit },
+            observeConnected().distinctUntilChanged().map { Unit },
+        ), fetch = { cursor -> mentionsPage(cursor).getOrThrow() },
+    )
+
+    override suspend fun mentionsPage(cursor: String?): Result<app.pulse.domain.model.FeedPage<MentionItem>> =
+        ownedPeerRequest { owner -> api.mentions(owner, cursor) }.mapCatching { page ->
+            validateFeedPage(page.feedPageVersion, page.hasMore, page.nextCursor, cursor)
+            app.pulse.domain.model.FeedPage(page.items.map { m ->
+                MentionItem(m.messageId, m.conversationId, m.conversationName, m.author?.name ?: "", m.snippet, m.createdAt, m.expiresAt)
+            }.filter { it.isVisible() }, page.nextCursor, page.hasMore)
+        }
+
+    override suspend fun searchMessages(query: String): Result<List<MessageHit>> = searchMessagePage(query, null).map { it.items }
+
+    private fun validateFeedPage(version: Int?, more: Boolean, next: String?, cursor: String?) {
+        check(version == 1 && more == (next != null) && (next == null || (next.isNotBlank() && next.length <= 2048 && next != cursor))) {
+            "Feed pagination was not confirmed. Update the gateway or retry from the newest page."
+        }
+    }
+
+    override suspend fun searchMessagePage(query: String, cursor: String?): Result<app.pulse.domain.model.FeedPage<MessageHit>> {
         if (query.trim().length > 64) return Result.failure(IllegalArgumentException("Search text must be 64 UTF-16 units or fewer."))
-        return ownedPeerRequest { owner -> api.search(owner, query) }.map { page ->
-            page.messages.map { hit ->
+        return ownedPeerRequest { owner -> api.search(owner, query, cursor) }.mapCatching { page ->
+            validateFeedPage(page.feedPageVersion, page.hasMore, page.nextCursor, cursor)
+            val items = page.messages.map { hit ->
                 MessageHit(
                     id = hit.id,
                     conversationId = hit.conversationId,
@@ -3522,6 +3551,7 @@ class PulseRepositoryImpl constructor(
                     viewOnce = hit.viewOnce,
                 )
             }
+            app.pulse.domain.model.FeedPage(items, page.nextCursor, page.hasMore)
         }
     }
 
@@ -3536,6 +3566,19 @@ class PulseRepositoryImpl constructor(
                 hits.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
             }
         }.withSearchHitExpiry().map { Result.success(it) })
+    }
+
+    override fun observeSearchPage(query: String, cursor: String?): Flow<Result<app.pulse.domain.model.FeedPage<MessageHit>>> = kotlinx.coroutines.flow.flow {
+        val watermark = messageEventClock.get()
+        val result = searchMessagePage(query, cursor)
+        val page = result.getOrElse { emit(Result.failure(it)); return@flow }
+        emitAll(messageCacheChanges.map {
+            messageCacheMutex.withLock {
+                // A selected result is a snapshot, not authorization to retain
+                // a body after a known edit/delete. Re-query to discover new matches.
+                page.items.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+            }
+        }.withSearchHitExpiry().map { Result.success(page.copy(items = it)) })
     }
 
     private val historyActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -3819,7 +3862,9 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> {
+    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> = savedLibraryPage(null).map { it.items }
+
+    override suspend fun savedLibraryPage(cursor: String?): Result<app.pulse.domain.model.FeedPage<SavedItem>> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
         return try {
@@ -3827,18 +3872,20 @@ class PulseRepositoryImpl constructor(
                 requireConversationOwner(owner, epoch)
                 kotlin.coroutines.coroutineContext.ensureActive()
                 val watermark = messageFetchFence()
-                val response = api.savedList(owner)
+                val response = api.savedList(owner, cursor)
                 requireConversationOwner(owner, epoch)
                 when (response) {
                     is PulseResult.Success -> messageCacheMutex.withLock {
                         database.withTransaction {
                             requireConversationOwner(owner, epoch)
                             kotlin.coroutines.coroutineContext.ensureActive()
+                            validateFeedPage(response.value.feedPageVersion, response.value.hasMore, response.value.nextCursor, cursor)
                             cacheFetchedMessagesLocked(response.value.items.map { it.message.toDomain() }, watermark)
-                            savedDao.clear()
                             savedDao.upsertAll(response.value.items.map { it.toSavedEntity() })
                             requireConversationOwner(owner, epoch)
-                            Result.success(savedDao.library().map { it.toDomain() }.filter { savedMessageVisible(it.message) })
+                            Result.success(app.pulse.domain.model.FeedPage(
+                                savedDao.page(response.value.items.map { it.message.id }, false).map { it.toDomain() }.filter { savedMessageVisible(it.message) },
+                                response.value.nextCursor, response.value.hasMore))
                         }
                     }
                     is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
@@ -3849,6 +3896,11 @@ class PulseRepositoryImpl constructor(
 
     private fun savedMessageVisible(message: Message): Boolean = !message.isDeleted && !message.viewOnce &&
         message.threadRootId?.let { it in deniedThreads.value } != true && (message.expiresAtEpochMs?.let { it > System.currentTimeMillis() } != false)
+
+    override fun observeSavedPage(selectedIds: List<String>?): Flow<List<SavedItem>> = kotlinx.coroutines.flow.combine(
+        savedDao.observePage(selectedIds.orEmpty(), selectedIds == null), deniedThreads,
+    ) { rows, denied -> rows.map { it.toDomain() }.filter { it.message.threadRootId?.let(denied::contains) != true } }
+        .withSavedMessageExpiry()
 
     override fun observeSavedLibrary(): Flow<List<SavedItem>> = kotlinx.coroutines.flow.combine(
         savedDao.observeLibrary(), deniedThreads,
@@ -4637,7 +4689,7 @@ class PulseRepositoryImpl constructor(
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Profile account changed")
         return when (val r = response) {
-            is PulseResult.Success -> if (r.value.id == owner) Result.success(r.value.toUserProfile())
+            is PulseResult.Success -> if (r.value.id == owner) Result.success(r.value.toUserProfile()).also { eventsBus.tryEmit(PulseEvent.PrivateFeedsChanged) }
                 else Result.failure(IllegalStateException("Profile response did not match this account"))
             is PulseResult.Failure -> Result.failure(
                 OnboardingError.of(r).takeIf { r.status == 400 || r.status == 409 }

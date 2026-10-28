@@ -22,6 +22,11 @@ struct SavedLibraryView: View {
     @State private var openingId: String?
     @State private var removingIds: Set<String> = []
     @State private var loadGeneration = UUID()
+    @State private var cursor: String?
+    @State private var nextCursor: String?
+    @State private var previous: [String?] = []
+    @State private var selectedIds: [String]?
+    @State private var pageLoading = false
     @State private var libraryObservation: AnyCancellable?
     @Environment(\.dismiss) private var dismiss
 
@@ -29,6 +34,13 @@ struct SavedLibraryView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 searchField
+                if nextCursor != nil || !previous.isEmpty {
+                    HStack {
+                        Button("Newer results") { movePage(older: false) }.disabled(pageLoading || previous.isEmpty)
+                        Spacer()
+                        Button("Older saved messages") { movePage(older: true) }.disabled(pageLoading || nextCursor == nil)
+                    }.font(.footnote).padding()
+                }
                 Divider()
                 content
             }
@@ -48,19 +60,12 @@ struct SavedLibraryView: View {
         }
         .presentationDetents([.large])
         .task {
-            let epoch = session.sessionGeneration
-            if let store = session.store {
-                libraryObservation = store.observeSavedItems()
-                    .receive(on: DispatchQueue.main)
-                    .sink(receiveCompletion: { completion in
-                        if case .failure = completion { session.toasts.show("Saved messages could not be read from storage") }
-                    }, receiveValue: { rows in if session.sessionGeneration == epoch { items = visibleItems(rows) } })
-            }
+            observePage()
             await load()
         }
         .onChange(of: session.sessionGeneration) { _, _ in
             libraryObservation?.cancel(); libraryObservation = nil
-            loadGeneration = UUID(); items = []; phase = .failed("Reopen Saved messages for the current account")
+            loadGeneration = UUID(); items = []; cursor = nil; nextCursor = nil; previous = []; selectedIds = nil; phase = .failed("Reopen Saved messages for the current account")
         }
         .onDisappear { libraryObservation?.cancel(); libraryObservation = nil; loadGeneration = UUID() }
         .onReceive(session.messageVisibilityClock) { now in
@@ -77,6 +82,23 @@ struct SavedLibraryView: View {
         }
     }
 
+    private func observePage() {
+        libraryObservation?.cancel()
+        let epoch = session.sessionGeneration
+        guard let store = session.store else { return }
+        libraryObservation = store.observeSavedPage(ids: selectedIds).receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { completion in
+                if case .failure = completion { session.toasts.show("Saved messages could not be read from storage") }
+            }, receiveValue: { rows in if session.sessionGeneration == epoch { items = visibleItems(rows) } })
+    }
+    private func movePage(older: Bool) {
+        guard !pageLoading else { return }
+        if older { guard let next = nextCursor else { return }; previous.append(cursor); cursor = next }
+        else { guard !previous.isEmpty else { return }; cursor = previous.removeLast() }
+        selectedIds = []; items = []; observePage(); pageLoading = true
+        Task { await load() }
+    }
+
     // ── data ─────────────────────────────────────────────────
 
     private func load() async {
@@ -86,6 +108,8 @@ struct SavedLibraryView: View {
         }
         let ticket = UUID()
         loadGeneration = ticket
+        pageLoading = true
+        defer { if loadGeneration == ticket { pageLoading = false } }
         let epoch = session.sessionGeneration
         let api = session.api
         guard let store = session.store else {
@@ -94,15 +118,18 @@ struct SavedLibraryView: View {
         let watermark = session.messageRevision
         let snapshotRequest = store.beginMessageSnapshot()
         let savedWatermark = session.savedRevision
-        if items.isEmpty, let cached = try? store.cachedSavedItems() { items = visibleItems(cached) }
+        if items.isEmpty, let cached = try? store.cachedSavedPage(ids: selectedIds) { items = visibleItems(cached) }
         phase = items.isEmpty ? .loading : .loaded
         do {
-            let fresh = try await api.savedLibrary(userId: viewer.id)
+            let page = try await api.savedPage(userId: viewer.id, cursor: cursor)
+            let fresh = page.items ?? []
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             guard savedWatermark == session.savedRevision else { phase = .loaded; return }
             let changed = Set(fresh.filter { !session.acceptsSyncMessage($0.message.id, startedAt: watermark) }.map { $0.message.id })
-            try store.upsert(savedItems: fresh, replacingSnapshot: true, preservingMessageIds: changed, snapshotRequest: snapshotRequest)
-            items = visibleItems(try store.cachedSavedItems())
+            try store.upsert(savedItems: fresh, replacingSnapshot: false, preservingMessageIds: changed, snapshotRequest: snapshotRequest)
+            selectedIds = fresh.map { $0.message.id }; nextCursor = page.nextCursor
+            observePage()
+            items = visibleItems(try store.cachedSavedPage(ids: selectedIds))
             phase = .loaded
         } catch {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
@@ -170,7 +197,7 @@ struct SavedLibraryView: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search saved messages", text: $query)
+            TextField("Filter this saved page", text: $query)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
             if !query.isEmpty {

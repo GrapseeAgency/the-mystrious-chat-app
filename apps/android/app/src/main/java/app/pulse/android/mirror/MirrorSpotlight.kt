@@ -291,10 +291,13 @@ internal fun MirrorSpotlightOverlay(
         }
     }
 
+    var searchCursor by remember(query, repository, viewerId) { mutableStateOf<String?>(null) }
+    var searchNext by remember(query, repository, viewerId) { mutableStateOf<String?>(null) }
+    var searchPrevious by remember(query, repository, viewerId) { mutableStateOf(emptyList<String?>()) }
     var msgHits by remember { mutableStateOf<List<MessageHit>?>(null) }
     var msgSearching by remember { mutableStateOf(false) }
     var msgError by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(query, repository) {
+    LaunchedEffect(query, repository, searchCursor, viewerId) {
         msgHits = null
         msgError = null
         val term = query.trim()
@@ -306,9 +309,10 @@ internal fun MirrorSpotlightOverlay(
         msgSearching = true
         val account = repository.boundToCurrentAccount()
         delay(250)
-        account.observeMessageSearch(term).collect {
+        account.observeSearchPage(term, searchCursor).collect {
             msgError = it.exceptionOrNull()?.message
-            msgHits = it.getOrNull()
+            msgHits = it.getOrNull()?.items
+            searchNext = it.getOrNull()?.nextCursor
             msgSearching = false
         }
     }
@@ -385,7 +389,7 @@ internal fun MirrorSpotlightOverlay(
         .take(6)
 
     // Message rows (web spotlight.tsx:340-345): server hits, top 8
-    val msgRows = if (q.length >= 2) (msgHits ?: emptyList()).take(8) else emptyList()
+    val msgRows = if (q.length >= 2) (msgHits ?: emptyList()) else emptyList()
 
     // Section model (web spotlight.tsx:292-352)
     val sections: List<Pair<String, List<SpotRow>>> = when {
@@ -403,7 +407,7 @@ internal fun MirrorSpotlightOverlay(
         }
     }
     val flat = sections.flatMap { it.second }
-    val nothingFound = q.isNotEmpty() && flat.isEmpty() && !msgSearching && msgError == null
+    val nothingFound = q.isNotEmpty() && flat.isEmpty() && !msgSearching && msgError == null && searchNext == null
     val serverPending = q.length >= 2 && msgSearching && msgHits == null
 
     Box(
@@ -578,6 +582,9 @@ internal fun MirrorSpotlightOverlay(
                                     }
                                 }
                             }
+                            if (q.length >= 2) app.pulse.feature.chat.FeedPageButtons(searchPrevious.isNotEmpty(), searchNext != null, msgSearching,
+                                onPrevious = { if (msgSearching || searchPrevious.isEmpty()) return@FeedPageButtons; msgSearching = true; msgHits = null; searchCursor = searchPrevious.last(); searchPrevious = searchPrevious.dropLast(1) },
+                                onNext = { if (msgSearching) return@FeedPageButtons; searchNext?.let { next -> msgSearching = true; msgHits = null; searchPrevious = searchPrevious + listOf(searchCursor); searchCursor = next } })
                             if (msgError != null) {
                                 Text(msgError.orEmpty(), color = SubPageInk.Rose400, modifier = Modifier.padding(16.dp))
                             }

@@ -418,7 +418,7 @@ struct ChatsView: View {
                 EntryPill(
                     icon: "at",
                     title: "Mentions",
-                    trailing: viewModel.mentionCount == 1 ? "1 mention" : "\(viewModel.mentionCount ?? 0) mentions",
+                    trailing: viewModel.mentionCount.map { $0 >= 100 ? "99+ mentions" : $0 == 1 ? "1 mention" : "\($0) mentions" } ?? "Checking mentions…",
                     badgeCount: viewModel.mentionCount ?? 0,
                     onPress: {
                         PulseHaptics.tap()
@@ -733,6 +733,15 @@ struct ChatsView: View {
                                 }
                             }
                         }
+                    }
+                    if viewModel.searchHasOlder || viewModel.searchHasNewer {
+                        HStack {
+                            Button("Newer results") { viewModel.searchPage(older: false, session: session) }
+                                .disabled(viewModel.serverSearching || !viewModel.searchHasNewer)
+                            Spacer()
+                            Button("Search older history") { viewModel.searchPage(older: true, session: session) }
+                                .disabled(viewModel.serverSearching || !viewModel.searchHasOlder)
+                        }.font(.footnote).tint(PulseTheme.accent).padding()
                     }
                 } else if viewModel.deferredQuery.count == 1 {
                     Text("Keep typing to search inside messages…")
@@ -2673,6 +2682,11 @@ final class ChatsViewModel: ObservableObject {
     @Published private(set) var serverHits: [WireSearchMessage]?
     @Published private(set) var serverTotal: Int?
     @Published private(set) var serverSearching = false
+    @Published private(set) var searchHasOlder = false
+    @Published private(set) var searchHasNewer = false
+    private var searchCursor: String?
+    private var searchNextCursor: String?
+    private var searchPrevious: [String?] = []
     @Published private(set) var searchError: String?
     // R2-D ITEM 8 - spotlight recent searches (web spotlight.tsx parity):
     // last 5 queries, newest-first, surfaced while the query is empty.
@@ -2683,6 +2697,11 @@ final class ChatsViewModel: ObservableObject {
     @Published private(set) var storyGroups: [WireStoryGroup] = []
     @Published private(set) var folders: [WireFolder]?
     @Published private(set) var mentionCount: Int?
+    private var mentionBadgeRefresh = PulseCoalescedRefresh()
+    private var mentionBadgeTicket = UUID()
+    private var mentionBadgeDeadline: Date?
+    private var mentionBadgeRetry = Date.distantPast
+    private var mentionBadgeActive = false
 
     // folder rail
     @Published var activeFolderId: String?
@@ -2865,7 +2884,7 @@ final class ChatsViewModel: ObservableObject {
         let deferred = deferredQuery
         if deferred.count < 2 { return true }
         if serverSearching { return false }
-        if let hits = serverHits { return hits.isEmpty }
+        if let hits = serverHits { return hits.isEmpty && !searchHasOlder }
         return false // An unavailable remote search is not proof of no matches.
     }
 
@@ -2898,12 +2917,14 @@ final class ChatsViewModel: ObservableObject {
     // ── lifecycle ────────────────────────────────────────────
 
     func start(session: PulseSession, prefs: PulsePrefs) {
+        mentionBadgeActive = true
+        invalidateMentionBadge(session: session)
         observedSession = session
         if conversationActionOwner != session.sessionGeneration { resetConversationActions(epoch: session.sessionGeneration) }
         if sideQueryOwner != session.sessionGeneration {
             sideQueryTask?.cancel(); sideQueryGeneration = UUID(); folderReadGeneration &+= 1
             sideQueryOwner = session.sessionGeneration
-            storyGroups = []; folders = nil; mentionCount = 0
+            storyGroups = []; folders = nil; mentionCount = nil
         }
         bind(prefs: prefs)
         observe(session: session)
@@ -2936,6 +2957,8 @@ final class ChatsViewModel: ObservableObject {
     }
 
     func stop() {
+        mentionBadgeActive = false
+        mentionBadgeRefresh.cancel(); mentionBadgeTicket = UUID(); mentionBadgeDeadline = nil
         cancelSelfOpening()
         resetConversationActions(epoch: nil)
         sideQueryTask?.cancel(); sideQueryTask = nil; sideQueryGeneration = UUID(); folderReadGeneration &+= 1
@@ -2947,6 +2970,9 @@ final class ChatsViewModel: ObservableObject {
 
     private func expireInbox(session: PulseSession) {
         let now = Date()
+        if mentionBadgeActive && session.isForeground && (mentionBadgeDeadline.map { $0 <= now } == true || mentionBadgeRetry <= now) {
+            invalidateMentionBadge(session: session)
+        }
         let liveStories = StoriesSessionModel.liveGroups(storyGroups, nowMs: Int64(now.timeIntervalSince1970 * 1000))
         if liveStories != storyGroups { storyGroups = liveStories }
         if let hits = serverHits {
@@ -3014,9 +3040,45 @@ final class ChatsViewModel: ObservableObject {
         localDrafts = store.allDrafts(includingClears: true)
     }
 
+    private func invalidateMentionBadge(session: PulseSession) {
+        mentionBadgeTicket = UUID(); mentionCount = nil; mentionBadgeDeadline = nil
+        mentionBadgeRetry = Date().addingTimeInterval(30)
+        guard mentionBadgeActive, session.isForeground else { return }
+        mentionBadgeRetry = .distantFuture
+        mentionBadgeRefresh.request { [weak self, weak session] in
+            guard let self, let session, self.mentionBadgeActive, session.isForeground else { return }
+            let epoch = session.sessionGeneration, api = session.api, ticket = self.mentionBadgeTicket
+            defer {
+                if self.mentionBadgeTicket == ticket { self.mentionBadgeRetry = Date().addingTimeInterval(30) }
+            }
+            do {
+                let snapshot = try await PulseMentionBadgeSnapshot.load { try await api.mentionPage(cursor: $0) }
+                guard !Task.isCancelled, self.mentionBadgeActive, session.sessionGeneration == epoch, self.mentionBadgeTicket == ticket else { return }
+                self.mentionCount = snapshot.count; self.mentionBadgeDeadline = snapshot.expiresAt
+                self.mentionBadgeRetry = Date().addingTimeInterval(30)
+            } catch { /* keep unknown, not a false zero; next hint/reconnect retries */ }
+        }
+    }
+
     private func observe(session: PulseSession) {
         guard !observing else { return }
         observing = true
+        session.signals.sink { [weak self, weak session] signal in
+            guard let self, let session else { return }
+            switch signal {
+            case .messageNew, .messageDeleted, .messageEnvelope, .conversationUpdated, .connectionState:
+                self.invalidateMentionBadge(session: session)
+            default: break
+            }
+        }.store(in: &cancellables)
+        session.$viewer.map { $0?.name }.removeDuplicates().sink { [weak self, weak session] _ in
+            guard let session else { return }; self?.invalidateMentionBadge(session: session)
+        }.store(in: &cancellables)
+        session.$isForeground.removeDuplicates().sink { [weak self, weak session] foreground in
+            guard let self, let session else { return }
+            if !foreground { self.mentionBadgeRefresh.cancel() }
+            self.invalidateMentionBadge(session: session)
+        }.store(in: &cancellables)
         let inboxEpoch = session.sessionGeneration
         session.inboxSnapshots
             .sink { [weak self, weak session] rooms in
@@ -3136,9 +3198,7 @@ final class ChatsViewModel: ObservableObject {
         guard !Task.isCancelled, epoch == session.sessionGeneration else { return }
         await reloadFolders(session: session)
         guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
-        let count = await api.mentionsCount()
-        guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
-        if let count { mentionCount = count }
+        if mentionBadgeRetry <= Date() { invalidateMentionBadge(session: session) }
     }
 
     /// Wave 6 - refetch JUST the folder rail (folder-manager mutations call
@@ -3167,7 +3227,11 @@ final class ChatsViewModel: ObservableObject {
 
     // ── search ───────────────────────────────────────────────
 
-    func searchTextChanged(_ value: String, session: PulseSession) {
+    func searchTextChanged(_ value: String, session: PulseSession, resetPage: Bool = true) {
+        if resetPage { searchCursor = nil; searchPrevious = [] }
+        searchHasNewer = !searchPrevious.isEmpty
+        searchHasOlder = false
+        let cursor = searchCursor
         query = value
         searchDebounceTask?.cancel()
         serverHits = nil
@@ -3193,12 +3257,14 @@ final class ChatsViewModel: ObservableObject {
                 self.serverSearching = true
                 let watermark = session.messageRevision
                 do {
-                    let page = try await client.searchMessages(trimmed)
+                    let page = try await client.searchMessages(trimmed, cursor: cursor, requirePagination: true)
                     guard !Task.isCancelled, session.sessionGeneration == epoch, self.query == value else { return }
                     self.searchMessageRevision = watermark
                     self.serverSearching = false
                     self.serverHits = page.messages?.filter { $0.isVisibleSearchHit() && session.acceptsSyncMessage($0.id, startedAt: watermark) }
                     self.serverTotal = self.serverHits?.count
+                    self.searchNextCursor = page.nextCursor
+                    self.searchHasOlder = page.hasMore == true
                 } catch {
                     guard !Task.isCancelled, session.sessionGeneration == epoch, self.query == value else { return }
                     self.serverSearching = false
@@ -3206,6 +3272,18 @@ final class ChatsViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    func searchPage(older: Bool, session: PulseSession) {
+        guard !serverSearching else { return }
+        if older {
+            guard let next = searchNextCursor, searchHasOlder else { return }
+            searchPrevious.append(searchCursor); searchCursor = next
+        } else {
+            guard !searchPrevious.isEmpty else { return }
+            searchCursor = searchPrevious.removeLast()
+        }
+        searchTextChanged(query, session: session, resetPage: false)
     }
 
     /// R2-D ITEM 8 - a query actually used (the user opened a chat or a

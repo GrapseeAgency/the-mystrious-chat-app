@@ -886,6 +886,21 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireUserEnvelope.self, from: data).user
     }
 
+    func validateFeedPage(version: Int?, more: Bool?, next: String?, cursor: String?) throws {
+        guard version == 1, let more, more == (next != nil),
+              next == nil || (!next!.isEmpty && next!.count <= 2048 && next != cursor) else {
+            throw Failure(kind: .validation, message: "Feed pagination was not confirmed. Update the gateway or restart from the newest page.")
+        }
+    }
+
+    public func mentionPage(cursor: String? = nil) async throws -> WireMentionEntriesPage {
+        let page: WireMentionEntriesPage = try await get("/api/mentions?userId=\(q(userId))&limit=50" + (cursor.map { "&cursor=\(q($0))" } ?? ""))
+        try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor)
+        guard page.items != nil else { throw Failure(kind: .server, message: "Mention feed is missing.") }
+        try Task.checkCancellation()
+        return page
+    }
+
     /// Full feed: transport failures are not an authoritative empty result.
     public func mentions(limit: Int = 50) async throws -> [WireMentionEntry] {
         let page: WireMentionEntriesPage = try await get("/api/mentions?userId=\(q(userId))&limit=\(limit)")
@@ -1149,12 +1164,13 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// Failed search is distinct from a successful empty result.
-    public func searchMessages(_ query: String) async throws -> WireSearchPage {
+    public func searchMessages(_ query: String, cursor: String? = nil, requirePagination: Bool = false) async throws -> WireSearchPage {
         guard query.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count <= 64 else {
             throw Failure(kind: .validation, message: "Search text must be 64 UTF-16 units or fewer.")
         }
-        let page = try await get(Self.searchPath(userId: userId, query: query), as: WireSearchPage.self)
+        let page = try await get(Self.searchPath(userId: userId, query: query) + (cursor.map { "&cursor=\(q($0))" } ?? ""), as: WireSearchPage.self)
         guard page.messages != nil else { throw Failure(kind: .server, message: "Search results are missing.") }
+        if requirePagination { try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor) }
         try Task.checkCancellation()
         return page
     }
@@ -1282,6 +1298,14 @@ public struct PulseAPIClient: Sendable {
     /// GET /api/users/{id}/saved - saved/starred library, newest-first,
     /// cap 100, NO server pagination/search (local filter is the native
     /// capability, spec §1 row 14).
+    public func savedPage(userId: String, cursor: String? = nil) async throws -> WireSavedPage {
+        let page: WireSavedPage = try await get("/api/users/\(q(userId))/saved?limit=100" + (cursor.map { "&cursor=\(q($0))" } ?? ""))
+        try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor)
+        guard page.items != nil else { throw Failure(kind: .validation, message: "Saved results are missing.") }
+        try Task.checkCancellation()
+        return page
+    }
+
     public func savedLibrary(userId: String) async throws -> [WireSavedItem] {
         let page: WireSavedPage = try await get("/api/users/\(userId)/saved")
         return page.items ?? []

@@ -1,147 +1,48 @@
-// /api/mentions - Discord mobile "Mentions" feed (R35-b).
-//
-// GET ?userId=X&limit=50 → 200 { items: MentionItem[] } newest first:
-//   { messageId, conversationId, conversationName: string|null, isGroup,
-//     author: { id, name, color, avatar: string|null },
-//     snippet: string (≤160 chars), createdAt: ISO }
-//
-// A message is a MENTION of viewer X when X participates in the conversation,
-// the message is not deleted, someone ELSE sent it within the last 14 days,
-// and its text mentions X by display name. Exact matching rule (also mirrored
-// client-side in mentions-page.tsx - keep the two in sync):
-//
-//   new RegExp(`@${escapeRegex(me.name)}(?=\\s|$|[^A-Za-z0-9])`, 'i')
-//
-//   • an '@' immediately followed by the user's FULL display name,
-//   • matched case-insensitively ("@alice" mentions "Alice"),
-//   • the character right after the name must be whitespace, end-of-string,
-//     or any non-alphanumeric char - so "@AliceChen" NEVER mentions "Alice"
-//     while "@Alice," / "@Alice!" / "@Alice" (end) all do,
-//   • applied in JS: SQLite's Prisma `contains` cannot do per-message
-//     case-insensitive + boundary matching (and `mode: 'insensitive'` is
-//     unsupported on SQLite), so the DB query only fetches a pragmatic
-//     superset (content contains '@') and this regex decides.
-//
-// Scale assumptions (honest): per conversation we scan at most the 200 most
-// recent '@'-containing messages of the 14-day window (index
-// Message@@index([conversationId, createdAt]) makes this a cheap tail scan).
-// Rooms with more than 200 '@'-bearing messages in 14 days may miss older
-// mentions - acceptable for a mentions inbox; no full-table scans.
+// All historical mentions, with bounded scans and explicit continuation.
 import { NextResponse } from 'next/server'
 import { requireActionOwner } from '@/lib/wallet-authorization'
-import { inboxMessagesWhere, visibleInboxPreview } from '@/lib/message-visibility'
+import { unexpiredMessages, visibleInboxPreview } from '@/lib/message-visibility'
 import { clipUtf16 } from '@/lib/text-limits'
 import { db } from '@/lib/db'
-
+import { scanFeed, feedScope, feedBounds, FeedCursorError } from '@/lib/feed-pagination'
 export const dynamic = 'force-dynamic'
-
-const DEFAULT_LIMIT = 50
-const MAX_LIMIT = 100
-const WINDOW_DAYS = 14
-const PER_CONVERSATION_SUPERSET = 200
-const SNIPPET_MAX_CHARS = 160
-
-/** Escape every regex metacharacter so user names match literally. */
-function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
+const headers = { 'Cache-Control': 'private, no-store' }
 export async function GET(req: Request) {
-  const url = new URL(req.url)
-  const userId = url.searchParams.get('userId')?.trim()
-  if (!userId || userId.trim() === '') {
-    return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
+  const query = new URL(req.url).searchParams, userId = query.get('userId')?.trim()
+  const rawLimit = query.get('limit') ?? '50', limit = Number(rawLimit)
+  if (!userId || !/^\d+$/.test(rawLimit) || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    return NextResponse.json({ error: 'A user and page size between 1 and 100 are required.' }, { status: 400, headers })
   }
-
   const denied = await requireActionOwner(req, userId, 'mentions')
   if (denied) return denied
-
-  const rawLimit = url.searchParams.get('limit')
-  let limit = DEFAULT_LIMIT
-  if (rawLimit !== null) {
-    if (!/^\d+$/.test(rawLimit)) {
-      return NextResponse.json({ error: 'limit must be a positive integer.' }, { status: 400 })
-    }
-    const parsed = Number.parseInt(rawLimit, 10)
-    if (parsed < 1 || parsed > MAX_LIMIT) {
-      return NextResponse.json(
-        { error: `limit must be between 1 and ${MAX_LIMIT}.` },
-        { status: 400 },
-      )
-    }
-    limit = parsed
-  }
-
-  const me = await db.user.findUnique({
-    where: { id: userId },
-    select: { id: true, name: true },
-  })
-  if (!me) {
-    return NextResponse.json({ error: 'User not found.' }, { status: 404 })
-  }
-
-  const participations = await db.conversationParticipant.findMany({
-    where: { userId },
-    select: { conversationId: true },
-  })
-  const conversationIds = participations.map((p) => p.conversationId)
-  if (conversationIds.length === 0) {
-    return NextResponse.json({ items: [] }, { headers: { 'Cache-Control': 'private, no-store' } })
-  }
-
-  const now = new Date()
-  const since = new Date(now.getTime() - WINDOW_DAYS * 24 * 3600 * 1000)
-  const windows = await Promise.all(
-    conversationIds.map((conversationId) =>
-      db.message.findMany({
-        where: {
-          ...inboxMessagesWhere(conversationId, now),
-          conversation: { participants: { some: { userId } } },
-          deletedAt: null, viewOnce: false,
-          senderId: { not: userId },
-          createdAt: { gte: since },
-          content: { contains: '@' },
+  try {
+    const page = await db.$transaction(async tx => {
+      const me = await tx.user.findUnique({ where: { id: userId }, select: { name: true } })
+      if (!me) return null
+      const escaped = me.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const pattern = new RegExp(`@${escaped}(?=\\s|$|[^A-Za-z0-9])`, 'i'), now = new Date()
+      return scanFeed({ cursor: query.get('cursor'), scope: feedScope('mentions', userId, me.name), limit,
+        load: (before, upper, take) => tx.message.findMany({
+          where: { deletedAt: null, viewOnce: false, senderId: { not: userId }, content: { contains: '@' }, ...unexpiredMessages(now),
+            conversation: { participants: { some: { userId } } },
+            AND: [...feedBounds(before, upper), { OR: [{ parentId: null }, { parent: { is: { parentId: null, deletedAt: null, ...unexpiredMessages(now) } } }] }],
+          }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take,
+          select: { id: true, conversationId: true, content: true, createdAt: true, expiresAt: true, parentId: true, anon: true, anonAlias: true,
+            parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
+            sender: { select: { id: true, name: true, color: true, avatar: true } }, conversation: { select: { isGroup: true, name: true } } },
+        }), position: row => ({ id: row.id, at: row.createdAt.toISOString() }),
+        project: row => {
+          const m = visibleInboxPreview(row, row.conversationId, new Date())
+          if (!m || !m.content || !pattern.test(m.content)) return null
+          return { messageId: m.id, conversationId: m.conversationId, conversationName: m.conversation.name, isGroup: m.conversation.isGroup,
+            author: m.anon ? { id: '', name: m.anonAlias || 'Anonymous', color: 'orange', avatar: null } : m.sender,
+            snippet: clipUtf16(m.content, 160), expiresAt: m.expiresAt?.toISOString() ?? null, createdAt: m.createdAt.toISOString() }
         },
-        orderBy: { createdAt: 'desc' },
-        take: PER_CONVERSATION_SUPERSET,
-        select: {
-          id: true,
-          conversationId: true,
-          content: true,
-          createdAt: true, expiresAt: true, parentId: true, anon: true, anonAlias: true,
-          parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
-          sender: { select: { id: true, name: true, color: true, avatar: true } },
-          conversation: { select: { isGroup: true, name: true } },
-        },
-      }),
-    ),
-  )
-
-  const mentionPattern = new RegExp(`@${escapeRegex(me.name)}(?=\\s|$|[^A-Za-z0-9])`, 'i')
-
-  const items = windows
-    .flat()
-    .flatMap(m => {
-      const live = visibleInboxPreview(m, m.conversationId, new Date())
-      return live && live.content.length > 0 && mentionPattern.test(live.content) ? [live] : []
-    })
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()) // newest first
-    .slice(0, limit)
-    .map((m) => ({
-      messageId: m.id,
-      conversationId: m.conversationId,
-      conversationName: m.conversation.name,
-      isGroup: m.conversation.isGroup,
-      author: m.anon ? { id: '', name: m.anonAlias || 'Anonymous', color: 'orange', avatar: null } : {
-        id: m.sender.id,
-        name: m.sender.name,
-        color: m.sender.color,
-        avatar: m.sender.avatar,
-      },
-      snippet: clipUtf16(m.content, SNIPPET_MAX_CHARS),
-      expiresAt: m.expiresAt?.toISOString() ?? null,
-      createdAt: m.createdAt.toISOString(),
-    }))
-
-  return NextResponse.json({ items }, { headers: { 'Cache-Control': 'private, no-store' } })
+      })
+    }, { isolationLevel: 'Serializable', timeout: 15000 })
+    return page ? NextResponse.json(page, { headers }) : NextResponse.json({ error: 'User not found.' }, { status: 404, headers })
+  } catch (error) {
+    if (error instanceof FeedCursorError) return NextResponse.json({ error: error.message }, { status: 400, headers })
+    throw error
+  }
 }

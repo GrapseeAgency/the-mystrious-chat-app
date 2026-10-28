@@ -59,6 +59,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -81,6 +82,8 @@ class SavedLibraryViewModel @Inject constructor(
         val error: String? = null,
         val items: List<SavedItem> = emptyList(),
         val query: String = "",
+        val previous: Boolean = false,
+        val next: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -89,11 +92,23 @@ class SavedLibraryViewModel @Inject constructor(
     val viewerId: String? get() = repo.viewerId
 
     private var all: List<SavedItem> = emptyList()
+    private val selected = MutableStateFlow<List<String>?>(null)
+    private var cursor: String? = null
+    private var nextCursor: String? = null
+    private val previous = mutableListOf<String?>()
+    private var request = 0L
+    private var ownerEpoch: String? = null
+    fun page(older: Boolean) {
+        if (_state.value.loading) return
+        if (older) { val next = nextCursor ?: return; previous.add(cursor); cursor = next }
+        else { if (previous.isEmpty()) return; cursor = previous.removeAt(previous.lastIndex) }
+        selected.value = emptyList(); all = emptyList(); applyFilter(); refresh()
+    }
 
     init {
         refresh()
         viewModelScope.launch {
-            repo.observeSavedLibrary().collect { rows ->
+            selected.flatMapLatest { repo.observeSavedPage(it) }.collect { rows ->
                 all = rows
                 applyFilter()
             }
@@ -103,15 +118,22 @@ class SavedLibraryViewModel @Inject constructor(
     fun refresh() {
         val epoch = repo.attachmentSessionKey() ?: return
         val owned = repo.boundToCurrentAccount()
+        if (ownerEpoch != epoch) { cursor = null; nextCursor = null; previous.clear(); selected.value = null; ownerEpoch = epoch }
+        val ticket = ++request
         viewModelScope.launch {
             if (repo.attachmentSessionKey() != epoch) return@launch
             _state.value = _state.value.copy(loading = true, error = null)
             try {
-                owned.refreshSavedLibrary().getOrThrow()
-                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(loading = false)
+                val page = owned.savedLibraryPage(cursor).getOrThrow()
+                if (repo.attachmentSessionKey() == epoch && request == ticket) {
+                    nextCursor = page.nextCursor
+                    selected.value = page.items.map { it.message.id }
+                    all = page.items; applyFilter()
+                    _state.value = _state.value.copy(loading = false, previous = previous.isNotEmpty(), next = page.hasMore)
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
-                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(
-                    loading = false, error = failure.message ?: "Couldn't load your saved messages")
+                if (repo.attachmentSessionKey() == epoch && request == ticket) _state.value = _state.value.copy(
+                    loading = false, previous = previous.isNotEmpty(), error = failure.message ?: "Couldn't load your saved messages")
             }
         }
     }
@@ -201,7 +223,7 @@ fun SavedLibraryScreen(
                 BasicField(
                     value = state.query,
                     onValueChange = viewModel::setQuery,
-                    placeholder = "Search saved messages…",
+                    placeholder = "Filter this saved page…",
                     leading = {
                         Icon(PulseIcons.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.55f), modifier = Modifier.size(16.dp))
                     },
@@ -213,6 +235,7 @@ fun SavedLibraryScreen(
             }
         }
 
+        FeedPageButtons(state.previous, state.next, state.loading, { viewModel.page(false) }, { viewModel.page(true) })
         Box(Modifier.weight(1f)) {
             when {
                 state.loading && state.items.isEmpty() -> {

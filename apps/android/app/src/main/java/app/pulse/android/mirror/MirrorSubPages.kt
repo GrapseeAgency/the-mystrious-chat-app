@@ -792,21 +792,27 @@ internal fun MirrorMentionsPage(
     val account = remember(repository, epoch) { repository.boundToCurrentAccount() }
     var items by remember(epoch) { mutableStateOf<List<MentionItem>?>(null) }
     var errorText by remember(epoch) { mutableStateOf<String?>(null) }
+    var cursor by remember(epoch) { mutableStateOf<String?>(null) }
+    var next by remember(epoch) { mutableStateOf<String?>(null) }
+    var previous by remember(epoch) { mutableStateOf(emptyList<String?>()) }
+    var loading by remember(epoch) { mutableStateOf(true) }
     var tick by remember { mutableStateOf(0) }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) }
     }
-    LaunchedEffect(repository, epoch, tick) {
+    LaunchedEffect(repository, epoch, tick, cursor) {
         if (epoch == null) return@LaunchedEffect
         while (true) {
-            val result = account.mentions()
+            loading = true
+            val result = account.mentionsPage(cursor)
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
-            result.fold(onSuccess = { items = it; errorText = null }, onFailure = {
+            result.fold(onSuccess = { items = it.items; next = it.nextCursor; errorText = null }, onFailure = {
                 if (items == null || (it as? app.pulse.domain.model.PulseApiException)?.status in listOf(401, 403, 404)) items = emptyList()
                 errorText = it.message ?: "Could not load mentions."
             })
+            loading = false
             kotlinx.coroutines.delay(30_000)
         }
     }
@@ -820,6 +826,9 @@ internal fun MirrorMentionsPage(
         onClose = onClose,
         onRefresh = { tick++ },
     ) {
+        app.pulse.feature.chat.FeedPageButtons(previous.isNotEmpty(), next != null, loading,
+            onPrevious = { loading = true; items = null; cursor = previous.last(); previous = previous.dropLast(1) },
+            onNext = { next?.let { value -> loading = true; items = null; previous = previous + listOf(cursor); cursor = value } })
         when {
             list == null -> Column(Modifier.padding(top = 16.dp)) {
                 Box(
@@ -843,7 +852,7 @@ internal fun MirrorMentionsPage(
             list.isEmpty() && errorText == null -> MirrorSubPageEmpty(
                 icon = "LAtSign",
                 title = "No mentions yet",
-                copy = "No mentions yet - when someone @-names you it lands here",
+                copy = if (next != null) "No matches in this window. Continue searching older history." else "No mentions in this window.",
             )
             errorText != null && list.isEmpty() -> MirrorSubPageEmpty(
                 icon = "LAtSign",

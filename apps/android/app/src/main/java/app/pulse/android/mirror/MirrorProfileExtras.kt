@@ -151,15 +151,25 @@ internal fun MirrorSavedSheet(
     onOpenConversation: (String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val list by repository.observeSavedLibrary().collectAsStateWithLifecycle(initialValue = emptyList())
+    val epoch = repository.attachmentSessionKey()
+    val account = remember(repository, epoch) { repository.boundToCurrentAccount() }
+    var cursor by remember(epoch) { mutableStateOf<String?>(null) }
+    var next by remember(epoch) { mutableStateOf<String?>(null) }
+    var previous by remember(epoch) { mutableStateOf(emptyList<String?>()) }
+    var selected by remember(epoch) { mutableStateOf<List<String>?>(null) }
+    val libraryFlow = remember(account, selected) { account.observeSavedPage(selected) }
+    val list by libraryFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     var loading by remember(viewerId) { mutableStateOf(true) }
     var error by remember(viewerId) { mutableStateOf<String?>(null) }
     var retry by remember(viewerId) { mutableStateOf(0) }
-    LaunchedEffect(repository, viewerId, retry) {
+    LaunchedEffect(repository, viewerId, retry, cursor, epoch) {
         loading = true
         error = null
         try {
-            repository.refreshSavedLibrary().getOrThrow()
+            val page = account.savedLibraryPage(cursor).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
+            selected = page.items.map { it.message.id }; next = page.nextCursor
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -204,6 +214,9 @@ internal fun MirrorSavedSheet(
                     fontWeight = FontWeight.Bold,
                 )
             }
+            app.pulse.feature.chat.FeedPageButtons(previous.isNotEmpty(), next != null, loading,
+                onPrevious = { loading = true; selected = emptyList(); cursor = previous.last(); previous = previous.dropLast(1) },
+                onNext = { next?.let { value -> loading = true; selected = emptyList(); previous = previous + listOf(cursor); cursor = value } })
             if (error != null) {
                 androidx.compose.material3.TextButton(onClick = { retry++ }) {
                     Text("Could not refresh · Retry", color = MirrorArt.Dim)

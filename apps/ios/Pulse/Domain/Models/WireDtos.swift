@@ -468,6 +468,9 @@ public struct WireSavedItem: Codable, Hashable, Sendable {
 
 public struct WireSavedPage: Codable, Hashable, Sendable {
     public let items: [WireSavedItem]?
+    public let feedPageVersion: Int?
+    public let nextCursor: String?
+    public let hasMore: Bool?
 }
 
 /// Zulip-style topic. "General" is NOT a row - it is the unfiltered room;
@@ -841,6 +844,9 @@ public struct WireSearchMessage: Codable, Hashable, Sendable {
 public struct WireSearchPage: Codable, Sendable {
     public let messages: [WireSearchMessage]?
     public let total: Int?
+    public let feedPageVersion: Int?
+    public let nextCursor: String?
+    public let hasMore: Bool?
 }
 
 // wire → domain mappers (mirror Android data/repository mappers)

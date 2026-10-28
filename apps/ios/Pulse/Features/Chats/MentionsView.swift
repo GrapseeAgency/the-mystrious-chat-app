@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Wave 6 - the mentions feed (F-SM-03, mentions-page.tsx parity): the REAL
-/// GET /api/mentions entries (14-day window, sender≠viewer), author avatar
+/// GET /api/mentions entries (paginated all-history, sender≠viewer), author avatar
 /// circular, snippet with the first "@Me" token in an emerald glass chip,
 /// "Direct message" footer for DMs, honest empty copy. NO read-state/ack -
 /// opening the page never clears the pill (count = feed length, web parity).
@@ -16,6 +16,9 @@ struct MentionsView: View {
     @State private var loading = true
     @State private var errorText: String?
     @State private var reloadTick = 0
+    @State private var cursor: String?
+    @State private var nextCursor: String?
+    @State private var previous: [String?] = []
     @State private var loadTicket: UUID?
     @State private var ownerEpoch: UUID?
     @State private var openingTicket: UUID?
@@ -28,6 +31,18 @@ struct MentionsView: View {
                     .ignoresSafeArea()
                 ScrollView {
                     LazyVStack(spacing: 8) {
+                        if nextCursor != nil || !previous.isEmpty {
+                            HStack {
+                                Button("Newer results") {
+                                    loading = true; entries = []; cursor = previous.removeLast(); reloadTick += 1
+                                }.disabled(loading || previous.isEmpty)
+                                Spacer()
+                                Button("Search older history") {
+                                    guard let next = nextCursor else { return }
+                                    loading = true; entries = []; previous.append(cursor); cursor = next; reloadTick += 1
+                                }.disabled(loading || nextCursor == nil)
+                            }.font(.footnote).tint(PulseTheme.accent).padding(.vertical, 8)
+                        }
                         if let errorText, !entries.isEmpty {
                             Text(errorText).font(.footnote).foregroundStyle(PulseTheme.textSecondary)
                             Button("Try again") { reloadTick += 1 }
@@ -90,7 +105,7 @@ struct MentionsView: View {
         }
         .onDisappear { openingTicket = nil; openingTask?.cancel(); openingTask = nil }
         .onChange(of: session.sessionGeneration) { _, _ in
-            if ownerEpoch != session.sessionGeneration { entries = []; errorText = nil }
+            if ownerEpoch != session.sessionGeneration { entries = []; errorText = nil; cursor = nil; nextCursor = nil; previous = [] }
             openingTicket = nil; openingTask?.cancel(); openingTask = nil
         }
     }
@@ -105,7 +120,7 @@ struct MentionsView: View {
             Text("No mentions yet")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(PulseTheme.titleOnPanel)
-            Text("No mentions yet - when someone @mentions you, it shows up here.")
+            Text(nextCursor == nil ? "No mentions in this window." : "No matches in this window. Continue searching older history.")
                 .font(.system(size: 12.5))
                 .foregroundStyle(PulseTheme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -139,12 +154,12 @@ struct MentionsView: View {
         let epoch = session.sessionGeneration, client = session.api, ticket = UUID()
         if ownerEpoch != epoch { entries = []; ownerEpoch = epoch }
         loadTicket = ticket
-        loading = entries.isEmpty
+        loading = true
         defer { if loadTicket == ticket { loading = false; loadTicket = nil } }
         do {
-            let fresh = try await client.mentions(limit: 50)
+            let page = try await client.mentionPage(cursor: cursor)
             guard !Task.isCancelled, session.sessionGeneration == epoch, loadTicket == ticket else { return }
-            entries = fresh.filter { $0.isVisible() }; errorText = nil
+            entries = (page.items ?? []).filter { $0.isVisible() }; nextCursor = page.nextCursor; errorText = nil
         } catch {
             guard !Task.isCancelled, session.sessionGeneration == epoch, loadTicket == ticket else { return }
             if let failure = error as? PulseAPIClient.Failure, [401, 403, 404].contains(failure.status ?? 0) { entries = [] }

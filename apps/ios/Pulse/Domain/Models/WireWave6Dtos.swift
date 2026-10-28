@@ -146,8 +146,8 @@ public struct WireMentionAuthor: Codable, Hashable, Sendable {
     public let avatar: String?
 }
 
-/// GET /api/mentions?userId=&limit= - one feed row. 14-day window,
-/// senderId≠viewer, snippet ≤160 - NO read-state/ack: count = feed length.
+/// GET /api/mentions?userId=&limit= - one all-history feed row.
+/// senderId≠viewer, snippet ≤160 - NO read-state/ack; the badge traverses pages up to 99+.
 public struct WireMentionEntry: Codable, Hashable, Sendable, Identifiable {
     public let messageId: String?
     public let conversationId: String?
@@ -171,6 +171,9 @@ public struct WireMentionEntry: Codable, Hashable, Sendable, Identifiable {
 
 public struct WireMentionEntriesPage: Codable, Sendable {
     public let items: [WireMentionEntry]?
+    public let feedPageVersion: Int?
+    public let nextCursor: String?
+    public let hasMore: Bool?
 }
 
 /// { folder } envelope - POST/PATCH /api/folders + PUT …/conversations all

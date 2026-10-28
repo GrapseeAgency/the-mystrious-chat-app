@@ -5,6 +5,8 @@ import { savedMessagesWhere, visibleInboxPreview } from '@/lib/message-visibilit
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
+import { scanFeed, feedScope, feedBounds, FeedCursorError } from '@/lib/feed-pagination'
+
 export const dynamic = 'force-dynamic'
 
 interface RouteCtx {
@@ -19,20 +21,21 @@ interface RouteCtx {
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id: userId } = await params
 
-  if (req.headers.has('authorization')) {
-    const denied = await requireActionOwner(req, userId, 'saved messages')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, userId, 'saved messages')
+  if (denied) return denied
+  const headers = { 'Cache-Control': 'private, no-store' }
+  try {
   const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
   if (!user) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
   }
 
   const items = await db.$transaction(async tx => {
-    const rows = await tx.savedMessage.findMany({
-      where: savedMessagesWhere(userId, new Date()),
-      orderBy: { savedAt: 'desc' },
-      take: 100,
+    const now = new Date()
+    return scanFeed({ cursor: new URL(req.url).searchParams.get('cursor'), scope: feedScope('saved', userId), limit: 100,
+      load: (before, upper, take) => tx.savedMessage.findMany({
+      where: { AND: [savedMessagesWhere(userId, now), ...feedBounds(before, upper, 'savedAt', 'messageId')] },
+      orderBy: [{ savedAt: 'desc' }, { messageId: 'desc' }], take,
       include: {
         message: {
           include: {
@@ -49,10 +52,11 @@ export async function GET(req: Request, { params }: RouteCtx) {
           },
         },
       },
-    })
-
-    const deliveredAt = new Date()
-    return rows.filter(row => visibleInboxPreview(row.message, row.message.conversationId, deliveredAt) !== null).map((row) => {
+    }),
+    position: row => ({ id: row.messageId, at: row.savedAt.toISOString() }),
+    project: row => {
+      const visible = visibleInboxPreview(row.message, row.message.conversationId, new Date())
+      if (!visible) return null
       const conv = row.message.conversation
       const partner =
         !conv.isGroup && conv.name === null
@@ -65,10 +69,14 @@ export async function GET(req: Request, { params }: RouteCtx) {
           isGroup: conv.isGroup,
           name: conv.isGroup ? conv.name : (partner ?? conv.name ?? 'Direct message'),
         },
-        message: mapMessage(row.message, userId),
+        message: mapMessage(visible, userId),
       }
-    })
+    } })
 
-  }, { isolationLevel: 'Serializable' })
-  return NextResponse.json({ items })
+  }, { isolationLevel: 'Serializable', timeout: 15000 })
+  return NextResponse.json(items, { headers })
+  } catch (error) {
+    if (error instanceof FeedCursorError) return NextResponse.json({ error: error.message }, { status: 400, headers })
+    throw error
+  }
 }

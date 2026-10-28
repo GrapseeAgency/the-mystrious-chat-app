@@ -220,6 +220,7 @@ fun ChatsScreen(
     val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
     val searchRunning by viewModel.searching.collectAsStateWithLifecycle()
     val searchError by viewModel.searchError.collectAsStateWithLifecycle()
+    val searchPaging by viewModel.searchPaging.collectAsStateWithLifecycle()
     // R2-C item 7 - recent searches for the search bar (last 5).
     val spotlightRecents by viewModel.spotlightRecents.collectAsStateWithLifecycle()
     // R14 gap 14 - the spotlight check-in flight flag (Actions block).
@@ -460,6 +461,9 @@ fun ChatsScreen(
                         rows = locallyFiltered,
                         query = query,
                         hits = searchHits,
+                        paging = searchPaging,
+                        onPreviousPage = { viewModel.searchPage(false) },
+                        onNextPage = { viewModel.searchPage(true) },
                         searching = searchRunning,
                         error = searchError,
                         typing = typing,
@@ -2088,6 +2092,9 @@ private fun SearchResults(
     hits: List<MessageHit>,
     searching: Boolean,
     error: String?,
+    paging: Pair<Boolean, Boolean>,
+    onPreviousPage: () -> Unit,
+    onNextPage: () -> Unit,
     typing: Map<String, ChatsViewModel.TypingState>,
     presence: Set<String>,
     onPress: (Conversation) -> Unit,
@@ -2214,7 +2221,8 @@ private fun SearchResults(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
-        if (rows.isEmpty() && (q.length < 2 || (!searching && error == null && hits.isEmpty()))) {
+        if (q.length >= 2) FeedPageButtons(paging.first, paging.second, searching, onPreviousPage, onNextPage)
+        if (!paging.second && rows.isEmpty() && (q.length < 2 || (!searching && error == null && hits.isEmpty()))) {
             Column(
                 Modifier.fillMaxWidth().padding(top = 96.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

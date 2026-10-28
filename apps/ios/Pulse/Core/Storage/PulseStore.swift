@@ -1127,8 +1127,21 @@ public final class PulseStore: Sendable {
         ValueObservation.tracking { db in try Self.savedItems(in: db, now: Date()) }.publisher(in: dbQueue)
     }
 
-    private static func savedItems(in db: Database, now: Date) throws -> [WireSavedItem] {
-        try Row.fetchAll(db, sql: """
+    func cachedSavedPage(ids: [String]? = nil, now: Date = Date()) throws -> [WireSavedItem] {
+        try dbQueue.read { db in try Self.savedItems(in: db, now: now, selectedIds: ids, limit: 100) }
+    }
+    func observeSavedPage(ids: [String]?) -> DatabasePublishers.Value<[WireSavedItem]> {
+        ValueObservation.tracking { db in try Self.savedItems(in: db, now: Date(), selectedIds: ids, limit: 100) }.publisher(in: dbQueue)
+    }
+
+    private static func savedItems(in db: Database, now: Date, selectedIds: [String]? = nil, limit: Int = -1) throws -> [WireSavedItem] {
+        var arguments: StatementArguments = ["now": now.timeIntervalSince1970, "pageLimit": limit]
+        let selection: String
+        if let ids = selectedIds {
+            selection = ids.isEmpty ? " AND 0" : " AND s.messageId IN (\(Array(repeating: "?", count: ids.count).joined(separator: ",")))"
+            arguments += StatementArguments(ids)
+        } else { selection = "" }
+        return try Row.fetchAll(db, sql: """
             SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
                    c.kind AS savedConversationKind, p.expiresAtEpoch AS savedRootExpiry
             FROM savedMessages s JOIN message m ON m.id = s.messageId
@@ -1138,8 +1151,9 @@ public final class PulseStore: Sendable {
               AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.parentId IS NULL AND p.deletedAt IS NULL
                 AND (p.expiresAtEpoch IS NULL OR p.expiresAtEpoch > :now)))
               AND m.deletedAt IS NULL AND (m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now)
-            ORDER BY s.savedAt DESC, s.messageId DESC
-            """, arguments: ["now": now.timeIntervalSince1970]).compactMap { row in
+            \(selection)
+            ORDER BY s.savedAt DESC, s.messageId DESC LIMIT :pageLimit
+            """, arguments: arguments).compactMap { row in
                 guard var message = Self.messageRow(from: row), message.viewOnce != true,
                       let savedAt: String = row["savedStamp"] else { return nil }
                 // Preview deadline only; leave the canonical reply expiry untouched.

@@ -916,11 +916,13 @@ class PulseApi(
         }
 
     /** GET /api/search?userId=&q= - server message search (≥2 chars upstream). */
-    suspend fun search(userId: String, query: String): PulseResult<SearchPageDto> {
+    private fun feedCursorQuery(cursor: String?): String = cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
+
+    suspend fun search(userId: String, query: String, cursor: String? = null): PulseResult<SearchPageDto> {
         if (query.trim().length > 64) return PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "Search text must be 64 UTF-16 units or fewer.")
         return get(
             "/api/search?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
-                "&q=" + java.net.URLEncoder.encode(query, "UTF-8"),
+                "&q=" + java.net.URLEncoder.encode(query, "UTF-8") + feedCursorQuery(cursor),
         ) {
             val root = PulseJson.parseToJsonElement(it) as? JsonObject
             if (root?.get("messages") !is kotlinx.serialization.json.JsonArray)
@@ -1019,9 +1021,9 @@ class PulseApi(
         }
 
     /** GET /api/mentions?userId=&limit=50 - @mention feed (count consumer). */
-    suspend fun mentions(userId: String): PulseResult<MentionsPageDto> =
+    suspend fun mentions(userId: String, cursor: String? = null): PulseResult<MentionsPageDto> =
         get(
-            "/api/mentions?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=50",
+            "/api/mentions?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=50" + feedCursorQuery(cursor),
         ) {
             val root = PulseJson.parseToJsonElement(it) as? JsonObject
             if (root?.get("items") !is kotlinx.serialization.json.JsonArray)
@@ -1144,8 +1146,8 @@ class PulseApi(
     }
 
     /** GET /api/users/{id}/saved → { items: [{savedAt, conversation, message}] } (newest first, cap 100). */
-    suspend fun savedList(userId: String): PulseResult<SavedPageDto> =
-        get("/api/users/$userId/saved") {
+    suspend fun savedList(userId: String, cursor: String? = null): PulseResult<SavedPageDto> =
+        get("/api/users/$userId/saved?limit=100" + feedCursorQuery(cursor)) {
             PulseJson.decodeFromString(SavedPageDto.serializer(), it)
         }
 

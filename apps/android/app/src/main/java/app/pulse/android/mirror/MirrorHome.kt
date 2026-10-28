@@ -475,15 +475,24 @@ internal fun MirrorHome(
         // is not a composable context).
         if (searchQuery.length >= 2 && repository != null) {
             item {
+                var cursor by remember(searchQuery, repository) { mutableStateOf<String?>(null) }
+                var next by remember(searchQuery, repository) { mutableStateOf<String?>(null) }
+                var previous by remember(searchQuery, repository) { mutableStateOf(emptyList<String?>()) }
+                var loading by remember(searchQuery, repository) { mutableStateOf(false) }
                 var hits by remember(searchQuery) { mutableStateOf<List<MessageHit>?>(null) }
                 var searchError by remember(searchQuery) { mutableStateOf<String?>(null) }
-                LaunchedEffect(searchQuery, repository) {
+                LaunchedEffect(searchQuery, repository, cursor) {
+                    hits = null; loading = true; searchError = null
                     val account = repository.boundToCurrentAccount()
                     kotlinx.coroutines.delay(250)
-                    account.observeMessageSearch(searchQuery).collect {
-                        hits = it.getOrNull(); searchError = it.exceptionOrNull()?.message
+                    account.observeSearchPage(searchQuery, cursor).collect {
+                        hits = it.getOrNull()?.items; next = it.getOrNull()?.nextCursor
+                        loading = false; searchError = it.exceptionOrNull()?.message
                     }
                 }
+                app.pulse.feature.chat.FeedPageButtons(previous.isNotEmpty(), next != null, loading,
+                    onPrevious = { if (loading || previous.isEmpty()) return@FeedPageButtons; loading = true; hits = null; cursor = previous.last(); previous = previous.dropLast(1) },
+                    onNext = { if (loading) return@FeedPageButtons; next?.let { value -> loading = true; hits = null; previous = previous + listOf(cursor); cursor = value } })
                 if (searchError != null) Text(searchError.orEmpty(), color = MirrorArt.Dim, modifier = Modifier.padding(16.dp))
                 val loaded = hits
                 if (loaded != null && loaded.isNotEmpty()) {
@@ -496,7 +505,7 @@ internal fun MirrorHome(
                             letterSpacing = 1.2.sp,
                             modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 4.dp),
                         )
-                        for (hit in loaded.take(12)) {
+                        for (hit in loaded) {
                             Column(
                                 Modifier
                                     .widthIn(max = maxW)
@@ -531,7 +540,7 @@ internal fun MirrorHome(
                             }
                         }
                     }
-                } else if (loaded != null && loaded.isEmpty() && shown.isEmpty()) {
+                } else if (loaded != null && loaded.isEmpty() && shown.isEmpty() && next == null) {
                     Text(
                         "No messages found for \u201C$searchQuery\u201D",
                         color = MirrorArt.Faint,

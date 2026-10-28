@@ -214,7 +214,9 @@ internal fun MirrorRoot(
     var archivedOpen by remember { mutableStateOf(false) }
     var mentionsOpen by remember { mutableStateOf(false) }
     var foldersOpen by remember { mutableStateOf(false) }
-    var mentionCount by remember { mutableStateOf(0) }
+    val mentionBadgeFlow = remember(repository) { repository.observeMentionBadge() }
+    val mentionBadge by mentionBadgeFlow.collectAsStateWithLifecycle(initialValue = null)
+    val mentionCount = mentionBadge ?: 0
     var rowOptions by remember { mutableStateOf<Conversation?>(null) }
     // R70 - full room-info page + the classic group manager it hands off to
     var roomInfoFor by remember { mutableStateOf<Conversation?>(null) }
@@ -365,10 +367,7 @@ internal fun MirrorRoot(
                             )
                         }
                     }
-                    val mentions = account.mentions()
-                    currentCoroutineContext().ensureActive()
-                    if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
-                    mentions.getOrNull()?.let { mentionCount = it.size }
+
                 }
                 delay(5_000)
             }

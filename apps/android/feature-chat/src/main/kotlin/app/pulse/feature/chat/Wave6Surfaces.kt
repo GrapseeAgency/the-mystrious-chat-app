@@ -86,12 +86,24 @@ class MentionsViewModel @Inject constructor(
         val loading: Boolean = true,
         val items: List<MentionItem> = emptyList(),
         val error: Boolean = false,
+        val previous: Boolean = false,
+        val next: Boolean = false,
     )
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
     private var loading: kotlinx.coroutines.Job? = null
+    private var cursor: String? = null
+    private var nextCursor: String? = null
+    private val previous = mutableListOf<String?>()
+    fun page(older: Boolean) {
+        if (_state.value.loading) return
+        if (older) { val next = nextCursor ?: return; previous.add(cursor); cursor = next }
+        else { if (previous.isEmpty()) return; cursor = previous.removeAt(previous.lastIndex) }
+        _state.value = _state.value.copy(items = emptyList())
+        refresh()
+    }
     private var generation = 0L
     private var feedEpoch: String? = null
     fun canOpen(item: MentionItem): Boolean = feedEpoch != null && feedEpoch == repo.attachmentSessionKey() && item.isVisible()
@@ -109,20 +121,24 @@ class MentionsViewModel @Inject constructor(
     fun refresh() {
         val epoch = repo.attachmentSessionKey()
         val account = repo.boundToCurrentAccount()
-        if (feedEpoch != epoch) { _state.value = State(); feedEpoch = epoch }
+        if (feedEpoch != epoch) { _state.value = State(); feedEpoch = epoch; cursor = null; nextCursor = null; previous.clear() }
         val request = ++generation
         loading?.cancel()
+        _state.value = _state.value.copy(loading = true, previous = previous.isNotEmpty(), error = false)
         loading = viewModelScope.launch {
-            val result = account.mentions()
+            val result = account.mentionsPage(cursor)
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (request != generation || epoch == null || repo.attachmentSessionKey() != epoch) return@launch
-            _state.value = State(loading = false, items = result.getOrElse { emptyList() }.filter { it.isVisible() }, error = result.isFailure)
+            val page = result.getOrNull()
+            nextCursor = page?.nextCursor
+            _state.value = State(loading = false, items = page?.items.orEmpty().filter { it.isVisible() }, error = result.isFailure,
+                previous = previous.isNotEmpty(), next = page?.hasMore == true)
         }
     }
 
 }
 
-/** Mentions feed - the 14-day server feed IS the badge count (no clear-on-open; no ack API exists, web parity). */
+/** Mentions feed - the paginated all-history server feed supplies the badge (no clear-on-open; no ack API exists, web parity). */
 @Composable
 fun MentionsScreen(
     onBack: () -> Unit,
@@ -154,6 +170,7 @@ fun MentionsScreen(
             IconButton(onClick = viewModel::refresh) { Icon(PulseIcons.Refresh, contentDescription = "Refresh") }
         }
 
+        FeedPageButtons(state.previous, state.next, state.loading, { viewModel.page(false) }, { viewModel.page(true) })
         when {
             state.loading && state.items.isEmpty() -> Row(
                 Modifier.padding(20.dp),
@@ -169,7 +186,7 @@ fun MentionsScreen(
                 Text("No mentions yet", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "No mentions yet - when someone @mentions you, it shows up here.",
+                    if (state.next) "No matches in this window. Continue searching older history." else "No mentions in this window.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                 )

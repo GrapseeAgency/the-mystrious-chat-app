@@ -75,8 +75,8 @@ class ChatsViewModel @Inject constructor(
     val folders: StateFlow<List<FolderSummary>> = _folders.asStateFlow()
 
     /** Live @mention count for the entry pill (0 when offline). */
-    private val _mentionCount = MutableStateFlow(0)
-    val mentionCount: StateFlow<Int> = _mentionCount.asStateFlow()
+    val mentionCount: StateFlow<Int> = repo.observeMentionBadge().map { it ?: 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(0), 0)
 
     /** Server-side message search results (debounced upstream in the screen). */
     private val _searchHits = MutableStateFlow<List<MessageHit>>(emptyList())
@@ -245,7 +245,6 @@ class ChatsViewModel @Inject constructor(
                 }
             }
             _folders.value = repo.folders().getOrDefault(emptyList())
-            _mentionCount.value = repo.mentions().getOrDefault(emptyList()).size
         }
     }
 
@@ -253,8 +252,27 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch { prefs.setChatsListFilter(value) }
     }
 
+    private var searchCursor: String? = null
+    private var searchNextCursor: String? = null
+    private val searchPrevious = mutableListOf<String?>()
+    private var searchQuery = ""
+    private val _searchPaging = MutableStateFlow(false to false)
+    val searchPaging: StateFlow<Pair<Boolean, Boolean>> = _searchPaging.asStateFlow()
+    fun searchPage(older: Boolean) {
+        if (_searching.value) return
+        if (older) {
+            val next = searchNextCursor ?: return
+            searchPrevious.add(searchCursor); searchCursor = next
+        } else { if (searchPrevious.isEmpty()) return; searchCursor = searchPrevious.removeAt(searchPrevious.lastIndex) }
+        search(searchQuery, resetPage = false)
+    }
+
     /** Debounced server message search - ≥2 chars, 250ms (web rhythm). */
-    fun search(query: String) {
+    fun search(query: String, resetPage: Boolean = true) {
+        if (resetPage) { searchCursor = null; searchPrevious.clear() }
+        searchQuery = query
+        searchNextCursor = null
+        _searchPaging.value = searchPrevious.isNotEmpty() to false
         searchJob?.cancel()
         val generation = ++searchGeneration
         val epoch = repo.attachmentSessionKey()
@@ -270,11 +288,14 @@ class ChatsViewModel @Inject constructor(
         _searching.value = true
         searchJob = viewModelScope.launch {
             delay(250)
-            account.observeMessageSearch(trimmed).collect { result ->
+            account.observeSearchPage(trimmed, searchCursor).collect { result ->
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (generation != searchGeneration || repo.attachmentSessionKey() != epoch) return@collect
                 _searchError.value = result.exceptionOrNull()?.message
-                _searchHits.value = result.getOrDefault(emptyList())
+                val page = result.getOrNull()
+                _searchHits.value = page?.items.orEmpty()
+                searchNextCursor = page?.nextCursor
+                _searchPaging.value = searchPrevious.isNotEmpty() to (page?.hasMore == true)
                 _searching.value = false
             }
         }
