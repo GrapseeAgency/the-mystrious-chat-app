@@ -145,8 +145,8 @@ struct ChatsView: View {
             }
             // Wave 6 - the three real discovery surfaces (stub toasts retired).
             .sheet(isPresented: $viewModel.mentionsOpen) {
-                MentionsView(session: session) { conversation in
-                    openRoom(conversation)
+                MentionsView(session: session) { conversation, messageId in
+                    openRoom(conversation, jumpMessageId: messageId)
                 }
             }
             .sheet(isPresented: $viewModel.channelsOpen) {
@@ -2395,22 +2395,39 @@ private struct ChatActionSheet: View {
 
     /// A failed history page must never produce a successful partial export.
     @MainActor private func exportChat() async {
-        guard session.ready, let owner = session.viewer?.id else { return }
+        guard session.ready, session.viewer != nil else { return }
         let epoch = session.sessionGeneration, client = session.api
         var output: URL?
         var accepted = false
         defer { if !accepted, let output { try? FileManager.default.removeItem(at: output.deletingLastPathComponent()) } }
         do {
             try Task.checkCancellation()
-            let history = try await client.fullHistory(conversationId: conversation.id)
-            try Task.checkCancellation()
-            guard session.sessionGeneration == epoch else { return }
-            let text = Self.transcript(for: conversation, viewerId: owner, messages: history)
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pulse-export-" + UUID().uuidString)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let fileURL = directory.appendingPathComponent(Self.exportFileName(title: title))
-            output = fileURL
-            try text.write(to: fileURL, atomically: true, encoding: .utf8)
+            output = fileURL // cleanup also covers a failed create/open/write
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard FileManager.default.createFile(atPath: fileURL.path, contents: nil) else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Couldn't create an export file.")
+            }
+            let handle = try FileHandle(forWritingTo: fileURL)
+            defer { try? handle.close() }
+            func write(_ text: String) throws { try handle.write(contentsOf: Data(text.utf8)) }
+            try write("Pulse - chat export\nChat: \(title)\nExported: \(Date())\n\n")
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm"
+            var count = 0
+            try await client.streamHistory(conversationId: conversation.id) { rows in
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { throw CancellationError() }
+                for message in rows where PulseRemediationLogic.isAlive(message.expiresAt) {
+                    let who = message.anon == true ? (message.anonAlias ?? "Anonymous") : (message.sender?.name ?? "Unknown")
+                    try write("[\(formatter.string(from: PulseFormat.date(message.createdAt) ?? Date()))] \(who): \(Self.transcriptBody(message))\n")
+                    count += 1
+                }
+            }
+            try write("\nMessages exported: \(count)\n")
+            try handle.synchronize()
+            try handle.close()
             try Task.checkCancellation()
             guard session.sessionGeneration == epoch else { return }
             accepted = true

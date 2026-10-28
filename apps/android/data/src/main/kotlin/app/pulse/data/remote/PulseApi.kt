@@ -320,6 +320,11 @@ class PulseApi(
             PulseJson.decodeFromString(ConversationsPageDto.serializer(), it)
         }
 
+    suspend fun exportPage(conversationId: String, cursor: String?): PulseResult<MessagesPageDto> =
+        get("/api/conversations/$conversationId/export-page" + (cursor?.let { "?cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")) {
+            PulseJson.decodeFromString(MessagesPageDto.serializer(), it)
+        }
+
     suspend fun messageWindow(conversationId: String, anchorId: String?, threadId: String?,
         before: app.pulse.domain.sync.MessageHistoryCursor?, after: app.pulse.domain.sync.MessageHistoryCursor?
     ): PulseResult<app.pulse.protocol.MessageWindowDto> {

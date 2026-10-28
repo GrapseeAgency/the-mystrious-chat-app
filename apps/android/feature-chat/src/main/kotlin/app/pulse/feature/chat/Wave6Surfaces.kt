@@ -126,7 +126,7 @@ class MentionsViewModel @Inject constructor(
 @Composable
 fun MentionsScreen(
     onBack: () -> Unit,
-    onOpenRoom: (String) -> Unit,
+    onOpenRoom: (String, String) -> Unit,
     viewModel: MentionsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -177,7 +177,7 @@ fun MentionsScreen(
 
             else -> LazyColumn(Modifier.fillMaxSize()) {
                 items(state.items, key = { it.messageId }) { item ->
-                    MentionRow(item = item, onClick = { if (viewModel.canOpen(item)) onOpenRoom(item.conversationId) })
+                    MentionRow(item = item, onClick = { if (viewModel.canOpen(item)) onOpenRoom(item.conversationId, item.messageId) })
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }

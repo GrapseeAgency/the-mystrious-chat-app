@@ -794,9 +794,9 @@ internal fun MirrorRoot(
                     // GET /api/mentions feed.
                     MirrorMentionsPage(
                         repository = repository,
-                        onOpenConv = {
+                        onOpenConv = { conversationId, messageId ->
                             mentionsOpen = false
-                            openById(it)
+                            openById(conversationId, messageId)
                         },
                         onClose = { mentionsOpen = false },
                     )

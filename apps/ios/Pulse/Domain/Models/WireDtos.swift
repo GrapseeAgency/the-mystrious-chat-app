@@ -327,6 +327,15 @@ public struct WireMessagesPage: Codable, Sendable {
     public let total: Int
     public let syncVersion: Int?
     public let nextSyncCursor: String?
+    public let exportVersion: Int?
+    public let exportPosition: WireMessageWindowPosition?
+    public init(messages: [WireChatMessage], hasMore: Bool, total: Int, syncVersion: Int? = nil,
+                nextSyncCursor: String? = nil, exportVersion: Int? = nil, exportPosition: WireMessageWindowPosition? = nil) {
+        self.messages = messages; self.hasMore = hasMore; self.total = total
+        self.syncVersion = syncVersion; self.nextSyncCursor = nextSyncCursor
+        self.exportVersion = exportVersion; self.exportPosition = exportPosition
+    }
+
 }
 
 

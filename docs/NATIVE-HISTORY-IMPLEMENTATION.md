@@ -14,11 +14,16 @@ not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
    Additive navigation indexes are in `20261028_history_navigation.sql`.
 3. **Very large threads:** incremental transport/rendering work remains.
 4. **Cross-page reconciliation:** implementation work remains.
-5. **Streaming exports:** implementation work remains.
+5. **Streaming exports:** implemented bounded authorized export pages and direct
+   temporary-file writers on Android/iOS. No whole-conversation array/string or
+   50,000-row export ceiling. Scan positions advance through expiring pages;
+   ownership, write errors, cancellation and incomplete completion delete the
+   unshared partial file. Destructive clear keeps its separate bounded policy.
 6. **Exhaustive global search:** implementation work remains.
 7. **Exhaustive mentions:** implementation work remains.
-8. **Exact mention entry points:** implementation work remains; window lookup is
-   the shared navigation foundation, not yet closure of every entry point.
+8. **Exact mention entry points:** Android primary/Mirror callbacks and the iOS
+   mention sheet now pass the message identity through the room-navigation path.
+   Deep reply navigation still depends on the large-thread work in item 3.
 9. **Mention badge freshness:** implementation work remains.
 10. **Saved pagination:** implementation work remains.
 11. **Durable ordered saved state:** implementation work remains.

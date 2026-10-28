@@ -3448,10 +3448,6 @@ class PulseRepositoryImpl constructor(
         var output: File? = null
         try {
             kotlin.coroutines.coroutineContext.ensureActive()
-            val history = fullHistory(conversationId).getOrThrow().filter {
-                it.expiresAtEpochMs?.let { expires -> expires <= System.currentTimeMillis() } != true
-            }
-            requireConversationOwner(owner, epoch)
             val dir = File(context.cacheDir, "exports").apply { mkdirs() }
             val fileName = "pulse-${java.util.UUID.randomUUID()}.txt"
             val file = File(dir, fileName)
@@ -3459,16 +3455,32 @@ class PulseRepositoryImpl constructor(
             file.bufferedWriter().use { writer ->
                 writer.appendLine("Pulse - exported chat")
                 writer.appendLine("Conversation: $conversationId")
-                writer.appendLine("Messages: ${history.size}")
                 writer.appendLine("Exported: ${java.time.LocalDateTime.now()}")
                 writer.appendLine()
-                for (m in history) {
-                    kotlin.coroutines.coroutineContext.ensureActive()
+                var exported = 0L
+                app.pulse.data.remote.CompleteHistory.stream(conversationId, fetch = { cursor ->
                     requireConversationOwner(owner, epoch)
-                    val body = when { m.isDeleted -> "(message deleted)"; m.viewOnce -> "(view-once message)"; else -> m.body }
-                    val name = if (m.anon) m.anonAlias ?: "Anonymous" else m.authorName
-                    writer.appendLine("[${PulseTime.clock(m.createdAt)}] $name: $body")
+                    val response = api.exportPage(conversationId, cursor)
+                    requireConversationOwner(owner, epoch)
+                    when (response) {
+                        is PulseResult.Success -> response.value
+                        is PulseResult.Failure -> throw apiExceptionOf(response)
+                    }
+                }) { rows ->
+                    for (row in rows) {
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        requireConversationOwner(owner, epoch)
+                        val m = row.toDomain()
+                        if (m.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) continue
+                        val body = when { m.isDeleted -> "(message deleted)"; m.viewOnce -> "(view-once message)"; else -> m.body }
+                        val name = if (m.anon) m.anonAlias ?: "Anonymous" else m.authorName
+                        writer.appendLine("[${PulseTime.clock(m.createdAt)}] $name: $body")
+                        exported++
+                    }
+                    writer.flush()
                 }
+                writer.appendLine()
+                writer.appendLine("Messages exported: $exported")
             }
             requireConversationOwner(owner, epoch)
             kotlin.coroutines.coroutineContext.ensureActive()

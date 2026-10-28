@@ -49,4 +49,34 @@ class CompleteHistoryTest {
             }
         }
     }
+    @Test fun streamingExceedsOldWholeHistoryCeilingWithoutAccumulatingRows() = runTest {
+        var supplied = 0
+        var consumed = 0L
+        val count = CompleteHistory.stream("room", fetch = {
+            val size = minOf(200, 50_100 - supplied)
+            val ids = (supplied until supplied + size).map { "m" + it.toString().padStart(6, '0') }
+            supplied += size
+            page(ids, supplied < 50_100, if (supplied < 50_100) "page-$supplied" else null).copy(
+                exportVersion = 1, exportPosition = app.pulse.protocol.MessageWindowPositionDto(ids.last(), "2026-10-22T00:00:00Z"))
+        }) { rows -> assertTrue(rows.size <= 200); consumed += rows.size }
+        assertEquals(50_100L, count)
+        assertEquals(count, consumed)
+    }
+
+    @Test fun streamingRejectsFalseCompletionAndPropagatesWriterFailure() = runTest {
+        for (mode in listOf("writer", "old", "repeated-scan", "unconfirmed-end")) {
+            var calls = 0
+            try {
+                CompleteHistory.stream("room", fetch = {
+                    calls++
+                    val id = if (calls == 1) "a" else "b"
+                    page(listOf(id), calls == 1, if (calls == 1 || mode == "unconfirmed-end") "next-$calls" else null).copy(
+                        exportVersion = if (mode == "old") null else 1,
+                        exportPosition = app.pulse.protocol.MessageWindowPositionDto(if (mode == "repeated-scan") "a" else id, "2026-10-22T00:00:00Z"))
+                }) { if (mode == "writer") throw java.io.IOException("Disk full") }
+                fail("$mode cannot succeed")
+            } catch (error: Exception) { if (mode == "writer") assertTrue(error is java.io.IOException) }
+        }
+    }
+
 }

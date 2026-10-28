@@ -1152,6 +1152,13 @@ public struct PulseAPIClient: Sendable {
 
     /// Complete, server-bounded history including replies. Empty is success;
     /// interrupted, unsupported, stalled or oversized scans throw, never return a prefix.
+    public func streamHistory(conversationId: String, consume: ([WireChatMessage]) throws -> Void) async throws {
+        try await PulseCompleteHistory.stream(room: conversationId, fetch: { cursor in
+            let suffix = cursor.map { "?cursor=" + self.q($0) } ?? ""
+            return try await self.get("/api/conversations/\(conversationId)/export-page\(suffix)")
+        }, consume: consume)
+    }
+
     public func fullHistory(conversationId: String) async throws -> [WireChatMessage] {
         try await PulseCompleteHistory.load(room: conversationId) { cursor in
             try await messages(conversationId: conversationId, limit: 200,

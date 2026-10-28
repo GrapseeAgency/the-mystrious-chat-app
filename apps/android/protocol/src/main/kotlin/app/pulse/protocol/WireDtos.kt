@@ -93,6 +93,8 @@ data class MessagesPageDto(
     val total: Int = 0,
     val syncVersion: Int? = null,
     val nextSyncCursor: String? = null,
+    val exportVersion: Int? = null,
+    val exportPosition: MessageWindowPositionDto? = null,
 )
 
 @Serializable

@@ -11,6 +11,42 @@ import kotlin.coroutines.coroutineContext
  * boundary in its sync cursor, so arrivals cannot keep this scan running forever. */
 internal object CompleteHistory {
     const val START = "0001-01-01T00:00:00.000Z"
+    /** Constant-memory traversal. Only the caller owns the unshared temporary
+     * file; a failed page throws rather than returning a successful prefix. */
+    suspend fun stream(room: String, fetch: suspend (String?) -> MessagesPageDto,
+        consume: suspend (List<ChatMessageDto>) -> Unit): Long {
+        var cursor: String? = null
+        var scanned: app.pulse.domain.sync.MessageHistoryCursor? = null
+        var previous: app.pulse.domain.sync.MessageHistoryCursor? = null
+        var count = 0L
+        while (true) {
+            coroutineContext.ensureActive()
+            val page = fetch(cursor)
+            coroutineContext.ensureActive()
+            check(page.exportVersion == 1 && page.messages.size <= 200) { "Update the gateway for streaming export." }
+            val next = page.exportPosition?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) }
+            check(!page.hasMore || (!page.nextSyncCursor.isNullOrBlank() && page.nextSyncCursor != cursor && next != null)) { "Export did not advance" }
+            check(page.hasMore || page.nextSyncCursor == null) { "Export completion was not confirmed" }
+            if (next != null) {
+                check(next.id.isNotBlank() && (scanned == null || scanned.precedes(next))) { "Export scan repeated a position" }
+                Instant.parse(next.createdAt)
+            }
+            for (row in page.messages) {
+                check(row.conversationId == room && row.id.isNotBlank() && !row.id.startsWith("local_")) { "Export returned an unrelated row" }
+                val position = app.pulse.domain.sync.MessageHistoryCursor(row.id, row.createdAt)
+                Instant.parse(row.createdAt)
+                check(previous == null || previous.precedes(position)) { "Export repeated or reordered rows" }
+                check(next != null && !next.precedes(position)) { "Export row exceeds its scan position" }
+                previous = position
+            }
+            consume(page.messages)
+            count += page.messages.size
+            if (!page.hasMore) return count
+            scanned = next
+            cursor = page.nextSyncCursor
+        }
+    }
+
     suspend fun load(
         room: String,
         maximumRows: Int = 50_000,

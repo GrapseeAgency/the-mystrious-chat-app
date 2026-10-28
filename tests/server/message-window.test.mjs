@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+import { readExportPage } from '../../src/lib/history-export.ts'
 import { readMessageWindow, MessageWindowError } from '../../src/lib/message-window.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function fixture(run) {
@@ -20,7 +21,9 @@ async function fixture(run) {
     let queries = 0
     const read = (tx, where, order, take) => { queries++; return tx.message.findMany({ where, orderBy: [{createdAt:order},{id:order}], take, select }) }
     const page = (options = {}, owner = 'reader', clock) => readMessageWindow(db, 'room', owner, options, read, clock)
-    await run({ db, page, queries: () => queries })
+    const exportPage = (cursor = null, owner = 'reader', clock) => readExportPage(db, 'room', owner, cursor,
+      (tx, where, take) => tx.message.findMany({where,take,orderBy:[{createdAt:'asc'},{id:'asc'}],select}), clock)
+    await run({ db, page, exportPage, queries: () => queries })
   } finally { await db.$disconnect(); await rm(directory, { recursive: true, force: true }) }
 }
 
@@ -65,4 +68,35 @@ test('unavailable, foreign, expired and unauthorized targets never produce a suc
   }
   await f.db.conversationParticipant.deleteMany()
   await assert.rejects(f.page(),e=>e.status===403)
+}))
+
+
+test('export traverses a fixed upper boundary in bounded pages and rechecks membership on every page', () => fixture(async f => {
+  let cursor = null, calls = 0, count = 0
+  do {
+    const result = await f.exportPage(cursor)
+    assert.equal(result.exportVersion,1)
+    assert.ok(result.messages.length<=200)
+    count += result.messages.length; calls++
+    cursor = result.nextSyncCursor
+    if (calls===1) await f.db.$executeRawUnsafe("INSERT INTO Message(id,conversationId,createdAt) VALUES ('new-arrival','room',2000)")
+    assert.equal(result.hasMore,cursor!==null)
+  } while (cursor)
+  assert.equal(count,6000); assert.equal(calls,30)
+  const first = await f.exportPage()
+  await f.db.conversationParticipant.deleteMany()
+  await assert.rejects(f.exportPage(first.nextSyncCursor),e=>e.status===403)
+}))
+
+test('export scan positions survive a fully expired page without publishing inaccessible replies', () => fixture(async f => {
+  await f.db.$executeRawUnsafe("UPDATE Message SET expiresAt=1 WHERE id<'m-000200'")
+  await f.db.$executeRawUnsafe("INSERT INTO Message(id,conversationId,parentId,createdAt) VALUES ('hidden','room','m-000000',0)")
+  let time=0
+  const page=await f.exportPage(null,'reader',()=>new Date(time++===0?0:2))
+  assert.equal(page.hasMore,true)
+  assert.ok(page.exportPosition)
+  assert.deepEqual(page.messages,[])
+  const next=await f.exportPage(page.nextSyncCursor)
+  assert.ok(next.messages.length>0)
+  assert.ok(next.messages.every(m=>m.id!=='hidden'))
 }))

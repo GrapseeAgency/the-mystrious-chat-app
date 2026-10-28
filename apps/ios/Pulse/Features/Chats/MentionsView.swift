@@ -8,7 +8,7 @@ import SwiftUI
 struct MentionsView: View {
     @ObservedObject var session: PulseSession
     /// Open the conversation a mention belongs to (chats-list navigation).
-    var onOpenConversation: (WireConversationSummary) -> Void
+    var onOpenConversation: (WireConversationSummary, String) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -153,7 +153,7 @@ struct MentionsView: View {
     }
 
     @MainActor private func open(_ entry: WireMentionEntry) {
-        guard ownerEpoch == session.sessionGeneration, entry.isVisible(), let conversationId = entry.conversationId else { return }
+        guard ownerEpoch == session.sessionGeneration, entry.isVisible(), let conversationId = entry.conversationId, let messageId = entry.messageId else { return }
         let epoch = session.sessionGeneration, client = session.api, ticket = UUID()
         openingTask?.cancel(); openingTicket = ticket
         session.noteRoomNavigationIntent()
@@ -166,7 +166,7 @@ struct MentionsView: View {
                 guard !Task.isCancelled, openingTicket == ticket, session.sessionGeneration == epoch, session.roomNavigationGeneration == navigation, entry.isVisible() else { return }
                 openingTicket = nil; openingTask = nil
                 dismiss()
-                onOpenConversation(room)
+                onOpenConversation(room, messageId)
             } catch {
                 guard !Task.isCancelled, openingTicket == ticket, session.sessionGeneration == epoch else { return }
                 session.toasts.show("That chat isn't available right now")

@@ -785,7 +785,7 @@ private fun MirrorArchivedRow(
 @Composable
 internal fun MirrorMentionsPage(
     repository: PulseRepository,
-    onOpenConv: (String) -> Unit,
+    onOpenConv: (String, String) -> Unit,
     onClose: () -> Unit,
 ) {
     val epoch = repository.attachmentSessionKey()
@@ -862,7 +862,7 @@ internal fun MirrorMentionsPage(
                         for (mention in list) {
                             MirrorMentionRow(
                                 mention = mention,
-                                onPress = { if (mention.isVisible() && repository.attachmentSessionKey() == epoch) onOpenConv(mention.conversationId) },
+                                onPress = { if (mention.isVisible() && repository.attachmentSessionKey() == epoch) onOpenConv(mention.conversationId, mention.messageId) },
                             )
                         }
                     }
