@@ -1,8 +1,11 @@
-# History, search, mentions and saved content — implementation work
+# History, search, mentions and saved content — section 2 complete
 
 Deployment and physical-device auditing are deferred by the owner. Completion in
 this workstream means implemented native/backend paths plus code-level validation,
 not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
+All eleven items below are implementation-complete in that scope. The final seek
+repair is `e058e51`; its Android/iOS/protocol source trees are unchanged from
+`078035f`, whose native validation results are recorded below.
 
 ## Work ledger
 
@@ -20,14 +23,14 @@ not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
    rather than accumulating it, with both older/newer offline navigation.
    Underlying Android primary/Mirror rivers now exclude unselected thread rows;
    reply counts use a live SQLite aggregate with expiry deadlines, not decoded
-   reply arrays. Exact cached jumps use single-row observations. The new paths
-   still require native SDK/instrumented validation.
+   reply arrays. Exact cached jumps use single-row observations. Native
+   SDK/unit/instrumented validation has completed as recorded below.
 4. **Cross-page reconciliation:** displayed windows are refreshed, rather than
    claimed to be a single immutable full-thread snapshot. Position-based centers
    survive deleted anchors and include same-time backfills. Reconnect/event and
    foreground periodic refreshes retain the current reader center; existing
-   cache/session/revision fences remain. Mounted viewport behavior still needs
-   validation in the native runners; deferred device auditing is separate.
+   cache/session/revision fences remain. Code-level reconciliation regressions
+   are covered; comprehensive physical-device viewport auditing remains deferred.
 5. **Streaming exports:** implemented bounded authorized export pages and direct
    temporary-file writers on Android/iOS. No whole-conversation array/string or
    50,000-row export ceiling. Scan positions advance through expiring pages;
@@ -100,12 +103,22 @@ Android build and both instrumentation levels also passed for `420d513`.
 The stricter missing-list contract exposed one older Wave2 fixture that expected
 `{}` to mean an empty library; `36e527b` fixes that expectation without weakening
 the production contract. Its Android build and API 34 instrumentation passed.
-The latest native source is `078035f`: Android JVM tests passed; release assembly,
-instrumentation and its iOS validation are still being checked. iOS archives
-passed for `c429739` and `36e527b`. The older `b414cf0` hosted read-presentation
-failure remains historical, without a demonstrated production cause; later full
-native passes are not a reason to relax that gate. Syntax parsing and backend
-passes alone are not native SDK validation.
+The latest native source is `078035f`, unchanged by the final backend seek repair:
+- Android run [40657629654](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40657629654):
+  JVM tests and signed release build **passed**; API 30 and API 34 instrumented
+  tests and release-smoke checks **passed**. Publishing was intentionally skipped.
+- iOS run [40657629719](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40657629719):
+  simulator build, unit suite, install/launch smoke, and unsigned device archive
+  **passed**. Existing keychain-environment test skips are not physical keychain
+  acceptance.
+- The final backend candidate `e058e51` also passed server-contract and web checks.
+
+Historical runner failures remain recorded rather than declared causally fixed:
+`b414cf0`, `c429739`, and `36e527b` hit the hosted read-presentation fixture with
+an unsettled sheet; `91befc0` timed out waiting for the socket presence snapshot.
+The current native run passed without relaxing production reading gates or
+those test expectations. This does not establish the cause of those older
+failures or substitute for the deferred broader device/lifecycle audit.
 
 ### Seek efficiency and cursor boundaries
 
