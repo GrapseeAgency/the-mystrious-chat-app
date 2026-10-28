@@ -67,7 +67,9 @@ not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
     preview visibility, so revoked/expired content cannot be restored by sync.
     Reconnect/foreground/background replay, owner-only live hints and bounded
     reconciliation repair cross-device state, including markers outside the
-    current feed page. Partial reads preserve later queued intent.
+    current feed page. Partial reads preserve later queued intent. Unreadable
+    journal rows retain their exact bytes and pending status but rotate behind
+    other work instead of blocking every message for the account.
 
 Window tests use real Prisma/SQLite, 16,000-reply traversal, equal-time rows,
 deleted centers/cursors, backfills, thread/root checks, and authorization/expiry
@@ -89,8 +91,11 @@ exports, mention scan/expiry/lifetime behavior, strict receipts, durable saved
 journals and 2,400-row offline saved traversal. `b414cf0`, `03d4e22` and `0344d10` iOS
 archives succeeded. Their Android unit jobs exposed outdated test adapters and
 an event-registry expectation; those fixtures are corrected. Current-candidate
-SDK/unit/instrumented completion is still being checked. Syntax parsing and
-backend passes alone are not native SDK validation.
+SDK/unit/instrumented completion is still being checked. The older `b414cf0`
+iOS unit run failed its existing hosted read-presentation fixture (a sheet
+transition stayed at progress zero); this is not evidence that the production
+reading gate should be relaxed, or a cause attribution for historical device
+failures. Syntax parsing and backend passes alone are not native SDK validation.
 
 Android history storage is Room v19, with a physical expiry projection and a
 200-row additive/backfill migration registered for every account. Saved journals

@@ -1891,10 +1891,30 @@ extension PulseStore {
         return formatter.string(from: Date())
     }
     func pendingSaved(owner: String) throws -> [PulseSavedIntent] {
+        try dbQueue.write { db in
+            let prefix = Self.savedPrefix(owner)
+            let rows = try Row.fetchAll(db, sql: "SELECT key,json FROM wave7Cache WHERE substr(key,1,length(?))=? ORDER BY updatedAt,key LIMIT 100", arguments: [prefix,prefix])
+            var intents: [PulseSavedIntent] = []
+            for row in rows {
+                let key: String = row["key"], json: String = row["json"]
+                do {
+                    let intent = try JSONDecoder().decode(PulseSavedIntent.self, from: Data(json.utf8))
+                    try intent.validate(owner: owner, rowKey: key)
+                    intents.append(intent)
+                } catch {
+                    // Retain unreadable bytes and pending status, but do not let
+                    // one damaged record prevent unrelated messages from syncing.
+                    try db.execute(sql: "UPDATE wave7Cache SET updatedAt=(SELECT COALESCE(MAX(updatedAt),0)+1 FROM wave7Cache WHERE substr(key,1,length(?))=?) WHERE key=?", arguments: [prefix,prefix,key])
+                    try Self.savedMetadata(db, key: "saved-sync-notice:v1|\(owner)", json: "Some saved changes could not be read from storage. They are retained on this device; other changes can still sync.")
+                }
+            }
+            return intents
+        }
+    }
+    func hasPendingSaved(owner: String) throws -> Bool {
         try dbQueue.read { db in
             let prefix = Self.savedPrefix(owner)
-            return try String.fetchAll(db, sql: "SELECT json FROM wave7Cache WHERE substr(key,1,length(?))=? ORDER BY updatedAt,key LIMIT 100", arguments: [prefix,prefix])
-                .map { try JSONDecoder().decode(PulseSavedIntent.self, from: Data($0.utf8)) }
+            return try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM wave7Cache WHERE substr(key,1,length(?))=?)", arguments: [prefix,prefix]) ?? false
         }
     }
     /// Server revisions order commits, not HTTP starts. Keep the canonical state

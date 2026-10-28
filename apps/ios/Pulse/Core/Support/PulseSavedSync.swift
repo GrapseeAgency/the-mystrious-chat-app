@@ -10,6 +10,19 @@ struct PulseSavedIntent: Codable, Sendable {
     let predecessorClientId: String?
     var prefix: String { "saved-intent:v1|\(owner)|\(messageId)|" }
     var key: String { self.prefix + clientId }
+    func validate(owner expectedOwner: String, rowKey: String) throws {
+        func token(_ value: String) -> Bool {
+            let bytes = Array(value.utf8)
+            return (1...128).contains(bytes.count) && bytes.allSatisfy {
+                (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95
+            }
+        }
+        guard owner == expectedOwner, key == rowKey, !messageId.isEmpty, messageId.count <= 128, !messageId.contains("|"),
+              token(clientId), (expectedRevision == nil) != (predecessorClientId == nil),
+              expectedRevision.map(WireSavedStateReceipt.validRevision) ?? true,
+              predecessorClientId.map({ token($0) && $0 != clientId }) ?? true else { throw CocoaError(.coderInvalidValue) }
+    }
+
 }
 struct PulseSavedStates: Codable {
     let savedStateVersion: Int
@@ -76,7 +89,7 @@ enum PulseSavedReplay {
                     if !PulseReadJournalReplay.canContinue(after: error) { return false }
                 }
             }
-            return try isCurrent() && store.pendingSaved(owner: owner).isEmpty
+            return try isCurrent() && !store.hasPendingSaved(owner: owner)
         } catch { return false }
     }
 }

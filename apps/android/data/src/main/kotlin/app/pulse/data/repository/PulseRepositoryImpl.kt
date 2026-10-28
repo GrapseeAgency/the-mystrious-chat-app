@@ -1,5 +1,6 @@
 package app.pulse.data.repository
 
+import app.pulse.protocol.validateSavedJournalRow
 import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withSavedMessageExpiry
 import app.pulse.domain.sync.messageExpiryEpochMs
@@ -1997,8 +1998,17 @@ class PulseRepositoryImpl constructor(
                 val blocked = mutableSetOf<String>()
                 for (row in rows) {
                     requireConversationOwner(owner, epoch)
-                    val intent = decodeSavedIntent(row)
-                    check(intent.owner == owner && row.key == intent.key)
+                    val intent = try { decodeSavedIntent(row).also { it.validateSavedJournalRow(owner, row.key) } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
+                        // Keep the exact unreadable row, but rotate it behind other
+                        // work instead of making one damaged record block the owner.
+                        database.withTransaction {
+                            requireConversationOwner(owner, epoch)
+                            wave7Dao.deferReadIntent(row.key, row.json, savedIntentPrefix(owner))
+                            wave7Dao.upsert(Wave7CacheEntity("saved-sync-notice:v1|$owner", "Some saved changes could not be read from storage. They are retained on this device; other changes can still sync.", 0))
+                            requireConversationOwner(owner, epoch)
+                        }
+                        continue
+                    }
                     if (intent.messageId in blocked) continue
                     var halt = false
                     savedTransport.withLock {

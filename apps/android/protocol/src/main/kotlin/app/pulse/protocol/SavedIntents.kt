@@ -39,3 +39,11 @@ fun compareSavedRevisions(left: String, right: String): Int {
     require(validSavedRevision(left) && validSavedRevision(right))
     return if (left.length != right.length) left.length.compareTo(right.length) else left.compareTo(right)
 }
+
+fun SavedIntentDto.validateSavedJournalRow(expectedOwner: String, rowKey: String) {
+    fun token(value: String) = value.matches(Regex("[A-Za-z0-9_-]{1,128}"))
+    require(owner == expectedOwner && key == rowKey && messageId.isNotBlank() && messageId.length <= 128 && '|' !in messageId)
+    require(token(clientId) && ((expectedRevision == null) != (predecessorClientId == null)))
+    expectedRevision?.let { require(validSavedRevision(it)) }
+    predecessorClientId?.let { require(token(it) && it != clientId) }
+}

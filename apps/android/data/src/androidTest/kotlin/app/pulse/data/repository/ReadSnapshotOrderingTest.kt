@@ -55,6 +55,20 @@ class ReadSnapshotOrderingTest {
         })
     }
 
+    @Test fun unreadableSavedIntentIsRetainedWithoutBlockingOtherMessages() = runBlocking {
+        exerciseReadOrdering(cached = true, onReady = { repo, db, _ ->
+            val bad = Wave7CacheEntity("saved-intent:v1|owner|damaged|bad", "{broken", 0)
+            val intent = app.pulse.protocol.SavedIntentDto("owner", "anchor", "room", false, "valid", expectedRevision = "0")
+            val json = app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.SavedIntentDto.serializer(), intent)
+            db.wave7Dao().upsert(bad); db.wave7Dao().upsert(Wave7CacheEntity(intent.key, json, 1))
+            assertEquals(2, repo.flushSavedIntents().getOrThrow())
+            assertEquals(bad.json, db.wave7Dao().get(bad.key)!!.json)
+            // The valid row reached the offline transport and was deferred too.
+            assertTrue(db.wave7Dao().get(intent.key)!!.updatedAt > 1)
+            assertNotNull(db.wave7Dao().get("saved-sync-notice:v1|owner"))
+        })
+    }
+
     @Test fun unchangedNegativeProofRetiresOlderPageWithoutDroppingOtherMessages() = runBlocking {
         exerciseReadOrdering(cached = true)
     }

@@ -122,4 +122,19 @@ final class SavedIntentJournalTests: XCTestCase {
         }
     }
 
+    func testUnreadableJournalRowIsRetainedWithoutBlockingOtherMessagesOrClaimingDrain() async throws {
+        let store = try PulseStore(), original = try message()
+        let badKey = "saved-intent:v1|o|damaged|bad"
+        try store.saveWave7Cache(key: badKey, json: "{broken", updatedAt: 0)
+        try store.upsert(messages: [original]); try store.enqueueSavedIntent(owner: "o", message: original, saved: true)
+        var sent: [String] = []
+        let drained = await PulseSavedReplay.flush(store: store, owner: "o", isCurrent: { true }) { intent in
+            sent.append(intent.messageId)
+            return self.receipt(intent, saved: true, revision: "1")
+        }
+        XCTAssertEqual(sent, ["m"]); XCTAssertFalse(drained)
+        XCTAssertTrue(try store.hasPendingSaved(owner: "o"))
+        XCTAssertEqual(try store.loadWave7Cache(key: badKey)?.json, "{broken")
+    }
+
 }
