@@ -1471,7 +1471,7 @@ class PulseRepositoryImpl constructor(
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
             return demoSend(conversationId, body, replyToId, parentId, topicId, draftToken)
         }
-        if (kind !in setOf("text", "image", "audio", "file", "sticker", "location")) {
+        if (kind !in setOf("text", "image", "audio", "file", "sticker", "location", "poll")) {
             return Result.failure(IllegalArgumentException("Unsupported message kind"))
         }
         val richPayload = payload?.let {
@@ -1890,6 +1890,7 @@ class PulseRepositoryImpl constructor(
         val owner = viewerId ?: return
         if (message.authorId != owner || message.id.startsWith("local_")) return
         val key = localEditKey(owner,message.id)
+        val epoch = attachmentSession
         val revision = draftWrites.editVersions.getOrPut(key) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
         val snapshot = app.pulse.protocol.ComposerLocalEditDto(text,message.body,message.editedAt)
         draftWrites.editBuffers[key] = revision to snapshot
@@ -1901,7 +1902,13 @@ class PulseRepositoryImpl constructor(
                 wave7Dao.upsert(Wave7CacheEntity(key,app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local),System.currentTimeMillis()))
                 draftWrites.editBuffers.computeIfPresent(key) { _, value -> value.takeIf { it.first != revision } }
             } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (error: Exception) { Log.w(TAG,"Edited text could not be saved",error) }
+            catch (error: Exception) {
+                Log.w(TAG,"Edited text could not be saved",error)
+                if (attachmentSession == epoch && viewerId == owner && draftWrites.editVersions[key]?.get() == revision) {
+                    eventsBus.emit(PulseEvent.ComposerSaveFailed(message.conversationId,message.id,
+                        "Edited text could not be saved. Keep this screen open and check device storage; your text is still in memory."))
+                }
+            }
         }
     }
     override suspend fun recoveredEditDraft(messageId: String): String? {
@@ -1967,7 +1974,10 @@ class PulseRepositoryImpl constructor(
         val key = if (rootId == null) conversationId else threadDraftKey(conversationId,rootId)
         val revision = draftVersions.getOrPut(key) { java.util.concurrent.atomic.AtomicLong() }.get()
         return try {
-            val before = draftMutex.withLock { draftDao.get(key) }
+            val before = draftMutex.withLock {
+                if (threadDraftBuffers[key]?.first == revision) return Result.success(null)
+                draftDao.get(key)
+            }
             if (composerJournal.hasIntent(owner,conversationId,rootId)) return Result.success(null)
             val intent = app.pulse.protocol.ComposerIntentDto(owner,"draft",conversationId,conversationId,rootId,
                 java.util.UUID.randomUUID().toString(),"",before?.text ?: "")
@@ -1978,7 +1988,7 @@ class PulseRepositoryImpl constructor(
             app.pulse.protocol.validateComposerReceipt(state,intent)
             val imported = draftMutex.withLock {
                 requireConversationOwner(owner,epoch)
-                if (draftVersions[key]?.get() != revision) return@withLock false
+                if (draftVersions[key]?.get() != revision || threadDraftBuffers[key]?.first == revision) return@withLock false
                 database.withTransaction {
                     if (draftDao.get(key) != before || composerJournal.hasIntent(owner,conversationId,rootId)) false
                     else {
@@ -2008,8 +2018,10 @@ class PulseRepositoryImpl constructor(
                         app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,"Unsubmitted edit",id,messageDao.byId(id)?.conversationId ?: "",value.text,"Kept on this device. Reopen the message to edit; typing is never sent automatically.")
                     }
                     row.key.startsWith("composer-schedule-ack:") -> {
-                        val cancel = row.json == "cancelled"
-                        val value = if (cancel) null else app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledItemDto.serializer(),row.json)
+                        val receipt = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandAckDto.serializer(),row.json)
+                        check(receipt.owner == owner && receipt.version == 1)
+                        val cancel = receipt.kind == "cancel"
+                        val value = receipt.item
                         app.pulse.domain.model.ComposerRecoveryEntry(row.key,version,"Schedule receipt",value?.id ?: "",value?.conversationId ?: "",value?.content ?: "",if (cancel) "Cancellation was confirmed." else "Scheduled for ${value?.scheduledAt}. Check Scheduled messages for its current status.")
                     }
                     row.key.startsWith("composer-schedule") -> {
@@ -2034,7 +2046,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun recoverComposer(entry: app.pulse.domain.model.ComposerRecoveryEntry, action: String): Result<Unit> = try {
         val owner = viewerId ?: error("No active account")
         val epoch = attachmentSession
-        check(entry.key.startsWith(entry.key.substringBefore('|') + "|$owner|")) { "Recovery belongs to another account" }
+        check(listOf("composer-intent","composer-blocked","composer-local-edit","composer-schedule","composer-schedule-blocked","composer-schedule-ack").any { entry.key.startsWith("$it:v1|$owner|") }) { "Recovery belongs to another account" }
         val row = wave7Dao.get(entry.key) ?: error("Already resolved; refresh this list")
         check(recoveryVersion(row.json) == entry.version) { "Recovery changed; refresh this list" }
         if (action == "remove") database.withTransaction {
@@ -4155,16 +4167,19 @@ class PulseRepositoryImpl constructor(
         } finally { viewOnceActions.remove(messageId) }
     }
 
-    override suspend fun createPoll(conversationId: String, question: String, options: List<String>): Result<Message> =
-        when (val r = api.createPoll(conversationId, viewerId ?: "", question, options)) {
-            is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                val retained = upsertMessage(message)
-                scheduleConversationsRefresh()
-                Result.success(retained)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun createPoll(conversationId: String, question: String, options: List<String>): Result<Message> {
+        val q = question.trim()
+        val choices = options.map { it.trim() }
+        if (q.isEmpty() || q.length > 140 || choices.size !in 2..6 || choices.any { it.isEmpty() || it.length > 80 }) {
+            return Result.failure(IllegalArgumentException("A poll needs a question of 1–140 characters and 2–6 options of 1–80 characters"))
         }
+        val payload = kotlinx.serialization.json.buildJsonObject {
+            put("question", kotlinx.serialization.json.JsonPrimitive(q))
+            put("options", kotlinx.serialization.json.JsonArray(choices.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        }.toString()
+        return sendRichMessage(conversationId, q, "poll", payload, false, null, null, null, null, null)
+            .map { it.message }
+    }
 
     private val pollActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 

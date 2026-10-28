@@ -597,6 +597,7 @@ internal fun MirrorRoom(
 
     LaunchedEffect(groupId) {
         repository.events().collect { event ->
+            if (event is PulseEvent.ComposerSaveFailed && event.conversationId == groupId) sendError = event.reason
             if (event is PulseEvent.VoiceRoster && event.payload.conversationId == groupId) {
                 voiceRoster = event.payload.roster
             }
@@ -1133,6 +1134,11 @@ internal fun MirrorRoom(
 
     // R74 - the slash fast-path (web handleSlashSelect L3000+): the palette
     // and the tray Commands tile dispatch through the same parser branches.
+    fun openSchedule() {
+        if (anonNext || replyTo != null || editing != null || activeTopicId != null) {
+            sendError = "Scheduling supports plain named messages only. Clear anonymous mode, reply, edit or topic first."
+        } else { scheduleOpen = true }
+    }
     fun runSlashCommand(rawCmd: String) {
         val cmd = rawCmd.trim()
         // text-transform commands stage the arg into the draft (web L3356)
@@ -1142,7 +1148,7 @@ internal fun MirrorRoom(
         }
         when {
             cmd == "/poll" -> { draftValue = TextFieldValue(""); pollOpen = true }
-            cmd == "/schedule" -> { draftValue = TextFieldValue(""); scheduleOpen = true }
+            cmd == "/schedule" -> { openSchedule() }
             cmd == "/sticker" -> { draftValue = TextFieldValue(""); stickerOpen = true }
             cmd == "/location" -> { draftValue = TextFieldValue(""); locationOpen = true }
             cmd == "/whiteboard" -> { draftValue = TextFieldValue(""); whiteboardOpen = true }
@@ -2307,7 +2313,7 @@ internal fun MirrorRoom(
                             },
                             MirrorTrayTileSpec("LCalendarClock", "Schedule", "Send this message later", TrayToneOrange) {
                                 trayOpen = false
-                                scheduleOpen = true
+                                openSchedule()
                             },
                             MirrorTrayTileSpec("LPresentation", "Whiteboard", "Sketch together on one canvas", TrayToneAmber) {
                                 trayOpen = false
@@ -2694,8 +2700,13 @@ internal fun MirrorRoom(
         MirrorScheduleComposerSheet(
             repository = repository,
             conversationId = groupId,
-            initialDraft = draftValue.text,
-            onConsumedDraft = { if (roomActionsLive.get()) { composerDraft.clearIfUnchanged(scheduledRevision); scheduledRefresh++ } },
+            initialDraft = draftValue.text.trim().removePrefix("/schedule").trim(),
+            onConsumedDraft = { submitted ->
+                if (roomActionsLive.get()) {
+                    if (draftValue.text.trim().removePrefix("/schedule").trim() == submitted.trim()) composerDraft.clearIfUnchanged(scheduledRevision)
+                    scheduledRefresh++
+                }
+            },
             onDismiss = { scheduleOpen = false },
         )
     }
@@ -4647,7 +4658,7 @@ private fun MirrorScheduleComposerSheet(
     repository: PulseRepository,
     conversationId: String,
     initialDraft: String,
-    onConsumedDraft: () -> Unit,
+    onConsumedDraft: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     androidx.compose.runtime.key(repository, repository.attachmentSessionKey(), conversationId) {
@@ -4658,7 +4669,7 @@ private fun MirrorScheduleComposerSheet(
 @Composable
 private fun MirrorOwnedScheduleComposerSheet(
     repository: PulseRepository, conversationId: String, initialDraft: String,
-    onConsumedDraft: () -> Unit, onDismiss: () -> Unit,
+    onConsumedDraft: (String) -> Unit, onDismiss: () -> Unit,
 ) {
     var body by remember { mutableStateOf(initialDraft) }
     var customWhen by remember { mutableStateOf("") }
@@ -4710,7 +4721,7 @@ private fun MirrorOwnedScheduleComposerSheet(
                 val item = repository.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repository.attachmentSessionKey() != epoch) return@launch
-                onConsumedDraft()
+                onConsumedDraft(text)
                 repository.acknowledgeScheduledCreation(item).getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repository.attachmentSessionKey() != epoch) return@launch

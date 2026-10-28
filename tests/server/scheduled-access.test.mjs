@@ -333,3 +333,33 @@ test('scheduled identities reject trailing newline and completed cancellation ha
  const result=await h.DELETE(req('DELETE'),ctx('queued'))
  assert.equal(result.status,409);assert.equal((await result.json()).code,'schedule_already_sent')
 }))
+
+test('an expired notice lease cannot authorize the next channel',()=>fixture(async(db)=>{
+ let now=1_800_000_000_000,pushes=0
+ await db.$transaction(tx=>enqueueScheduledNotice(tx,'lease-boundary',now))
+ assert.equal(await drainScheduledNotices(db,async()=>{now+=300_001},async()=>{pushes++;return null},()=>now),0)
+ assert.equal(pushes,0)
+ assert.equal(await drainScheduledNotices(db,async()=>{throw Error('socket already recorded')},async()=>{pushes++;return null},()=>now),1)
+ assert.equal(pushes,1)
+}))
+test('notice retention bounds child cleanup without deleting unfinished receipts or delivered messages',()=>fixture(async(db,h)=>{
+ await h.create({scheduledAt:new Date(Date.now()-1000)})
+ await h.dispatch(tick())
+ const message=await db.message.findFirst()
+ assert.equal((await db.scheduledMessage.findFirst()).content,'')
+ assert.equal(message.content,'Hello')
+ const old=Date.now()-8*86_400_000
+ await db.$executeRaw`UPDATE ScheduledDeliveryNotice SET completedAtMs=${BigInt(old)}`
+ await db.$transaction(async tx=>{
+   for(let i=0;i<505;i++) await recordScheduledPush(tx,message.id,`device-${i}`)
+   await enqueueScheduledNotice(tx,'unfinished',Date.now()+86_400_000)
+   await recordScheduledPush(tx,'unfinished','keep')
+ })
+ await drainScheduledNotices(db,async()=>{},async()=>null)
+ assert.equal((await db.$queryRaw`SELECT * FROM ScheduledPushReceipt WHERE messageId=${message.id}`).length,5)
+ assert.equal((await db.$queryRaw`SELECT * FROM ScheduledDeliveryNotice WHERE messageId=${message.id}`).length,1)
+ await drainScheduledNotices(db,async()=>{},async()=>null)
+ assert.equal((await db.$queryRaw`SELECT * FROM ScheduledDeliveryNotice WHERE messageId=${message.id}`).length,0)
+ assert.equal(await scheduledPushDelivered(db,'unfinished','keep'),true)
+ assert.ok(await db.message.findUnique({where:{id:message.id}}))
+}))

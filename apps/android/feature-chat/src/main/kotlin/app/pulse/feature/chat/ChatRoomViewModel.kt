@@ -608,6 +608,7 @@ class ChatRoomViewModel @Inject constructor(
                             app.pulse.core.fx.PulseFx.fire(kind)
                         }
                     }
+                    is PulseEvent.ComposerSaveFailed -> if (event.conversationId == conversationId) notify(event.reason, isError = true)
                     is PulseEvent.OutboxDropped -> if (event.conversationId == conversationId && event.threadRootId == null) notify(event.reason, isError = true)
                     else -> Unit
                 }

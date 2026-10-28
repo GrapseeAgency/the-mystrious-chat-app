@@ -1556,7 +1556,7 @@ struct MirrorRoomView: View {
             let write = draftJournal.submit(newValue, revision: DispatchTime.now().uptimeNanoseconds)
             Task {
                 do { try await write.value }
-                catch { session.toasts.show("Draft could not be saved. Check device storage.") }
+                catch { session.toasts.show("Draft save needs attention. " + error.localizedDescription) }
             }
         }
     }
@@ -1828,6 +1828,7 @@ struct MirrorRoomView: View {
                 messages: messages,
                 memberRows: memberRows,
                 draftText: draft,
+                schedulingSupported: !anonNext && armedEffect == nil,
                 onInsertDraft: { text in
                     draft = text
                     composerFocused = true
@@ -2729,6 +2730,7 @@ struct MirrorRoomSheetView: View {
     // R102 - the tray surfaces read the live draft (schedule) and push
     // inserts/sends back into the room (topic/commands/phrases, reload).
     var draftText: String = ""
+    var schedulingSupported = true
     var onInsertDraft: (String) -> Void = { _ in }
     var onSent: () -> Void = {}
     var captureScheduledDraft: () -> PulseDraftReceipt? = { nil }
@@ -2819,8 +2821,12 @@ struct MirrorRoomSheetView: View {
             case .poll:
                 MirrorPollBuilder(session: session, row: row, onSent: onSent)
             case .schedule:
-                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent,
-                    captureDraft: captureScheduledDraft, onScheduled: onScheduled)
+                if schedulingSupported {
+                    MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent,
+                        captureDraft: captureScheduledDraft, onScheduled: onScheduled)
+                } else {
+                    MirrorPanelHint("Scheduling supports plain named messages only. Turn off anonymous mode and effects first; your draft is unchanged.")
+                }
             case .phrases:
                 MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
             case .sticker:
@@ -3090,25 +3096,27 @@ private struct MirrorPollBuilder: View {
     }
 
     private func send() {
+        guard !busy else { return }
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            session.toasts.show("Local storage is not ready. Nothing was queued.")
+            return
+        }
         busy = true
-        let q = question.trimmingCharacters(in: .whitespaces)
-        let opts = options.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        Task {
-            defer { busy = false }
-            do {
-                _ = try await session.api.createPoll(
-                    conversationId: row.id,
-                    senderId: session.api.userId,
-                    question: q,
-                    options: opts
-                )
-                dismiss()
-                onSent()
-            } catch {
-                session.toasts.show("Poll failed - check the connection")
-            }
+        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        let opts = options.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        do {
+            _ = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: row.id,
+                kind: "poll", content: q, payload: ["question": q, "options": opts])
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+            dismiss()
+            onSent()
+        } catch {
+            busy = false
+            session.toasts.show("Poll was not queued. " + RoomViewModel.describe(error))
         }
     }
+
 }
 
 /// Schedule surface - POST /api/conversations/{id}/scheduled; the live draft

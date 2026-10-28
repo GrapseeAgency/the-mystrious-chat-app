@@ -39,6 +39,9 @@ struct PulseComposerReceipt: Codable, Sendable {
     let editedAt: String?
     let clientId: String?
     let outcome: String?
+    func hasSafeDraftBaseline(_ intent: PulseComposerIntent) -> Bool {
+        intent.kind != "draft" || intent.baseRevision != nil || text.utf16.elementsEqual(intent.text.utf16) || revision.hasSuffix(":0")
+    }
     func validate(_ intent: PulseComposerIntent, flight: PulseComposerFlight? = nil) throws {
         guard composerVersion == 1, userId == intent.owner, kind == intent.kind, targetId == intent.targetId,
               rootId == intent.rootId, conversationId == intent.conversationId, text.utf16.count <= 2000,
@@ -70,7 +73,7 @@ enum PulseComposerReplay {
                     try state.validate(intent)
                     guard current() else { throw CancellationError() }
                     let sameTime = state.editedAt == intent.baseEditedAt || (PulseFormat.date(state.editedAt) != nil && PulseFormat.date(state.editedAt) == PulseFormat.date(intent.baseEditedAt))
-                    guard (intent.baseRevision == nil || intent.baseRevision == state.revision),
+                    guard state.hasSafeDraftBaseline(intent), (intent.baseRevision == nil || intent.baseRevision == state.revision),
                         state.text.utf16.elementsEqual(intent.text.utf16) ||
                         (state.text.utf16.elementsEqual(intent.baseText.utf16) && (intent.kind != "edit" || sameTime)) else {
                         try store.blockComposer(intent, notice: "Changed on another device. Your text is retained; review before replacing it.")
@@ -116,4 +119,10 @@ struct PulseComposerRecovery: Identifiable, Sendable {
 struct PulseComposerRecoveryPage {
     let items: [PulseComposerRecovery]
     let nextCursor: String?
+}
+
+struct PulseDetachedDraft: Codable {
+    let conversationId: String
+    let rootId: String?
+    let text: String
 }

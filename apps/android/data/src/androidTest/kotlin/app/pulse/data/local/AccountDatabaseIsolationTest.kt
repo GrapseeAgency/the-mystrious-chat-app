@@ -40,6 +40,12 @@ class AccountDatabaseIsolationTest {
         try {
             withTimeout(30_000) {
                 repo.start("account-a-$suffix")
+                val poll = repo.createPoll("poll-room", "Choose", listOf("One", "Two")).getOrThrow()
+                assertTrue(poll.id.startsWith("local_"))
+                assertEquals(Message.Kind.POLL, poll.kind)
+                val queuedPoll = repo.observeOutbox().first().single { it.conversationId == "poll-room" }
+                assertEquals("poll", queuedPoll.kind)
+                assertTrue(repo.createPoll("poll-room", "Choose", listOf("Only")).isFailure)
                 repo.saveDraft("same-room-id", "private draft A")
                 assertEquals("private draft A", repo.observeDraft("same-room-id").first())
                 // A queued composer send consumes its draft in the SAME commit,

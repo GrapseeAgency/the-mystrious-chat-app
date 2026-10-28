@@ -34,11 +34,18 @@ enum PulseTextDelivery {
     static func enqueueRich(store: PulseStore, viewer: PulseViewer, conversationId: String,
                             kind: String, content: String = "", payload: [String: Any],
                             replyTo: WireChatMessage? = nil, topicId: String? = nil, anon: Bool = false) throws -> WireChatMessage {
-        guard !conversationId.isEmpty, ["sticker", "location"].contains(kind) else {
+        guard !conversationId.isEmpty, ["sticker", "location", "poll"].contains(kind) else {
             throw PulseAPIClient.Failure(kind: .validation, message: "Unsupported message type.")
         }
         let text = try validatedContent(content, allowEmpty: true)
-        if kind == "location" {
+        if kind == "poll" {
+            guard let question = payload["question"] as? String, question == text,
+                  !question.isEmpty, question.utf16.count <= 140,
+                  let options = payload["options"] as? [String], (2...6).contains(options.count),
+                  options.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf16.count <= 80 }) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "A poll needs a question of 1–140 characters and 2–6 options of 1–80 characters.")
+            }
+        } else if kind == "location" {
             guard let lat = payload["lat"] as? Double, let lng = payload["lng"] as? Double,
                   lat.isFinite, lng.isFinite, (-90...90).contains(lat), (-180...180).contains(lng) else {
                 throw PulseAPIClient.Failure(kind: .validation, message: "Location is invalid.")

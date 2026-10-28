@@ -58,7 +58,7 @@ export async function POST(req: Request) {
             createdAt: now, expiresAt: decision.expiresAt },
           include: MESSAGE_FULL_INCLUDE,
         })
-        await tx.scheduledMessage.update({ where: { id }, data: { sentAt: now } })
+        await tx.scheduledMessage.update({ where: { id }, data: { sentAt: now, content: '' } })
         await tx.conversation.update({
           where: { id: row.conversationId },
           data: { updatedAt: now },

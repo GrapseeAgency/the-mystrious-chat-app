@@ -3200,7 +3200,7 @@ struct BubbleView: View {
             )
         } else {
             // Poll row whose card payload is missing (degraded cache row).
-            Label("Poll", systemImage: "chart.bar.fill")
+            Label(message.content.isEmpty ? "Poll" : message.content, systemImage: "chart.bar.fill")
                 .font(.subheadline)
         }
     }
@@ -4915,7 +4915,7 @@ final class RoomViewModel: ObservableObject {
         let write = draftJournal.submit(text, revision: revision)
         Task { [weak self] in
             do { try await write.value }
-            catch { self?.errorText = "Draft could not be saved: check device storage" }
+            catch { self?.errorText = "Draft save needs attention. " + error.localizedDescription }
         }
     }
 
@@ -5168,6 +5168,10 @@ final class RoomViewModel: ObservableObject {
     func scheduleDraft(for date: Date, session: PulseSession) async -> Bool {
         guard session.sessionGeneration == readSessionGeneration, !Task.isCancelled else { return false }
         guard !scheduling else { session.toasts.show("Scheduling is still in progress"); return false }
+        guard !anonOn, replyTarget == nil, activeTopicId == nil, editingTarget == nil else {
+            session.toasts.show("Scheduling supports plain named messages only. Turn off anonymous mode and clear the reply or topic first.")
+            return false
+        }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else {
             session.toasts.show("Type the message first - scheduling sends the draft")
@@ -5855,25 +5859,9 @@ final class RoomViewModel: ObservableObject {
     // ── Wave 2 polls (spec §1 rows 2/3/4) ────────────────
 
     func createPoll(question: String, options: [String], session: PulseSession) {
-        guard let viewer = session.viewer else { return }
-        let trimmedQuestion = question.trimmingCharacters(in: .whitespaces)
-        guard !trimmedQuestion.isEmpty, options.count >= 2 else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.createPoll(
-                    conversationId: conversationId,
-                    senderId: viewer.id,
-                    question: trimmedQuestion,
-                    options: options,
-                )
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                self.loadTopics(session: session)
-            } catch {
-                session.toasts.show(Self.describe(error))
-            }
-        }
+        let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        let choices = options.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        enqueueRich(kind: "poll", content: question, payload: ["question": question, "options": choices], session: session)
     }
 
     func votePoll(pollID: String, optionID: String, session: PulseSession) {

@@ -19,6 +19,14 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
     private fun held(key: String) = key.replaceFirst("composer-schedule:","composer-schedule-blocked:")
     private fun ack(key: String) = key.replaceFirst("composer-schedule:","composer-schedule-ack:")
     private fun head(command: ScheduledCommandDto) = "composer-schedule-head:v1|${command.owner}|${command.conversationId}"
+    private fun requestHash(command: ScheduledCommandDto): String {
+        val input = listOf(command.owner,command.clientId,command.kind,command.conversationId,command.text,command.scheduledAt).joinToString("") { "${it.length}:$it" }
+        return java.security.MessageDigest.getInstance("SHA-256").digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+    private fun receipt(row: Wave7CacheEntity, command: ScheduledCommandDto): ScheduledCommandAckDto =
+        PulseJson.decodeFromString(ScheduledCommandAckDto.serializer(),row.json).also {
+            check(it.version == 1 && it.owner == command.owner && it.clientId == command.clientId && it.kind == command.kind && it.requestHash == requestHash(command)) { "Schedule receipt does not match these original instructions" }
+        }
     private fun encode(command: ScheduledCommandDto) = PulseJson.encodeToString(ScheduledCommandDto.serializer(),command)
     private fun decode(row: Wave7CacheEntity): ScheduledCommandDto = PulseJson.decodeFromString(ScheduledCommandDto.serializer(),row.json).also {
         check(it.kind in setOf("create","cancel") && it.owner.isNotBlank() && it.clientId.isNotBlank() &&
@@ -26,7 +34,7 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
     }
     suspend fun stage(command: ScheduledCommandDto) = db.withTransaction {
         val key = key(command)
-        if (dao.get(ack(key)) != null) return@withTransaction
+        dao.get(ack(key))?.let { receipt(it,command); return@withTransaction }
         val prior = (dao.get(key) ?: dao.get(held(key)))?.let(::decode)
         check(prior == null || prior.copy(notice=null) == command.copy(notice=null)) { "The original schedule instructions must not change" }
         if (command.kind == "create") {
@@ -38,9 +46,9 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
         dao.delete(held(key))
     }
     suspend fun result(command: ScheduledCommandDto): ScheduledItemDto? = dao.get(ack(key(command)))?.let {
-        PulseJson.decodeFromString(ScheduledItemDto.serializer(),it.json)
+        receipt(it,command).item?.copy(content=command.text)
     }
-    suspend fun cancelled(command: ScheduledCommandDto): Boolean = dao.get(ack(key(command)))?.json == "cancelled"
+    suspend fun cancelled(command: ScheduledCommandDto): Boolean = dao.get(ack(key(command)))?.let { receipt(it,command).kind == "cancel" } == true
     private class Transport(val failure: PulseResult.Failure): Exception(failure.message)
     suspend fun flush(owner: String, api: PulseApi, current: () -> Boolean): Int =
         DraftWriteCoordinator.forDatabase(db).scheduleMutex.withLock {
@@ -60,7 +68,9 @@ internal class ScheduledJournal(private val db: PulseDatabase) {
                     currentCoroutineContext().ensureActive(); if (!current()) break
                     db.withTransaction {
                         if (dao.get(row.key)?.json != row.json) return@withTransaction
-                        dao.upsert(Wave7CacheEntity(ack(row.key),result,System.currentTimeMillis()))
+                        val item = if (command.kind == "create") PulseJson.decodeFromString(ScheduledItemDto.serializer(),result).copy(content="") else null
+                        val receipt = ScheduledCommandAckDto(owner=owner,clientId=command.clientId,kind=command.kind,requestHash=requestHash(command),item=item)
+                        dao.upsert(Wave7CacheEntity(ack(row.key),PulseJson.encodeToString(ScheduledCommandAckDto.serializer(),receipt),System.currentTimeMillis()))
                         dao.acknowledgeReadIntent(row.key,row.json)
                         if (command.kind == "create") dao.acknowledgeReadIntent(head(command),command.clientId)
                     }

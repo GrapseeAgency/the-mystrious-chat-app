@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct PulseScheduledCommand: Codable, Sendable {
     let owner: String
@@ -12,6 +13,10 @@ struct PulseScheduledCommand: Codable, Sendable {
         owner == other.owner && clientId == other.clientId && kind == other.kind && conversationId == other.conversationId &&
             text.utf16.elementsEqual(other.text.utf16) && scheduledAt == other.scheduledAt
     }
+    var requestHash: String {
+        let input = [owner,clientId,kind,conversationId,text,scheduledAt].map { "\($0.utf16.count):\($0)" }.joined()
+        return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x",$0) }.joined()
+    }
     var key: String { "composer-schedule:v1|\(owner)|\(kind)|\(clientId)" }
     var heldKey: String { key.replacingOccurrences(of: "composer-schedule:",with: "composer-schedule-blocked:") }
     var ackKey: String { key.replacingOccurrences(of: "composer-schedule:",with: "composer-schedule-ack:") }
@@ -21,7 +26,7 @@ struct PulseScheduledCommand: Codable, Sendable {
 @MainActor
 enum PulseScheduledReplay {
     private static var busy = Set<String>()
-    static func flush(store: PulseStore, client: PulseAPIClient, current: () -> Bool) async throws -> Int {
+    static func flush(store: PulseStore, client: PulseAPIClient, current: @MainActor () -> Bool) async throws -> Int {
         guard busy.insert(store.storageIdentity).inserted else { return try store.pendingSchedules(owner: client.userId) }
         defer { busy.remove(store.storageIdentity) }
         for command in try store.scheduledCommandPage(owner: client.userId).prefix(25) {
@@ -49,5 +54,18 @@ enum PulseScheduledReplay {
             }
         }
         return try store.pendingSchedules(owner: client.userId)
+    }
+}
+
+struct PulseScheduledCommandAck: Codable, Sendable {
+    var version = 1
+    let owner: String
+    let clientId: String
+    let kind: String
+    let requestHash: String
+    let item: WireScheduledItem?
+    func validate(_ command: PulseScheduledCommand) throws {
+        guard version == 1, owner == command.owner, clientId == command.clientId, kind == command.kind,
+              requestHash == command.requestHash else { throw CocoaError(.coderInvalidValue) }
     }
 }

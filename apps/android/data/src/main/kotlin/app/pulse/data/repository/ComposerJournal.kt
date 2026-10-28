@@ -115,7 +115,7 @@ internal class ComposerJournal(private val db: PulseDatabase) {
                         check(pending.text.length <= 2000 && (pending.kind != "edit" || pending.text.isNotBlank())) { "Text is retained locally but is outside the sendable length" }
                         val state = unwrap(api.composerState(pending)); state.validateComposer(pending)
                         check(current()) { "Account changed" }
-                        if ((pending.baseRevision != null && state.revision != pending.baseRevision) ||
+                        if (!state.hasSafeDraftBaseline(pending) || (pending.baseRevision != null && state.revision != pending.baseRevision) ||
                             (state.text != pending.text && (state.text != pending.baseText || (pending.kind == "edit" && !dateEqual(state.editedAt,pending.baseEditedAt))))) {
                             db.withTransaction {
                                 val latest = dao.get(row.key)?.let(::decode)
@@ -146,7 +146,7 @@ internal class ComposerJournal(private val db: PulseDatabase) {
                                 val localKey = "composer-local-edit:v1|${pending.owner}|${pending.targetId}"
                                 val row = dao.get(localKey)
                                 val local = row?.let { PulseJson.decodeFromString(ComposerLocalEditDto.serializer(),it.json) }
-                                if (row != null && local?.revision == flight.localEditRevision && local.text.trim() == flight.text)
+                                if (row != null && local != null && local.revision == flight.localEditRevision && local.text.trim() == flight.text)
                                     dao.acknowledgeReadIntent(localKey,row.json)
                             }
                         }

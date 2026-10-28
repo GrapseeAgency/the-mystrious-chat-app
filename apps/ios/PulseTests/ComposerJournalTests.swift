@@ -99,4 +99,27 @@ final class ScheduledCommandJournalTests: XCTestCase {
         XCTAssertEqual(try store.scheduledCommandResult(command),"cancelled")
         XCTAssertThrowsError(try store.composerRecoveryPage(owner: "other"))
     }
+    func testAcceptedScheduleReceiptRetainsOnlyBoundMetadataAndRejectsChangedInstructions() throws {
+        let store = try PulseStore(owner: "me")
+        let command = PulseScheduledCommand(owner: "me",clientId: "immutable-operation",kind: "create",conversationId: "room",text: "private body",scheduledAt: "2030-01-01T00:00:00.000Z")
+        try store.stageScheduledCommand(command)
+        let item = WireScheduledItem(id: "accepted",conversationId: "room",content: command.text,scheduledAt: command.scheduledAt,
+            sentAt: nil,cancelledAt: nil,cancelledReason: nil,creationClientId: command.clientId)
+        try store.finishScheduledCommand(command,result: String(decoding: JSONEncoder().encode(item),as: UTF8.self))
+        let raw = try XCTUnwrap(store.loadWave7Cache(key: command.ackKey)?.json)
+        XCTAssertFalse(raw.contains("private body"))
+        XCTAssertEqual(try store.pendingSchedules(owner: "me"),0)
+        let restored = try JSONDecoder().decode(WireScheduledItem.self,from: Data(try XCTUnwrap(store.scheduledCommandResult(command)).utf8))
+        XCTAssertEqual(restored.content,"private body")
+        var altered = command; altered.text = "different body"
+        XCTAssertThrowsError(try store.stageScheduledCommand(altered))
+        XCTAssertThrowsError(try store.scheduledCommandResult(altered))
+        let recovery = try XCTUnwrap(store.composerRecoveryPage(owner: "me").items.first)
+        XCTAssertEqual(recovery.text, "")
+        let cancel = PulseScheduledCommand(owner: "me",clientId: "accepted",kind: "cancel")
+        try store.stageScheduledCommand(cancel)
+        XCTAssertThrowsError(try store.finishScheduledCommand(cancel,result: "pending"))
+        XCTAssertEqual(try store.pendingSchedules(owner: "me"),1)
+    }
+
 }

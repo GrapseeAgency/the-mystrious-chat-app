@@ -17,7 +17,23 @@ final class PulseDraftJournal {
     }
     private static var snapshots: [String: Snapshot] = [:]
 
+    enum Failure: LocalizedError {
+        case displaced
+        var errorDescription: String? { "Another window owns this draft. Your text is saved separately in Composer recovery; copy it before replacing the other draft." }
+    }
+    static func hasPending(store: PulseStore, conversationId: String, parentId: String? = nil) -> Bool {
+        let key = store.storageIdentity + "\u{0}" + PulseThreadDraft.key(conversationId, parentId: parentId)
+        guard let value = snapshots[key], value.text != nil else { return false }
+        return value.storageRevision == store.captureDraftConsumption(conversationId: conversationId, parentId: parentId).revision
+    }
     private actor Writer {
+        private var detachedRevisions: [String: UInt64] = [:]
+        func preserve(_ text: String, id: UUID, revision: UInt64, store: PulseStore, room: String, root: String?) throws {
+            let key = store.storageIdentity + id.uuidString
+            guard revision >= (detachedRevisions[key] ?? 0) else { return }
+            try store.preserveDetachedDraft(text: text, id: id, room: room, root: root)
+            detachedRevisions[key] = revision
+        }
         var newest: [String: (owner: UInt64, revision: UInt64)] = [:]
 
         func save(_ text: String, revision: UInt64, owner: UInt64, store: PulseStore, room: String, writeRevision: UInt64) throws {
@@ -73,8 +89,14 @@ final class PulseDraftJournal {
 
     /// Call synchronously on each UI change, before creating any observer task.
     func submit(_ text: String, revision: UInt64) -> Task<Void, Error> {
-        if let previous = Self.snapshots[key],
-           previous.owner > owner || (previous.owner == owner && previous.revision > revision) {
+        if let previous = Self.snapshots[key], previous.owner > owner {
+            let store = store, room = conversationId, root = parentId, id = receiptOwner
+            return Task<Void, Error> {
+                try await Self.writer.preserve(text, id: id, revision: revision, store: store, room: room, root: root)
+                throw Failure.displaced
+            }
+        }
+        if let previous = Self.snapshots[key], previous.owner == owner && previous.revision > revision {
             return Task<Void, Error> { }
         }
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : text
@@ -114,7 +136,7 @@ final class PulseDraftJournal {
     /// Called synchronously after the same transaction committed queue + clear.
     func didConsumeDraft() {
         guard let current = Self.snapshots[key], current.owner == owner else { return }
-        Self.snapshots[key] = Snapshot(owner: owner, revision: current.revision &+ 1, text: "",
+        Self.snapshots[key] = Snapshot(owner: owner, revision: current.revision &+ 1, text: nil,
             storageRevision: store.captureDraftConsumption(conversationId: conversationId, parentId: parentId).revision)
     }
 

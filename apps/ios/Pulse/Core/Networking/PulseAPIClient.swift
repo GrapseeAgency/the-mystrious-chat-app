@@ -2337,8 +2337,8 @@ public struct PulseAPIClient: Sendable {
         let receipt = try decoder.decode(ScheduledReceipt.self, from: data)
         try validateScheduledScope(receipt, room: conversationId)
         guard receipt.clientId == id, receipt.replayed != nil,
-              var row = receipt.item, row.content == content.trimmingCharacters(in: .whitespacesAndNewlines),
-              row.cancelledAt == nil, row.cancelledReason == nil,
+              var row = receipt.item, row.content.utf16.elementsEqual(content.trimmingCharacters(in: .whitespacesAndNewlines).utf16),
+              row.sentAt == nil, row.cancelledAt == nil, row.cancelledReason == nil,
               let actual = PulseFormat.date(row.scheduledAt), let expected = PulseFormat.date(scheduledAtIso),
               abs(actual.timeIntervalSince(expected)) < 0.001 else {
             throw Failure(kind: .server, message: "The requested scheduled message was not confirmed. Retry the same details.")

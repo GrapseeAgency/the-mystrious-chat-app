@@ -108,6 +108,8 @@ sealed interface PulseEvent {
         val isTyping: Boolean,
     ) : PulseEvent
 
+    data class ComposerSaveFailed(val conversationId: String, val messageId: String, val reason: String) : PulseEvent
+
     // offline outbox (Wave 0)
     /** A send failed network-class and now waits in the outbox (`local_<clientId>` bubble). */
     data class OutboxQueued(val clientId: String, val conversationId: String) : PulseEvent

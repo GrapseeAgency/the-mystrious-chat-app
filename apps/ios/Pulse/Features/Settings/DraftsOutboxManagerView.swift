@@ -68,7 +68,11 @@ struct DraftsOutboxManagerView: View {
         } message: {
             Text(recoveryAction == "replace" ? "Replace the current server draft or edit with this saved text? A further server change will still cause a conflict rather than being overwritten." : "This removes only the local recovery copy. It does NOT cancel a scheduled message or undo a send or edit already accepted by the server.")
         }
-        .onChange(of: session.sessionGeneration) { _, _ in dismiss() }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            drafts = []; queued = []; recovery = []; recoveryCursor = nil; recoveryConfirmation = nil
+            conversationNames = [:]; draftRevisions = [:]; loadedOwner = nil; actionNotice = nil
+            dismiss()
+        }
     }
 
     private var recoveryCard: some View {
@@ -80,7 +84,7 @@ struct DraftsOutboxManagerView: View {
                     if !row.text.isEmpty { Text(row.text).font(.footnote).lineLimit(3) }
                     Text(row.notice).font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        if !row.text.isEmpty { Button("Copy text") { UIPasteboard.general.string = row.text } }
+                        if !row.text.isEmpty { Button("Copy text") { if ownedStore() != nil { UIPasteboard.general.string = row.text } } }
                         if row.canRetry { Button("Retry original") { performRecovery(row,action: "retry") } }
                     }.font(.caption)
                     if row.canReplace { Button("Use this version") { recoveryAction = "replace"; recoveryConfirmation = row }.font(.caption) }
@@ -347,7 +351,10 @@ struct DraftsOutboxManagerView: View {
 
     private func reload() {
         let epoch = session.sessionGeneration
-        if loadedOwner != epoch { drafts = []; queued = []; conversationNames = [:]; draftRevisions = [:] }
+        if loadedOwner != epoch {
+            drafts = []; queued = []; conversationNames = [:]; draftRevisions = [:]
+            recovery = []; recoveryCursor = nil; recoveryConfirmation = nil; actionNotice = nil
+        }
         loadedOwner = epoch
         reloadRecovery()
         clearDraftsArmed = false

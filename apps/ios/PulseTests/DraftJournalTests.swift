@@ -38,8 +38,12 @@ final class DraftJournalTests: XCTestCase {
         let old = PulseDraftJournal(store: store, conversationId: "room")
         let reopened = PulseDraftJournal(store: store, conversationId: "room")
         try await reopened.save("new edit", revision: 20)
-        try await old.save("late old edit", revision: 30)
+        do { try await old.save("late old edit", revision: 30); XCTFail("Displaced draft must report its recovery copy") }
+        catch { XCTAssertTrue(error is PulseDraftJournal.Failure) }
         XCTAssertEqual(store.draft(conversationId: "room"), "new edit")
+        let recovery = try XCTUnwrap(store.composerRecoveryPage(owner: "local").items.first)
+        XCTAssertEqual(recovery.text, "late old edit")
+        XCTAssertFalse(recovery.canRetry)
     }
 
     func testRapidReopenSeesPendingSnapshotBeforeAwaitingSQLite() async throws {

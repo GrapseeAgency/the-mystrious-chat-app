@@ -39,7 +39,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-// R24-b: deterministic incognito aliases (Session/SimpleX-style) 
+// R24-b: deterministic incognito aliases (Session/SimpleX-style)
 // Same person + same conversation ALWAYS maps to the same alias -
 // FNV-1a over "userId:conversationId" keeps it stable across restarts.
 const ANON_ADJECTIVES = ['Swift', 'Quiet', 'Neon', 'Ember', 'Frost', 'Lucky', 'Cosmic', 'Silent'] as const
@@ -314,7 +314,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   // Rich message kinds - sticker packs, live location cards, documents and
   // full-screen effects all ride the kind+payload pair (kind defaults to "text").
-  const MESSAGE_KINDS = ['text', 'image', 'audio', 'sticker', 'location', 'file'] as const
+  const MESSAGE_KINDS = ['text', 'image', 'audio', 'sticker', 'location', 'file', 'poll'] as const
   const EFFECTS = ['confetti', 'lasers', 'echo', 'sparkles'] as const
   const kind = strField(body.kind) || 'text'
   if (!(MESSAGE_KINDS as readonly string[]).includes(kind)) {
@@ -323,6 +323,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       { status: 400 },
     )
   }
+  let poll: { question: string; options: string[] } | null = null
   let payload: string | null = null
   if (body.payload !== undefined && body.payload !== null) {
     if (typeof body.payload !== 'object' || Array.isArray(body.payload)) {
@@ -332,7 +333,16 @@ export async function POST(req: Request, { params }: RouteCtx) {
     if (['bot', 'webhook', 'webhookName', 'webhookColor'].some(key => Object.hasOwn(p, key))) {
       return NextResponse.json({ error: 'Integration origin metadata is reserved for server-generated messages.' }, { status: 400 })
     }
-    if (kind === 'sticker') {
+    if (kind === 'poll') {
+      const question = strField(p.question)
+      const options = p.options
+      if (!question || question.length > 140 || question !== content || !Array.isArray(options) ||
+          options.length < 2 || options.length > 6 ||
+          options.some(option => typeof option !== 'string' || !option.trim() || option.trim().length > 80)) {
+        return NextResponse.json({ error: 'A poll needs a question of 1–140 characters matching its content, and 2–6 options of 1–80 characters.' }, { status: 400 })
+      }
+      poll = { question, options: options.map(option => (option as string).trim()) }
+    } else if (kind === 'sticker') {
       const emoji = strField(p.emoji)
       if (!emoji || emoji.length > 12) {
         return NextResponse.json({ error: 'payload.emoji (≤12 chars) is required for stickers.' }, { status: 400 })
@@ -372,6 +382,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
     if (payload && payload.length > 2048) {
       return NextResponse.json({ error: 'payload must be 2KB or smaller.' }, { status: 400 })
     }
+  }
+  if (kind === 'poll' && !poll) {
+    return NextResponse.json({ error: 'Poll messages need payload.question and payload.options.' }, { status: 400 })
   }
   if (kind === 'sticker' && !payload) {
     return NextResponse.json({ error: 'Sticker messages need payload.emoji.' }, { status: 400 })
@@ -423,7 +436,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'durationMs is only valid together with audioPath.' }, { status: 400 })
   }
 
-  // R40: document attachment (kind 'file') 
+  // R40: document attachment (kind 'file')
   // filePath references a previously-uploaded document (pdf/txt/csv/zip);
   // fileName is the ORIGINAL filename for display (1–120 chars, sanitized);
   // fileSize is optional metadata (0..10 MB). Non-file kinds must NOT carry
@@ -626,6 +639,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
         content,
         kind,
         ...(payload ? { payload } : {}),
+        // Poll, options, message and immutable send receipt commit as one operation.
+        ...(poll ? { poll: { create: { question: poll.question,
+          options: { createMany: { data: poll.options.map((text, position) => ({ text, position })) } },
+        } } } : {}),
         ...(replyToId ? { replyToId } : {}),
         ...(parentId ? { parentId } : {}),
         ...(topicId ? { topicId } : {}),
@@ -692,20 +709,24 @@ export async function POST(req: Request, { params }: RouteCtx) {
   // together. Push remains best-effort and never changes committed acceptance.
   void deliverMessageNotification(db, fanoutPush, message.id).catch(() => {})
 
-  // Pulse AI companion: fire-and-forget evaluation (DMs + @mentions in groups).
-  // Stands down when the deterministic bot engine owns this message, so a
-  // single user message never earns two replies.
-  if (!botWillRespond(content)) maybeAiReply(id, mapped)
+  // A poll question is not a bot command or an automation trigger.
+  if (kind !== 'poll') {
+    // Pulse AI companion: fire-and-forget evaluation (DMs + @mentions in groups).
+    // Stands down when the deterministic bot engine owns this message, so a
+    // single user message never earns two replies.
+    if (!botWillRespond(content)) maybeAiReply(id, mapped)
 
-  // Pulse bot engine: real command replies (/roll, /math, /wallet, /poll …).
-  await maybeBotReply(id, { id: message.id, senderId, content })
+    // Pulse bot engine: real command replies (/roll, /math, /wallet, /poll …).
+    await maybeBotReply(id, { id: message.id, senderId, content })
 
-  // R39: keyword automations - AFTER the human message is stored + notified.
-  // Automation replies are authored directly via db with viaAutomation=true
-  // and never re-enter this route, so the engine can never chain. A failure
-  // here must never fail the human send (same principle as XP accounting).
-  if (message.deletedAt === null) {
-    await maybeAutomationReply(id, message.id, content)
+    // R39: keyword automations - AFTER the human message is stored + notified.
+    // Automation replies are authored directly via db with viaAutomation=true
+    // and never re-enter this route, so the engine can never chain. A failure
+    // here must never fail the human send (same principle as XP accounting).
+    if (message.deletedAt === null) {
+      await maybeAutomationReply(id, message.id, content)
+    }
+
   }
 
   // R31-a: gaming-grade daily XP cap - every real send earns XP_PER_MESSAGE

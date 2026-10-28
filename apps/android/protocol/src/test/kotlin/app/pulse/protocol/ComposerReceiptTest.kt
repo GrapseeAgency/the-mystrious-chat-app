@@ -22,4 +22,11 @@ class ComposerReceiptTest {
         assertEquals("mine",restored.flight?.text)
         assertEquals("member:0",restored.baseRevision)
     }
+    @Test fun unknownBaselineDoesNotOverwriteAnExplicitRemoteClear() {
+        assertFalse(good.copy(text="",revision="member:2").hasSafeDraftBaseline(intent))
+        assertTrue(good.copy(text="",revision="member:0").hasSafeDraftBaseline(intent))
+        assertTrue(good.hasSafeDraftBaseline(intent))
+        assertTrue(good.copy(text="",revision="member:2").hasSafeDraftBaseline(intent.copy(baseRevision="member:2")))
+    }
+
 }

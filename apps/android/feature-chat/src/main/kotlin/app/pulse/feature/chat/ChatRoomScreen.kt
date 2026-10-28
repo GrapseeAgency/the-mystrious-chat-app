@@ -1954,7 +1954,11 @@ fun ChatRoomScreen(
             draft = scheduleDraft.orEmpty(),
             busy = scheduledBusy,
             onDismiss = { scheduleOpen = false; schedulePresentation = null },
-            onSchedule = { iso ->
+            onSchedule = schedule@ { iso ->
+                if (anonNext || state.replyTo != null || state.editing != null || activeTopicId != null) {
+                    viewModel.notify("Scheduling supports plain named messages only. Clear anonymous mode, reply, edit or topic first.")
+                    return@schedule
+                }
                 val submitted = scheduleDraft.orEmpty()
                 val receipt = draftState.capture()
                 val presentation = schedulePresentation
@@ -4712,7 +4716,11 @@ internal fun PollCard(
     onClose: ((pollId: String) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val poll = message.poll ?: return
+    val poll = message.poll
+    if (poll == null) {
+        Text(message.body.ifBlank { "Poll is waiting to send" }, modifier = modifier.padding(12.dp))
+        return
+    }
     val closed = poll.closed
     val picked = poll.pickFor(viewerId)
     val total = maxOf(poll.totalVotes, poll.options.sumOf { it.voteCount })

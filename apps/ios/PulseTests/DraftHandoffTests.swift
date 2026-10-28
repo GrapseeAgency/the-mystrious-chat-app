@@ -27,7 +27,8 @@ final class DraftHandoffTests: XCTestCase {
         let next = PulseDraftJournal(store: reopened, conversationId: "room")
         XCTAssertEqual(next.snapshot, "")
         try await next.save("new edit", revision: 10)
-        try await journal.save("old disposal", revision: 100)
+        do { try await journal.save("old disposal", revision: 100); XCTFail("Displaced draft must report its recovery copy") }
+        catch { XCTAssertTrue(error is PulseDraftJournal.Failure) }
         XCTAssertEqual(reopened.draftSnapshot(conversationId: "room"), "new edit")
     }
 

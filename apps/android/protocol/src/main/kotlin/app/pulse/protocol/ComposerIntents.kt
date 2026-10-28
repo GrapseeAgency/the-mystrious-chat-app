@@ -35,3 +35,12 @@ fun validateComposerReceipt(receipt: ComposerReceiptDto, intent: ComposerIntentD
 @Serializable
 data class ScheduledCommandDto(val owner: String, val clientId: String, val kind: String,
     val conversationId: String = "", val text: String = "", val scheduledAt: String = "", val notice: String? = null)
+
+/** Accepted schedules retain identity/metadata, never another copy of message text. */
+@Serializable
+data class ScheduledCommandAckDto(val version: Int = 1, val owner: String, val clientId: String,
+    val kind: String, val requestHash: String, val item: ScheduledItemDto? = null)
+
+/** An unknown draft baseline must not overwrite a remote clear/edit ABA. */
+fun ComposerReceiptDto.hasSafeDraftBaseline(intent: ComposerIntentDto): Boolean =
+    intent.kind != "draft" || intent.baseRevision != null || text == intent.text || revision.endsWith(":0")

@@ -167,4 +167,19 @@ final class TextDeliveryTests: XCTestCase {
         XCTAssertEqual(try store.countPendingOutbox(), 2)
     }
 
+    func testPollOptionsAndOperationIdentityArePersistedBeforeTransport() throws {
+        let store = try PulseStore()
+        let message = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: "room",
+            kind: "poll", content: "Choose", payload: ["question": "Choose", "options": ["One", "Two"]])
+        let entry = try XCTUnwrap(store.outboxPending().first)
+        let envelope = try XCTUnwrap(PulseOutboxForward.decode(entry.payloadJson))
+        XCTAssertEqual(envelope.kind, "poll")
+        XCTAssertEqual(try store.message(id: message.id)?.payload, envelope.payload)
+        let value = try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(envelope.payload).utf8)) as? [String: Any]
+        XCTAssertEqual(value?["options"] as? [String], ["One", "Two"])
+        XCTAssertThrowsError(try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: "room",
+            kind: "poll", content: "Choose", payload: ["question": "Choose", "options": ["Only"]]))
+        XCTAssertEqual(try store.countOutbox(), 1)
+    }
+
 }

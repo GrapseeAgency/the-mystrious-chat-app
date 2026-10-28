@@ -577,22 +577,27 @@ public final class PulseSession: ObservableObject {
         let epoch = generation, client = api
         let token = store.captureDraftConsumption(conversationId: room,parentId: root)
         let previous = store.draftSnapshot(conversationId: token.storageKey)
-        guard try !store.hasComposerDraft(owner: owner,room: room,root: root) else { return nil }
+        guard !PulseDraftJournal.hasPending(store: store,conversationId: room,parentId: root),
+              try !store.hasComposerDraft(owner: owner,room: room,root: root) else { return nil }
         let intent = PulseComposerIntent(owner: owner,kind: "draft",targetId: room,conversationId: room,rootId: root,
             desiredId: UUID().uuidString.lowercased(),text: "",baseText: previous ?? "",baseEditedAt: nil,flight: nil,blocked: nil)
         let state = try await client.composerState(intent)
         try state.validate(intent)
         guard generation == epoch, viewer?.id == owner else { throw CancellationError() }
+        guard !PulseDraftJournal.hasPending(store: store,conversationId: room,parentId: root) else { return nil }
         return try store.importComposerDraft(state,token: token,previous: previous) ? state.text : nil
     }
 
     private var composerSyncTask: Task<Void,Never>?
+    private var composerSyncTicket = UUID()
     func requestComposerSync() {
         guard ready, isForeground, composerSyncTask == nil else { return }
+        let ticket = UUID()
+        composerSyncTicket = ticket
         composerSyncTask = Task { [weak self] in
             guard let self else { return }
             _ = await self.flushComposerIntentsNow()
-            self.composerSyncTask = nil
+            if self.composerSyncTicket == ticket { self.composerSyncTask = nil }
         }
     }
     func flushComposerIntentsNow() async -> Bool {
@@ -1193,7 +1198,7 @@ public final class PulseSession: ObservableObject {
         PulsePushNotifications.deactivate()
         generation = UUID()
         savedRefresh.cancel(); savedSyncTimer?.cancel(); savedSyncTimer = nil
-        composerSyncTask?.cancel(); composerSyncTask = nil
+        composerSyncTicket = UUID(); composerSyncTask?.cancel(); composerSyncTask = nil
         savedSyncObservation?.cancel(); savedSyncObservation = nil; savedSyncStatus = nil
         savedRefreshIds.removeAll(); savedScanAfter = ""; savedFullRefresh = true; savedReplayBusy = false
         notificationRefreshTask?.cancel(); notificationRefreshTask = nil
