@@ -1,10 +1,17 @@
 # Section 3 — drafts, outgoing messages, edits and scheduling
 
-Implementation complete across the eleven tracked areas on Android, iOS and the
-backend. Autumn styling is unchanged; deployment and comprehensive physical-device
-auditing remain deferred. The full iOS test suite is **not green**: the exact
-candidate reports the existing hosted read-presentation failure described below.
-Existing repairs are retained, not counted as newly discovered missing features.
+**Reopened for verification.** The previous implementation-closure statement was
+stronger than the available evidence. Android and backend checks passed, but a
+failed full iOS run with no reported composer failures is not explicit proof that
+every composer regression ran and passed. A separate fail-closed iOS test check
+now requires a terminal `passed` result for every selected test; it supplements,
+not replaces, the full iOS suite.
+
+The eleven rows below are a **reconstructed working checklist**, not a recovered
+verbatim copy of the original eleven-item backlog. Reconciliation must identify
+its historical sources and must not quietly substitute this list as the original.
+Autumn styling remains unchanged. Deployment and physical-device auditing stay
+deferred. The existing hosted read-presentation failure remains unresolved.
 
 ## Eleven acceptance areas
 
@@ -39,9 +46,9 @@ isolation. Native execution results and their limits are recorded below.
 
 ## Implementation reconciliation (2026-10-28)
 
-The eleven rows above remain the implementation boundary. All eleven are
-implemented in both apps and the backend. This is a bounded implementation
-closure, not a zero-defect claim or a clean full-app validation declaration.
+The eleven rows above remain the implementation boundary. Implementation has been traced in both apps and the backend, but item-by-item
+evidence and explicit iOS test outcomes are being reconciled. This is not a
+completion declaration.
 
 | Area | Implemented behavior / principal evidence |
 | --- | --- |
@@ -98,7 +105,7 @@ closure, not a zero-defect claim or a clean full-app validation declaration.
   cancellation after its composer was already acknowledged. Retrying the old
   body/time cannot return a cached “scheduled” success for a known cancellation.
 
-## Closure evidence — 2026-10-28
+## Previous closure evidence — 2026-10-28 (claim reopened)
 
 Native production code and native test sources at closure are unchanged from
 `adb34904c63c1f1af2a22cc86669374ffa19fce8`.
@@ -118,7 +125,8 @@ waived or relabeled as a section 3 success. The full iOS run log could not be
 retrieved in this environment; the exact failure statements above are from
 GitHub check annotations, not an invented per-test pass count.
 
-All eleven implementation rows are closed within this section's defined scope.
+The previous statement closing all eleven rows is withdrawn pending the
+reconciliation and explicit verification described above.
 Deployment, schema-patch application, matching-backend/device acceptance,
 the unresolved broader iOS test failure, and sections 4–16 are not closed by
 this document. No release replacement or pull-request merge was performed.
