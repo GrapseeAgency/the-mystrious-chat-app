@@ -163,7 +163,11 @@ internal class ComposerJournal(private val db: PulseDatabase) {
                     val terminal = failure == null || failure.status in setOf(400,403,404,410,422) || failure.kind == PulseResult.Failure.Kind.VALIDATION
                     if (terminal) db.withTransaction {
                         val latest = dao.get(row.key)?.let(::decode)
-                        if (latest?.flight?.clientId == pending.flight?.clientId && latest != null)
+                        // Before a flight exists, null == null is not ownership:
+                        // a newer desired draft/edit may have replaced this GET.
+                        val ownsFailure = if (pending.flight != null) latest?.flight?.clientId == pending.flight?.clientId
+                            else latest?.desiredId == pending.desiredId
+                        if (latest != null && ownsFailure)
                             block(row.key,latest,error.message ?: "This operation needs review; your text is retained.")
                     }
                     val latest = dao.get(row.key)

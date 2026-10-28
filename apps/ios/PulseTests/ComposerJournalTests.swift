@@ -76,6 +76,30 @@ final class ComposerJournalTests: XCTestCase {
         XCTAssertTrue(state.hasSafeDraftBaseline(verified))
     }
 
+    func testLatePreflightRefusalCannotHoldNewerDraftOrEdit() throws {
+        for kind in ["draft", "edit"] {
+            let store = try PulseStore(owner: "me")
+            let message = try JSONDecoder().decode(WireChatMessage.self, from: Data("{\"id\":\"m\",\"conversationId\":\"room\",\"senderId\":\"me\",\"kind\":\"text\",\"content\":\"original\",\"createdAt\":\"2026-10-28T00:00:00Z\"}".utf8))
+            func stage(_ text: String) throws {
+                if kind == "draft" { try store.saveDraftSnapshot(conversationId: "room", text: text) }
+                else { try store.enqueueComposerEdit(message, text: text, owner: "me") }
+            }
+            try stage("older text")
+            let original = try XCTUnwrap(store.composerPage(owner: "me").first?.intent)
+            XCTAssertNil(original.flight)
+            try stage("newer text")
+            try store.blockComposer(original, notice: "Old lookup refused")
+            let newer = try XCTUnwrap(store.composerPage(owner: "me").first?.intent)
+            XCTAssertNotEqual(newer.desiredId, original.desiredId)
+            XCTAssertEqual(newer.text, "newer text")
+            XCTAssertNil(newer.blocked)
+            XCTAssertTrue(try store.composerPage(owner: "me", held: true).isEmpty())
+            let frozen = try XCTUnwrap(store.freezeComposer(newer, revision: "member:0"))
+            try store.acceptComposer(frozen, receipt: receipt(frozen, text: "newer text", revision: "member:1"))
+            XCTAssertEqual(try store.pendingComposerCount(owner: "me"), 0)
+        }
+    }
+
     func testAcceptedBaselineStoresOnlyMetadataAndExactTextFingerprint() throws {
         let state = PulseComposerReceipt(composerVersion: 1,userId: "me",kind: "edit",targetId: "message",rootId: nil,
             conversationId: "room",text: "private e\u{301}",revision: "fingerprint",editedAt: nil,clientId: nil,outcome: nil)

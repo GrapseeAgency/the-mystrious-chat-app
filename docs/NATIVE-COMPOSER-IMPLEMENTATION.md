@@ -130,3 +130,10 @@ reconciliation and explicit verification described above.
 Deployment, schema-patch application, matching-backend/device acceptance,
 the unresolved broader iOS test failure, and sections 4–16 are not closed by
 this document. No release replacement or pull-request merge was performed.
+
+## Reconciliation follow-up
+
+See [source-to-regression reconciliation](NATIVE-COMPOSER-VERIFICATION.md) for
+historical requirement sources, the eleven working-area mappings, explicit limits
+and the newly discovered Android preflight-refusal ownership correction. Its
+native results are pending; prior successes do not certify the new correction.
