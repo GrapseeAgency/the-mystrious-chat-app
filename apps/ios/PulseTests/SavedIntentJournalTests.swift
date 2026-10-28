@@ -9,7 +9,7 @@ final class SavedIntentJournalTests: XCTestCase {
     private func receipt(_ intent: PulseSavedIntent, saved: Bool, revision: String, outcome: String = "applied") -> WireSavedStateReceipt {
         WireSavedStateReceipt(savedReceiptVersion: 2, userId: intent.owner, messageId: intent.messageId,
             saved: saved, savedAt: saved ? "2026-10-28T00:00:00.000Z" : nil,
-            revision: revision, clientId: intent.clientId, outcome: outcome)
+            revision: revision, clientId: intent.clientId, outcome: outcome, visible: saved)
     }
     func testJournalAndOptimisticMarkerSurviveReopenAndLaterUnsaveWinsOverOlderRefresh() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path

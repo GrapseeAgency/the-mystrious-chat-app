@@ -475,17 +475,21 @@ internal fun MirrorHome(
         // is not a composable context).
         if (searchQuery.length >= 2 && repository != null) {
             item {
-                var cursor by remember(searchQuery, repository) { mutableStateOf<String?>(null) }
-                var next by remember(searchQuery, repository) { mutableStateOf<String?>(null) }
-                var previous by remember(searchQuery, repository) { mutableStateOf(emptyList<String?>()) }
-                var loading by remember(searchQuery, repository) { mutableStateOf(false) }
-                var hits by remember(searchQuery) { mutableStateOf<List<MessageHit>?>(null) }
-                var searchError by remember(searchQuery) { mutableStateOf<String?>(null) }
-                LaunchedEffect(searchQuery, repository, cursor) {
+                val searchOwner = repository.attachmentSessionKey()
+                var cursor by remember(searchQuery, repository, searchOwner) { mutableStateOf<String?>(null) }
+                var next by remember(searchQuery, repository, searchOwner) { mutableStateOf<String?>(null) }
+                var previous by remember(searchQuery, repository, searchOwner) { mutableStateOf(emptyList<String?>()) }
+                var loading by remember(searchQuery, repository, searchOwner) { mutableStateOf(false) }
+                var hits by remember(searchQuery, searchOwner) { mutableStateOf<List<MessageHit>?>(null) }
+                var searchError by remember(searchQuery, searchOwner) { mutableStateOf<String?>(null) }
+                LaunchedEffect(searchQuery, repository, cursor, searchOwner) {
                     hits = null; loading = true; searchError = null
                     val account = repository.boundToCurrentAccount()
                     kotlinx.coroutines.delay(250)
                     account.observeSearchPage(searchQuery, cursor).collect {
+                        if (repository.attachmentSessionKey() != searchOwner) {
+                            hits = emptyList(); next = null; loading = false; return@collect
+                        }
                         hits = it.getOrNull()?.items; next = it.getOrNull()?.nextCursor
                         loading = false; searchError = it.exceptionOrNull()?.message
                     }

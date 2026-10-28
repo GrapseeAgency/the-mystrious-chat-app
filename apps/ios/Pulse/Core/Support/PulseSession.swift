@@ -421,6 +421,7 @@ public final class PulseSession: ObservableObject {
     private let savedRefresh = PulseCoalescedRefresh(initialDelay: 0)
     private var savedSyncTimer: Task<Void, Never>?
     private var savedRefreshIds = Set<String>()
+    private var savedScanAfter = ""
     private var savedFullRefresh = true
     private var savedReplayBusy = false
 
@@ -455,16 +456,20 @@ public final class PulseSession: ObservableObject {
             do {
                 if !ids.isEmpty { try await self.refreshSavedStates(ids, store: store, client: client, epoch: epoch) }
                 if full {
-                    try store.seedSavedVersions(owner: owner)
+                    if self.savedScanAfter.isEmpty { try store.seedSavedVersions(owner: owner) }
                     let prefix = "saved-version:v1|\(owner)|"
-                    var after = ""
-                    while true {
+                    var continuing = true
+                    // Yield between bounded chunks so incoming targeted changes
+                    // and new queued writes cannot wait behind a huge library.
+                    for _ in 0..<10 {
                         guard !Task.isCancelled, self.generation == epoch else { return }
-                        let keys = try store.savedVersionPage(owner: owner, after: after)
-                        if keys.isEmpty { break }
+                        let keys = try store.savedVersionPage(owner: owner, after: self.savedScanAfter)
+                        if keys.isEmpty { self.savedScanAfter = ""; continuing = false; break }
                         try await self.refreshSavedStates(keys.map { String($0.dropFirst(prefix.count)) }, store: store, client: client, epoch: epoch)
-                        after = keys.last!
+                        self.savedScanAfter = keys.last!
+                        if keys.count < 100 { self.savedScanAfter = ""; continuing = false; break }
                     }
+                    if continuing { self.savedFullRefresh = true; self.requestSavedSync(ids: []) }
                 }
             } catch { if self.generation == epoch { self.savedFullRefresh = true } }
         }
@@ -489,8 +494,9 @@ public final class PulseSession: ObservableObject {
 
     private var savedActions: [String: UUID] = [:]
 
-    /// Shared by room Save and library Unsave. A receipt is not UI success until
-    /// the original account's marker has committed; never rewrite a tapped body.
+    /// Shared by room Save and library Unsave. Local UI success means both the
+    /// intent and marker committed; pending/conflict status distinguishes cloud
+    /// confirmation. Never rewrite message content from a tapped snapshot.
     public func setMessageSaved(_ requested: WireChatMessage, saved: Bool) async throws {
         try Task.checkCancellation()
         guard ready, let viewer, let store, savedActions[requested.id] == nil else {
@@ -1088,7 +1094,7 @@ public final class PulseSession: ObservableObject {
         generation = UUID()
         savedRefresh.cancel(); savedSyncTimer?.cancel(); savedSyncTimer = nil
         savedSyncObservation?.cancel(); savedSyncObservation = nil; savedSyncStatus = nil
-        savedRefreshIds.removeAll(); savedFullRefresh = true; savedReplayBusy = false
+        savedRefreshIds.removeAll(); savedScanAfter = ""; savedFullRefresh = true; savedReplayBusy = false
         notificationRefreshTask?.cancel(); notificationRefreshTask = nil
         readReplayID = UUID()
         readReplayTask?.cancel()

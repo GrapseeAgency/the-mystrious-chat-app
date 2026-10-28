@@ -28,7 +28,7 @@ export const SERVER_EVENTS = [
   'joined', 'presence:snapshot', 'typing',
   'message:new', 'message:deleted', 'message:read',
   'message:react', 'message:edited', 'message:pinned', 'message:viewed',
-  'poll:voted', 'link:preview', 'translation:added', 'conversation:updated',
+  'poll:voted', 'link:preview', 'translation:added', 'conversation:updated', 'saved:changed', 'private-feeds:changed',
   'voice:roster', 'voice:ptt', 'voice:chunk', 'voice:transcript',
   'stage:state', 'stage:ended',
   'space:state',
@@ -46,7 +46,7 @@ export type ServerSocketEvent = (typeof SERVER_EVENTS)[number]
 export const NOTIFY_EVENTS = [
   'message:new', 'message:deleted', 'message:read',
   'message:react', 'message:edited', 'message:pinned', 'message:viewed',
-  'poll:voted', 'link:preview', 'translation:added', 'conversation:updated',
+  'poll:voted', 'link:preview', 'translation:added', 'conversation:updated', 'saved:changed', 'private-feeds:changed',
 ] as const
 
 // ─────────────────────────────────────────────────────────────
@@ -371,3 +371,7 @@ export interface WireConversationSummary {
 export interface WireConversationsPage {
   conversations: WireConversationSummary[]
 }
+
+/** Owner-only invalidations; payloads contain no message bodies or private counts. */
+export interface SavedChangedEvent { userId: string; messageId: string }
+export interface PrivateFeedsChangedEvent { userId: string }

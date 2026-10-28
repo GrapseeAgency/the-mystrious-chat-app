@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { Prisma } from '../../../../../prisma/generated-client'
 import {
   mapUser,
+  notifySocket,
   normalizeColor,
   normalizeUsername,
   safeJson,
@@ -176,6 +177,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
   try {
     const user = await db.user.update({ where: { id }, data })
+    if (data.name !== undefined) await notifySocket('private-feeds:changed', [id], { userId: id })
     return NextResponse.json({ user: mapUser(user) })
   } catch (error) {
     // Availability checks are advisory. Two owners can pass the check before

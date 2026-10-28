@@ -1897,7 +1897,7 @@ extension PulseStore {
             guard savedSnapshotVersions.accepts(state.messageId, request: snapshot) else { return }
             try Self.savedMetadata(db, key: Self.savedVersionKey(state.userId,state.messageId), json: state.revision!)
             if try !Self.savedPending(db, owner: state.userId, id: state.messageId) {
-                if state.saved {
+                if state.saved && state.visible == true {
                     try db.execute(sql: "INSERT INTO savedMessages(messageId,conversationId,savedAt) SELECT id,conversationId,? FROM message WHERE id=? ON CONFLICT(messageId) DO UPDATE SET savedAt=excluded.savedAt", arguments: [state.savedAt,state.messageId])
                 } else { try db.execute(sql: "DELETE FROM savedMessages WHERE messageId=?", arguments: [state.messageId]) }
             }

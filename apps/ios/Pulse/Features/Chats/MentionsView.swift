@@ -34,11 +34,12 @@ struct MentionsView: View {
                         if nextCursor != nil || !previous.isEmpty {
                             HStack {
                                 Button("Newer results") {
+                                    guard !loading, !previous.isEmpty else { return }
                                     loading = true; entries = []; cursor = previous.removeLast(); reloadTick += 1
                                 }.disabled(loading || previous.isEmpty)
                                 Spacer()
                                 Button("Search older history") {
-                                    guard let next = nextCursor else { return }
+                                    guard !loading, let next = nextCursor else { return }
                                     loading = true; entries = []; previous.append(cursor); cursor = next; reloadTick += 1
                                 }.disabled(loading || nextCursor == nil)
                             }.font(.footnote).tint(PulseTheme.accent).padding(.vertical, 8)
@@ -162,7 +163,10 @@ struct MentionsView: View {
             entries = (page.items ?? []).filter { $0.isVisible() }; nextCursor = page.nextCursor; errorText = nil
         } catch {
             guard !Task.isCancelled, session.sessionGeneration == epoch, loadTicket == ticket else { return }
-            if let failure = error as? PulseAPIClient.Failure, [401, 403, 404].contains(failure.status ?? 0) { entries = [] }
+            if let failure = error as? PulseAPIClient.Failure {
+                if [401, 403, 404].contains(failure.status ?? 0) { entries = [] }
+                if failure.status == 400 { entries = []; cursor = nil; nextCursor = nil; previous = [] }
+            }
             errorText = "Could not refresh mentions. Please try again."
         }
     }

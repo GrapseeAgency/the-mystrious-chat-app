@@ -20,6 +20,7 @@ data class SavedPageIndexDto(val ids: List<String>, val cursor: String?, val nex
 
 fun SavedStateReceiptDto.validateSavedState(owner: String, id: String, intent: SavedIntentDto? = null) {
     require(savedReceiptVersion == 2 && userId == owner && messageId == id && !revision.isNullOrBlank() && revision.length <= 128)
+    require(visible != null && (visible == false || saved))
     if (saved) java.time.Instant.parse(requireNotNull(savedAt)) else require(savedAt == null)
     if (intent != null) {
         require(clientId == intent.clientId && outcome in setOf("applied", "superseded", "conflict", "rejected"))
@@ -29,3 +30,6 @@ fun SavedStateReceiptDto.validateSavedState(owner: String, id: String, intent: S
 
 @Serializable
 data class SavedOfflineCursorDto(val owner: String, val at: String, val id: String)
+
+@Serializable
+data class PrivateFeedsChangedDto(val userId: String)

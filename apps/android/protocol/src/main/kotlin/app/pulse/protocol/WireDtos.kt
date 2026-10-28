@@ -187,6 +187,7 @@ data class SavedStateReceiptDto(
     val revision: String? = null,
     val clientId: String? = null,
     val outcome: String? = null,
+    val visible: Boolean? = null,
 )
 
 // R5-B: POST /api/conversations/[id]/messages response envelope

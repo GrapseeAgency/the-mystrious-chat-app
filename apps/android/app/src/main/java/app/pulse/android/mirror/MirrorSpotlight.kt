@@ -291,13 +291,14 @@ internal fun MirrorSpotlightOverlay(
         }
     }
 
-    var searchCursor by remember(query, repository, viewerId) { mutableStateOf<String?>(null) }
-    var searchNext by remember(query, repository, viewerId) { mutableStateOf<String?>(null) }
-    var searchPrevious by remember(query, repository, viewerId) { mutableStateOf(emptyList<String?>()) }
-    var msgHits by remember { mutableStateOf<List<MessageHit>?>(null) }
-    var msgSearching by remember { mutableStateOf(false) }
-    var msgError by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(query, repository, searchCursor, viewerId) {
+    val searchOwner = repository.attachmentSessionKey()
+    var searchCursor by remember(query, repository, viewerId, searchOwner) { mutableStateOf<String?>(null) }
+    var searchNext by remember(query, repository, viewerId, searchOwner) { mutableStateOf<String?>(null) }
+    var searchPrevious by remember(query, repository, viewerId, searchOwner) { mutableStateOf(emptyList<String?>()) }
+    var msgHits by remember(searchOwner) { mutableStateOf<List<MessageHit>?>(null) }
+    var msgSearching by remember(searchOwner) { mutableStateOf(false) }
+    var msgError by remember(searchOwner) { mutableStateOf<String?>(null) }
+    LaunchedEffect(query, repository, searchCursor, viewerId, searchOwner) {
         msgHits = null
         msgError = null
         val term = query.trim()
@@ -310,6 +311,9 @@ internal fun MirrorSpotlightOverlay(
         val account = repository.boundToCurrentAccount()
         delay(250)
         account.observeSearchPage(term, searchCursor).collect {
+            if (repository.attachmentSessionKey() != searchOwner) {
+                msgHits = emptyList(); searchNext = null; msgSearching = false; return@collect
+            }
             msgError = it.exceptionOrNull()?.message
             msgHits = it.getOrNull()?.items
             searchNext = it.getOrNull()?.nextCursor

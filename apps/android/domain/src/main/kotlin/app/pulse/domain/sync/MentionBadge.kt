@@ -14,6 +14,9 @@ suspend fun mentionBadgeSnapshot(now: () -> Long = System::currentTimeMillis,
     fetch: suspend (String?) -> FeedPage<MentionItem>): MentionBadgeSnapshot {
     val retained = linkedMapOf<String, MentionItem>()
     var cursor: String? = null
+    var checkpoint: String? = null
+    var power = 1L
+    var distance = 0L
     while (true) {
         currentCoroutineContext().ensureActive()
         val page = fetch(cursor)
@@ -24,7 +27,11 @@ suspend fun mentionBadgeSnapshot(now: () -> Long = System::currentTimeMillis,
         page.items.filter { it.isVisible(now()) }.forEach { if (retained.size < 100) retained[it.messageId] = it }
         if (retained.size >= 100 || !page.hasMore) return MentionBadgeSnapshot(retained.size,
             retained.values.mapNotNull { messageExpiryEpochMs(it.expiresAt) }.minOrNull())
-        cursor = page.nextCursor
+        val next = checkNotNull(page.nextCursor)
+        check(next != checkpoint) { "Mention cursor cycle" }
+        distance++
+        if (distance == power) { checkpoint = next; power = minOf(power * 2, Long.MAX_VALUE / 2); distance = 0 }
+        cursor = next
     }
 }
 

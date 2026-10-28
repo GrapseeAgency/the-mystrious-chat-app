@@ -810,6 +810,7 @@ internal fun MirrorMentionsPage(
             if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
             result.fold(onSuccess = { items = it.items; next = it.nextCursor; errorText = null }, onFailure = {
                 if (items == null || (it as? app.pulse.domain.model.PulseApiException)?.status in listOf(401, 403, 404)) items = emptyList()
+                if ((it as? app.pulse.domain.model.PulseApiException)?.status == 400) { cursor = null; next = null; previous = emptyList(); items = emptyList() }
                 errorText = it.message ?: "Could not load mentions."
             })
             loading = false
@@ -827,8 +828,8 @@ internal fun MirrorMentionsPage(
         onRefresh = { tick++ },
     ) {
         app.pulse.feature.chat.FeedPageButtons(previous.isNotEmpty(), next != null, loading,
-            onPrevious = { loading = true; items = null; cursor = previous.last(); previous = previous.dropLast(1) },
-            onNext = { next?.let { value -> loading = true; items = null; previous = previous + listOf(cursor); cursor = value } })
+            onPrevious = { if (loading || previous.isEmpty()) return@FeedPageButtons; loading = true; items = null; cursor = previous.last(); previous = previous.dropLast(1) },
+            onNext = { if (loading) return@FeedPageButtons; next?.let { value -> loading = true; items = null; previous = previous + listOf(cursor); cursor = value } })
         when {
             list == null -> Column(Modifier.padding(top = 16.dp)) {
                 Box(

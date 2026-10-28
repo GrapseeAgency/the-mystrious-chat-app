@@ -28,7 +28,7 @@ class SocketContractsTest {
             "joined", "presence:snapshot", "typing",
             "message:new", "message:deleted", "message:read",
             "message:react", "message:edited", "message:pinned", "message:viewed",
-            "poll:voted", "link:preview", "translation:added", "conversation:updated",
+            "poll:voted", "link:preview", "translation:added", "conversation:updated", "saved:changed", "private-feeds:changed",
             "voice:roster", "voice:ptt", "voice:chunk", "voice:transcript",
             "stage:state", "stage:ended",
             "space:state",
@@ -37,11 +37,11 @@ class SocketContractsTest {
         val notify = listOf(
             "message:new", "message:deleted", "message:read",
             "message:react", "message:edited", "message:pinned", "message:viewed",
-            "poll:voted", "link:preview", "translation:added", "conversation:updated",
+            "poll:voted", "link:preview", "translation:added", "conversation:updated", "saved:changed", "private-feeds:changed",
         )
         assertEquals(22, SocketEvents.CLIENT_EVENTS.size)
-        assertEquals(27, SocketEvents.SERVER_EVENTS.size)
-        assertEquals(11, SocketEvents.NOTIFY_EVENTS.size)
+        assertEquals(29, SocketEvents.SERVER_EVENTS.size)
+        assertEquals(13, SocketEvents.NOTIFY_EVENTS.size)
         assertEquals(client, SocketEvents.CLIENT_EVENTS)
         assertEquals(server, SocketEvents.SERVER_EVENTS)
         assertEquals(notify, SocketEvents.NOTIFY_EVENTS)

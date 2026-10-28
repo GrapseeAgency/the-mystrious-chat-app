@@ -231,8 +231,8 @@ internal fun MirrorSavedSheet(
             syncStatus?.let { Text(it, color = MirrorArt.Dim, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp)) }
             if (cachedPage) Text("Cached saved messages · reopen to refresh online", color = MirrorArt.Dim, fontSize = 12.sp)
             app.pulse.feature.chat.FeedPageButtons(previous.isNotEmpty(), next != null, loading,
-                onPrevious = { loading = true; selected = emptyList(); cursor = previous.last(); previous = previous.dropLast(1) },
-                onNext = { next?.let { value -> loading = true; selected = emptyList(); previous = previous + listOf(cursor); cursor = value } })
+                onPrevious = { if (loading || previous.isEmpty()) return@FeedPageButtons; loading = true; selected = emptyList(); cursor = previous.last(); previous = previous.dropLast(1) },
+                onNext = { if (loading) return@FeedPageButtons; next?.let { value -> loading = true; selected = emptyList(); previous = previous + listOf(cursor); cursor = value } })
             if (error != null) {
                 androidx.compose.material3.TextButton(onClick = { retry++ }) {
                     Text("Could not refresh · Retry", color = MirrorArt.Dim)

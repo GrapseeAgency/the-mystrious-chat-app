@@ -213,7 +213,13 @@ struct ChatsView: View {
         }
         .onAppear { viewModel.start(session: session, prefs: prefs) }
         .onDisappear { viewModel.cancelSelfOpening(); viewModel.stop() }
-        .onChange(of: session.sessionGeneration) { _, _ in viewModel.cancelSelfOpening() }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            viewModel.cancelSelfOpening()
+            viewModel.searchTextChanged(viewModel.query, session: session)
+        }
+        .onChange(of: session.ready) { _, ready in
+            if ready { viewModel.searchTextChanged(viewModel.query, session: session) }
+        }
         .onChange(of: newChatOpen) { _, open in if open { viewModel.cancelSelfOpening() } }
         .onChange(of: callsOpen) { _, open in if open { viewModel.cancelSelfOpening() } }
         .onChange(of: isActive) { _, active in
@@ -3078,7 +3084,7 @@ final class ChatsViewModel: ObservableObject {
         session.signals.sink { [weak self, weak session] signal in
             guard let self, let session else { return }
             switch signal {
-            case .messageNew, .messageDeleted, .messageEnvelope, .conversationUpdated, .connectionState:
+            case .messageNew, .messageDeleted, .messageEnvelope, .conversationUpdated, .connectionState, .privateFeedsChanged:
                 self.invalidateMentionBadge(session: session)
             default: break
             }
@@ -3252,7 +3258,7 @@ final class ChatsViewModel: ObservableObject {
         searchError = nil
         let epoch = session.sessionGeneration, client = session.api
         let trimmed = value.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else {
+        guard session.ready, client.userId == session.viewer?.id, !trimmed.isEmpty else {
             deferredQuery = ""
             serverHits = nil
             serverTotal = nil

@@ -26,9 +26,11 @@ async function fixture(run, routeDatabase = db => db) {
     for (const id of ['owner', 'other']) await db.user.create({ data: { id, name: id, about: 'kept bio', color: 'amber',
       sessionTokenHash: hashSessionToken(`synthetic-${id}`), legacyTokenHashes: '[]', preferences: '{"lastSeenVisible":false}' } })
     const requireActionOwner = await load('src/lib/wallet-authorization.ts', { db, bearerToken, tokenAccepted }, 'requireActionOwner')
+    const feedHints = []
     const { PATCH } = await load('src/app/api/users/[id]/route.ts', {
       db: routeDatabase(db), Prisma, requireActionOwner, NextResponse: { json: Response.json }, privacyPreferenceEnabled,
       safeJson: r => r.json(), strField: v => typeof v === 'string' ? v.trim() : '',
+      notifySocket: async (...args) => feedHints.push(args),
       USER_NAME_MAX: 32, ABOUT_MAX: 140, STATUS_ICON_IDS: ['coffee'],
       normalizeColor: v => v, normalizeUsername: v => /^[a-z0-9_]{3,20}$/.test(v) ? v : null,
       suggestUsername: async v => `${v}_2`, mapUser: u => ({ id: u.id, name: u.name, about: u.about, avatar: u.avatar, coverImage: u.coverImage, statusText: u.statusText }),
@@ -36,7 +38,7 @@ async function fixture(run, routeDatabase = db => db) {
     const patch = (body, token = 'synthetic-owner', id = 'owner') => PATCH(new Request('https://profile.test', {
       method: 'PATCH', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body),
     }), { params: Promise.resolve({ id }) })
-    await run({ db, patch, PATCH })
+    await run({ db, patch, PATCH, feedHints })
   } finally { await db.$disconnect(); await rm(dir, { recursive: true, force: true }) }
 }
 
@@ -115,4 +117,11 @@ test('malformed field types cannot silently clear a bio, handle, photo or status
   assert.equal((await patch({ username: 'owned_handle' })).status, 200)
   assert.equal((await patch({ username: '' })).status, 200)
   assert.equal((await db.user.findUnique({ where: { id: 'owner' } })).username, null)
+}))
+
+test('profile rename invalidates only the owner private feeds after the write', () => fixture(async ({ patch, feedHints }) => {
+  assert.equal((await patch({name:'New name'})).status,200)
+  assert.deepEqual(feedHints,[['private-feeds:changed',['owner'],{userId:'owner'}]])
+  await patch({name:'Rejected'},'synthetic-other')
+  assert.equal(feedHints.length,1)
 }))

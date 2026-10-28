@@ -65,13 +65,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * Saved library state holder (Wave 2, spec §1 row 14): refresh → Room-cached
- * flow, local search over sender/content/conversation (the server has NO
- * pagination/search - the fetch is capped at 100 newest), unsave via the explicit
- * removal endpoint. "Open original" = navigate room + jump-to-message (the shell wires
- * the flash).
- */
+/** Bounded server/offline saved pages, current-page filtering, durable explicit
+ * removal and exact-message navigation. Partial pages never clear the library. */
 @HiltViewModel
 class SavedLibraryViewModel @Inject constructor(
     private val repo: PulseRepository,

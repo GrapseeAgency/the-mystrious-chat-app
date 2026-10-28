@@ -8,6 +8,8 @@ struct PulseMentionBadgeSnapshot {
     static func load(fetch: (String?) async throws -> WireMentionEntriesPage) async throws -> Self {
         var retained: [String: WireMentionEntry] = [:]
         var cursor: String?
+        var checkpoint: String?
+        var power = 1, distance = 0
         while true {
             try Task.checkCancellation()
             let page = try await fetch(cursor)
@@ -22,7 +24,12 @@ struct PulseMentionBadgeSnapshot {
             if retained.count >= 100 || !more {
                 return Self(count: retained.count, expiresAt: retained.values.compactMap { PulseFormat.date($0.expiresAt) }.min())
             }
-            cursor = page.nextCursor
+            guard let next = page.nextCursor, next != checkpoint else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Mention cursor cycle.")
+            }
+            distance += 1
+            if distance == power { checkpoint = next; power = min(power * 2, Int.max / 2); distance = 0 }
+            cursor = next
         }
     }
 }

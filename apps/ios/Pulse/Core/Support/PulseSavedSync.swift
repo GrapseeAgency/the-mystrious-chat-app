@@ -29,6 +29,7 @@ extension WireSavedStateReceipt {
     func validate(owner: String, id: String, intent: PulseSavedIntent? = nil) throws {
         guard savedReceiptVersion == 2, userId == owner, messageId == id,
               let revision, !revision.isEmpty, revision.count <= 128,
+              let visible, !visible || saved,
               saved ? savedAt.flatMap(PulseFormat.date) != nil : savedAt == nil else {
             throw PulseAPIClient.Failure(kind: .validation, message: "Saved state was not confirmed.")
         }

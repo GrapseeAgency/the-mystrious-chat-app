@@ -888,7 +888,7 @@ function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unkno
 // ---------------------------------------------------------------------------
 // Internal HTTP relay endpoints (called by Next.js API routes)
 // ---------------------------------------------------------------------------
-const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'message:viewed', 'poll:voted', 'link:preview', 'translation:added', 'conversation:updated', 'saved:changed', 'gcall:ring'])
+const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'message:viewed', 'poll:voted', 'link:preview', 'translation:added', 'conversation:updated', 'saved:changed', 'private-feeds:changed', 'gcall:ring'])
 
 type NotifyBody = { event?: unknown; recipients?: unknown; payload?: unknown }
 

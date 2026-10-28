@@ -399,6 +399,7 @@ public struct WireSavedStateReceipt: Codable, Sendable {
     public var revision: String? = nil
     public var clientId: String? = nil
     public var outcome: String? = nil
+    public var visible: Bool? = nil
 }
 
 /// POST /api/uploads {dataUrl} - media upload verdict (JSON, NOT multipart).

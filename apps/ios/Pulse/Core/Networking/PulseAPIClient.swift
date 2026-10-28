@@ -917,6 +917,9 @@ public struct PulseAPIClient: Sendable {
         let page: WireMentionEntriesPage = try await get("/api/mentions?userId=\(q(userId))&limit=50" + (cursor.map { "&cursor=\(q($0))" } ?? ""))
         try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor)
         guard page.items != nil else { throw Failure(kind: .server, message: "Mention feed is missing.") }
+        guard let rows = page.items, rows.count <= 100, Set(rows.map(\.id)).count == rows.count else {
+            throw Failure(kind: .validation, message: "Invalid mention page identities.")
+        }
         try Task.checkCancellation()
         return page
     }
@@ -1190,7 +1193,12 @@ public struct PulseAPIClient: Sendable {
         }
         let page = try await get(Self.searchPath(userId: userId, query: query) + (cursor.map { "&cursor=\(q($0))" } ?? ""), as: WireSearchPage.self)
         guard page.messages != nil else { throw Failure(kind: .server, message: "Search results are missing.") }
-        if requirePagination { try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor) }
+        if requirePagination {
+            try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor)
+            guard let rows = page.messages, rows.count <= 30, Set(rows.map(\.id)).count == rows.count else {
+                throw Failure(kind: .validation, message: "Invalid search page identities.")
+            }
+        }
         try Task.checkCancellation()
         return page
     }
@@ -1315,17 +1323,21 @@ public struct PulseAPIClient: Sendable {
         return WireMessageEnvelope.extractOptional(from: data)
     }
 
-    /// GET /api/users/{id}/saved - saved/starred library, newest-first,
-    /// cap 100, NO server pagination/search (local filter is the native
-    /// capability, spec §1 row 14).
+    /// One newest-first saved window. Empty pages may still have continuation.
     public func savedPage(userId: String, cursor: String? = nil) async throws -> WireSavedPage {
         let page: WireSavedPage = try await get("/api/users/\(q(userId))/saved?limit=100" + (cursor.map { "&cursor=\(q($0))" } ?? ""))
         try validateFeedPage(version: page.feedPageVersion, more: page.hasMore, next: page.nextCursor, cursor: cursor)
         guard page.items != nil else { throw Failure(kind: .validation, message: "Saved results are missing.") }
+        guard let rows = page.items, rows.count <= 100, Set(rows.map { $0.message.id }).count == rows.count,
+              rows.allSatisfy({ !$0.message.id.isEmpty && !$0.message.conversationId.isEmpty && $0.message.conversationId == $0.conversation.id &&
+                  ($0.revision == nil || (!$0.revision!.isEmpty && $0.revision!.count <= 128)) }) else {
+            throw Failure(kind: .validation, message: "Invalid saved page identities.")
+        }
         try Task.checkCancellation()
         return page
     }
 
+    /// Legacy first-page adapter; production library views use savedPage.
     public func savedLibrary(userId: String) async throws -> [WireSavedItem] {
         let page: WireSavedPage = try await get("/api/users/\(userId)/saved")
         return page.items ?? []

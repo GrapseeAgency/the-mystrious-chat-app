@@ -97,6 +97,7 @@ class PulseSocketClient(
         data class MessageEnvelope(val event: String, val conversationId: String, val dto: ChatMessageDto?) : Signal
         data class Read(val conversationId: String, val userId: String, val lastReadAt: String?,
             val messageIds: List<String> = emptyList(), val readerMembershipId: String? = null, val all: Boolean = false) : Signal
+        data class PrivateFeedsChanged(val userId: String) : Signal
         data class SavedChanged(val userId: String, val messageId: String) : Signal
         data class ConversationUpdated(val conversationId: String) : Signal
         data class Typing(val conversationId: String, val userId: String, val userName: String, val isTyping: Boolean) : Signal
@@ -286,6 +287,9 @@ class PulseSocketClient(
             decode<ReadEventPayload>(args)?.let {
                 _signals.tryEmit(Signal.Read(it.conversationId, it.userId, it.lastReadAt, it.messageIds, it.readerMembershipId, it.all))
             }
+        }
+        sock.on(SocketEvents.PRIVATE_FEEDS_CHANGED) { args ->
+            decode<app.pulse.protocol.PrivateFeedsChangedDto>(args)?.let { _signals.tryEmit(Signal.PrivateFeedsChanged(it.userId)) }
         }
         sock.on(SocketEvents.SAVED_CHANGED) { args ->
             decode<app.pulse.protocol.SavedChangedDto>(args)?.let {

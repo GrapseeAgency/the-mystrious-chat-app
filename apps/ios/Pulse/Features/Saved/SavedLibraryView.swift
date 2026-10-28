@@ -1,13 +1,8 @@
 import SwiftUI
 import Combine
 
-/// Wave 2 saved library (spec §1 row 14) - GET /api/users/{id}/saved (newest
-/// first, cap 100, NO server pagination/search) mirrored into the GRDB cache
-/// via one atomic snapshot replacement, then observed with a
-/// LOCAL search over sender/content/conversation, an honest loading/error/
-/// empty state, row Unsave via explicit repeat-safe removal, and "open original"
-/// = resolve the full conversation → Chats stack pushes the room with a
-/// jump-to-message target (the same path global search uses).
+/// Bounded online/offline saved pages with current-page filtering and durable
+/// explicit removal. Partial responses do not replace the whole local library.
 struct SavedLibraryView: View {
     @ObservedObject var session: PulseSession
     /// (conversation, messageId) - RootView dismisses + switches to Chats +

@@ -628,6 +628,7 @@ export type PulseSocketEvent =
   | 'translation:added'
   | 'conversation:updated'
   | 'saved:changed'
+  | 'private-feeds:changed'
 
 /**
  * Relay a realtime event to the socket.io mini service so it can fan out

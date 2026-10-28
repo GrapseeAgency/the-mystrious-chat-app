@@ -150,9 +150,9 @@ test('saved state reconciliation withdraws unavailable bodies even when the book
   await mutateSavedIntent(db, 'me', 'reply', true, { clientId: 'save-visible', expectedRevision: '0' })
   assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].saved, true)
   await db.$executeRaw`UPDATE Message SET expiresAt=0 WHERE id='root'`
-  assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].saved, false)
+  assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].visible, false)
   assert.equal(await db.savedMessage.count(), 1)
   await db.$executeRaw`UPDATE Message SET expiresAt=NULL WHERE id='root'`
   await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId='me'`
-  assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].saved, false)
+  assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].visible, false)
 }))

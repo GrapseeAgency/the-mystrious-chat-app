@@ -546,11 +546,12 @@ interface PulseRepository {
     /** POST /api/messages/{id}/pin-state {userId, pinned:true} - replay-safe addition, never a toggle. */
     suspend fun pinMessage(messageId: String): Result<Message>
 
-    /** Explicit desired bookmark state; retrying Save must never remove it. */
+    /** Durable pending/conflict status; a local bookmark is not a cloud receipt. */
     fun observeSavedSyncStatus(): Flow<String?> = kotlinx.coroutines.flow.flowOf(null)
     fun observePendingSaved(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
     suspend fun flushSavedIntents(): Result<Int> = Result.success(0)
     suspend fun refreshSavedStates(ids: List<String>): Result<Unit> = Result.success(Unit)
+    /** Journal explicit desire and local marker atomically; ordered replay owns cloud confirmation. */
     suspend fun setMessageSaved(messageId: String, saved: Boolean): Result<Boolean>
 
     /** GET /api/conversations/{id}/pinned?userId= - pinned rows, pinnedAt asc (also upserts Room). */
@@ -804,11 +805,8 @@ interface PulseRepository {
      */
     suspend fun unfurlMessage(messageId: String)
 
-    /**
-     * GET /api/users/{id}/saved - refetch the saved library (newest-first,
-     * server cap 100). Upserts the carried message rows + savedMessages rows
-     * and PRUNES local rows the server no longer lists (server is truth).
-     */
+    /** Legacy first-page adapter. Paged UI must use savedLibraryPage; partial
+     * pages never authorize clearing unrelated local markers. */
     suspend fun refreshSavedLibrary(): Result<List<SavedItem>>
 
     /** Live saved library from the Room cache (skips messages missing from cache gracefully). */
@@ -818,7 +816,7 @@ interface PulseRepository {
 
     fun observeSavedLibrary(): Flow<List<SavedItem>>
 
-    /** POST /api/messages/{id}/save - reuse the toggle; unsaves (saved=false) also drops the local row. */
+    /** Queue explicit unsave with a stable causal identity; never toggle on replay. */
     suspend fun unsaveMessage(messageId: String): Result<Boolean>
 
     /** GET /api/conversations/{id}/topics?userId= - refresh the topic rail (prune not-in-response rows). */

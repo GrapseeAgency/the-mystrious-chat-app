@@ -129,6 +129,9 @@ class MentionsViewModel @Inject constructor(
             val result = account.mentionsPage(cursor)
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (request != generation || epoch == null || repo.attachmentSessionKey() != epoch) return@launch
+            if ((result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.status == 400) {
+                cursor = null; nextCursor = null; previous.clear()
+            }
             val page = result.getOrNull()
             nextCursor = page?.nextCursor
             _state.value = State(loading = false, items = page?.items.orEmpty().filter { it.isVisible() }, error = result.isFailure,

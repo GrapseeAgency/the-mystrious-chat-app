@@ -293,6 +293,7 @@ class PulseRepositoryImpl constructor(
         attachmentSession = java.util.UUID.randomUUID().toString()
         viewerId = null
         queueOwner.value = null
+        messageCacheChanges.value = messageEventClock.incrementAndGet()
         conversationSnapshots.clear()
         readStateRevisions.clear()
         socket.disconnect()
@@ -571,6 +572,9 @@ class PulseRepositoryImpl constructor(
                     is PulseSocketClient.Signal.Typing -> eventsBus.tryEmit(
                         PulseEvent.Typing(signal.conversationId, signal.userId, signal.userName, signal.isTyping),
                     )
+                    is PulseSocketClient.Signal.PrivateFeedsChanged -> {
+                        if (signal.userId == viewerId) eventsBus.tryEmit(PulseEvent.PrivateFeedsChanged)
+                    }
                     is PulseSocketClient.Signal.SavedChanged -> {
                         if (signal.userId == viewerId) {
                             eventsBus.tryEmit(PulseEvent.SavedChanged(signal.messageId))
@@ -1923,6 +1927,7 @@ class PulseRepositoryImpl constructor(
 
     private val savedOperations = Mutex()
     private val savedTransport = Mutex()
+    private val savedReplay = Mutex()
     private fun savedVersionKey(owner: String, id: String) = "saved-version:v1|$owner|$id"
     private fun savedIntentPrefix(owner: String, id: String? = null) = "saved-intent:v1|$owner|" + (id?.let { "$it|" } ?: "")
     private fun decodeSavedIntent(row: Wave7CacheEntity) = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.SavedIntentDto.serializer(), row.json)
@@ -1959,7 +1964,7 @@ class PulseRepositoryImpl constructor(
                     wave7Dao.upsert(Wave7CacheEntity(headKey, intent.clientId, 0))
                     wave7Dao.upsert(Wave7CacheEntity(savedVersionKey(owner, messageId), version, System.currentTimeMillis()))
                     wave7Dao.delete("saved-sync-notice:v1|$owner")
-                    if (saved) savedDao.upsertAll(listOf(SavedMessageEntity(messageId, checkNotNull(current).conversationId, java.time.Instant.now().toString())))
+                    if (saved) savedDao.upsertAll(listOf(SavedMessageEntity(messageId, checkNotNull(current).conversationId, java.time.format.DateTimeFormatterBuilder().appendInstant(3).toFormatter().format(java.time.Instant.now()))))
                     else savedDao.deleteById(messageId)
                     requireConversationOwner(owner, epoch)
                 }
@@ -1973,7 +1978,7 @@ class PulseRepositoryImpl constructor(
         wave7Dao.upsert(Wave7CacheEntity(savedVersionKey(owner, state.messageId), checkNotNull(state.revision), System.currentTimeMillis()))
         // A canonical snapshot must not erase a later locally queued desire.
         if (wave7Dao.lastSavedIntent(savedIntentPrefix(owner, state.messageId)) != null) return
-        if (!state.saved) savedDao.deleteById(state.messageId)
+        if (!state.saved || state.visible == false) savedDao.deleteById(state.messageId)
         else messageDao.byId(state.messageId)?.let { row ->
             savedDao.upsertAll(listOf(SavedMessageEntity(row.id, row.conversationId, checkNotNull(state.savedAt))))
         }
@@ -1983,7 +1988,7 @@ class PulseRepositoryImpl constructor(
         val owner = viewerId ?: return Result.success(0)
         val epoch = attachmentSession
         return try {
-            savedTransport.withLock {
+            savedReplay.withLock {
                 requireConversationOwner(owner, epoch)
                 val rows = wave7Dao.savedJournalPage(savedIntentPrefix(owner))
                 val blocked = mutableSetOf<String>()
@@ -1992,30 +1997,35 @@ class PulseRepositoryImpl constructor(
                     val intent = decodeSavedIntent(row)
                     check(intent.owner == owner && row.key == intent.key)
                     if (intent.messageId in blocked) continue
-                    when (val response = api.applySavedIntent(intent)) {
-                        is PulseResult.Success -> savedOperations.withLock {
-                            requireConversationOwner(owner, epoch)
-                            database.withTransaction {
-                                wave7Dao.acknowledgeReadIntent(row.key, row.json)
-                                acceptSavedState(owner, response.value)
-                                if (response.value.outcome in setOf("conflict", "rejected")) {
-                                    val text = if (response.value.outcome == "conflict") "Saved state changed on another device. Review it before trying again."
-                                        else "A saved change was refused because the message or access changed."
-                                    wave7Dao.upsert(Wave7CacheEntity("saved-sync-notice:v1|$owner", text, System.currentTimeMillis()))
-                                    eventsBus.tryEmit(PulseEvent.SavedSyncNotice(text))
-                                }
+                    var halt = false
+                    savedTransport.withLock {
+                        requireConversationOwner(owner, epoch)
+                        when (val response = api.applySavedIntent(intent)) {
+                            is PulseResult.Success -> savedOperations.withLock {
                                 requireConversationOwner(owner, epoch)
+                                database.withTransaction {
+                                    wave7Dao.acknowledgeReadIntent(row.key, row.json)
+                                    acceptSavedState(owner, response.value)
+                                    if (response.value.outcome in setOf("conflict", "rejected")) {
+                                        val text = if (response.value.outcome == "conflict") "Saved state changed on another device. Review it before trying again."
+                                            else "A saved change was refused because the message or access changed."
+                                        wave7Dao.upsert(Wave7CacheEntity("saved-sync-notice:v1|$owner", text, System.currentTimeMillis()))
+                                        eventsBus.tryEmit(PulseEvent.SavedSyncNotice(text))
+                                    }
+                                    requireConversationOwner(owner, epoch)
+                                }
+                                eventsBus.tryEmit(PulseEvent.SavedChanged(intent.messageId))
                             }
-                            eventsBus.tryEmit(PulseEvent.SavedChanged(intent.messageId))
-                        }
-                        is PulseResult.Failure -> {
-                            blocked.add(intent.messageId)
-                            wave7Dao.deferReadIntent(row.key, row.json, savedIntentPrefix(owner))
-                            // Preserve an unbound error, including proxy 4xx. Only an
-                            // owner/action-bound terminal verdict may retire this row.
-                            if (response.kind in setOf(PulseResult.Failure.Kind.NETWORK, PulseResult.Failure.Kind.AUTH, PulseResult.Failure.Kind.RATE_LIMITED) || response.status == null || (response.status ?: 0) >= 500) break
+                            is PulseResult.Failure -> {
+                                blocked.add(intent.messageId)
+                                wave7Dao.deferReadIntent(row.key, row.json, savedIntentPrefix(owner))
+                                // Preserve an unbound error, including proxy 4xx. Only an
+                                // owner/action-bound terminal verdict may retire this row.
+                                if (response.kind in setOf(PulseResult.Failure.Kind.NETWORK, PulseResult.Failure.Kind.AUTH, PulseResult.Failure.Kind.RATE_LIMITED) || response.status == null || (response.status ?: 0) >= 500) halt = true
+                            }
                         }
                     }
+                    if (halt) break
                 }
                 Result.success(wave7Dao.savedJournalPage(savedIntentPrefix(owner)).size)
             }
@@ -3634,6 +3644,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun mentionsPage(cursor: String?): Result<app.pulse.domain.model.FeedPage<MentionItem>> =
         ownedPeerRequest { owner -> api.mentions(owner, cursor) }.mapCatching { page ->
             validateFeedPage(page.feedPageVersion, page.hasMore, page.nextCursor, cursor)
+            require(page.items.size <= 100 && page.items.map { it.messageId }.toSet().size == page.items.size) { "Invalid mention page size or duplicate identities" }
             app.pulse.domain.model.FeedPage(page.items.map { m ->
                 MentionItem(m.messageId, m.conversationId, m.conversationName, m.author?.name ?: "", m.snippet, m.createdAt, m.expiresAt)
             }.filter { it.isVisible() }, page.nextCursor, page.hasMore)
@@ -3651,6 +3662,7 @@ class PulseRepositoryImpl constructor(
         if (query.trim().length > 64) return Result.failure(IllegalArgumentException("Search text must be 64 UTF-16 units or fewer."))
         return ownedPeerRequest { owner -> api.search(owner, query, cursor) }.mapCatching { page ->
             validateFeedPage(page.feedPageVersion, page.hasMore, page.nextCursor, cursor)
+            require(page.messages.size <= 30 && page.messages.map { it.id }.toSet().size == page.messages.size) { "Invalid search page size or duplicate identities" }
             val items = page.messages.map { hit ->
                 MessageHit(
                     id = hit.id,
@@ -3674,6 +3686,7 @@ class PulseRepositoryImpl constructor(
     }
 
     override fun observeMessageSearch(query: String): Flow<Result<List<MessageHit>>> = kotlinx.coroutines.flow.flow {
+        val owner = viewerId; val epoch = attachmentSession
         val watermark = messageEventClock.get()
         val result = searchMessages(query)
         val hits = result.getOrElse { emit(Result.failure(it)); return@flow }
@@ -3681,12 +3694,13 @@ class PulseRepositoryImpl constructor(
             messageCacheMutex.withLock {
                 // A selected result is a snapshot, not authorization to retain
                 // a body after a known edit/delete. Re-query to discover new matches.
-                hits.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+                if (viewerId != owner || attachmentSession != epoch) emptyList() else hits.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
             }
         }.withSearchHitExpiry().map { Result.success(it) })
     }
 
     override fun observeSearchPage(query: String, cursor: String?): Flow<Result<app.pulse.domain.model.FeedPage<MessageHit>>> = kotlinx.coroutines.flow.flow {
+        val owner = viewerId; val epoch = attachmentSession
         val watermark = messageEventClock.get()
         val result = searchMessagePage(query, cursor)
         val page = result.getOrElse { emit(Result.failure(it)); return@flow }
@@ -3694,9 +3708,9 @@ class PulseRepositoryImpl constructor(
             messageCacheMutex.withLock {
                 // A selected result is a snapshot, not authorization to retain
                 // a body after a known edit/delete. Re-query to discover new matches.
-                page.items.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+                if (viewerId != owner || attachmentSession != epoch) emptyList() else page.items.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
             }
-        }.withSearchHitExpiry().map { Result.success(page.copy(items = it)) })
+        }.withSearchHitExpiry().map { Result.success(if (viewerId == owner && attachmentSession == epoch) page.copy(items = it) else page.copy(items = emptyList(), nextCursor = null, hasMore = false)) })
     }
 
     private val historyActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -3999,6 +4013,11 @@ class PulseRepositoryImpl constructor(
                             requireConversationOwner(owner, epoch)
                             kotlin.coroutines.coroutineContext.ensureActive()
                             validateFeedPage(response.value.feedPageVersion, response.value.hasMore, response.value.nextCursor, cursor)
+                            val items = response.value.items
+                            require(items.size <= 100 && items.map { it.message.id }.toSet().size == items.size && items.all {
+                                it.message.id.isNotBlank() && it.message.conversationId.isNotBlank() && it.message.conversationId == it.conversation.id &&
+                                    (it.revision?.let { version -> version.isNotBlank() && version.length <= 128 } != false)
+                            }) { "Invalid saved page identities" }
                             cacheFetchedMessagesLocked(response.value.items.map { it.message.toDomain() }, watermark)
                             response.value.items.forEach { item ->
                                 item.revision?.let { wave7Dao.upsert(Wave7CacheEntity(savedVersionKey(owner, item.message.id), it, System.currentTimeMillis())) }
@@ -4032,13 +4051,13 @@ class PulseRepositoryImpl constructor(
 
     private suspend fun cachedSavedLibraryPage(owner: String, cursor: String?): app.pulse.domain.model.FeedPage<SavedItem> {
         val edge = cursor?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.SavedOfflineCursorDto.serializer(),
-            String(java.util.Base64.getUrlDecoder().decode(it.removePrefix("local-saved:")))) }
+            String(android.util.Base64.decode(it.removePrefix("local-saved:"), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING))) }
         require(edge == null || edge.owner == owner)
         val rows = savedDao.offlinePage(edge?.at, edge?.id)
         val page = rows.take(100)
         val next = if (rows.size <= 100) null else page.last().let {
-            "local-saved:" + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(app.pulse.protocol.PulseJson.encodeToString(
-                app.pulse.protocol.SavedOfflineCursorDto.serializer(), app.pulse.protocol.SavedOfflineCursorDto(owner, it.savedAt, it.messageId)).toByteArray())
+            "local-saved:" + android.util.Base64.encodeToString(app.pulse.protocol.PulseJson.encodeToString(
+                app.pulse.protocol.SavedOfflineCursorDto.serializer(), app.pulse.protocol.SavedOfflineCursorDto(owner, it.savedAt, it.messageId)).toByteArray(), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
         }
         return app.pulse.domain.model.FeedPage(savedDao.page(page.map { it.messageId }, false).map { it.toDomain() }.filter { savedMessageVisible(it.message) }, next, next != null, cached = true)
     }

@@ -85,8 +85,8 @@ async function savedSnapshot(tx: Prisma.TransactionClient, userId: string, messa
       (!message.expiresAt || message.expiresAt > now) &&
       (!message.parentId || threadRootAvailable(message.parent, message.conversationId, now)))
   }
-  return { savedReceiptVersion: 2 as const, userId, messageId, saved: visible,
-    savedAt: visible ? marker!.savedAt.toISOString() : null, revision: state?.revision ?? '0' }
+  return { savedReceiptVersion: 2 as const, userId, messageId, saved: Boolean(marker), visible,
+    savedAt: marker?.savedAt.toISOString() ?? null, revision: state?.revision ?? '0' }
 }
 
 export async function readSavedMessageStates(db: PrismaClient, userId: string, ids: string[]) {

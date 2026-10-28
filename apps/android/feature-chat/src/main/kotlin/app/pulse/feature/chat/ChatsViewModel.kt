@@ -290,7 +290,12 @@ class ChatsViewModel @Inject constructor(
             delay(250)
             account.observeSearchPage(trimmed, searchCursor).collect { result ->
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                if (generation != searchGeneration || repo.attachmentSessionKey() != epoch) return@collect
+                if (generation != searchGeneration) return@collect
+                if (repo.attachmentSessionKey() != epoch) {
+                    _searchHits.value = emptyList(); _searchPaging.value = false to false
+                    searchNextCursor = null; _searching.value = false; _searchError.value = null
+                    return@collect
+                }
                 _searchError.value = result.exceptionOrNull()?.message
                 val page = result.getOrNull()
                 _searchHits.value = page?.items.orEmpty()
