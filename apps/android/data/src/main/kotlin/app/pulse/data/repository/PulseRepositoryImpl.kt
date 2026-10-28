@@ -3,6 +3,7 @@ package app.pulse.data.repository
 import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withSavedMessageExpiry
 import app.pulse.domain.sync.messageExpiryEpochMs
+import kotlinx.coroutines.flow.transformLatest
 import app.pulse.domain.sync.withMessageExpiry
 import app.pulse.domain.sync.withTopicUnreadExpiry
 
@@ -837,6 +838,21 @@ class PulseRepositoryImpl constructor(
 
     override fun observeMessages(conversationId: String): Flow<List<Message>> =
         messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
+
+    override fun observeRiverMessages(conversationId: String, selectedIds: List<String>): Flow<List<Message>> =
+        messageDao.observeRiver(conversationId, selectedIds).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    override fun observeThreadReplyCounts(conversationId: String): Flow<Map<String, Int>> =
+        messageDao.observeThreadCountInvalidations(conversationId).transformLatest {
+            while (true) {
+                val now = System.currentTimeMillis()
+                val rows = messageDao.liveThreadCounts(conversationId, now)
+                emit(rows.associate { it.rootId to it.cnt })
+                val next = rows.mapNotNull { it.nextExpiryMs }.filter { it > now }.minOrNull() ?: break
+                kotlinx.coroutines.delay((next - now).coerceIn(1L, 30_000L))
+            }
+        }.distinctUntilChanged()
 
     override fun observeMessage(conversationId: String, messageId: String): Flow<Message?> =
         messageDao.observeMessage(conversationId, messageId).map { listOfNotNull(it?.toDomain()) }.withMessageExpiry().map { it.firstOrNull() }

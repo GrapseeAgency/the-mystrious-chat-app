@@ -1173,7 +1173,7 @@ private fun MirrorRoomScaffold(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     val visible by androidx.compose.runtime.rememberUpdatedState(readingEnabled)
-    val messages by repository.observeMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
+    val messages by repository.observeRiverMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
     var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
     var muted by remember { mutableStateOf(convo.isMuted) }
     var ttlSeconds by remember { mutableStateOf<Int?>(null) }
@@ -1372,7 +1372,7 @@ private fun MirrorPipChat(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val messages by repository.observeMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
+    val messages by repository.observeRiverMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
     var draft by remember { mutableStateOf("") }
     // R72 - channel truth: the pip window cannot send into a broadcast room
     // either (the server would 403 - mirror the locked composer honestly)

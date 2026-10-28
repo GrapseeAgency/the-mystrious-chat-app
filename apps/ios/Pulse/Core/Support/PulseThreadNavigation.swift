@@ -53,4 +53,5 @@ struct PulseCachedThreadPage {
     let messages: [WireChatMessage]
     let cursor: PulseCachedThreadCursor?
     let hasMore: Bool
+    var newerCursor: PulseCachedThreadCursor? = nil
 }

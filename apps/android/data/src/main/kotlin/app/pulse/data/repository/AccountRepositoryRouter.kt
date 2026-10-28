@@ -62,7 +62,7 @@ internal class AccountRepositoryRouter(
                                 "observeDraft", "observeMessage" -> emit(null)
                                 "observeMessageSearch" -> emit(Result.success(emptyList<app.pulse.domain.model.MessageHit>()))
                                 "observeThreadDraft" -> emit(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
-                                "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
+                                "observeThreadReplyCounts", "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
                                 "getPulsePrefs" -> emit(PulseWave8Logic.PRIVATE_DEFAULTS)
                                 else -> emit(emptyList<Any>())
                             }

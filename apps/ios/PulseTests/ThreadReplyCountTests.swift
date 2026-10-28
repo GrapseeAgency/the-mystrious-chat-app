@@ -143,6 +143,21 @@ final class ThreadReplyCountTests: XCTestCase {
         XCTAssertEqual(store.draft(conversationId: draftKey), "keep typing")
     }
 
+    func testOfflineForwardPagesReturnToNewerHistoryWithStableRawCursors() throws {
+        let store = try PulseStore()
+        let replies = try (0..<450).map { try row(String(format: "r%03d", $0), parent: "root") }
+        try store.upsert(messages: [row("root")] + replies)
+        let first = try store.cachedThreadPage(roomId: "room", rootId: "root", limit: 100)
+        let older = try store.cachedThreadPage(roomId: "room", rootId: "root", before: first.cursor, limit: 100)
+        let back = try store.cachedThreadPage(roomId: "room", rootId: "root", after: older.newerCursor, limit: 100)
+        XCTAssertEqual(back.messages.map(\.id), first.messages.map(\.id))
+        XCTAssertEqual(back.cursor, first.cursor)
+        XCTAssertEqual(back.newerCursor, first.newerCursor)
+        XCTAssertFalse(back.hasMore)
+        XCTAssertThrowsError(try store.cachedThreadPage(roomId: "other", rootId: "root", after: older.newerCursor))
+        XCTAssertThrowsError(try store.cachedThreadPage(roomId: "room", rootId: "root", before: first.cursor, after: older.newerCursor))
+    }
+
     func testOfflineThreadPagesCross300RowsWithTiesAndDeletedCursorWithoutGaps() throws {
         let store = try PulseStore()
         let replies = try (0..<450).map { try row(String(format: "r%03d", $0), parent: "root") }

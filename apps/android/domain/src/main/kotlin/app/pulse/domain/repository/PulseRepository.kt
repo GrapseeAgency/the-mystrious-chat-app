@@ -88,6 +88,7 @@ import app.pulse.protocol.WhiteboardPageDto
 import app.pulse.protocol.WhiteboardPostResultDto
 import app.pulse.protocol.WhiteboardStrokePostDto
 import app.pulse.protocol.WhiteboardUndoResultDto
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.Flow
 
 /** Live events pushed by the relay - the UDF event side of the repository. */
@@ -555,6 +556,10 @@ interface PulseRepository {
         after: app.pulse.domain.sync.MessageHistoryCursor? = null,
         center: app.pulse.domain.sync.MessageHistoryCursor? = null): app.pulse.domain.sync.MessageWindow =
         throw UnsupportedOperationException("Thread windows are unavailable")
+
+    fun observeRiverMessages(conversationId: String, selectedIds: List<String> = emptyList()): Flow<List<Message>> = observeMessages(conversationId)
+    fun observeThreadReplyCounts(conversationId: String): Flow<Map<String, Int>> =
+        observeMessages(conversationId).map { app.pulse.domain.sync.cachedThreadReplyCounts(it) }
 
     fun observeMessage(conversationId: String, messageId: String): Flow<Message?> = kotlinx.coroutines.flow.flowOf(null)
     fun observeThreadWindow(rootId: String, selectedIds: List<String>?): Flow<List<Message>> = kotlinx.coroutines.flow.flowOf(emptyList())

@@ -17,15 +17,17 @@ not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
    reply jumps no longer assemble the complete thread. Android observes only the
    selected cached replies plus pending local sends and a single root; offline
    tuple slices preserve saved-history browsing. iOS replaces its cached page
-   rather than accumulating it. **Still reviewing:** main-room observers behind
-   Android thread sheets can independently materialize all cached room replies;
-   the new thread paths require native SDK/instrumented validation.
+   rather than accumulating it, with both older/newer offline navigation.
+   Underlying Android primary/Mirror rivers now exclude unselected thread rows;
+   reply counts use a live SQLite aggregate with expiry deadlines, not decoded
+   reply arrays. Exact cached jumps use single-row observations. The new paths
+   still require native SDK/instrumented validation.
 4. **Cross-page reconciliation:** displayed windows are refreshed, rather than
    claimed to be a single immutable full-thread snapshot. Position-based centers
    survive deleted anchors and include same-time backfills. Reconnect/event and
    foreground periodic refreshes retain the current reader center; existing
-   cache/session/revision fences remain. Mounted viewport behavior and the
-   underlying main-room cache observer still need validation.
+   cache/session/revision fences remain. Mounted viewport behavior still needs
+   validation in the native runners; deferred device auditing is separate.
 5. **Streaming exports:** implemented bounded authorized export pages and direct
    temporary-file writers on Android/iOS. No whole-conversation array/string or
    50,000-row export ceiling. Scan positions advance through expiring pages;
@@ -47,7 +49,9 @@ thread-denial poisoning. Native window decoders reject duplicates, wrong order,
 scope and malformed continuation metadata. Added native transport and bounded
 Room observation tests; they have not yet completed in the SDK runners.
 
-Latest full server run: **480 passed, 0 failed, 0 skipped** (468 top-level tests).
+Latest full server run: **481 passed, 0 failed, 0 skipped** (469 top-level tests).
+Production Android SQL is also exercised against 12,000 cached replies,
+selected-row observations, both cursor directions, expiry, and root denial.
 Streaming export/mention commit: `8d112ac`; its iOS archive succeeded while other
 native jobs were still running at the last inspection. Native SDK validation is
 still required for this new implementation. No item is closed merely because a

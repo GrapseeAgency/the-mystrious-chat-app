@@ -686,6 +686,29 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || messages.threadRootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
+    /** The main river must not decode a whole cached thread behind its sheet. */
+    @Query("SELECT * FROM messages WHERE conversationId = :room AND (threadRootId IS NULL OR id IN (:selected)) " +
+        "AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || messages.threadRootId) " +
+        "AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
+    fun observeRiver(room: String, selected: List<String>): Flow<List<MessageEntity>>
+
+    @Query("SELECT COUNT(*) FROM messages WHERE conversationId = :room " +
+        "AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || messages.threadRootId) " +
+        "AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
+    fun observeThreadCountInvalidations(room: String): Flow<Int>
+
+    @Query("SELECT reply.threadRootId AS rootId, COUNT(*) AS cnt, " +
+        "MIN(CASE WHEN reply.expiresAtEpochMs IS NULL THEN root.expiresAtEpochMs WHEN root.expiresAtEpochMs IS NULL THEN reply.expiresAtEpochMs " +
+        "ELSE MIN(reply.expiresAtEpochMs, root.expiresAtEpochMs) END) AS nextExpiryMs " +
+        "FROM messages reply JOIN messages root ON root.id = reply.threadRootId AND root.conversationId = reply.conversationId " +
+        "WHERE reply.conversationId = :room AND root.threadRootId IS NULL AND substr(root.id, 1, 6) != 'local_' " +
+        "AND root.deletedAt IS NULL AND reply.deletedAt IS NULL " +
+        "AND (root.expiresAtEpochMs IS NULL OR root.expiresAtEpochMs > :now) " +
+        "AND (reply.expiresAtEpochMs IS NULL OR reply.expiresAtEpochMs > :now) " +
+        "AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || root.id) " +
+        "AND NOT EXISTS (SELECT 1 FROM outbox o WHERE reply.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) GROUP BY reply.threadRootId")
+    suspend fun liveThreadCounts(room: String, now: Long): List<LiveThreadCountRow>
+
     /** The repository validates root/reply structure and lifetime in the same transaction. */
     @Query("SELECT * FROM messages WHERE conversationId = :roomId AND id IN (:rootId, :targetId) " +
         "AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) " +
@@ -838,6 +861,8 @@ interface MessageDao {
 }
 
 /** Projection row for the batched thread-count query (river reply chips). */
+data class LiveThreadCountRow(val rootId: String, val cnt: Int, val nextExpiryMs: Long?)
+
 data class ThreadCountRow(val rootId: String, val cnt: Int)
 
 @Dao

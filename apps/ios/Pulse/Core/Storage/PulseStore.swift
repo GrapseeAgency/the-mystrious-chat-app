@@ -799,9 +799,12 @@ public final class PulseStore: Sendable {
     /// Keyset pages keep offline history reachable beyond the initial 300-row window.
     /// Cursor comes from raw rows (including local echoes), so tombstones, failed decode
     /// or a subsequently removed anchor cannot stall paging or skip timestamp ties.
-    func cachedThreadPage(roomId: String, rootId: String, before: PulseCachedThreadCursor? = nil,
+    func cachedThreadPage(roomId: String, rootId: String, before: PulseCachedThreadCursor? = nil, after: PulseCachedThreadCursor? = nil,
                           limit: Int = 100, now: Date = Date()) throws -> PulseCachedThreadPage {
         if let before, before.roomId != roomId || before.rootId != rootId { throw CocoaError(.coderInvalidValue) }
+        if let after, after.roomId != roomId || after.rootId != rootId { throw CocoaError(.coderInvalidValue) }
+        if before != nil && after != nil { throw CocoaError(.coderInvalidValue) }
+        let forward = after != nil
         let size = min(300, max(1, limit))
         return try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: """
@@ -815,15 +818,19 @@ public final class PulseStore: Sendable {
                   AND NOT EXISTS (SELECT 1 FROM outbox o WHERE reply.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)
                   AND (:beforeCreated IS NULL OR reply.createdAt < :beforeCreated
                        OR (reply.createdAt = :beforeCreated AND reply.id < :beforeId))
-                ORDER BY reply.createdAt DESC, reply.id DESC LIMIT :limit
+                  AND (:afterCreated IS NULL OR reply.createdAt > :afterCreated
+                       OR (reply.createdAt = :afterCreated AND reply.id > :afterId))
+                ORDER BY reply.createdAt \(forward ? "ASC" : "DESC"), reply.id \(forward ? "ASC" : "DESC") LIMIT :limit
                 """, arguments: ["room": roomId, "root": rootId, "now": now.timeIntervalSince1970,
-                    "beforeCreated": before?.createdAt, "beforeId": before?.id, "limit": size + 1])
+                    "beforeCreated": before?.createdAt, "beforeId": before?.id,
+                    "afterCreated": after?.createdAt, "afterId": after?.id, "limit": size + 1])
             let selected = Array(rows.prefix(size))
-            let cursor = selected.last.map { row in
-                PulseCachedThreadCursor(roomId: roomId, rootId: rootId, createdAt: row["createdAt"], id: row["id"])
+            let ordered = forward ? selected : Array(selected.reversed())
+            func cursor(_ row: Row?) -> PulseCachedThreadCursor? {
+                row.map { PulseCachedThreadCursor(roomId: roomId, rootId: rootId, createdAt: $0["createdAt"], id: $0["id"]) }
             }
-            return PulseCachedThreadPage(messages: selected.reversed().compactMap(Self.messageRow(from:)),
-                                         cursor: cursor, hasMore: rows.count > size)
+            return PulseCachedThreadPage(messages: ordered.compactMap(Self.messageRow(from:)),
+                cursor: cursor(ordered.first), hasMore: rows.count > size, newerCursor: cursor(ordered.last))
         }
     }
 

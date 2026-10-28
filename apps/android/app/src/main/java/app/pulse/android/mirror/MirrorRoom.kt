@@ -753,7 +753,7 @@ internal fun MirrorRoom(
         val topic = activeTopicId
         historyScope.launch {
             try {
-                val rows = repository.observeMessages(groupId).first()
+                val rows = repository.observeRiverMessages(groupId).first()
                 // Search/thread caches may contain isolated older rows. Only a
                 // consumed response proves a contiguous history boundary.
                 var cursor = historyCursor
@@ -792,12 +792,11 @@ internal fun MirrorRoom(
         jumpFlashId = null
         activeTopicId = null // a search/quote jump must not remain hidden by a topic
         try {
-            val cached = repository.observeMessages(groupId).first()
-            if (cached.none { it.id == target }) repository.messageWindow(groupId, anchorId = target)
+            val cached = repository.observeMessage(groupId, target).first()
+            if (cached == null) repository.messageWindow(groupId, anchorId = target)
             ensureActive()
             if (!roomActionsLive.get()) return@LaunchedEffect
-            val fresh = repository.observeMessages(groupId).first()
-            val targetRow = fresh.firstOrNull { it.id == target }
+            val targetRow = repository.observeMessage(groupId, target).first()
             if (targetRow == null || targetRow.isDeleted || targetRow.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
                 sendError = "That message is unavailable or outside the loaded history"
                 return@LaunchedEffect

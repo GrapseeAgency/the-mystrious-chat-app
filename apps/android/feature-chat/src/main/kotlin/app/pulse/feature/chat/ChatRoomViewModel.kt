@@ -4,6 +4,8 @@ import app.pulse.domain.sync.reconcileResumedRoom
 import app.pulse.domain.sync.messageReadStateRefreshes
 import app.pulse.domain.sync.MessageHistoryCursor
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.ensureActive
 import android.content.Context
 import android.media.MediaRecorder
@@ -241,7 +243,8 @@ class ChatRoomViewModel @Inject constructor(
     val transcribingIds: StateFlow<Set<String>> = _transcribingIds.asStateFlow()
 
     /** Share one raw Room/expiry stream before filtering the main river. */
-    private val roomRows = repo.observeMessages(conversationId)
+    private val roomRows = _state.map { (it.pins + it.searchResults).map { row -> row.id }.distinct().sorted() }
+        .distinctUntilChanged().flatMapLatest { selected -> repo.observeRiverMessages(conversationId, selected) }
         .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     /** MAIN RIVER - thread replies (threadRootId != null) live on the ThreadScreen only. */
@@ -465,8 +468,7 @@ class ChatRoomViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Observe raw room rows: a reply-only change may leave the main river identical. */
-    val replyCounts: StateFlow<Map<String, Int>> = roomRows
-        .map { rows -> app.pulse.domain.sync.cachedThreadReplyCounts(rows) }
+    val replyCounts: StateFlow<Map<String, Int>> = repo.observeThreadReplyCounts(conversationId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     data class ThreadJumpRequest(val rootId: String, val replyId: String, val revision: Long)
@@ -1090,7 +1092,7 @@ class ChatRoomViewModel @Inject constructor(
         _state.value = _state.value.copy(loadingOlder = true)
         historyJob = viewModelScope.launch {
             try {
-                var target = repo.observeMessages(conversationId).first().firstOrNull { it.id == messageId }
+                var target = repo.observeMessage(conversationId, messageId).first()
                 if (target == null) {
                     val window = repo.messageWindow(conversationId, anchorId = messageId)
                     target = window.messages.firstOrNull { it.id == messageId }
