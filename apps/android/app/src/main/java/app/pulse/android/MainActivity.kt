@@ -284,6 +284,21 @@ class MainActivity : FragmentActivity() {
         // Foreground outbox trigger (Wave 0): whatever queued while the app
         // was dead/backgrounded drains the moment the surface is up.
         lifecycleScope.launch { runCatching { repository.flushOutbox() } }
+        // R42 - orphaned media cache sweep: camera captures and voice takes
+        // too old for any live process to still claim (past the 24h prune
+        // grace; the recording journal owns anything more recent) are removed.
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val cutoff = android.os.System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                java.io.File(cacheDir, "camera").listFiles()?.forEach { f ->
+                    if (f.name.startsWith("capture-") && f.lastModified() < cutoff) f.delete()
+                }
+                cacheDir.listFiles()?.forEach { f ->
+                    val n = f.name
+                    if ((n.startsWith("voice-") || n.startsWith("voice-note-")) && n.endsWith(".m4a") && f.lastModified() < cutoff) f.delete()
+                }
+            }
+        }
         // Wave 7 - ask for the notifications permission ONCE (API 33+), then
         // run the due-loop: GET ?due=1 → local notification → PATCH firedAt.
         app.pulse.android.notify.ReminderNotifier.ensureChannel(this)
@@ -341,6 +356,13 @@ class MainActivity : FragmentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         handleIntent(intent)
+        // R42 - a pending external share from a previous process death
+        // re-opens its picker sheet (its bytes/text live in the inbox).
+        if (shareIn.value == null) {
+            ShareInInbox.load(this).firstOrNull()?.let { entry ->
+                shareIn.value = ShareInPayload.from(entry)
+            }
+        }
         // True edge-to-edge with NO system scrims: the app surface (ambient field)
         // shows behind the status bar AND the navigation bar - the default
         // enableEdgeToEdge() nav scrim is what painted a gray band over the dock.
@@ -366,6 +388,15 @@ class MainActivity : FragmentActivity() {
                 onRequestUnlock = { appLock.presentPrompt(this) },
                 shareInFlow = shareIn,
                 onConsumeShareIn = { id -> val current = shareIn.value; if (current?.id == id) shareIn.compareAndSet(current, null) },
+                // R42 - only a durable queue success or an explicit remove consumes an inbox entry.
+                onShareConsumed = { id ->
+                    ShareInInbox.remove(this, id)
+                    shareIn.value = ShareInInbox.load(this).firstOrNull()?.let { ShareInPayload.from(it) }
+                },
+                onShareRemoved = { id ->
+                    ShareInInbox.remove(this, id)
+                    shareIn.value = ShareInInbox.load(this).firstOrNull()?.let { ShareInPayload.from(it) }
+                },
                 shortcutFlow = shortcutRequest,
                 onConsumeShortcut = { shortcutRequest.value = null },
             )
@@ -396,16 +427,45 @@ class MainActivity : FragmentActivity() {
             ShareInActivity.ACTION_SHARE_IN -> {
                 val text = intent.getStringExtra(ShareInActivity.EXTRA_SHARE_TEXT)
                 val stream = ShareInActivity.forwardedStream(intent)
-                shareIn.value = if (text.isNullOrBlank() && stream == null) {
+                if (text.isNullOrBlank() && stream == null) {
                     // Unreadable payload - say so and close, no half state.
                     android.widget.Toast.makeText(
                         this,
                         "Couldn't read the shared content",
                         android.widget.Toast.LENGTH_SHORT,
                     ).show()
-                    null
+                } else if (stream == null) {
+                    // R42 - text needs no preparation: store it straight into
+                    // the durable share-in inbox and open the picker.
+                    val entry = ShareInInbox.store(this, "text", text?.takeIf { it.isNotBlank() }, null, null, null)
+                    shareIn.value = ShareInPayload.from(entry)
                 } else {
-                    ShareInPayload(text = text?.takeIf { it.isNotBlank() }, stream = stream)
+                    // R42 - eager pre-upload: copy the provider bytes app-private
+                    // NOW, while the temporary URI grant is fresh; the sheet then
+                    // works from inbox bytes, never from the (revocable) grant.
+                    lifecycleScope.launch {
+                        val activity = this@MainActivity
+                        val mime = runCatching { activity.contentResolver.getType(stream) }.getOrNull()
+                        if (mime != null && mime.startsWith("image/")) {
+                            app.pulse.feature.chat.MediaSupport.imageToDataUrl(activity, stream).fold(
+                                onSuccess = { dataUrl ->
+                                    val entry = ShareInInbox.store(activity, "image", null, dataUrl, null, null)
+                                    shareIn.value = ShareInPayload.from(entry)
+                                },
+                                onFailure = {
+                                    android.widget.Toast.makeText(activity, "Couldn't read the shared photo", android.widget.Toast.LENGTH_SHORT).show()
+                                })
+                        } else {
+                            app.pulse.feature.chat.MediaSupport.documentToDataUrl(activity, stream).fold(
+                                onSuccess = { doc ->
+                                    val entry = ShareInInbox.store(activity, "file", null, doc.dataUrl, doc.fileName, doc.sizeBytes)
+                                    shareIn.value = ShareInPayload.from(entry)
+                                },
+                                onFailure = {
+                                    android.widget.Toast.makeText(activity, "Couldn't read the shared document", android.widget.Toast.LENGTH_SHORT).show()
+                                })
+                        }
+                    }
                 }
             }
 
@@ -434,6 +494,10 @@ fun PulseRoot(
     // R10-a - share-in payload + launcher-shortcut requests from the activity.
     shareInFlow: StateFlow<ShareInPayload?>,
     onConsumeShareIn: (String) -> Unit,
+    // R42 - inbox consumption: only a durable queue success or the user's
+    // explicit Remove consumes a stored share entry.
+    onShareConsumed: (String) -> Unit = {},
+    onShareRemoved: (String) -> Unit = {},
     shortcutFlow: StateFlow<ShortcutRequest?>,
     onConsumeShortcut: () -> Unit,
 ) {
@@ -690,6 +754,8 @@ fun PulseRoot(
                                 pendingRoomId = id
                             }
                         },
+                        onConsumed = { onShareConsumed(payload.id) },
+                        onRemoved = { onShareRemoved(payload.id) },
                     )
                 }
                 pendingInvite?.let { code ->

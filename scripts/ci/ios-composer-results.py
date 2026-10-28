@@ -16,7 +16,7 @@ FILES = (
     'ComposerJournalTests', 'DraftHandoffTests', 'DraftJournalTests',
     'DraftReceiptTests', 'ThreadDraftHandoffTests', 'PulseOutboxTests',
     'TextDeliveryTests', 'ScheduledAcceptanceTests', 'ScheduledCreationRetryTests',
-    'ComposerAttentionTests',
+    'ComposerAttentionTests', 'StagedAttachmentAndRecordingJournalTests',
 )
 
 

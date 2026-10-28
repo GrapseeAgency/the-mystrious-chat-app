@@ -87,6 +87,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
+            <!-- R42 - the chat document family rides the share intake too;
+                 preparation happens eagerly while the URI grant is fresh. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="text/csv" />
+            </intent-filter>
         </activity>
 
         <!-- LiveUpdate: read-only URI for the system installer on cacheDir/liveupdate. -->

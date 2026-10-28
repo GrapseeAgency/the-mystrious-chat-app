@@ -18,8 +18,10 @@ enum PulseMediaSupport {
     static let imageQuality: CGFloat = 0.82
     /// Document ceiling - the server rejects heavier payloads (spec §1.1).
     static let maxDocumentBytes = 10 * 1024 * 1024
-    /// Caption ceiling for staged media sends (≤500 chars, web parity).
-    static let maxCaptionLength = 500
+    /// Caption ceiling for staged media sends.
+    /// R42 parity: captions ride the same 2000-character message limit the
+    /// server, the Android mirror composer and AttachmentValidation enforce.
+    static let maxCaptionLength = 2000
 
     // images
 

@@ -45,4 +45,12 @@ class SharedContentDelivery(private val router: PulseRepository) {
         val clientId = imageClientIds.getOrPut(conversationId) { UUID.randomUUID().toString() }
         account.queueSharedImage(conversationId, clientId, bytes, checkNotNull(owner)).getOrThrow()
     }
+
+    /** R42 - a prepared document (pdf/txt/csv/zip) rides the same durable
+     * staging path; its stable client id dedupes retries. */
+    suspend fun document(conversationId: String, dataUrl: String, fileName: String, fileSize: Long): Result<Unit> = send {
+        requireCurrent()
+        val clientId = imageClientIds.getOrPut("document:$conversationId") { UUID.randomUUID().toString() }
+        account.queueSharedDocument(conversationId, clientId, dataUrl, fileName, fileSize, checkNotNull(owner)).getOrThrow()
+    }
 }

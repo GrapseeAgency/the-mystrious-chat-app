@@ -487,6 +487,25 @@ interface PulseRepository {
     suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> =
         Result.failure(UnsupportedOperationException("Shared image storage unavailable"))
 
+    /** External share: journal a prepared document (pdf/txt/csv/zip) through the same durable outbox. */
+    suspend fun queueSharedDocument(conversationId: String, clientId: String, dataUrl: String, fileName: String, fileSize: Long, sessionKey: String): Result<Message> =
+        Result.failure(UnsupportedOperationException("Shared document storage unavailable"))
+
+    // R42 - durable recording journal (interrupted-recording reconstruction)
+
+    /** Journal a take BEFORE the recorder starts; survives abrupt process death. */
+    suspend fun recordingJournalStart(id: String, conversationId: String, file: java.io.File, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Recording journal unavailable"))
+    /** Mark a gracefully stopped take (recoverable in full). */
+    suspend fun recordingJournalStopped(id: String, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Recording journal unavailable"))
+    /** The user's discard receipt: a later sweep completes it, never resurrects the take. */
+    suspend fun recordingJournalCancelled(id: String, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Recording journal unavailable"))
+    /** The take was durably staged elsewhere; retire its journal row. */
+    suspend fun recordingJournalConsumed(id: String, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Recording journal unavailable"))
+
     // offline outbox + drafts (Wave 0 - web pulse-outbox/pulse-drafts parity)
 
     /** Persist an outgoing message for later delivery (FIFO, capped at 50). */

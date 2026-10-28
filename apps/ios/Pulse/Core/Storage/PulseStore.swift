@@ -354,6 +354,42 @@ public final class PulseStore: Sendable {
         m.registerMigration("v15") { db in
             try db.alter(table: "topics") { t in t.add(column: "readStateJson", .text) }
         }
+        m.registerMigration("v16") { db in
+            // R42 - unsent staged attachment selections (rehydration after
+            // process death), durable consumption receipts, and the
+            // active-recording journal (interrupted-recording reconstruction).
+            try db.create(table: "stagedAttachment") { t in
+                t.column("selectionId", .text).primaryKey()
+                t.column("conversationId", .text).notNull().indexed()
+                t.column("kind", .text).notNull()
+                t.column("dataUrl", .text).notNull()
+                t.column("caption", .text).notNull().defaults(to: "")
+                t.column("viewOnce", .boolean).notNull().defaults(to: false)
+                t.column("fileName", .text)
+                t.column("fileSize", .integer)
+                t.column("durationMs", .double)
+                t.column("replyToId", .text)
+                t.column("parentId", .text)
+                t.column("topicId", .text)
+                t.column("anon", .boolean).notNull().defaults(to: false)
+                t.column("revision", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .double).notNull()
+            }
+            try db.create(table: "attachmentReceipt") { t in
+                t.column("selectionId", .text).primaryKey()
+                t.column("conversationId", .text).notNull()
+                t.column("outcome", .text).notNull()
+                t.column("consumedAt", .double).notNull()
+            }
+            try db.create(table: "recordingJournal") { t in
+                t.column("id", .text).primaryKey()
+                t.column("conversationId", .text).notNull().indexed()
+                t.column("filePath", .text).notNull()
+                t.column("startedAt", .double).notNull()
+                t.column("stoppedAt", .double?)
+                t.column("cancelledAt", .double?)
+            }
+        }
         return m
     }
 
@@ -736,7 +772,8 @@ public final class PulseStore: Sendable {
 
     @discardableResult
     func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
-                        consumingDraft token: PulseDraftConsumption?, forwarding source: WireChatMessage? = nil) throws -> Bool {
+                        consumingDraft token: PulseDraftConsumption?, consumingStaged stagedSelectionId: String? = nil,
+                        forwarding source: WireChatMessage? = nil) throws -> Bool {
         guard composerOwner == nil || composerOwner == message.senderId else { throw CocoaError(.coderInvalidValue) }
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
         if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId || token.parentId != message.parentId || token.parentId != envelope.parentId {
@@ -761,6 +798,17 @@ public final class PulseStore: Sendable {
                 try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
                     content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
                     attempts: 0, payloadJson: payload).insert(db)
+                if let stagedSelectionId = stagedSelectionId {
+                    // R42 - the staged selection's consume: the journal row is
+                    // deleted and the outbox successor owns the same
+                    // transaction, so no process death can leave the selection
+                    // BOTH restorable and re-queued. The receipt records the
+                    // consumption durably.
+                    try db.execute(sql: "DELETE FROM stagedAttachment WHERE selectionId = ? AND conversationId = ?",
+                        arguments: [stagedSelectionId, message.conversationId])
+                    try db.execute(sql: "INSERT OR REPLACE INTO attachmentReceipt (selectionId, conversationId, outcome, consumedAt) VALUES (?,?,?,?)",
+                        arguments: [clientId, message.conversationId, "queued", Date().timeIntervalSince1970])
+                }
                 if consume, let token { try self.writeDraftSnapshot(db, room: token.storageKey, text: "") }
             }
         }
@@ -793,6 +841,9 @@ public final class PulseStore: Sendable {
             let retained = try Self.writeAcknowledgedMessage(message, db: db)
             try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
             try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [clientId])
+            // R42 - the delivered entry retires its queued consumption receipt
+            // in the same transaction (its staged bytes left with the envelope).
+            try db.execute(sql: "DELETE FROM attachmentReceipt WHERE selectionId = ? AND outcome = 'queued'", arguments: [clientId])
             messageSnapshotVersions.note([message.id])
             return retained
         }
@@ -1461,6 +1512,8 @@ public final class PulseStore: Sendable {
             if let clientId = try String.fetchOne(db, sql: "SELECT clientId FROM outbox WHERE id = ?", arguments: [id]) {
                 try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
                 try db.execute(sql: "DELETE FROM outbox WHERE id = ?", arguments: [id])
+                // R42 - a user-discarded entry drops its consumption receipt too.
+                try db.execute(sql: "DELETE FROM attachmentReceipt WHERE selectionId = ?", arguments: [clientId])
             }
         }
     }
@@ -1469,6 +1522,190 @@ public final class PulseStore: Sendable {
         try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
             try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [clientId])
+            // R42 - a user-discarded entry drops its consumption receipt too.
+            try db.execute(sql: "DELETE FROM attachmentReceipt WHERE selectionId = ?", arguments: [clientId])
+        }
+    }
+
+    // MARK: - R42 staged attachment selections + consumption receipts
+
+    /// A staged (picked, not yet sent) attachment selection. Persisted the
+    /// moment its bytes are prepared, so a process death between picking and
+    /// sending restores the selection instead of losing it.
+    public struct StagedAttachmentRow: Equatable, Sendable {
+        public let selectionId: String
+        public let conversationId: String
+        public let kind: String            // "image" | "file" | "audio"
+        public let dataUrl: String
+        public var caption: String
+        public var viewOnce: Bool
+        public var fileName: String?
+        public var fileSize: Int?
+        public var durationMs: Double?
+        public var replyToId: String?
+        public var parentId: String?
+        public var topicId: String?
+        public var anon: Bool
+        public var revision: Int
+
+        public init(selectionId: String, conversationId: String, kind: String, dataUrl: String,
+                    caption: String = "", viewOnce: Bool = false, fileName: String? = nil, fileSize: Int? = nil,
+                    durationMs: Double? = nil, replyToId: String? = nil, parentId: String? = nil,
+                    topicId: String? = nil, anon: Bool = false, revision: Int = 0) {
+            self.selectionId = selectionId
+            self.conversationId = conversationId
+            self.kind = kind
+            self.dataUrl = dataUrl
+            self.caption = caption
+            self.viewOnce = viewOnce
+            self.fileName = fileName
+            self.fileSize = fileSize
+            self.durationMs = durationMs
+            self.replyToId = replyToId
+            self.parentId = parentId
+            self.topicId = topicId
+            self.anon = anon
+            self.revision = revision
+        }
+    }
+
+    private static let stagedColumns = "selectionId, conversationId, kind, dataUrl, caption, viewOnce, fileName, fileSize, durationMs, replyToId, parentId, topicId, anon, revision"
+
+    private static func stagedRow(_ row: Row) -> StagedAttachmentRow? {
+        guard let selectionId: String = row["selectionId"],
+              let conversationId: String = row["conversationId"],
+              let kind: String = row["kind"],
+              let dataUrl: String = row["dataUrl"] else { return nil }
+        let caption: String? = row["caption"]
+        let viewOnce: Bool? = row["viewOnce"]
+        let fileName: String? = row["fileName"]
+        let fileSize: Int? = row["fileSize"]
+        let durationMs: Double? = row["durationMs"]
+        let replyToId: String? = row["replyToId"]
+        let parentId: String? = row["parentId"]
+        let topicId: String? = row["topicId"]
+        let anon: Bool? = row["anon"]
+        let revision: Int? = row["revision"]
+        return StagedAttachmentRow(
+            selectionId: selectionId, conversationId: conversationId, kind: kind, dataUrl: dataUrl,
+            caption: caption ?? "", viewOnce: viewOnce ?? false,
+            fileName: fileName, fileSize: fileSize, durationMs: durationMs,
+            replyToId: replyToId, parentId: parentId, topicId: topicId,
+            anon: anon ?? false, revision: revision ?? 0)
+    }
+
+    /// One staged selection per room: a newer stage replaces an older one's
+    /// metadata (the older selection was never sent; the replacement wins).
+    public func stageAttachment(_ staged: StagedAttachmentRow) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO stagedAttachment (\(Self.stagedColumns))
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(conversationId) DO UPDATE SET
+                    selectionId=excluded.selectionId, kind=excluded.kind, dataUrl=excluded.dataUrl,
+                    caption=excluded.caption, viewOnce=excluded.viewOnce, fileName=excluded.fileName,
+                    fileSize=excluded.fileSize, durationMs=excluded.durationMs, replyToId=excluded.replyToId,
+                    parentId=excluded.parentId, topicId=excluded.topicId, anon=excluded.anon,
+                    revision=excluded.revision, createdAt=(SELECT createdAt FROM stagedAttachment WHERE conversationId = excluded.conversationId)
+                """, arguments: [staged.selectionId, staged.conversationId, staged.kind, staged.dataUrl,
+                    staged.caption, staged.viewOnce, staged.fileName, staged.fileSize, staged.durationMs,
+                    staged.replyToId, staged.parentId, staged.topicId, staged.anon, staged.revision])
+        }
+    }
+
+    /// Caption + view-once edits persist (monotonic revision), so a process
+    /// death mid-caption restores the typed text.
+    public func editStagedAttachment(selectionId: String, caption: String, viewOnce: Bool) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE stagedAttachment SET caption = ?, viewOnce = ?, revision = revision + 1 WHERE selectionId = ?",
+                arguments: [caption, viewOnce, selectionId])
+        }
+    }
+
+    public func loadStagedAttachment(conversationId: String) throws -> StagedAttachmentRow? {
+        try dbQueue.read { db in
+            try Row.fetchOne(db, sql: "SELECT \(Self.stagedColumns) FROM stagedAttachment WHERE conversationId = ?",
+                arguments: [conversationId]).flatMap(Self.stagedRow)
+        }
+    }
+
+    /// The user's discard is a durable consumption receipt: one transaction
+    /// removes the staged row and records that this selection can never be
+    /// silently resurrected by a stale restore.
+    public func discardStagedAttachment(conversationId: String, selectionId: String) throws {
+        try dbQueue.write { db in
+            let matched = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM stagedAttachment WHERE conversationId = ? AND selectionId = ?",
+                arguments: [conversationId, selectionId]) ?? 0
+            guard matched > 0 else { return }
+            try db.execute(sql: "DELETE FROM stagedAttachment WHERE selectionId = ?", arguments: [selectionId])
+            try db.execute(sql: "INSERT OR REPLACE INTO attachmentReceipt (selectionId, conversationId, outcome, consumedAt) VALUES (?,?,?,?)",
+                arguments: [selectionId, conversationId, "discarded", Date().timeIntervalSince1970])
+        }
+    }
+
+    /// The recorded consumption outcome for a selection ("queued" | "discarded"),
+    /// or nil when no receipt exists. Read API for verification surfaces.
+    public func attachmentReceiptOutcome(selectionId: String) throws -> String? {
+        try dbQueue.read { db in
+            let outcome: String? = try String.fetchOne(db,
+                sql: "SELECT outcome FROM attachmentReceipt WHERE selectionId = ?", arguments: [selectionId])
+            return outcome
+        }
+    }
+
+    // MARK: - R42 recording journal (interrupted-recording reconstruction)
+
+    /// One row per in-progress take, written BEFORE AVAudioRecorder starts.
+    public struct RecordingJournalRow: Equatable, Sendable {
+        public let id: String
+        public let conversationId: String
+        public let filePath: String
+        public let startedAt: Double
+        public let stoppedAt: Double?
+        public let cancelledAt: Double?
+    }
+
+    public func recordingJournalStart(id: String, conversationId: String, filePath: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "INSERT OR REPLACE INTO recordingJournal (id, conversationId, filePath, startedAt, stoppedAt, cancelledAt) VALUES (?,?,?,?,NULL,NULL)",
+                arguments: [id, conversationId, filePath, Date().timeIntervalSince1970])
+        }
+    }
+
+    public func recordingJournalStopped(id: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE recordingJournal SET stoppedAt = ? WHERE id = ? AND cancelledAt IS NULL",
+                arguments: [Date().timeIntervalSince1970, id])
+        }
+    }
+
+    /// The user's discard receipt: a later sweep completes the discard, never
+    /// resurrects the take.
+    public func recordingJournalCancelled(id: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE recordingJournal SET cancelledAt = ? WHERE id = ?",
+                arguments: [Date().timeIntervalSince1970, id])
+        }
+    }
+
+    /// The take was durably staged/sent elsewhere; retire its journal row.
+    public func recordingJournalConsumed(id: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM recordingJournal WHERE id = ?", arguments: [id])
+        }
+    }
+
+    public func recordingJournalRows() throws -> [RecordingJournalRow] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT id, conversationId, filePath, startedAt, stoppedAt, cancelledAt FROM recordingJournal ORDER BY startedAt ASC")
+            return rows.compactMap { row in
+                guard let id: String = row["id"], let conversationId: String = row["conversationId"],
+                      let filePath: String = row["filePath"], let startedAt: Double = row["startedAt"] else { return nil }
+                let stoppedAt: Double? = row["stoppedAt"]
+                let cancelledAt: Double? = row["cancelledAt"]
+                return RecordingJournalRow(id: id, conversationId: conversationId, filePath: filePath,
+                    startedAt: startedAt, stoppedAt: stoppedAt, cancelledAt: cancelledAt)
+            }
         }
     }
 

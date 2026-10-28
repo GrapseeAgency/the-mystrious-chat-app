@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 
 test('production Android thread projections bound large caches and expire counts without decoding replies', () => {
   const source = readFileSync('apps/android/data/src/main/kotlin/app/pulse/data/local/PulseDatabase.kt', 'utf8')
-  assert.match(source, /val expiresAtEpochMs: Long\? = null/); assert.match(source, /version = 19/); assert.match(source, /val MIGRATION_18_19/);
+  assert.match(source, /val expiresAtEpochMs: Long\? = null/); assert.match(source, /version = 20/); assert.match(source, /val MIGRATION_18_19/); assert.match(source, /val MIGRATION_19_20/);
   const queries = {}
   for (const match of source.matchAll(/@Query\(([\s\S]*?)\)\s*(?:suspend\s+)?fun\s+(\w+)/g)) {
     if (['observeRiver', 'liveThreadCounts', 'cachedThreadSlice', 'observeThreadWindow'].includes(match[2])) {

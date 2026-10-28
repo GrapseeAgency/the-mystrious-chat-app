@@ -15,8 +15,9 @@ import androidx.activity.ComponentActivity
  * shell - this activity owns NO screens.
  *
  * Manifest: exported=true (the system must reach it), translucent theme,
- * excludeFromRecents, allowTaskReparenting=false. Filters: text/plain and
- * the image MIME family only - anything else is honestly refused with a toast.
+ * excludeFromRecents, allowTaskReparenting=false. Filters: text/plain, the
+ * image MIME family and the R42 document family (pdf/zip/csv) - anything
+ * else is honestly refused with a toast.
  */
 class ShareInActivity : ComponentActivity() {
 
@@ -32,7 +33,7 @@ class ShareInActivity : ComponentActivity() {
             when {
                 type == "text/plain" ->
                     text = intent.getStringExtra(Intent.EXTRA_TEXT)
-                type.startsWith("image/") ->
+                type.startsWith("image/") || type in DOCUMENT_MIMES ->
                     stream = if (Build.VERSION.SDK_INT >= 33) {
                         intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                     } else {
@@ -78,6 +79,10 @@ class ShareInActivity : ComponentActivity() {
                 intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0 &&
                 intent.clipData?.let { clip -> (0 until clip.itemCount).any { clip.getItemAt(it).uri == uri } } == true }
         }
+
+        /** R42 - the document MIME family the share intake accepts (text/plain
+         * arrives as EXTRA_TEXT, not a stream). Mirrors the chat document picker. */
+        internal val DOCUMENT_MIMES = setOf("application/pdf", "application/zip", "text/csv")
 
         /** MainActivity consumes this action + the two payload extras. */
         const val ACTION_SHARE_IN = "app.pulse.android.action.SHARE_IN"

@@ -18,6 +18,10 @@ internal object AttachmentValidation {
         require(comma > 0 && types.any { draft.dataUrl.startsWith("data:$it;base64,") }) { "Unsupported attachment format" }
         val bytes = Base64.getDecoder().decode(draft.dataUrl.substring(comma + 1))
         require(bytes.isNotEmpty() && (draft.kind != "file" || bytes.size <= 10 * 1024 * 1024)) { "Attachment is empty or too large" }
+        // R42 parity - images/audio carry the same DECODED ceiling the server's
+        // encoded media cap implies (4,500,000 base64 chars → 3,375,000 bytes),
+        // matching the bounded source readers on both platforms.
+        require(draft.kind == "file" || bytes.size <= 3_375_000) { "Attachment is too large; documents allow 10 MB, photos and voice notes about 3.3 MB" }
         require(draft.kind != "audio" || draft.durationMs?.let { it in 1L..600_000L } == true) { "Voice note duration is invalid" }
         require(draft.caption.trim().length <= 2000) { "Caption exceeds the 2000-character message limit" }
         val replyToId = draft.replyToId // Domain property is defined in another module; snapshot before narrowing.

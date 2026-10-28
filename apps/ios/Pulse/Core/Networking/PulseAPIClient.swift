@@ -644,12 +644,16 @@ public struct PulseAPIClient: Sendable {
         }
     }
 
-    /// POST /api/uploads {dataUrl} - JSON body (NOT multipart); returns the
+    /// POST /api/uploads {dataUrl, clientKey?} - JSON body (NOT multipart); returns the
     /// stored filePath the message body then references. Callers downscale
     /// images (≤1280px JPEG q0.82) and stay under the size ceilings BEFORE
-    /// calling - the server rejects oversized payloads.
-    public func uploadMedia(dataUrl: String) async throws -> String {
-        let data = try await postRaw("/api/uploads", body: ["dataUrl": dataUrl])
+    /// calling - the server rejects oversized payloads. `clientKey` is the
+    /// R42 stable upload receipt: a lost-ack retry with the same key replays
+    /// the SAME stored file instead of a second orphan copy server-side.
+    public func uploadMedia(dataUrl: String, clientKey: String? = nil) async throws -> String {
+        var body: [String: Any] = ["dataUrl": dataUrl]
+        if let clientKey, !clientKey.isEmpty { body["clientKey"] = clientKey }
+        let data = try await postRaw("/api/uploads", body: body)
         let result = try decoder.decode(WireUploadResult.self, from: data)
         guard let filePath = result.filePath, !filePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Failure(kind: .validation, message: "Upload response missing filePath")

@@ -45,7 +45,7 @@ class AccountRepositories @Inject constructor(
                 .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5,
                     PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7,
                     PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9,
-                    PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19)
+                    PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19, PulseDatabase.MIGRATION_19_20)
                 .build()
         }
     }
@@ -83,6 +83,7 @@ class AccountRepositories @Inject constructor(
         )
         val repo = PulseRepositoryImpl(api, db, db.conversationDao(), db.messageDao(), db.outboxDao(),
             db.draftDao(), db.topicDao(), db.savedDao(), db.callLogDao(), db.storyDao(), db.wave7Dao(),
+            db.attachmentConsumptionDao(), db.recordingJournalDao(),
             socket, prefs, tokens, context, reminders,
             owner?.let { app.pulse.domain.notify.ReminderOwner(it, origin) })
         return Binding(key, token, alive, repo)

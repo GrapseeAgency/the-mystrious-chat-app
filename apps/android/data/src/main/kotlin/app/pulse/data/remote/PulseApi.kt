@@ -863,9 +863,13 @@ class PulseApi(
             PulseJson.decodeFromString(MessagesPageDto.serializer(), it)
         }
 
-    /** POST /api/uploads { dataUrl } → 201 { filePath, imagePath } - base64 data URL, NOT multipart. */
-    suspend fun uploadMedia(dataUrl: String): PulseResult<UploadResultDto> =
-        post("/api/uploads", jsonOf("dataUrl" to dataUrl)) {
+    /** POST /api/uploads { dataUrl, clientKey? } → 201 { filePath, imagePath } - base64
+     * data URL, NOT multipart. clientKey is the R42 stable upload receipt: a
+     * lost-ack retry with the same key replays the SAME stored file instead
+     * of minting a second orphan copy server-side. */
+    suspend fun uploadMedia(dataUrl: String, clientKey: String? = null): PulseResult<UploadResultDto> =
+        post("/api/uploads", if (clientKey.isNullOrBlank()) jsonOf("dataUrl" to dataUrl)
+            else jsonOf("dataUrl" to dataUrl, "clientKey" to clientKey)) {
             PulseJson.decodeFromString(UploadResultDto.serializer(), it)
         }
 

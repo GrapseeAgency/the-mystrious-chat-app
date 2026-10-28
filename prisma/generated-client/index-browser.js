@@ -599,6 +599,13 @@ exports.Prisma.WalletOperationScalarFieldEnum = {
   result: 'result'
 };
 
+exports.Prisma.UploadOperationScalarFieldEnum = {
+  clientKey: 'clientKey',
+  contentHash: 'contentHash',
+  name: 'name',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.ConversationCreationOperationScalarFieldEnum = {
   userId: 'userId',
   clientId: 'clientId',
@@ -745,6 +752,7 @@ exports.Prisma.ModelName = {
   MessageSendOperation: 'MessageSendOperation',
   WhiteboardStrokeOperation: 'WhiteboardStrokeOperation',
   WalletOperation: 'WalletOperation',
+  UploadOperation: 'UploadOperation',
   ConversationCreationOperation: 'ConversationCreationOperation',
   ScheduledCreationOperation: 'ScheduledCreationOperation',
   ReadIntentState: 'ReadIntentState',

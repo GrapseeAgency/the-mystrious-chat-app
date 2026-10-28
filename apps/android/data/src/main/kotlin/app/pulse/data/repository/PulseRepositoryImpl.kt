@@ -238,6 +238,8 @@ class PulseRepositoryImpl constructor(
     private val callLogDao: CallLogDao,
     private val storyDao: StoryDao,
     private val wave7Dao: app.pulse.data.local.Wave7Dao,
+    private val attachmentConsumptionDao: app.pulse.data.local.AttachmentConsumptionDao,
+    private val recordingJournalDao: app.pulse.data.local.RecordingJournalDao,
     private val socket: PulseSocketClient,
     private val prefsLocalStore: PulsePrefsLocalStore,
     private val sessionTokenStore: SessionTokenStore,
@@ -324,6 +326,13 @@ class PulseRepositoryImpl constructor(
                     val references = database.attachmentDraftDao().references().toSet()
                     withContext(Dispatchers.IO) { attachmentFiles().prune(references) }
                 }.onFailure { Log.w(TAG, "Attachment cleanup deferred", it) }
+            }
+            // R42 - interrupted-recording reconstruction: journal rows from an
+            // abrupt process death are staged back into their room (gracefully
+            // stopped takes) or dropped honestly (unfinalized containers).
+            launch {
+                if (reminderOwner != null) runCatching { sweepRecordingJournal() }
+                    .onFailure { Log.w(TAG, "Recording recovery deferred", it) }
             }
             socket.connect(userId)
             launch { runCatching { ensureDemoSeeded(userId) } }
@@ -445,21 +454,36 @@ class PulseRepositoryImpl constructor(
     /** Data & Storage - user-initiated drop of one held outbox row (no verdict event). */
     override suspend fun discardOutboxEntry(clientId: String) {
         val owner = viewerId ?: return
+        val pending = outboxDao.byClientId(clientId)
         database.withTransaction {
             val temp = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId) ?: return@withTransaction
             if (temp.authorId != owner) return@withTransaction
             outboxDao.deleteByClientId(clientId)
             messageDao.deleteById(temp.id)
         }
+        finishAttachmentDiscard(clientId, pending?.uploadKey)
     }
 
     override suspend fun discardOutboxEntryIfUnchanged(entry: OutboxEntry): Boolean {
         val owner = viewerId ?: return false
-        return database.withTransaction {
-            val removed = outboxDao.discardOwnedSnapshot(owner, entry.conversationId, entry.clientId, entry.createdAt, entry.failureReason)
-            if (removed == 0) return@withTransaction false
+        val pending = outboxDao.byClientId(entry.clientId)
+        val removed = database.withTransaction {
+            val rows = outboxDao.discardOwnedSnapshot(owner, entry.conversationId, entry.clientId, entry.createdAt, entry.failureReason)
+            if (rows == 0) return@withTransaction 0
             messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
-            true
+            rows
+        }
+        if (removed > 0) finishAttachmentDiscard(entry.clientId, pending?.uploadKey)
+        return removed > 0
+    }
+
+    /** R42 - a user-discarded attachment entry drops its consumption receipt
+     * and (if the upload never acked) its still-local bytes. Server-side
+     * orphans wait for the hourly upload sweep's grace window instead. */
+    private suspend fun finishAttachmentDiscard(clientId: String, uploadKey: String?) {
+        attachmentConsumptionDao.delete(clientId)
+        if (uploadKey != null) {
+            withContext(Dispatchers.IO) { runCatching { attachmentFiles().remove(uploadKey) } }
         }
     }
 
@@ -489,12 +513,16 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun clearOutbox() {
         val owner = viewerId ?: return
-        database.withTransaction {
+        val pending = database.withTransaction {
+            val uploadKeys = mutableListOf<String>()
             outboxDao.allOwned(owner).forEach { row ->
                 outboxDao.deleteByClientId(row.clientId)
                 messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + row.clientId)
+                row.uploadKey?.let { uploadKeys.add(it) }
             }
+            uploadKeys
         }
+        pending.forEach { key -> withContext(Dispatchers.IO) { runCatching { attachmentFiles().remove(key) } } }
     }
 
     /** Data & Storage - drop every composer draft at once. */
@@ -1718,7 +1746,27 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun discardAttachmentDraft(conversationId: String, selectionId: String, sessionKey: String): Result<Unit> = try {
         requireAttachmentSession(sessionKey)
-        database.attachmentDraftDao().delete(conversationId, selectionId)
+        val snapshot = database.attachmentDraftDao().get(conversationId)
+        val consumed = database.withTransaction {
+            requireAttachmentSession(sessionKey)
+            val current = database.attachmentDraftDao().get(conversationId)
+            val matches = current?.selectionId == selectionId
+            if (matches) {
+                database.attachmentDraftDao().delete(conversationId, selectionId)
+                // R42 - the discard is a durable consumption receipt: a stale UI
+                // can never resurrect this selection, and the sweep below can
+                // reclaim the file immediately instead of waiting for prune.
+                attachmentConsumptionDao.upsert(app.pulse.data.local.AttachmentConsumptionEntity(
+                    selectionId = selectionId, conversationId = conversationId,
+                    fileKey = current.fileKey, outcome = "discarded",
+                    consumedAt = android.os.System.currentTimeMillis()))
+            }
+            matches
+        }
+        if (consumed) {
+            // Multi-MB file cleanup never holds Room's writer lock.
+            snapshot?.let { withContext(Dispatchers.IO) { runCatching { attachmentFiles().remove(it.fileKey) } } }
+        }
         Result.success(Unit)
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
@@ -1755,6 +1803,9 @@ class PulseRepositoryImpl constructor(
             outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = selectionId,
                 content = caption, kind = draft.kind, createdAt = temp.createdAt, uploadKey = record.fileKey))
             database.attachmentDraftDao().delete(conversationId, selectionId)
+            attachmentConsumptionDao.upsert(app.pulse.data.local.AttachmentConsumptionEntity(
+                selectionId = selectionId, conversationId = conversationId, fileKey = record.fileKey,
+                outcome = "queued", consumedAt = android.os.System.currentTimeMillis()))
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             requireAttachmentSession(sessionKey)
             temp
@@ -1767,6 +1818,131 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun queueSharedImage(conversationId: String, clientId: String, dataUrl: String, sessionKey: String): Result<Message> =
         queuePreparedAttachment(app.pulse.domain.model.AttachmentDraft(clientId, conversationId, "image", dataUrl), sessionKey)
+
+    // R42 - durable recording journal: every take is journaled BEFORE the
+    // recorder starts, so an abrupt process death leaves a reconstructible
+    // record instead of an anonymous cache file.
+    override suspend fun recordingJournalStart(id: String, conversationId: String, file: java.io.File, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        recordingJournalDao.upsert(app.pulse.data.local.RecordingJournalEntity(
+            id = id, conversationId = conversationId, filePath = file.absolutePath,
+            ownerKey = sessionKey, startedAt = android.os.System.currentTimeMillis()))
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun recordingJournalStopped(id: String, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        recordingJournalDao.markStopped(id, android.os.System.currentTimeMillis())
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun recordingJournalCancelled(id: String, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        // The user's discard is a durable receipt: a later sweep must complete
+        // the discard (file + row), never resurrect the take.
+        recordingJournalDao.markCancelled(id, android.os.System.currentTimeMillis())
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun recordingJournalConsumed(id: String, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        recordingJournalDao.delete(id)
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    /**
+     * R42 - interrupted-recording reconstruction at account start.
+     *   • cancelled rows complete their discard (file + row).
+     *   • missing files clear their rows (cache purge beat us).
+     *   • a row whose room already holds a staged draft waits (never overwrites).
+     *   • a readable take (graceful stop, or a finalized container) stages
+     *     back into its room as an audio draft, then consumes the original.
+     *   • an unfinalized hard-killed take (MediaRecorder writes the container
+     *     index only at stop()) is dropped honestly - never silent disk garbage.
+     */
+    private suspend fun sweepRecordingJournal() {
+        val sessionKey = attachmentSession ?: return
+        for (row in recordingJournalDao.all()) {
+            if (row.ownerKey != sessionKey) continue
+            val file = java.io.File(row.filePath)
+            try {
+                if (row.cancelledAt != null) {
+                    withContext(Dispatchers.IO) { runCatching { file.delete() } }
+                    recordingJournalDao.delete(row.id)
+                    continue
+                }
+                if (!file.exists() || file.length() == 0L) {
+                    recordingJournalDao.delete(row.id)
+                    continue
+                }
+                if (database.attachmentDraftDao().get(row.conversationId) != null) {
+                    // A staged selection already occupies the room; retry next
+                    // start rather than overwrite it.
+                    continue
+                }
+                val durationMs = recoveredRecordingDurationMs(row, file)
+                if (durationMs == null) {
+                    withContext(Dispatchers.IO) { runCatching { file.delete() } }
+                    recordingJournalDao.delete(row.id)
+                    Log.i(TAG, "Dropped an unrecoverable interrupted recording (${row.id})")
+                    continue
+                }
+                // Same bounded read + base64 shape as the live voice pipeline.
+                val bytes = withContext(Dispatchers.IO) {
+                    file.inputStream().use { input ->
+                        val bound = 3_374_900
+                        val out = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            require(out.size() + count <= bound) { "Recording exceeds the supported size limit" }
+                            out.write(buffer, 0, count)
+                        }
+                        out.toByteArray()
+                    }
+                }
+                val dataUrl = "data:audio/mp4;base64," +
+                    android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                saveAttachmentDraft(app.pulse.domain.model.AttachmentDraft(
+                    selectionId = row.id, conversationId = row.conversationId, kind = "audio",
+                    dataUrl = dataUrl, durationMs = durationMs), sessionKey).getOrThrow()
+                withContext(Dispatchers.IO) { runCatching { file.delete() } }
+                recordingJournalDao.delete(row.id)
+                Log.i(TAG, "Recovered an interrupted recording into its room draft (${row.id})")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // A failed recovery keeps the row + file for the next start
+                // (transient IO) unless the file itself is unusable.
+                Log.w(TAG, "Recording recovery deferred (${row.id})", error)
+            }
+        }
+    }
+
+    /** Prefer the container's own duration index; fall back to the journal's
+     * stopped/started clocks when the index is unreadable but the take is
+     * otherwise finalizable. */
+    private suspend fun recoveredRecordingDurationMs(row: app.pulse.data.local.RecordingJournalEntity, file: java.io.File): Long? {
+        val parsed = withContext(Dispatchers.IO) {
+            try {
+                val retriever = android.media.MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(file.absolutePath)
+                    retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                } finally { runCatching { retriever.release() } }
+            } catch (error: Exception) { null }
+        }
+        val fromJournal = row.stoppedAt?.let { stopped -> (stopped - row.startedAt).coerceAtLeast(0L) }
+        val duration = parsed ?: fromJournal ?: return null
+        if (duration < 600L) return null
+        return duration.coerceAtMost(600_000L)
+    }
+
+    override suspend fun queueSharedDocument(conversationId: String, clientId: String, dataUrl: String, fileName: String, fileSize: Long, sessionKey: String): Result<Message> =
+        queuePreparedAttachment(app.pulse.domain.model.AttachmentDraft(
+            selectionId = clientId, conversationId = conversationId, kind = "file", dataUrl = dataUrl,
+            fileName = fileName, fileSize = fileSize), sessionKey)
 
     override suspend fun queuePreparedAttachment(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Message> = try {
         val clientId = draft.selectionId
@@ -1804,6 +1980,9 @@ class PulseRepositoryImpl constructor(
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = clientId,
                 content = validated.caption, kind = validated.kind, createdAt = temp.createdAt, uploadKey = key))
+            attachmentConsumptionDao.upsert(app.pulse.data.local.AttachmentConsumptionEntity(
+                selectionId = clientId, conversationId = conversationId, fileKey = key,
+                outcome = "queued", consumedAt = android.os.System.currentTimeMillis()))
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             requireAttachmentSession(sessionKey)
             temp
@@ -3167,7 +3346,7 @@ class PulseRepositoryImpl constructor(
         if (current.uploadKey != null) {
             if (current.kind !in setOf("image", "audio", "file")) return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved upload kind is invalid"))
             val bytes = try { withContext(Dispatchers.IO) { attachmentFiles().read(current.uploadKey) } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, error.message ?: "Saved attachment is unavailable")) }
-            val path = when (val upload = api.uploadMedia(bytes)) {
+            val path = when (val upload = api.uploadMedia(bytes, entry.clientId)) {
                 is PulseResult.Success -> upload.value.filePath?.takeIf { it.isNotBlank() }
                     ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Upload receipt was not confirmed; original attachment is kept"))
                 is PulseResult.Failure -> {
@@ -3187,6 +3366,11 @@ class PulseRepositoryImpl constructor(
                     audioPath = path.takeIf { current.kind == "audio" }, filePath = path.takeIf { current.kind == "file" })
                 messageDao.upsertAll(listOf(updated))
                 outboxDao.finishUpload(entry.clientId)
+                // The durable server path has replaced the local bytes: the
+                // queued consumption receipt (whose only job was keeping the
+                // file alive through any pre-upload process death) retires
+                // with the uploadKey in the same transaction.
+                attachmentConsumptionDao.deleteOutcome(entry.clientId, "queued")
                 updated
             } ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Attachment was discarded during upload"))
             temp = uploaded

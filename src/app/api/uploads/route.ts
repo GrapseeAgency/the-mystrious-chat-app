@@ -8,6 +8,7 @@ import { db } from '@/lib/db'
 import { DOC_MAX_BYTES, UPLOADS_DIR, UPLOAD_MIME, strField } from '@/lib/serializers'
 
 import { readUploadBody, decodeUploadBase64, UploadInputError } from '@/lib/upload-input'
+import { uploadOperation, replayUploadOperation, commitUploadOperation, UploadOperationError } from '@/lib/upload-operation'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,12 +22,27 @@ const MAX_DATA_URL_LENGTH = 4_500_000
  */
 const MAX_DOC_DATA_URL_LENGTH = Math.ceil(DOC_MAX_BYTES / 3) * 4 + 128
 
+/** R42 parity - images/audio carry the same DECODED ceiling the encoded
+ * media cap implies (4,500,000 base64 chars → exactly 3,375,000 bytes),
+ * mirroring the native readers' bounded source streams. */
+const MAX_MEDIA_BYTES = Math.floor(MAX_DATA_URL_LENGTH / 4) * 3
+
 const DATA_URL_REGEX =
   /^data:(image\/(?:jpeg|png|webp)|audio\/(?:webm|mpeg|ogg|wav|mp4|aac)|application\/(?:pdf|zip)|text\/(?:plain|csv));base64,([A-Za-z0-9+/=]+)$/
 
 /** Mime families that carry the R40 10 MB document cap (vs the media cap). */
 function isDocMime(mime: string): boolean {
   return mime === 'application/pdf' || mime === 'application/zip' || mime === 'text/plain' || mime === 'text/csv'
+}
+
+/** Map a receipt-contract refusal (bad key, key conflict, upgrade pending)
+ * to its response; non-contract errors propagate. */
+function operationErrorResponse(error: unknown): NextResponse | null {
+  if (error instanceof UploadOperationError) {
+    const headers = error.retryAfter ? { 'Retry-After': error.retryAfter } : undefined
+    return NextResponse.json({ error: error.message }, { status: error.status, headers })
+  }
+  return null
 }
 
 /**
@@ -107,18 +123,42 @@ async function upload(req: Request) {
       { status: 413 },
     )
   }
+  if (!doc && buffer.length > MAX_MEDIA_BYTES) {
+    return NextResponse.json({ error: 'Attachment is too large (max ~4.5 MB).' }, { status: 413 })
+  }
+
+  // R42 - a stable client key turns a lost-ack retry into a replay of the
+  // SAME stored file instead of a second orphan copy. Legacy callers
+  // (web, old builds) keep the receipt-less path.
+  let operation: ReturnType<typeof uploadOperation> = null
+  try {
+    operation = uploadOperation(body, mime, match[2])
+    if (operation) {
+      const replayed = await replayUploadOperation(db, operation)
+      if (replayed) return NextResponse.json({ filePath: replayed, imagePath: replayed }, { status: 201 })
+    }
+  } catch (error) {
+    const mapped = operationErrorResponse(error)
+    if (mapped) return mapped
+    throw error
+  }
 
   const filePath = `${randomUUID()}.${ext}`
   // The durable store is authoritative. Never acknowledge an ephemeral-only
   // upload: both native outboxes would discard their upload bytes on that ack.
-  try {
-    const storedBytes = new Uint8Array(buffer)
-    await db.uploadedFile.upsert({
+  const storedBytes = new Uint8Array(buffer)
+  const store = async (tx: typeof db) => {
+    await tx.uploadedFile.upsert({
       where: { name: filePath },
       create: { name: filePath, mime, bytes: storedBytes, size: buffer.length },
       update: { mime, bytes: storedBytes, size: buffer.length },
     })
-  } catch {
+  }
+  try {
+    await commitUploadOperation(db, operation, filePath, store)
+  } catch (error) {
+    const mapped = operationErrorResponse(error)
+    if (mapped) return mapped
     console.error('[uploads] Durable upload storage unavailable')
     return NextResponse.json({ error: 'Upload storage is temporarily unavailable. Your upload was not confirmed.' },
       { status: 503, headers: { 'Retry-After': '3' } })

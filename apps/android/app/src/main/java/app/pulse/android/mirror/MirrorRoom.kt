@@ -1225,7 +1225,6 @@ internal fun MirrorRoom(
     val voiceScope = rememberCoroutineScope()
     var voiceSendJob by remember(groupId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var voiceOperationId by remember(groupId) { mutableStateOf(java.util.UUID.randomUUID().toString()) }
-    var uploadedVoicePath by remember(groupId) { mutableStateOf<String?>(null) }
     var recording by remember(groupId) { mutableStateOf(false) }
     var recordSeconds by remember(groupId) { mutableStateOf(0) }
     var voiceBusy by remember(groupId) { mutableStateOf(false) }
@@ -1253,6 +1252,7 @@ internal fun MirrorRoom(
                 return@rememberLauncherForActivityResult
             }
             val context = context
+            val epoch = mediaSession
             runCatching {
                 val file = File(context.cacheDir, "voice-note-${System.currentTimeMillis()}.m4a")
                 recordFileRef.value = file
@@ -1263,8 +1263,12 @@ internal fun MirrorRoom(
                 recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
                 recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                recorder.setAudioEncodingBitRate(96_000)
+                // R42 parity: 32 kbps mono matches the feature-chat recorder and
+                // keeps a full 10-minute take under the ~3.3 MB voice ceiling
+                // (96 kbps overflowed it at ~4.2 minutes).
+                recorder.setAudioEncodingBitRate(32_000)
                 recorder.setAudioSamplingRate(44_100)
+                recorder.setAudioChannels(1)
                 recorder.setOutputFile(file.absolutePath)
                 recorder.prepare()
                 recorder.start()
@@ -1274,15 +1278,19 @@ internal fun MirrorRoom(
                 recordedDurationMs = 0L
                 voiceOperationId = java.util.UUID.randomUUID().toString()
                 voiceTopic = activeTopicId
-                uploadedVoicePath = null
                 recordStartAt = android.os.SystemClock.elapsedRealtime()
                 recordSeconds = 0
+                // R42 - journal the take BEFORE it can be interrupted, so an
+                // abrupt process death reconstructs it (or reports it) instead
+                // of orphaning an anonymous cache file.
+                if (epoch != null) runCatching { repository.recordingJournalStart(voiceOperationId, groupId, file, epoch) }
             }.onFailure {
                 runCatching { recorderRef.value?.release() }
                 recorderRef.value = null
                 app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
                 recordFileRef.value?.delete()
                 recordFileRef.value = null
+                if (epoch != null) runCatching { repository.recordingJournalCancelled(voiceOperationId, epoch) }
                 sendError = "Microphone unavailable"
             }
         } else {
@@ -1302,10 +1310,12 @@ internal fun MirrorRoom(
         app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
         recordFileRef.value?.delete()
         recordFileRef.value = null
+        // R42 - the user's discard is a durable receipt: a later sweep must
+        // never resurrect this take after process death.
+        mediaSession?.let { key -> runCatching { repository.recordingJournalCancelled(voiceOperationId, key) } }
         recording = false
         recordSeconds = 0
         recordedDurationMs = 0L
-        uploadedVoicePath = null
     }
     fun finishRecording(): File? {
         val file = recordFileRef.value ?: return null
@@ -1323,6 +1333,9 @@ internal fun MirrorRoom(
             return null
         }
         recordedDurationMs = duration
+        // R42 - the container is finalized: this take is recoverable in full
+        // after an abrupt process death until it is durably queued.
+        mediaSession?.let { key -> runCatching { repository.recordingJournalStopped(voiceOperationId, key) } }
         return file
     }
     fun sendRecording() {
@@ -1330,21 +1343,26 @@ internal fun MirrorRoom(
         val file = finishRecording() ?: return
         val operationId = voiceOperationId
         val duration = recordedDurationMs
+        val sessionKey = mediaSession
         voiceBusy = true
         voiceSendJob = voiceScope.launch {
             try {
-                val uploaded = uploadedVoicePath ?: run {
-                    val dataUrl = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                        "data:audio/mp4;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
-                    }
-                    repository.uploadMedia(dataUrl).getOrThrow().also { uploadedVoicePath = it }
+                // R42 - voice notes ride the SAME durable outbox as every other
+                // attachment: bytes journal before any network, a lost upload
+                // ack replays the stable clientKey instead of re-uploading, and
+                // a lost send ack retries without ever duplicating the take.
+                val dataUrl = app.pulse.feature.chat.MediaSupport.audioToDataUrl(context, file).getOrThrow()
+                if (sessionKey != null) {
+                    repository.queuePreparedAttachment(app.pulse.domain.model.AttachmentDraft(
+                        selectionId = operationId, conversationId = groupId, kind = "audio",
+                        dataUrl = dataUrl, durationMs = duration, topicId = voiceTopic), sessionKey).getOrThrow()
+                    runCatching { repository.recordingJournalConsumed(operationId, sessionKey) }
+                    ensureActive()
+                    cancelRecording()
+                    sendError = null
+                } else {
+                    sendError = "Attachment session ended. Reopen this room to retry."
                 }
-                ensureActive()
-                repository.sendMediaMessage(conversationId = groupId, body = "",
-                    audioPath = uploaded, durationMs = duration, clientId = operationId, topicId = voiceTopic).getOrThrow()
-                ensureActive()
-                cancelRecording()
-                sendError = null
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -1429,10 +1447,48 @@ internal fun MirrorRoom(
                     selection.draft.copy(dataUrl = document.dataUrl, fileName = document.fileName, fileSize = document.sizeBytes)
                 }
                 ensureActive()
+                // R42 - stage the prepared selection durably BEFORE the sheet
+                // opens: bytes land in the journal, so process death (here or
+                // mid-caption) restores the unsent selection instead of losing it.
+                repository.saveAttachmentDraft(prepared, selection.sessionKey).getOrThrow()
+                ensureActive()
                 if (ownsMedia(selection)) { captionFor = selection.copy(draft = prepared); sendError = null }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
                 if (ownsMedia(selection)) sendError = failure.message ?: "Could not prepare the attachment. Your text is kept."
             } finally { if (ownsMedia(selection)) preparingAttachment = false }
+        }
+    }
+    // R42 - unsent-selection rehydration: a selection staged by a previous
+    // process (photo, document or recovered recording) re-opens its caption
+    // sheet instead of dying with the process that picked it.
+    var mediaSelectionRestored by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf(false) }
+    LaunchedEffect(repository, groupId, viewerId, mediaSession) {
+        if (mediaSelectionRestored) return@LaunchedEffect
+        mediaSelectionRestored = true
+        val epoch = mediaSession ?: return@LaunchedEffect
+        if (captionFor != null || pendingPhoto != null || pendingDocument != null || preparingAttachment || uploadingImage) return@LaunchedEffect
+        val restored = runCatching { repository.loadAttachmentDraft(groupId, epoch) }.getOrNull() ?: return@LaunchedEffect
+        if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
+        if (captionFor == null && pendingPhoto == null && pendingDocument == null) {
+            captionFor = MirrorMediaSelection(draft = restored, sessionKey = epoch)
+        }
+    }
+    fun editStagedMedia(selectionId: String, caption: String, viewOnce: Boolean) {
+        val current = captionFor ?: return
+        if (current.draft.selectionId != selectionId || current.submitted != null) return
+        if (!ownsMedia(current)) return
+        val nextRevision = current.draft.revision + 1
+        captionFor = current.copy(draft = current.draft.copy(caption = caption, viewOnce = viewOnce, revision = nextRevision))
+        historyScope.launch {
+            runCatching { repository.editAttachmentDraft(groupId, selectionId, caption, viewOnce, nextRevision, current.sessionKey) }
+        }
+    }
+    fun discardStagedMedia(selection: MirrorMediaSelection) {
+        if (!ownsMedia(selection) || selection.submitted != null) return
+        historyScope.launch {
+            // R42 - the discard writes a durable consumption receipt; a stale
+            // sheet can never resurrect this selection after recreation.
+            runCatching { repository.discardAttachmentDraft(groupId, selection.draft.selectionId, selection.sessionKey) }
         }
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -1454,7 +1510,18 @@ internal fun MirrorRoom(
         attachmentJob = historyScope.launch {
             try {
                 if (!ownsMedia(selection)) return@launch
-                repository.queuePreparedAttachment(submitted, selection.sessionKey).getOrThrow()
+                // R42 - the journal consume is the consumption receipt: the
+                // staged draft row and its outbox successor swap inside ONE
+                // transaction (queueAttachmentDraft), so no process death can
+                // both keep the selection restorable AND re-queue it.
+                repository.queueAttachmentDraft(
+                    conversationId = groupId,
+                    selectionId = submitted.selectionId,
+                    caption = submitted.caption,
+                    viewOnce = submitted.viewOnce,
+                    topicId = submitted.topicId,
+                    sessionKey = selection.sessionKey,
+                ).getOrThrow()
                 ensureActive()
                 if (ownsMedia(selection) && captionFor?.draft?.selectionId == submitted.selectionId) {
                     selection.draftRevision?.let { composerDraft.clearIfUnchanged(it) }
@@ -2306,7 +2373,7 @@ internal fun MirrorRoom(
                                 trayOpen = false
                                 newMediaSelection("file")?.let { selection ->
                                     pendingDocument = selection
-                                    try { pickDocument.launch("*/*") }
+                                    try { pickDocument.launch(app.pulse.core.media.PulseMedia.DOCUMENT_MIME_ARRAY) }
                                     catch (_: Exception) { pendingDocument = null; sendError = "Document picker is unavailable." }
                                 }
                             },
@@ -2880,7 +2947,16 @@ internal fun MirrorRoom(
             busy = uploadingImage,
             error = sendError,
             onViewOnce = { value -> if (!uploadingImage && staged.submitted == null) captionFor = staged.withViewOnce(value) },
-            onDismiss = { if (!uploadingImage) captionFor = null },
+            onEdit = { caption, viewOnce -> editStagedMedia(staged.draft.selectionId, caption, viewOnce) },
+            onDismiss = {
+                if (!uploadingImage) {
+                    // An unsubmitted dismiss is the user's discard: journal the
+                    // consumption receipt. A locked (already attempted) dismiss
+                    // keeps the journal row - it may already be queued.
+                    if (staged.submitted == null) discardStagedMedia(staged)
+                    captionFor = null
+                }
+            },
             onSend = { caption -> sendStagedAttachment(staged, caption) },
         )
     }
@@ -4894,10 +4970,18 @@ private fun MirrorComposerBar(
 
 /** R73 - the photo caption sheet (web caption-sheet chat-room.tsx:5868-5945). */
 @Composable
-private fun MirrorCaptionSheet(selection: MirrorMediaSelection, destination: String, busy: Boolean, error: String?, onViewOnce: (Boolean) -> Unit, onDismiss: () -> Unit, onSend: (String) -> Unit) {
+private fun MirrorCaptionSheet(selection: MirrorMediaSelection, destination: String, busy: Boolean, error: String?, onViewOnce: (Boolean) -> Unit, onEdit: (String, Boolean) -> Unit = { _, _ -> }, onDismiss: () -> Unit, onSend: (String) -> Unit) {
     val draft = selection.draft
     val locked = selection.submitted != null
     var caption by remember(draft.selectionId) { mutableStateOf(draft.caption) }
+    // R42 - caption + view-once edits persist (debounced) so a process death
+    // mid-caption restores the typed text, not the last full re-pick.
+    var editTouched by remember(draft.selectionId) { mutableStateOf(false) }
+    LaunchedEffect(draft.selectionId, if (editTouched) caption else null, if (editTouched) draft.viewOnce else null) {
+        val text = if (editTouched) caption else return@LaunchedEffect
+        kotlinx.coroutines.delay(600)
+        onEdit(text.trim(), draft.viewOnce)
+    }
     val preview = remember(draft.selectionId) {
         if (draft.kind == "image") runCatching { Base64.decode(draft.dataUrl.substringAfter(','), Base64.NO_WRAP) }.getOrNull() else null
     }
@@ -4941,7 +5025,7 @@ private fun MirrorCaptionSheet(selection: MirrorMediaSelection, destination: Str
                     }
                     BasicTextField(
                         value = caption,
-                        onValueChange = { if (!busy && !locked) caption = it },
+                        onValueChange = { if (!busy && !locked) { caption = it; editTouched = true } },
                         readOnly = busy || locked,
                         textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                         cursorBrush = SolidColor(MirrorArt.Accent),

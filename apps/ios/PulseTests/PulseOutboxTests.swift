@@ -19,10 +19,12 @@ final class PulseOutboxTests: XCTestCase {
         }
 
         var uploadCount = 0
+        var uploadClientKeys: [String] = []
         var beforeUploadReturn: (() throws -> Void)?
         var beforeUploadAsync: (() async -> Void)?
-        func uploadMedia(dataUrl: String) async throws -> String {
+        func uploadMedia(dataUrl: String, clientKey: String?) async throws -> String {
             uploadCount += 1
+            if let clientKey { uploadClientKeys.append(clientKey) }
             await beforeUploadAsync?()
             try beforeUploadReturn?()
             return "uploaded-file.pdf"

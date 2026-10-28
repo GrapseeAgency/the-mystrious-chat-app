@@ -1,6 +1,7 @@
 import UIKit
 import Foundation
 import Combine
+import AVFoundation
 
 /// Outbox events relayed to feature view models (the open room swaps its
 /// queued placeholder for the real row; drops remove it honestly).
@@ -1358,6 +1359,10 @@ public final class PulseSession: ObservableObject {
         startStories(viewer: viewer)
         startVoiceRooms(viewer: viewer)
         startReminderDueLoop(viewer: viewer)
+        // R42 - interrupted-recording reconstruction: journal rows from an
+        // abrupt process death are staged back into their room (gracefully
+        // stopped takes) or dropped honestly (unfinalized containers).
+        sweepRecordingJournal()
         ready = true
         startSavedSynchronization()
         PulsePushRegistrationCenter.shared.noteViewerChanged()
@@ -1555,6 +1560,76 @@ public final class PulseSession: ObservableObject {
         replayReadJournal()
         guard let outbox else { return }
         Task { await outbox.flush() }
+    }
+
+    /// R42 - interrupted-recording reconstruction at session start.
+    ///   • cancelled rows complete their discard (file + row).
+    ///   • missing files clear their rows (iOS purged tmp first).
+    ///   • a row whose room already holds a staged selection waits (never overwrites).
+    ///   • a readable take (graceful stop, or a finalized container) stages
+    ///     back into its room as a staged audio selection, then consumes the original.
+    ///   • an unfinalized hard-killed take (AVAudioRecorder writes the
+    ///     container index only at stop()) is dropped honestly - never silent
+    ///     disk garbage.
+    private func sweepRecordingJournal() {
+        guard let store else { return }
+        guard let rows = try? store.recordingJournalRows() else { return }
+        for row in rows {
+            let url = URL(fileURLWithPath: row.filePath)
+            do {
+                if row.cancelledAt != nil {
+                    try? FileManager.default.removeItem(at: url)
+                    try store.recordingJournalConsumed(id: row.id)
+                    continue
+                }
+                guard FileManager.default.fileExists(atPath: row.filePath) else {
+                    try store.recordingJournalConsumed(id: row.id)
+                    continue
+                }
+                if let staged = try? store.loadStagedAttachment(conversationId: row.conversationId), staged != nil {
+                    // A staged selection already occupies the room; retry next
+                    // start rather than overwrite it.
+                    continue
+                }
+                guard let durationMs = Self.recoveredRecordingDurationMs(row: row, fileURL: url) else {
+                    try? FileManager.default.removeItem(at: url)
+                    try? store.recordingJournalConsumed(id: row.id)
+                    continue
+                }
+                // Same bounded read + base64 shape as the live voice pipeline.
+                let data = try Data(contentsOf: url)
+                guard data.count <= 3_374_900 else {
+                    try? FileManager.default.removeItem(at: url)
+                    try store.recordingJournalConsumed(id: row.id)
+                    continue
+                }
+                try store.stageAttachment(PulseStore.StagedAttachmentRow(
+                    selectionId: row.id, conversationId: row.conversationId, kind: "audio",
+                    dataUrl: PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data),
+                    durationMs: durationMs))
+                try? FileManager.default.removeItem(at: url)
+                try store.recordingJournalConsumed(id: row.id)
+            } catch {
+                // A failed recovery keeps the row + file for the next start.
+            }
+        }
+    }
+
+    /// Prefer the container's own duration (AVAudioPlayer parse); fall back to
+    /// the journal's stopped/started clocks when the index is unreadable but
+    /// the take is otherwise finalizable. Below the send floor or past the
+    /// ten-minute wire cap, nothing is recoverable.
+    private static func recoveredRecordingDurationMs(row: PulseStore.RecordingJournalRow, fileURL: URL) -> Double? {
+        if let player = try? AVAudioPlayer(contentsOf: fileURL) {
+            let seconds = player.duration
+            if seconds.isFinite, seconds > 0 {
+                return min(max(seconds * 1000, 1), 600_000)
+            }
+        }
+        guard let stoppedAt = row.stoppedAt else { return nil }
+        let seconds = stoppedAt - row.startedAt
+        guard seconds * 1000 >= 600 else { return nil }
+        return min(seconds * 1000, 600_000)
     }
 
     @discardableResult

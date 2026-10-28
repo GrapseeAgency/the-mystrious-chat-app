@@ -59,4 +59,30 @@ class MediaOperationApiTest {
         } finally { http.close() }
     }
 
+    /** R42 - a lost-ack upload retry replays the SAME stable clientKey with
+     * byte-identical payload; legacy keyless callers never send the field. */
+    @Test fun uploadRetrySendsTheStableClientKeyWithIdenticalPayload() = runTest {
+        val bodies = mutableListOf<String>()
+        val http = HttpClient(MockEngine { request ->
+            bodies += (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            respond("""{"filePath":"kept.pdf","imagePath":"kept.pdf"}""", HttpStatusCode.Created,
+                headersOf("Content-Type", "application/json"))
+        })
+        try {
+            val api = PulseApi(http, gateway = { "https://fixture.invalid" })
+            val dataUrl = "data:application/pdf;base64," +
+                java.util.Base64.getEncoder().encodeToString(ByteArray(8))
+            repeat(2) {
+                assertTrue(api.uploadMedia(dataUrl, "stable-upload-key-12345") is PulseResult.Success)
+            }
+            assertEquals(2, bodies.size)
+            assertEquals(bodies[0], bodies[1])
+            val payload = Json.parseToJsonElement(bodies[0]).jsonObject
+            assertEquals("stable-upload-key-12345", payload["clientKey"]?.jsonPrimitive?.content)
+            // A legacy keyless call keeps the receipt-less path: no field sent.
+            assertTrue(api.uploadMedia(dataUrl) is PulseResult.Success)
+            assertFalse(Json.parseToJsonElement(bodies[2]).jsonObject.containsKey("clientKey"))
+        } finally { http.close() }
+    }
+
 }

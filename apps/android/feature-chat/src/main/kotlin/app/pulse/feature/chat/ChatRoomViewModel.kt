@@ -218,6 +218,8 @@ class ChatRoomViewModel @Inject constructor(
     private var recordFile: File? = null
     private var recordStartedAtMs: Long = 0
     private var recordTicker: Job? = null
+    // R42 - the durable recording journal row id for the current take.
+    private var recordingJournalId: String? = null
 
     private val _recording = MutableStateFlow(false)
     val recording: StateFlow<Boolean> = _recording.asStateFlow()
@@ -1247,7 +1249,12 @@ class ChatRoomViewModel @Inject constructor(
                 persistedAttachmentId = id
                 _state.value = _state.value.copy(staged = _state.value.staged?.copy(uploading = false, saved = true, error = null))
                 _state.value.staged?.let { persistAttachmentEdits(it) }
-                if (selected.kind == StagedMedia.Kind.AUDIO) File(selected.localUri).delete() // The account-private journal owns the bytes now.
+                if (selected.kind == StagedMedia.Kind.AUDIO) {
+                    File(selected.localUri).delete() // The account-private journal owns the bytes now.
+                    // R42 - the take is durably staged; retire its journal row so
+                    // the recovery sweep never resurrects it as a second copy.
+                    retireRecordingJournal(discard = false)
+                }
                 if (autoSend) sendStaged(_state.value.staged?.caption.orEmpty())
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
                 if (isActive) stageFailed(id, error.message ?: "Couldn't save this attachment")
@@ -1271,7 +1278,9 @@ class ChatRoomViewModel @Inject constructor(
 
     fun setAttachmentCaption(value: String) {
         val staged = _state.value.staged?.takeUnless { it.sending } ?: return
-        val updated = staged.copy(caption = value.take(500), revision = staged.revision + 1)
+        // R42 parity: captions ride the same 2000-character message limit the
+        // server, the mirror composer and AttachmentValidation enforce.
+        val updated = staged.copy(caption = value.take(2000), revision = staged.revision + 1)
         _state.value = _state.value.copy(staged = updated)
         persistAttachmentEdits(updated)
     }
@@ -1423,6 +1432,14 @@ class ChatRoomViewModel @Inject constructor(
         _recordMs.value = 0L
         _recordAmps.value = emptyList()
         _recording.value = true
+        // R42 - journal the take BEFORE it can be interrupted: an abrupt
+        // process death reconstructs it (or reports it) instead of orphaning
+        // an anonymous cache file. The journal id reuses the file's uuid so
+        // the sweep stages a recovery under a stable selection id.
+        recordingJournalId = file.nameWithoutExtension
+        viewModelScope.launch {
+            runCatching { repo.recordingJournalStart(recordingJournalId ?: file.nameWithoutExtension, conversationId, file, attachmentKey) }
+        }
         recordTicker?.cancel()
         recordTicker = viewModelScope.launch {
             while (isActive) {
@@ -1451,9 +1468,26 @@ class ChatRoomViewModel @Inject constructor(
         stopRecorderLocked()
         recordFile?.delete()
         recordFile = null
+        // R42 - the user's discard is a durable receipt: a later sweep must
+        // never resurrect this take after process death.
+        retireRecordingJournal(discard = true)
         _recording.value = false
         _recordMs.value = 0L
         _recordAmps.value = emptyList()
+    }
+
+    /** R42 - retire the journal row for the current take: a discard marks it
+     * cancelled (the sweep completes the delete); a consume deletes it after
+     * the take was durably staged elsewhere. */
+    private fun retireRecordingJournal(discard: Boolean) {
+        val id = recordingJournalId ?: return
+        val key = recordingAttachmentSession ?: repo.attachmentSessionKey()
+        recordingJournalId = null
+        if (key == null) return
+        viewModelScope.launch {
+            if (discard) runCatching { repo.recordingJournalCancelled(id, key) }
+            else runCatching { repo.recordingJournalConsumed(id, key) }
+        }
     }
 
     /**
@@ -1483,6 +1517,9 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         val durationMs = app.pulse.core.media.PulseMedia.voiceDurationMs(elapsedMs)
+        // R42 - the container is finalized: this take is recoverable in full
+        // after an abrupt process death until it is durably staged below.
+        recordingJournalId?.let { id -> runCatching { repo.recordingJournalStopped(id, attachmentKey) } }
         // Keep the source while an upload is uncertain; expose the same staged
         // retry/discard controls as a file. Delete only after durable enqueue.
         val selected = StagedMedia(kind = StagedMedia.Kind.AUDIO, localUri = file.absolutePath,

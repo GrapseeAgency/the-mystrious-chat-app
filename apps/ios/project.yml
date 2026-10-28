@@ -37,6 +37,9 @@ targets:
       - package: GRDB
       - package: SocketIO
       - package: WebRTC
+      # R42 — embed the system share extension (share-services intake into
+      # the App Group inbox; the main app owns every later step).
+      - target: PulseShareExtension
     # XcodeGen consumes target.info.properties, not infoProperties. The latter
     # silently left background-read declarations and UIKit launch metadata out.
     info:
@@ -78,6 +81,13 @@ targets:
           - UIApplicationShortcutItemType: app.pulse.shortcut.compose
             UIApplicationShortcutItemTitle: New message
             UIApplicationShortcutItemIconSymbolName: square.and.pencil
+    # R42 — App Group container shared with the share extension (share-in
+    # inbox). Unsigned simulator builds skip entitlement validation; device
+    # provisioning is deferred with the device-acceptance work.
+    entitlements:
+      path: Pulse/Pulse.entitlements
+      properties:
+        com.apple.security.application-groups: [group.app.pulse.share]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.pulse.chat
@@ -88,6 +98,38 @@ targets:
         ENABLE_PREVIEWS: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_STANDALONE_ICON_NAME: AppIcon
+  # R42 — the system share extension: a thin intake that prepares the shared
+  # image/text into the App Group share-in inbox. No account, no network;
+  # the main app's picker + durable outbox own delivery.
+  PulseShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ShareExtension
+    entitlements:
+      path: ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups: [group.app.pulse.share]
+    info:
+      path: .generated/PulseShareExtension-Info.plist
+      properties:
+        CFBundleDisplayName: Pulse
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.pulse.chat.ShareExtension
+        MARKETING_VERSION: "0.10.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGNING_ALLOWED: "NO"
+        TARGETED_DEVICE_FAMILY: "1"
   PulseTests:
     type: bundle.unit-test
     platform: iOS

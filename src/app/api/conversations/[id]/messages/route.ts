@@ -84,6 +84,22 @@ function privateHistoryJson(body: unknown, init: ResponseInit = {}) {
   return NextResponse.json(body, { ...init, headers })
 }
 
+/**
+ * R41/R42 parity - an uploaded attachment's bytes may live on disk (fast
+ * path) OR only in the durable UploadedFile store (the sandbox wipes disk
+ * files while DB rows persist; GET /api/uploads/[file] already serves both).
+ * Image, audio and document attachments share ONE existence contract:
+ * reject only when NEITHER store holds the file.
+ */
+async function uploadedBytesExist(name: string): Promise<boolean> {
+  try {
+    await stat(path.join(UPLOADS_DIR, name))
+    return true
+  } catch {
+    return (await db.uploadedFile.findUnique({ where: { name }, select: { name: true } })) !== null
+  }
+}
+
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
 
@@ -399,9 +415,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     if (!/^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/.test(imagePath)) {
       return NextResponse.json({ error: 'imagePath is invalid.' }, { status: 400 })
     }
-    try {
-      await stat(path.join(UPLOADS_DIR, imagePath))
-    } catch {
+    if (!(await uploadedBytesExist(imagePath))) {
       return NextResponse.json(
         { error: 'imagePath does not reference an uploaded file. POST /api/uploads first.' },
         { status: 400 },
@@ -415,9 +429,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     if (!AUDIO_EXT_REGEX.test(audioPath)) {
       return NextResponse.json({ error: 'audioPath is invalid.' }, { status: 400 })
     }
-    try {
-      await stat(path.join(UPLOADS_DIR, audioPath))
-    } catch {
+    if (!(await uploadedBytesExist(audioPath))) {
       return NextResponse.json(
         { error: 'audioPath does not reference an uploaded file. POST /api/uploads first.' },
         { status: 400 },
@@ -484,17 +496,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     if (!DOC_EXT_REGEX.test(rawFilePath)) {
       return NextResponse.json({ error: 'filePath is invalid - documents must be pdf, txt, csv or zip.' }, { status: 400 })
     }
-    // R41 - the uploaded bytes may live on disk (fast path) OR in the
-    // durable UploadedFile store (the sandbox wipes disk files while DB
-    // rows persist). Accept either; reject only when NEITHER holds the file.
-    let exists = false
-    try {
-      await stat(path.join(UPLOADS_DIR, rawFilePath))
-      exists = true
-    } catch {
-      exists = (await db.uploadedFile.findUnique({ where: { name: rawFilePath }, select: { name: true } })) !== null
-    }
-    if (!exists) {
+    if (!(await uploadedBytesExist(rawFilePath))) {
       return NextResponse.json(
         { error: 'filePath does not reference an uploaded file. POST /api/uploads first.' },
         { status: 400 },

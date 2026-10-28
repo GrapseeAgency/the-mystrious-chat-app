@@ -1,7 +1,5 @@
 package app.pulse.android
 
-import android.content.Context
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -39,10 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.repository.PulseRepository
-import app.pulse.feature.chat.MediaSupport
 import app.pulse.ui.PulseAvatar
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -51,28 +47,43 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 
 /**
- * R10-a - the share-in payload MainActivity forwards from [ShareInActivity].
- * Text rides [text], an image rides [stream] (a caller-granted content:// Uri
- * - ClipData forwards the temporary grant onto MainActivity).
+ * R10-a/R42 - the share-in payload. Text rides [text]; a photo or document
+ * rides its PREPARED data URL ([dataUrl]) from the durable share-in inbox -
+ * never a revocable content:// grant. [kind] is "text" | "image" | "file".
  */
-data class ShareInPayload(val text: String? = null, val stream: Uri? = null, val id: String = java.util.UUID.randomUUID().toString()) {
-    val isImage: Boolean get() = stream != null
+data class ShareInPayload(
+    val text: String? = null,
+    val stream: android.net.Uri? = null,
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val kind: String = if (stream != null) "image" else "text",
+    val dataUrl: String? = null,
+    val fileName: String? = null,
+    val fileSize: Long? = null,
+) {
+    val isImage: Boolean get() = kind == "image" || (kind == "text" && stream != null)
+    val isDocument: Boolean get() = kind == "file"
     val isText: Boolean get() = !text.isNullOrBlank()
+
+    companion object {
+        /** An inbox entry is already prepared; no URI grant is involved. */
+        fun from(entry: ShareInInbox.Entry) = ShareInPayload(
+            id = entry.id, kind = entry.kind, text = entry.text,
+            dataUrl = entry.dataUrl, fileName = entry.fileName, fileSize = entry.fileSize)
+    }
 }
 
 /**
  * R10-a - picker + sender state for the share-in sheet. The conversation list
  * is the SAME live source the chats surface uses (repo.observeConversations);
- * text shares go through repo.sendMessage (the offline-queueable path the
- * room composer uses), image shares through the EXISTING staging pipeline
- * (MediaSupport.imageToDataUrl → repo.queueSharedImage). Raw bytes commit before
- * upload; no room attachment draft is overwritten. Failed preparation/storage
- * keeps the payload; only the account outbox owns subsequent network delivery.
+ * every share goes through the EXISTING durable staging pipeline
+ * (repo.queueSharedImage / queueSharedDocument / SendMessageUseCase). Raw
+ * bytes commit before upload; no room attachment draft is overwritten. Only
+ * a durable queue success (or the user's explicit Remove) consumes the
+ * inbox entry.
  */
 @HiltViewModel
 class ShareInViewModel @Inject constructor(
     private val repo: PulseRepository,
-    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     val conversations: StateFlow<List<Conversation>> = repo.observeConversations()
@@ -85,14 +96,13 @@ class ShareInViewModel @Inject constructor(
     }
 
     fun delivery() = app.pulse.domain.sync.SharedContentDelivery(repo)
-    suspend fun prepareImage(uri: Uri) = MediaSupport.imageToDataUrl(context, uri)
-
 }
 
 /**
  * R10-a - the share-in sheet at shell level (ModalBottomSheet, the house
- * sheet idiom). Lists recent conversations; picking one sends the payload
- * through the pipeline above, then opens the room so the send is visible.
+ * sheet idiom). Lists recent conversations; picking one queues the prepared
+ * payload through the durable pipeline above, then opens the room so the
+ * send is visible.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,16 +110,18 @@ fun ShareInSheet(
     payload: ShareInPayload,
     onDismiss: () -> Unit,
     onOpenRoom: (String) -> Unit,
+    onConsumed: () -> Unit = {},
+    onRemoved: () -> Unit = {},
     viewModel: ShareInViewModel = hiltViewModel(),
 ) {
     androidx.compose.runtime.key(payload.id) {
-        OwnedShareInSheet(payload, onDismiss, onOpenRoom, viewModel)
+        OwnedShareInSheet(payload, onDismiss, onOpenRoom, onConsumed, onRemoved, viewModel)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OwnedShareInSheet(payload: ShareInPayload, onDismiss: () -> Unit, onOpenRoom: (String) -> Unit, viewModel: ShareInViewModel) {
+private fun OwnedShareInSheet(payload: ShareInPayload, onDismiss: () -> Unit, onOpenRoom: (String) -> Unit, onConsumed: () -> Unit, onRemoved: () -> Unit, viewModel: ShareInViewModel) {
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
     val delivery = remember { viewModel.delivery() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -126,6 +138,7 @@ private fun OwnedShareInSheet(payload: ShareInPayload, onDismiss: () -> Unit, on
             Text(
                 when {
                     payload.isImage -> "Photo"
+                    payload.isDocument -> payload.fileName ?: "Document"
                     else -> payload.text.orEmpty().take(120)
                 },
                 fontSize = 12.5.sp,
@@ -162,11 +175,23 @@ private fun OwnedShareInSheet(payload: ShareInPayload, onDismiss: () -> Unit, on
                                     progress = ShareInViewModel.Progress.Sending
                                     scope.launch {
                                         try {
-                                            val result = if (payload.isImage) delivery.image(conversation.id) { viewModel.prepareImage(payload.stream!!) }
-                                                else delivery.text(conversation.id, payload.text.orEmpty())
+                                            // R42 - the payload's bytes were prepared at share
+                                            // arrival (inbox); delivery only queues them durably.
+                                            val result = when {
+                                                payload.isDocument -> delivery.document(
+                                                    conversation.id,
+                                                    checkNotNull(payload.dataUrl),
+                                                    checkNotNull(payload.fileName),
+                                                    payload.fileSize ?: 0L,
+                                                )
+                                                payload.isImage -> delivery.image(conversation.id) {
+                                                    Result.success(checkNotNull(payload.dataUrl))
+                                                }
+                                                else -> delivery.text(conversation.id, payload.text.orEmpty())
+                                            }
                                             kotlinx.coroutines.currentCoroutineContext().ensureActive()
                                             if (!delivery.isCurrent()) return@launch
-                                            result.fold(onSuccess = { onOpenRoom(conversation.id); onDismiss() },
+                                            result.fold(onSuccess = { onOpenRoom(conversation.id); onConsumed() },
                                                 onFailure = { progress = ShareInViewModel.Progress.Failed(it.message ?: "Couldn't queue this share. Retry when ready.") })
                                         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
                                         } catch (failure: Exception) {
@@ -201,6 +226,17 @@ private fun OwnedShareInSheet(payload: ShareInPayload, onDismiss: () -> Unit, on
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                     }
                 }
+            }
+            // R42 - explicit Remove is one of the only two ways an inbox entry
+            // is consumed (the other is a durable queue success).
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = progress !is ShareInViewModel.Progress.Sending) { onRemoved() }
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Text("Remove this share", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
             }
         }
     }

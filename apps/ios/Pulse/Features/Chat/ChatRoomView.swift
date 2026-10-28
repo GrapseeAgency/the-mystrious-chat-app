@@ -2570,6 +2570,13 @@ private struct RoomContent: View {
                     .lineLimit(1...3)
                     .textFieldStyle(.roundedBorder)
                     .font(.subheadline)
+                    // R42 parity - the staged caption rides the same 2000-char
+                    // message ceiling the server and Android enforce.
+                    .onChange(of: viewModel.caption) { _, value in
+                        if value.count > PulseMediaSupport.maxCaptionLength {
+                            viewModel.caption = String(value.prefix(PulseMediaSupport.maxCaptionLength))
+                        }
+                    }
                 Button {
                     viewModel.cancelStaged()
                 } label: {
@@ -3740,6 +3747,9 @@ final class RoomViewModel: ObservableObject {
     /// Wave 1 attach flow - a staged photo/document awaiting upload + send.
     struct StagedMedia: Equatable {
         enum Kind { case image, file, audio }
+        /// R42 - stable identity of this selection across the durable journal
+        /// (rehydration after process death + consumption receipts).
+        var selectionId: String = UUID().uuidString
         let kind: Kind
         let dataUrl: String
         let fileName: String?
@@ -3797,7 +3807,13 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var searching = false
     @Published var editingTarget: WireChatMessage?
     @Published var staged: StagedMedia?
-    @Published var caption = ""
+    @Published var caption = "" {
+        didSet {
+            // R42 - caption edits persist on top of the staged selection so a
+            // process death mid-caption restores the typed text.
+            if oldValue != caption, staged != nil { persistStagedEdit() }
+        }
+    }
     @Published private(set) var uploading = false
 
     // ── REM-B - scheduled / slow-mode / incognito / slash ──
@@ -3954,6 +3970,8 @@ final class RoomViewModel: ObservableObject {
     private var memberWatermarks: [String: Date] = [:]
     // Wave 2 voice plumbing - recorder + single active player + timers.
     private var voiceRecorder: VoiceRecorder?
+    // R42 - the durable recording journal row id for the current take.
+    private var voiceJournalId: String?
     private var voicePermissionTask: Task<Void, Never>?
     private var voicePermissionGeneration = UUID()
     private var recordingStartedAt: Date?
@@ -4082,6 +4100,10 @@ final class RoomViewModel: ObservableObject {
             loadPins(session: session)
             startTopicTicker()
             loadTopics(session: session)
+            // R42 - unsent-selection rehydration: a selection staged by a
+            // previous process (photo, document or recovered recording)
+            // restores with its caption instead of dying with that process.
+            rehydrateStagedAttachment(session: session)
             // REM-B F-MS-18 - pending scheduled count for the composer banner.
             loadScheduled(session: session)
             // R30-b - upcoming reminders for the header badge (one quiet GET).
@@ -5579,9 +5601,61 @@ final class RoomViewModel: ObservableObject {
     func installPreparedAttachment(_ prepared: StagedMedia) {
         guard !isRecording, staged?.kind != .audio else { return }
         let once = prepared.kind == .image && (prepared.viewOnce || (staged?.kind == .image && staged?.viewOnce == true))
-        staged = StagedMedia(kind: prepared.kind, dataUrl: prepared.dataUrl, fileName: prepared.fileName,
+        let next = StagedMedia(kind: prepared.kind, dataUrl: prepared.dataUrl, fileName: prepared.fileName,
             fileSize: prepared.fileSize, previewURL: prepared.previewURL, viewOnce: once,
             durationMs: prepared.durationMs, previewData: prepared.previewData)
+        // R42 - the selection is durable the moment its bytes are prepared:
+        // process death between picking and sending restores it, and the
+        // caption/view-once edits below persist on top of it.
+        staged = next
+        persistStagedAttachment()
+    }
+
+    /// R42 - persist the staged selection (metadata + bytes) into the account
+    /// store. One staged selection per room: a newer pick replaces an older,
+    /// never-sent one.
+    private func persistStagedAttachment() {
+        guard let media = staged, let store = session?.store, session?.ready == true else { return }
+        let kind: String
+        switch media.kind { case .image: kind = "image"; case .file: kind = "file"; case .audio: kind = "audio" }
+        try? store.stageAttachment(PulseStore.StagedAttachmentRow(
+            selectionId: media.selectionId, conversationId: conversationId, kind: kind,
+            dataUrl: media.dataUrl, caption: caption, viewOnce: media.viewOnce,
+            fileName: media.fileName, fileSize: media.fileSize, durationMs: media.durationMs,
+            replyToId: replyTarget?.id, parentId: nil, topicId: activeTopicId,
+            anon: isGroupRoom && anonOn))
+    }
+
+    /// R42 - restore a staged selection persisted by a previous process.
+    func rehydrateStagedAttachment(session: PulseSession) {
+        guard staged == nil, let store = session.store else { return }
+        guard let row = try? store.loadStagedAttachment(conversationId: conversationId), let saved = row else { return }
+        guard session.sessionGeneration == readSessionGeneration else { return }
+        let kind: StagedMedia.Kind
+        switch saved.kind { case "image": kind = .image; case "file": kind = .file; case "audio": kind = .audio; default: return }
+        staged = StagedMedia(kind: kind, dataUrl: saved.dataUrl, fileName: saved.fileName,
+            fileSize: saved.fileSize, previewURL: nil, viewOnce: saved.viewOnce,
+            durationMs: saved.durationMs)
+        staged?.selectionId = saved.selectionId
+        caption = saved.caption
+        replyTarget = saved.replyToId.flatMap { id in messages.first { $0.id == id } }
+    }
+
+    /// R42 - caption + view-once edits persist (debounced) so a process death
+    /// mid-caption restores the typed text, not the last full re-pick.
+    private var stagedEditTask: Task<Void, Never>?
+    func persistStagedEdit() {
+        guard let media = staged, let store = session?.store, session?.ready == true else { return }
+        let selectionId = media.selectionId
+        let text = caption
+        let once = media.viewOnce
+        stagedEditTask?.cancel()
+        stagedEditTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            try? store.editStagedAttachment(selectionId: selectionId, caption: text, viewOnce: once)
+            _ = self
+        }
     }
 
     /// Wave 2 view-once - flips the staged card's burn flag (image sends).
@@ -5597,10 +5671,17 @@ final class RoomViewModel: ObservableObject {
             durationMs: current.durationMs,
             previewData: current.previewData,
         )
+        persistStagedEdit()
     }
 
     func cancelStaged() {
         cancelPhotoImport()
+        // R42 - the user's discard is a durable consumption receipt: a stale
+        // restore can never silently resurrect this selection.
+        if let media = staged, let store = session?.store, session?.ready == true {
+            try? store.discardStagedAttachment(conversationId: conversationId, selectionId: media.selectionId)
+        }
+        stagedEditTask?.cancel()
         staged = nil
         caption = ""
         uploading = false
@@ -5622,12 +5703,19 @@ final class RoomViewModel: ObservableObject {
             switch media.kind { case .image: kind = "image"; case .file: kind = "file"; case .audio: kind = "audio" }
             let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
                 content: caption.trimmingCharacters(in: .whitespacesAndNewlines), dataUrl: media.dataUrl,
+                stagedSelectionId: media.selectionId,
                 envelope: PulseOutboxForward(kind: kind, durationMs: media.durationMs,
                     fileName: media.fileName, fileSize: media.fileSize, topicId: activeTopicId,
                     anon: isGroupRoom && anonOn, viewOnce: media.viewOnce), replyTo: replyTarget)
             upsert(message)
+            stagedEditTask?.cancel()
             staged = nil; caption = ""; replyTarget = nil
             if isGroupRoom { anonOn = false }
+            // R42 - a durably-enqueued voice take retires its journal row.
+            if media.kind == .audio, let journalId = voiceJournalId {
+                voiceJournalId = nil
+                try? store.recordingJournalConsumed(id: journalId)
+            }
             session.outbox?.reloadPending()
             session.flushOutbox()
         } catch { errorText = Self.describe(error) }
@@ -5659,6 +5747,14 @@ final class RoomViewModel: ObservableObject {
             do { try recorder.start() }
             catch { voiceSession = nil; session.toasts.show("Couldn't start recording"); return }
             voiceRecorder = recorder
+            // R42 - journal the take BEFORE it can be interrupted, so an abrupt
+            // process death reconstructs it (or reports it) instead of
+            // orphaning an anonymous temp file.
+            voiceJournalId = UUID().uuidString
+            if let store = session.store {
+                try? store.recordingJournalStart(id: voiceJournalId!, conversationId: conversationId,
+                    filePath: recorder.fileURL.path)
+            }
             recordingStartedAt = Date(); recordingElapsedMs = 0; recordingAmplitudes = []
             isRecording = true
             startRecordingTicker()
@@ -5681,6 +5777,19 @@ final class RoomViewModel: ObservableObject {
         guard isRecording else { return }
         voiceRecorder?.cancel()
         teardownRecording()
+        // R42 - the user's discard is a durable receipt: a later sweep must
+        // never resurrect this take after process death.
+        retireVoiceJournal(discard: true)
+    }
+
+    /// R42 - retire the journal row for the current take: a discard marks it
+    /// cancelled (the sweep completes the delete); a consume deletes it after
+    /// the take was durably staged/enqueued.
+    private func retireVoiceJournal(discard: Bool) {
+        guard let id = voiceJournalId, let store = session?.store else { voiceJournalId = nil; return }
+        voiceJournalId = nil
+        if discard { try? store.recordingJournalCancelled(id: id) }
+        else { try? store.recordingJournalConsumed(id: id) }
     }
 
     /// Stop and stage the recording, then durably enqueue its bytes and metadata.
@@ -5694,13 +5803,23 @@ final class RoomViewModel: ObservableObject {
         teardownRecording()
         guard !VoiceMath.isTooShort(elapsedMs), let fileURL else {
             if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
+            retireVoiceJournal(discard: true)
             session.toasts.show("Too short - voice note discarded")
             return
         }
         do {
             let data = try Data(contentsOf: fileURL)
-            staged = StagedMedia(kind: .audio, dataUrl: PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data),
-                fileName: "Voice note.m4a", fileSize: data.count, previewURL: nil, viewOnce: false, durationMs: durationMs)
+            // R42 - the container is finalized: this take is recoverable in
+            // full after an abrupt process death until it is durably staged.
+            if let store = session.store, let journalId = voiceJournalId {
+                try? store.recordingJournalStopped(id: journalId)
+            }
+            // Staging is durable (installPreparedAttachment persists the
+            // selection): the staged bytes survive even if this process dies
+            // before the enqueue below runs.
+            installPreparedAttachment(StagedMedia(kind: .audio,
+                dataUrl: PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data),
+                fileName: "Voice note.m4a", fileSize: data.count, previewURL: nil, viewOnce: false, durationMs: durationMs))
             caption = ""
             // Only the temporary recorder file is removed; the staged bytes remain
             // on storage failure, or move atomically into the durable outbox.

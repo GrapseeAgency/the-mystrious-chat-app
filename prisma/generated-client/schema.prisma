@@ -839,6 +839,17 @@ model WalletOperation {
   @@id([userId, clientId])
 }
 
+// Durable upload receipt (R42). Native outboxes retry an upload when its HTTP
+// ack is lost AFTER the server stored the bytes; the retry re-POSTs the same
+// data URL. The client-supplied stable key identifies that retry so the server
+// returns the SAME stored filename instead of minting a second orphan copy.
+model UploadOperation {
+  clientKey   String   @id
+  contentHash String
+  name        String
+  createdAt   DateTime @default(now())
+}
+
 // Durable group/channel creation identity, retained after removal/departure.
 model ConversationCreationOperation {
   userId         String
@@ -857,6 +868,7 @@ model ScheduledCreationOperation {
   scheduledId String
 
   @@id([userId, clientId])
+  @@index([userId, requestHash, clientId])
 }
 
 // Independent of message timestamps: a new manual action retires old read intent.

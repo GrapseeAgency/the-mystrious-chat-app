@@ -10,7 +10,7 @@ import Network
 /// Upload bytes and the eventual message share one durable operation. A known
 /// uploaded path is persisted before sending so a lost message ACK never reuploads.
 public protocol PulseOutboxSending: Sendable {
-    func uploadMedia(dataUrl: String) async throws -> String
+    func uploadMedia(dataUrl: String, clientKey: String?) async throws -> String
     func sendMessage(
         conversationId: String,
         clientId: String,
@@ -421,7 +421,10 @@ public final class PulseOutboxEngine: ObservableObject {
                     guard var uploaded = forward, ["image", "file", "audio"].contains(uploaded.kind ?? "") else {
                         throw CocoaError(.coderReadCorrupt)
                     }
-                    let path = try await sender.uploadMedia(dataUrl: dataUrl)
+                    // R42 - the outbox clientId is the stable upload receipt
+                    // key: a lost upload ack replays the SAME stored file
+                    // instead of minting a second orphan copy server-side.
+                    let path = try await sender.uploadMedia(dataUrl: dataUrl, clientKey: entry.clientId)
                     guard canWork, !Task.isCancelled else { return false }
                     guard !path.isEmpty else { throw CocoaError(.coderReadCorrupt) }
                     switch uploaded.kind {

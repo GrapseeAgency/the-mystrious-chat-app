@@ -641,7 +641,7 @@ data class AttachmentDraftEntity(
 
 @Dao
 interface AttachmentDraftDao {
-    @Query("SELECT fileKey FROM attachment_draft UNION SELECT uploadKey AS fileKey FROM outbox WHERE uploadKey IS NOT NULL")
+    @Query("SELECT fileKey FROM attachment_draft UNION SELECT uploadKey AS fileKey FROM outbox WHERE uploadKey IS NOT NULL UNION SELECT fileKey FROM attachment_consumption WHERE outcome = 'queued'")
     suspend fun references(): List<String>
     @Query("SELECT * FROM attachment_draft WHERE conversationId = :conversationId")
     suspend fun get(conversationId: String): AttachmentDraftEntity?
@@ -651,6 +651,67 @@ interface AttachmentDraftDao {
     suspend fun edit(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, revision: Long): Int
     @Query("DELETE FROM attachment_draft WHERE conversationId = :conversationId AND selectionId = :selectionId")
     suspend fun delete(conversationId: String, selectionId: String): Int
+}
+
+/** Durable attachment-selection consumption receipt (R42). Written in the
+ * SAME transaction that consumes a selection (queue or discard), so a
+ * selection's file survives prune while its outcome is still in flight and
+ * a stale UI can never silently resurrect a consumed selection. */
+@Entity(
+    tableName = "attachment_consumption",
+    indices = [Index(value = ["fileKey"])],
+)
+data class AttachmentConsumptionEntity(
+    @PrimaryKey val selectionId: String,
+    val conversationId: String,
+    val fileKey: String,
+    val outcome: String, // "queued" | "discarded"
+    val consumedAt: Long,
+)
+
+/** Durable active-recording journal (R42). One row per in-progress take,
+ * written BEFORE MediaRecorder/AVAudioRecorder starts, so an abrupt process
+ * death is reconstructible: a gracefully stopped take stages back as an
+ * audio draft; a hard-killed take is swept (kept or dropped honestly, never
+ * left as silent disk garbage). cancelledAt is the user's discard receipt. */
+@Entity(
+    tableName = "recording_journal",
+    indices = [Index(value = ["conversationId"])],
+)
+data class RecordingJournalEntity(
+    @PrimaryKey val id: String,
+    val conversationId: String,
+    val filePath: String,
+    val ownerKey: String,
+    val startedAt: Long,
+    val stoppedAt: Long? = null,
+    val cancelledAt: Long? = null,
+)
+
+@Dao
+interface AttachmentConsumptionDao {
+    @Query("SELECT fileKey FROM attachment_consumption")
+    suspend fun references(): List<String>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(receipt: AttachmentConsumptionEntity)
+    @Query("DELETE FROM attachment_consumption WHERE selectionId = :selectionId")
+    suspend fun delete(selectionId: String)
+    @Query("DELETE FROM attachment_consumption WHERE selectionId = :selectionId AND outcome = :outcome")
+    suspend fun deleteOutcome(selectionId: String, outcome: String): Int
+}
+
+@Dao
+interface RecordingJournalDao {
+    @Query("SELECT * FROM recording_journal ORDER BY startedAt ASC")
+    suspend fun all(): List<RecordingJournalEntity>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: RecordingJournalEntity)
+    @Query("UPDATE recording_journal SET stoppedAt = :stoppedAt WHERE id = :id AND cancelledAt IS NULL")
+    suspend fun markStopped(id: String, stoppedAt: Long): Int
+    @Query("UPDATE recording_journal SET cancelledAt = :cancelledAt WHERE id = :id")
+    suspend fun markCancelled(id: String, cancelledAt: Long): Int
+    @Query("DELETE FROM recording_journal WHERE id = :id")
+    suspend fun delete(id: String)
 }
 
 /** Per-conversation composer draft (Wave 0 - web pulse-drafts parity). */
@@ -1240,8 +1301,10 @@ interface Wave7Dao {
         CallLogQueueEntity::class,
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
+        AttachmentConsumptionEntity::class,
+        RecordingJournalEntity::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1249,6 +1312,8 @@ abstract class PulseDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun outboxDao(): OutboxDao
     abstract fun attachmentDraftDao(): AttachmentDraftDao
+    abstract fun attachmentConsumptionDao(): AttachmentConsumptionDao
+    abstract fun recordingJournalDao(): RecordingJournalDao
     abstract fun draftDao(): DraftDao
     abstract fun topicDao(): TopicDao
     abstract fun savedDao(): SavedDao
@@ -1413,6 +1478,19 @@ abstract class PulseDatabase : RoomDatabase() {
                 }
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_threadRootId_createdAt_id ON messages(threadRootId, createdAt, id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_conversationId_threadRootId_createdAt_id ON messages(conversationId, threadRootId, createdAt, id)")
+            }
+        }
+
+        /** R42 - durable attachment-selection consumption receipts + the
+         * active-recording journal. Both are additive tables: no existing
+         * row moves, no backfill needed (pre-R42 selections simply have no
+         * receipt; their files keep the existing prune grace contract). */
+        val MIGRATION_19_20: Migration = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `attachment_consumption` (`selectionId` TEXT NOT NULL PRIMARY KEY, `conversationId` TEXT NOT NULL, `fileKey` TEXT NOT NULL, `outcome` TEXT NOT NULL, `consumedAt` INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_attachment_consumption_fileKey` ON `attachment_consumption` (`fileKey`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `recording_journal` (`id` TEXT NOT NULL PRIMARY KEY, `conversationId` TEXT NOT NULL, `filePath` TEXT NOT NULL, `ownerKey` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, `stoppedAt` INTEGER, `cancelledAt` INTEGER)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_recording_journal_conversationId` ON `recording_journal` (`conversationId`)")
             }
         }
 

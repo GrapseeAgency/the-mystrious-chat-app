@@ -1578,6 +1578,8 @@ struct MirrorRoomView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var recording = false
     @State private var voiceRecorder: VoiceRecorder?
+    // R42 - the durable recording journal row id for the current take.
+    @State private var voiceJournalId: String?
     @State private var recordingStartedAt: Date?
     @State private var recordSeconds = 0
     @State private var recordTimer: Timer?
@@ -2364,6 +2366,10 @@ struct MirrorRoomView: View {
                 content: "", dataUrl: pending.dataUrl, envelope: pending.envelope)
             acceptCarrier(message)
             pendingAttachment = nil
+            // R42 - a durably-enqueued voice take retires its journal row.
+            if pending.envelope.kind == "audio" {
+                retireVoiceJournal(discard: false)
+            }
             if pending.envelope.anon == true { anonNext = false }
             session.outbox?.reloadPending()
             session.flushOutbox()
@@ -2428,6 +2434,14 @@ struct MirrorRoomView: View {
             do { try recorder.start() }
             catch { session.toasts.show("Couldn't start recording"); return false }
             voiceRecorder = recorder
+            // R42 - journal the take BEFORE it can be interrupted, so an abrupt
+            // process death reconstructs it (or reports it) instead of
+            // orphaning an anonymous temp file.
+            voiceJournalId = UUID().uuidString
+            if let store = session.store {
+                try? store.recordingJournalStart(id: voiceJournalId!, conversationId: row.id,
+                    filePath: recorder.fileURL.path)
+            }
             recordingStartedAt = Date(); recordSeconds = 0; recording = true
             recordTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
                 recordSeconds += 1
@@ -2446,11 +2460,17 @@ struct MirrorRoomView: View {
         teardownRecording()
         guard !VoiceMath.isTooShort(elapsedMs), let fileURL else {
             if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
+            retireVoiceJournal(discard: true)
             session.toasts.show("Too short - voice note discarded")
             return
         }
         do {
             let data = try Data(contentsOf: fileURL)
+            // R42 - the container is finalized: this take is recoverable in
+            // full after an abrupt process death until it is durably staged.
+            if let store = session.store, let journalId = voiceJournalId {
+                try? store.recordingJournalStopped(id: journalId)
+            }
             prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data),
                 envelope: PulseOutboxForward(kind: "audio", durationMs: durationMs, anon: row.isGroup && anonNext))
             // Either SQLite or the visible retry card now owns these bytes.
@@ -2461,6 +2481,19 @@ struct MirrorRoomView: View {
     private func cancelVoiceRecording() {
         voiceRecorder?.cancel()
         teardownRecording()
+        // R42 - the user's discard is a durable receipt: a later sweep must
+        // never resurrect this take after process death.
+        retireVoiceJournal(discard: true)
+    }
+
+    /// R42 - retire the journal row for the current take: a discard marks it
+    /// cancelled (the sweep completes the delete); a consume deletes it after
+    /// the take was durably staged/enqueued.
+    private func retireVoiceJournal(discard: Bool) {
+        guard let id = voiceJournalId, let store = session.store else { voiceJournalId = nil; return }
+        voiceJournalId = nil
+        if discard { try? store.recordingJournalCancelled(id: id) }
+        else { try? store.recordingJournalConsumed(id: id) }
     }
 
     private func teardownRecording() {

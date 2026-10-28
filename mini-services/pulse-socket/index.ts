@@ -2119,6 +2119,38 @@ async function tickDispatch(): Promise<void> {
 setInterval(() => void tickDispatch(), DISPATCH_INTERVAL_MS)
 
 // ---------------------------------------------------------------------------
+// Upload orphan sweep ticker (hourly).
+// Same shared-secret contract as the dispatch ticker: this service has NO
+// database access; the maintenance endpoint reconciles the durable upload
+// store (republishes disk caches for referenced files, removes unreferenced
+// rows past their grace window).
+// ---------------------------------------------------------------------------
+const UPLOAD_SWEEP_INTERVAL_MS = 60 * 60 * 1000
+let uploadSweepBusy = false
+async function tickUploadSweep(): Promise<void> {
+  if (uploadSweepBusy || !DISPATCH_KEY) return
+  uploadSweepBusy = true
+  try {
+    const res = await fetch(`${NEXT_APP_URL}/api/maintenance/upload-sweep`, {
+      method: 'POST',
+      headers: { 'x-pulse-key': DISPATCH_KEY },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (res.ok) {
+      const body = (await res.json().catch(() => null)) as { removed?: number; republished?: number } | null
+      if (body && ((typeof body.removed === 'number' && body.removed > 0) || (typeof body.republished === 'number' && body.republished > 0))) {
+        console.log(`[cron] upload sweep: removed ${body.removed ?? 0}, republished ${body.republished ?? 0}`)
+      }
+    }
+  } catch {
+    // app may be mid-restart — the next hourly tick retries silently
+  } finally { uploadSweepBusy = false }
+}
+setInterval(() => void tickUploadSweep(), UPLOAD_SWEEP_INTERVAL_MS)
+// First sweep shortly after boot (let the app finish starting first).
+setTimeout(() => void tickUploadSweep(), 60_000)
+
+// ---------------------------------------------------------------------------
 // Safety nets + start + graceful shutdown
 // ---------------------------------------------------------------------------
 process.on('uncaughtException', (err) => {

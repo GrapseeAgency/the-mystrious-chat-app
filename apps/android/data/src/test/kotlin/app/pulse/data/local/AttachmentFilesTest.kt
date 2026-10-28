@@ -45,6 +45,17 @@ class AttachmentFilesTest {
         assertTrue(runCatching { AttachmentValidation.validated(draft.copy(dataUrl = "data:text/plain;base64,")) }.isFailure)
         assertTrue(runCatching { AttachmentValidation.validated(draft.copy(viewOnce = true)) }.isFailure)
     }
+    @Test fun `decoded media ceiling matches the server encoded cap implication`() {
+        // R42 parity: images/audio are capped at 3,375,000 DECODED bytes - the
+        // same bound the 4,500,000-char encoded media ceiling implies. One byte
+        // past is refused (the encoded cap fires first here; the decoded check
+        // is defense-in-depth for encodings that slip under it).
+        val over = java.util.Base64.getEncoder().encodeToString(ByteArray(3_375_001)).removeSuffix("=")
+        val draft = AttachmentDraft("attachment-test-0001", "room", "image", "data:image/jpeg;base64,$over")
+        assertTrue(runCatching { AttachmentValidation.validated(draft) }.isFailure)
+        val under = "data:image/jpeg;base64," + java.util.Base64.getEncoder().encodeToString(ByteArray(16))
+        assertEquals(16L, AttachmentValidation.validated(draft.copy(dataUrl = under)).fileSize)
+    }
     @Test fun `caption limit matches gateway UTF16 length before upload`() {
         val draft = AttachmentDraft("attachment-test-0001", "room", "image", "data:image/jpeg;base64,YQ==")
         assertEquals(2000, AttachmentValidation.validated(draft.copy(caption = "🌿".repeat(1000))).caption.length)

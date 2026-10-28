@@ -6,6 +6,7 @@ import Foundation
 enum PulseAttachmentDelivery {
     static func enqueue(store: PulseStore, viewer: PulseViewer, conversationId: String,
                         content: String, dataUrl: String, envelope: PulseOutboxForward,
+                        stagedSelectionId: String? = nil,
                         replyTo: WireChatMessage? = nil) throws -> WireChatMessage {
         let content = try PulseTextDelivery.validatedContent(content, allowEmpty: true)
         let document = envelope.kind == "file"
@@ -28,6 +29,12 @@ enum PulseAttachmentDelivery {
         guard allowed.contains(where: { prefix == "data:\($0);base64" }),
               !document || bytes.count <= 10 * 1024 * 1024 else {
             throw PulseAPIClient.Failure(kind: .validation, message: "Unsupported attachment type or size.")
+        }
+        // R42 parity - photos/voice carry the same DECODED ceiling the
+        // 4,500,000-char encoded media cap implies (3,375,000 bytes), matching
+        // the server's decoded check and the Android bounded readers.
+        if !document, bytes.count > 3_375_000 {
+            throw PulseAPIClient.Failure(kind: .validation, message: "This photo or voice note is too large. Choose a smaller photo or shorter recording.")
         }
         if envelope.kind == "audio" {
             guard let duration = envelope.durationMs, duration.isFinite, duration > 0, duration <= 600_000 else {
@@ -54,7 +61,7 @@ enum PulseAttachmentDelivery {
         let message = TempMessages.make(conversationId: conversationId, viewer: viewer, clientId: id,
             content: content, parentId: pending.parentId, replyTo: replyTo, anon: pending.anon == true,
             anonAlias: alias, topicId: pending.topicId, attachment: pending)
-        try store.enqueueMessage(message, clientId: id, envelope: pending)
+        try store.enqueueMessage(message, clientId: id, envelope: pending, consumingStaged: stagedSelectionId)
         return message
     }
 

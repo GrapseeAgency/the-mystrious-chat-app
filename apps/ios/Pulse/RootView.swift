@@ -58,6 +58,11 @@ struct RootView: View {
     @State private var pendingLoginName: String?
     @State private var linkedRoomTask: Task<Void, Never>?
     @State private var linkedRoomTicket: UUID?
+    // R42 - the share extension's App Group inbox: pending external shares
+    // (prepared image/text) presented through the same durable outbox as
+    // in-app sends. Only a durable queue success or explicit Remove consumes.
+    @State private var shareInEntry: ShareInInbox.Entry?
+    @State private var shareInConversations: [WireConversationSummary] = []
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
@@ -151,6 +156,9 @@ struct RootView: View {
                 session.start(as: viewer)
 
             }
+            // R42 - a pending external share from the share extension (or a
+            // previous process death) presents on launch.
+            rescanShareInInbox()
             // R2-D - reminder-notification taps route like pulse://room: the
             // delegate (registered in PulseApp.init) parses the userInfo into
             // PulseDeepLink.room and hands it over through the session bridge.
@@ -196,6 +204,9 @@ struct RootView: View {
             case .active:
                 // Outbox flush trigger: app foreground (web visibilitychange).
                 session.flushOutbox()
+                // R42 - rescan the share extension's inbox on every foreground
+                // (the extension may have received shares while we slept).
+                rescanShareInInbox()
             case .background:
                 PulseApp.scheduleOutboxRefresh()
                 // R10-b - arm the app lock while leaving the foreground
@@ -435,6 +446,29 @@ struct RootView: View {
                     session.requestOpenRoom(conversation)
                 }
             }
+            // R42 - the share extension's inbox: prepared external shares
+            // deliver through the SAME durable outbox as in-app sends.
+            .sheet(item: $shareInEntry) { entry in
+                ShareInSheet(
+                    entry: entry,
+                    conversations: shareInConversations,
+                    viewerId: session.viewer?.id,
+                    deliver: { conversation, done in deliverShareIn(entry, to: conversation, done: done) },
+                    onConsumed: { id in consumeShareIn(id) },
+                    onRemoved: { id in
+                        ShareInInbox.remove(id: id)
+                        rescanShareInInbox()
+                    },
+                    onDismiss: {
+                        // "Later" keeps the entry; the next foreground rescan
+                        // presents it again.
+                        shareInEntry = nil
+                    }
+                )
+            }
+            .onReceive(session.inboxSnapshots) { rooms in
+                shareInConversations = rooms
+            }
         } else {
             // Gate on identity exactly like the web onboarding - the
             // two-step screen replaces the shell (not a modal sheet).
@@ -651,6 +685,61 @@ struct RootView: View {
         linkedRoomTicket = nil
         linkedRoomTask?.cancel()
         linkedRoomTask = nil
+    }
+
+    // MARK: - R42 share-in inbox (share extension handoff)
+
+    /// Scan the App Group inbox (launch + every foreground). Presents the
+    /// oldest pending share when the shell is up and nothing blocks reading.
+    private func rescanShareInInbox() {
+        let entries = ShareInInbox.scan()
+        if shareInEntry == nil, let oldest = entries.first, session.ready,
+           appLock.needsLock == false, pendingInvite == nil {
+            shareInEntry = oldest
+        }
+    }
+
+    /// Durable delivery: the SAME text/media enqueue paths the in-app
+    /// composers use. The callback receives an error text on failure, nil on
+    /// durable success (the account outbox owns upload/retry from here).
+    private func deliverShareIn(_ entry: ShareInInbox.Entry, to conversation: WireConversationSummary,
+                                done: @escaping (String?) -> Void) {
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            done("The account store is not ready. Your share is kept in the inbox.")
+            return
+        }
+        do {
+            switch entry.kind {
+            case "image":
+                guard let dataUrl = entry.dataUrl else {
+                    done("This share is incomplete. Remove it and share again.")
+                    return
+                }
+                _ = try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer,
+                    conversationId: conversation.id, content: "", dataUrl: dataUrl,
+                    envelope: PulseOutboxForward(kind: "image"))
+            default:
+                guard let text = entry.text, !text.isEmpty else {
+                    done("This share is empty. Remove it and share again.")
+                    return
+                }
+                _ = try PulseTextDelivery.enqueue(store: store, viewer: viewer,
+                    conversationId: conversation.id, content: text)
+            }
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+            done(nil)
+        } catch {
+            done((error as? PulseAPIClient.Failure)?.message ?? "Couldn't queue this share. It stays in the inbox.")
+        }
+    }
+
+    /// Consumption: the durable queue succeeded - remove the entry, advance
+    /// to the next pending share (if any), and surface the sent room.
+    private func consumeShareIn(_ id: String) {
+        ShareInInbox.remove(id: id)
+        shareInEntry = nil
+        rescanShareInInbox()
     }
 
     private func openLinkedRoom(_ conversationId: String, jumpMessageId: String? = nil) {
