@@ -118,7 +118,7 @@ struct MentionsView: View {
                 .foregroundStyle(PulseTheme.textTertiary)
                 .frame(width: 64, height: 64)
                 .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.ultraThinMaterial))
-            Text("No mentions yet")
+            Text(nextCursor != nil || !previous.isEmpty ? "No mentions on this page" : "No mentions yet")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(PulseTheme.titleOnPanel)
             Text(nextCursor == nil ? "No mentions in this window." : "No matches in this window. Continue searching older history.")

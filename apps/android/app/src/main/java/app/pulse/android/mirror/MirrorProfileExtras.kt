@@ -292,7 +292,11 @@ internal fun MirrorSavedSheet(
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        error ?: "Long-press a message in any chat and choose Save message.",
+                        error ?: when {
+                            next != null || previous.isNotEmpty() -> "No saved messages on this page. Browse another page."
+                            cachedPage -> "No cached saved messages. Connect to refresh your library."
+                            else -> "Long-press a message in any chat and choose Save message."
+                        },
                         color = MirrorArt.Dim,
                         fontSize = 12.sp,
                         lineHeight = 17.sp,

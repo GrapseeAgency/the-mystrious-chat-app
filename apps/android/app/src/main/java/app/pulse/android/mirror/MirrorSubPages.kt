@@ -852,7 +852,7 @@ internal fun MirrorMentionsPage(
             }
             list.isEmpty() && errorText == null -> MirrorSubPageEmpty(
                 icon = "LAtSign",
-                title = "No mentions yet",
+                title = if (next != null || previous.isNotEmpty()) "No mentions on this page" else "No mentions yet",
                 copy = if (next != null) "No matches in this window. Continue searching older history." else "No mentions in this window.",
             )
             errorText != null && list.isEmpty() -> MirrorSubPageEmpty(

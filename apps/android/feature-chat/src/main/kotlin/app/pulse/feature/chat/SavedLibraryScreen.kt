@@ -315,13 +315,23 @@ fun SavedLibraryScreen(
                         )
                         Spacer(Modifier.height(10.dp))
                         Text(
-                            "Nothing saved yet",
+                            when {
+                                state.query.isNotBlank() -> "No matches on this page"
+                                state.next || state.previous -> "No saved messages on this page"
+                                state.cached -> "No cached saved messages"
+                                else -> "Nothing saved yet"
+                            },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Long-press any message in a chat, then Save",
+                            when {
+                                state.query.isNotBlank() -> "Try another filter or browse another page."
+                                state.next || state.previous -> "Browse another page for more saved messages."
+                                state.cached -> "Connect to the gateway to refresh your saved library."
+                                else -> "Long-press any message in a chat, then Save"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,

@@ -278,11 +278,12 @@ struct SavedLibraryView: View {
         case .loaded:
             if filtered.isEmpty {
                 ContentUnavailableCompat(
-                    title: query.isEmpty ? "Nothing saved yet" : "No matches",
+                    title: !query.isEmpty ? "No matches on this page" : (nextCursor != nil || !previous.isEmpty) ? "No saved messages on this page" : cachedPage ? "No cached saved messages" : "Nothing saved yet",
                     systemImage: "bookmark",
-                    note: query.isEmpty
-                        ? "Long-press any message and choose Save to keep it here"
-                        : "Try a different search - the library keeps the 100 most recent saves",
+                    note: !query.isEmpty ? "Try another filter or browse another page."
+                        : (nextCursor != nil || !previous.isEmpty) ? "Browse another page for more saved messages."
+                        : cachedPage ? "Connect to the gateway to refresh your saved library."
+                        : "Long-press any message and choose Save to keep it here",
                 )
             } else {
                 List(filtered, id: \.message.id) { item in

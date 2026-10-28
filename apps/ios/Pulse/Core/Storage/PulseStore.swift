@@ -155,7 +155,7 @@ public final class PulseStore: Sendable {
                 t.column("lastMessageAt", .text)
                 t.column("messageCount", .integer).notNull().defaults(to: 0)
             }
-            // Saved-library mirror (GET /api/users/{id}/saved, cap 100) -
+            // Saved-library projection (paged GET /api/users/{id}/saved) -
             // the message row itself lives in `message` via upsert(savedItems:).
             try db.create(table: "savedMessages") { t in
                 t.column("messageId", .text).primaryKey()

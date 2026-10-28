@@ -186,7 +186,7 @@ fun MentionsScreen(
             }
 
             state.items.isEmpty() -> Column(Modifier.padding(20.dp)) {
-                Text("No mentions yet", fontWeight = FontWeight.SemiBold)
+                Text(if (state.next || state.previous) "No mentions on this page" else "No mentions yet", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     if (state.next) "No matches in this window. Continue searching older history." else "No mentions in this window.",
