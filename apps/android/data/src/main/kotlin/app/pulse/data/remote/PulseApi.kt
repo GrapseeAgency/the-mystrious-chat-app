@@ -326,17 +326,45 @@ class PulseApi(
         }
 
     suspend fun messageWindow(conversationId: String, anchorId: String?, threadId: String?,
-        before: app.pulse.domain.sync.MessageHistoryCursor?, after: app.pulse.domain.sync.MessageHistoryCursor?
+        before: app.pulse.domain.sync.MessageHistoryCursor?, after: app.pulse.domain.sync.MessageHistoryCursor?,
+        center: app.pulse.domain.sync.MessageHistoryCursor? = null
     ): PulseResult<app.pulse.protocol.MessageWindowDto> {
         val query = listOf("messageId" to anchorId, "threadId" to threadId,
             "before" to before?.createdAt, "beforeId" to before?.id,
-            "after" to after?.createdAt, "afterId" to after?.id)
+            "after" to after?.createdAt, "afterId" to after?.id, "center" to center?.createdAt, "centerId" to center?.id)
             .filter { it.second != null }.joinToString("&") { (key, value) ->
                 "$key=" + java.net.URLEncoder.encode(value, "UTF-8")
             }
-        return get("/api/conversations/$conversationId/message-window?$query") {
-            PulseJson.decodeFromString(app.pulse.protocol.MessageWindowDto.serializer(), it)
+        val result = get("/api/conversations/$conversationId/message-window?$query") {
+            PulseJson.decodeFromString(app.pulse.protocol.MessageWindowDto.serializer(), it).also { page ->
+                fun position(id: String, at: String): app.pulse.domain.sync.MessageHistoryCursor {
+                    require(id.isNotBlank() && !id.startsWith("local_")) { "Invalid window identity" }
+                    java.time.Instant.parse(at)
+                    return app.pulse.domain.sync.MessageHistoryCursor(id, at)
+                }
+                val rows = page.messages.map { row -> position(row.id, row.createdAt) }
+                val older = page.olderCursor?.let { cursor -> position(cursor.id, cursor.createdAt) }
+                val newer = page.newerCursor?.let { cursor -> position(cursor.id, cursor.createdAt) }
+                require(page.messageWindowVersion == 1 && page.conversationId == conversationId && page.anchorId == anchorId &&
+                    (threadId == null || page.threadId == threadId) && rows.size <= 200 &&
+                    rows.map { row -> row.id }.toSet().size == rows.size && rows.zipWithNext().all { (a, b) -> a.precedes(b) } &&
+                    page.messages.all { row -> row.conversationId == conversationId && row.parentId == page.threadId } &&
+                    (anchorId == null || rows.any { row -> row.id == anchorId }) &&
+                    (!page.hasOlder || older != null) && (!page.hasNewer || newer != null) &&
+                    (older == null || rows.none { row -> row.precedes(older) }) &&
+                    (newer == null || rows.none { row -> newer.precedes(row) }) &&
+                    (before == null || rows.all { row -> row.precedes(before) }) &&
+                    (after == null || rows.all { row -> after.precedes(row) })) { "Unexpected message window" }
+                if (page.threadId != null) require(page.parent?.id == page.threadId &&
+                    page.parent?.conversationId == conversationId && page.parent?.parentId == null) { "Unexpected thread parent" }
+            }
         }
+        if (threadId != null && result is PulseResult.Failure && result.status in setOf(403, 404, 410)) {
+            val expected = when (result.status) { 403 -> "thread_access"; 404 -> "thread_missing"; else -> "thread_gone" }
+            if (result.code != expected) return result.copy(kind = PulseResult.Failure.Kind.VALIDATION,
+                status = 409, message = "This reply or gateway could not be verified. Refresh the thread.")
+        }
+        return result
     }
 
     suspend fun messages(

@@ -21,6 +21,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountRepositoryRouterTest {
     private class Account(val owner: String?) {
+        val message = MutableStateFlow<app.pulse.domain.model.Message?>(null)
         val pendingReads = MutableStateFlow(true)
         val readRevision = MutableStateFlow(4L)
         val draft = MutableStateFlow<String?>("draft-$owner")
@@ -33,6 +34,7 @@ class AccountRepositoryRouterTest {
         val repo = Proxy.newProxyInstance(PulseRepository::class.java.classLoader,
             arrayOf(PulseRepository::class.java)) { _, method, args ->
             when {
+                method.name == "observeMessage" -> message
                 method.name == "observeDraft" -> draft
                 method.name == "observePendingReads" -> pendingReads
                 method.name == "observeReadStateRevision" -> readRevision
@@ -65,6 +67,17 @@ class AccountRepositoryRouterTest {
         a.draft.value = "late private response"; runCurrent()
         assertFalse(seen.contains("late private response"))
         assertTrue(seen.contains(null))
+    }
+
+    @Test fun singleMessageSwitchEmitsNullInsteadOfAnUnboxedList() = runTest {
+        val a = Account("a"); val b = Account("b")
+        val router = AccountRepositoryRouter(a.repo, { b.repo }, { b.repo })
+        val seen = mutableListOf<app.pulse.domain.model.Message?>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            router.repository.observeMessage("room", "root").toList(seen)
+        }
+        runCurrent(); router.repository.start("b"); runCurrent()
+        assertEquals(listOf(null, null, null), seen)
     }
 
     @Test fun searchSwitchEmitsAResultNotAnUnboxedList() = runTest {

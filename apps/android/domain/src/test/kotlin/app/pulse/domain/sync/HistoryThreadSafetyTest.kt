@@ -31,7 +31,10 @@ class HistoryThreadSafetyTest {
         val type = app.pulse.domain.repository.PulseRepository::class.java
         val repo = java.lang.reflect.Proxy.newProxyInstance(type.classLoader, arrayOf(type)) { _, method, args ->
             when (method.name) {
-                "loadThread" -> { failure?.let { throw it }; root to listOf(reply) }
+                "threadWindow" -> {
+                    assertEquals(listOf("room", "root", "reply"), args!!.take(3))
+                    failure?.let { throw it }; MessageWindow(listOf(reply), root, "root", null, null, false, false)
+                }
                 "cachedThreadTarget" -> {
                     assertEquals(listOf("room", "root", "reply"), args!!.take(3))
                     cacheReads++; saved

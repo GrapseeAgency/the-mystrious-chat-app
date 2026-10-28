@@ -461,11 +461,18 @@ internal fun MirrorThreadSheet(
     val clipboard = LocalClipboardManager.current
     var recoveryBusy by remember(root.id) { mutableStateOf(false) }
     var discardConfirm by remember(root.id) { mutableStateOf<String?>(null) }
-    val replyFlow = remember(threadRepository, root.id) { threadRepository.observeThreadMessages(root.id) }
+    var threadWindow by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.sync.MessageWindow?>(null) }
+    var viewportCenter by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.sync.MessageHistoryCursor?>(null) }
+    var followTail by remember(threadRepository, root.id) { mutableStateOf(true) }
+    var navigationReady by remember(threadRepository, root.id) { mutableStateOf(false) }
+    var pageDirection by remember(threadRepository, root.id) { mutableStateOf(0) }
+    var pageTick by remember(threadRepository, root.id) { mutableStateOf(0) }
+    val selectedIds = threadWindow?.messages?.map { it.id }
+    val replyFlow = remember(threadRepository, root.id, selectedIds) { threadRepository.observeThreadWindow(root.id, selectedIds) }
     val rootFlow = remember(threadRepository, root.id) {
-        kotlinx.coroutines.flow.combine(threadRepository.observeMessages(root.conversationId),
-            threadRepository.observeThreadAccessDenied(root.id)) { rows, refused ->
-            if (refused) null else rows.firstOrNull { it.id == root.id }
+        kotlinx.coroutines.flow.combine(threadRepository.observeMessage(root.conversationId, root.id),
+            threadRepository.observeThreadAccessDenied(root.id)) { row, refused ->
+            if (refused) null else row
         }
     }
     val cachedReplies by replyFlow.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -571,14 +578,33 @@ internal fun MirrorThreadSheet(
     LaunchedEffect(root.id) {
         while (true) { now = System.currentTimeMillis(); delay(1_000) }
     }
-    LaunchedEffect(threadRepository, root.id, connected, retry, revealLifecycle) {
+    LaunchedEffect(scopeReadRevision) {
+        delay(150)
+        while (loading) delay(150)
+        pageTick++
+    }
+    LaunchedEffect(threadRepository, root.id, connected, retry, revealLifecycle, pageTick) {
         revealLifecycle.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
             unreadRefresh.request()
             loading = true
             error = null
             try {
-                val (fresh, loadedReplies) = threadRepository.loadThread(root.id)
+                val old = threadWindow
+                val direction = pageDirection
+                pageDirection = 0
+                val middle = old?.messages?.let { it.getOrNull(it.size / 2) }
+                val anchor = if (!jumpResolved && direction == 0) jumpMessageId else null
+                val page = threadRepository.threadWindow(root.conversationId, root.id, anchorId = anchor,
+                    before = if (direction < 0) old?.older else null,
+                    after = if (direction > 0) old?.newer else null,
+                    center = if (direction == 0 && anchor == null && old != null && (!followTail || old.hasNewer))
+                        viewportCenter ?: middle?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) } else null)
+                val fresh = checkNotNull(page.parent)
+                val loadedReplies = page.messages
                 currentCoroutineContext().ensureActive()
+                threadWindow = page
+                navigationReady = true
+                if (page.cachedOnly) error = "Offline — showing saved replies"
                 fetchedReplies = loadedReplies
                 if (!threadRootAvailable(fresh, root.conversationId, root.id)) {
                     denied = true
@@ -591,13 +617,32 @@ internal fun MirrorThreadSheet(
                 throw cancelled
             } catch (failure: Exception) {
                 denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
+                navigationReady = false
+                if ((failure as? PulseApiException)?.code in setOf("message_missing", "message_gone")) jumpResolved = true
                 error = failure.message ?: "Couldn't load this thread. Tap to retry."
             } finally { loading = false }
+        }
+    }
+    LaunchedEffect(threadRepository, root.id, revealLifecycle) {
+        revealLifecycle.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) { delay(15_000); if (!loading) pageTick++ }
         }
     }
     val available = !denied && threadRootAvailable(currentRoot, root.conversationId, root.id, now)
     val replies = if (available) cachedReplies.filter { it.conversationId == root.conversationId &&
         it.threadRootId == root.id && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) } else emptyList()
+    val viewportReplies = androidx.compose.runtime.rememberUpdatedState(replies)
+    LaunchedEffect(threadRepository, root.id, listState) {
+        androidx.compose.runtime.snapshotFlow {
+            val rows = viewportReplies.value
+            val visible = listState.layoutInfo.visibleItemsInfo
+            rows.firstOrNull { row -> visible.firstOrNull { item -> rows.any { it.id == item.key } }?.key == row.id } to
+                visible.any { it.key == rows.lastOrNull()?.id }
+        }.collect { (first, tail) ->
+            viewportCenter = first?.takeUnless { it.id.startsWith("local_") }?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) }
+            followTail = tail
+        }
+    }
     val latestReadMembers = androidx.compose.runtime.rememberUpdatedState(members)
     val readScope = remember(threadRepository, root.conversationId, root.id) {
         app.pulse.domain.sync.VisibleReadScope(threadRepository, root.conversationId) {
@@ -615,7 +660,7 @@ internal fun MirrorThreadSheet(
         onActive = { app.pulse.android.notify.IncomingAttention.beginReading(root.conversationId) },
     )
     LaunchedEffect(jumpMessageId, replies, available, loading, fetchedReplies) {
-        if (jumpResolved || jumpMessageId == null || !available) return@LaunchedEffect
+        if (jumpResolved || jumpMessageId == null || !available || !navigationReady || loading) return@LaunchedEffect
         val index = threadJumpIndex(replies, root, jumpMessageId, System.currentTimeMillis())
         if (index != null) {
             androidx.compose.runtime.withFrameNanos { }
@@ -667,6 +712,14 @@ internal fun MirrorThreadSheet(
                 Text(if (loading) "Loading thread…" else "This thread is unavailable. Your draft is saved on this device.",
                     color = MirrorArt.Faint, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
             } else {
+                threadWindow?.let { window ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        androidx.compose.material3.TextButton(enabled = !loading && window.hasOlder,
+                            onClick = { pageDirection = -1; pageTick++ }) { Text("Earlier replies", color = MirrorArt.Accent) }
+                        androidx.compose.material3.TextButton(enabled = !loading && window.hasNewer,
+                            onClick = { pageDirection = 1; pageTick++ }) { Text("Later replies", color = MirrorArt.Accent) }
+                    }
+                }
                 LazyColumn(state = listState, modifier = Modifier.weight(1f, fill = false).heightIn(max = 340.dp)) {
                     item(key = "thread-parent") {
                         currentRoot?.let { parent -> MirrorThreadTextBubble(parent, parent.authorId == viewerId, onViewOnce = { openViewOnce(parent) }) }

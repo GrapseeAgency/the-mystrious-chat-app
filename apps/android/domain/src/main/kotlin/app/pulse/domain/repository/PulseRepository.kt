@@ -549,6 +549,16 @@ interface PulseRepository {
     /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) - also upserts Room. */
     suspend fun loadThread(rootId: String): Pair<Message, List<Message>>
 
+    /** A bounded thread window; absence outside this window is NOT deletion. */
+    suspend fun threadWindow(conversationId: String, rootId: String, anchorId: String? = null,
+        before: app.pulse.domain.sync.MessageHistoryCursor? = null,
+        after: app.pulse.domain.sync.MessageHistoryCursor? = null,
+        center: app.pulse.domain.sync.MessageHistoryCursor? = null): app.pulse.domain.sync.MessageWindow =
+        throw UnsupportedOperationException("Thread windows are unavailable")
+
+    fun observeMessage(conversationId: String, messageId: String): Flow<Message?> = kotlinx.coroutines.flow.flowOf(null)
+    fun observeThreadWindow(rootId: String, selectedIds: List<String>?): Flow<List<Message>> = kotlinx.coroutines.flow.flowOf(emptyList())
+
     /** Exact offline navigation target, never permission revalidation or a complete thread snapshot. */
     suspend fun cachedThreadTarget(roomId: String, rootId: String, targetId: String): Pair<Message, Message>? = null
 

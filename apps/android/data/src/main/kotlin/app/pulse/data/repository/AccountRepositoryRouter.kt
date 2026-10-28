@@ -59,7 +59,7 @@ internal class AccountRepositoryRouter(
                                 "observeReadStateRevision" -> emit(0L)
                                 "observePersonalScreenPrivacy" -> emit(app.pulse.domain.model.PersonalScreenPrivacy())
                                 "observePresence" -> emit(emptySet<String>())
-                                "observeDraft" -> emit(null)
+                                "observeDraft", "observeMessage" -> emit(null)
                                 "observeMessageSearch" -> emit(Result.success(emptyList<app.pulse.domain.model.MessageHit>()))
                                 "observeThreadDraft" -> emit(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
                                 "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())

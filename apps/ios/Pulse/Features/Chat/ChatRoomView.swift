@@ -4528,7 +4528,9 @@ final class RoomViewModel: ObservableObject {
         }
         let ticket = historyGeneration, epoch = session.sessionGeneration
         do {
-            let page = try await session.validatedThread(rootId: rootId, roomId: conversationId)
+            let window = try await session.validatedThreadWindow(rootId: rootId, roomId: conversationId, anchorId: target.id)
+            guard let parent = window.parent else { throw CancellationError() }
+            let page = WireThreadPage(parent: parent, replies: window.messages)
             guard !Task.isCancelled, ticket == historyGeneration, epoch == session.sessionGeneration else { return }
             let rows = [page.parent] + page.replies
             let fresh = try session.store?.currentMessageSnapshot(rows) ?? rows

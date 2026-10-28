@@ -36,5 +36,5 @@ data class MessageHistoryPage(
 data class MessageWindow(
     val messages: List<Message>, val parent: Message?, val threadId: String?,
     val older: MessageHistoryCursor?, val newer: MessageHistoryCursor?,
-    val hasOlder: Boolean, val hasNewer: Boolean,
+    val hasOlder: Boolean, val hasNewer: Boolean, val cachedOnly: Boolean = false,
 )

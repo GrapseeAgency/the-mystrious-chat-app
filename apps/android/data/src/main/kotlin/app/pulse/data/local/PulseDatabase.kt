@@ -692,6 +692,28 @@ interface MessageDao {
         "AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
     suspend fun cachedThreadTargetRows(roomId: String, rootId: String, targetId: String): List<MessageEntity>
 
+    @Query("SELECT * FROM messages WHERE conversationId = :roomId AND id = :id")
+    fun observeMessage(roomId: String, id: String): Flow<MessageEntity?>
+
+    /** Keep a large persisted thread out of the UI heap. Pending local sends
+     * remain visible; remote rows are only the selected page (or cached tail). */
+    @Query("SELECT * FROM messages WHERE threadRootId = :rootId " +
+        "AND (id IN (:ids) OR id LIKE 'local_%' OR (:latest = 1 AND id IN " +
+        "(SELECT id FROM messages WHERE threadRootId = :rootId ORDER BY createdAt DESC, id DESC LIMIT 60))) " +
+        "AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) " +
+        "AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) " +
+        "ORDER BY createdAt ASC, id ASC")
+    fun observeThreadWindow(rootId: String, ids: List<String>, latest: Boolean): Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM messages WHERE conversationId = :room AND threadRootId = :root AND substr(id, 1, 6) != 'local_' " +
+        "AND (expiresAtEpochMs IS NULL OR expiresAtEpochMs > :now) " +
+        "AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) " +
+        "AND (:at IS NULL OR (:forward = 1 AND (createdAt > :at OR (createdAt = :at AND id > :id))) " +
+        "OR (:forward = 0 AND (createdAt < :at OR (createdAt = :at AND id < :id)))) " +
+        "ORDER BY CASE WHEN :forward = 1 THEN createdAt END ASC, CASE WHEN :forward = 1 THEN id END ASC, " +
+        "CASE WHEN :forward = 0 THEN createdAt END DESC, CASE WHEN :forward = 0 THEN id END DESC LIMIT :size")
+    suspend fun cachedThreadSlice(room: String, root: String, at: String?, id: String?, forward: Boolean, size: Int, now: Long): List<MessageEntity>
+
     /** Thread screen rehydration - replies asc from the Room cache. */
     @Query("SELECT * FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeThread(rootId: String): Flow<List<MessageEntity>>

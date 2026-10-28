@@ -331,6 +331,48 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    public func validatedThreadWindow(rootId: String, roomId: String, anchorId: String? = nil,
+        before: WireMessageWindowPosition? = nil, after: WireMessageWindowPosition? = nil, center: WireMessageWindowPosition? = nil) async throws -> WireMessageWindow {
+        guard let store, let viewer, ready else { throw CancellationError() }
+        let ticket = threadValidationFence.begin(rootId), epoch = sessionGeneration, client = api, revision = messageRevision
+        let snapshotRequest = store.beginMessageSnapshot()
+        defer { threadValidationFence.finish(rootId, ticket) }
+        do {
+            let page = try await client.messageWindow(conversationId: roomId, anchorId: anchorId, threadId: rootId, before: before, after: after, center: center)
+            guard let parent = page.parent else { throw PulseAPIClient.Failure(kind: .validation, message: "Missing thread parent.") }
+            try Task.checkCancellation()
+            guard epoch == sessionGeneration else { throw CancellationError() }
+            guard threadValidationFence.isCurrent(rootId, ticket) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "A newer thread check superseded this one. Try again.", status: 409)
+            }
+            guard parent.id == rootId, parent.conversationId == roomId, parent.parentId == nil else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Unexpected thread response.", status: 409)
+            }
+            let eligible = ([parent] + page.messages).filter { acceptsSyncMessage($0.id, startedAt: revision) }
+            let saved = try store.acceptThreadSnapshot(rootId: rootId, roomId: roomId, messages: eligible, snapshotRequest: snapshotRequest)
+            deniedThreadRoots.remove(rootId)
+            messageVisibilityClock.send(Date())
+            // Rows rejected by the revision fence may still be live in newer storage.
+            let replies = try page.messages.compactMap { incoming -> WireChatMessage? in
+                guard incoming.parentId == rootId, incoming.conversationId == roomId else { return nil }
+                return try store.message(id: incoming.id)
+            }
+            return WireMessageWindow(messageWindowVersion: page.messageWindowVersion, conversationId: roomId,
+                anchorId: page.anchorId, threadId: rootId, parent: saved.parent, messages: replies,
+                hasOlder: page.hasOlder, hasNewer: page.hasNewer, olderCursor: page.olderCursor, newerCursor: page.newerCursor)
+        } catch {
+            let unavailable = error is PulseStore.ThreadAccessError
+            if epoch == sessionGeneration, threadValidationFence.isCurrent(rootId, ticket),
+               unavailable || [403, 404, 410].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                deniedThreadRoots.insert(rootId)
+                try? store.denyThread(rootId: rootId) // memory still blocks this session if disk is unwritable
+                messageVisibilityClock.send(Date())
+            }
+            if unavailable { throw PulseAPIClient.Failure(kind: .notFound, message: "This thread is no longer available.", status: 410) }
+            throw error
+        }
+    }
+
     private var viewOnceActions: Set<String> = []
 
     /// A tap is not permission to reveal. Only this request's successful consumption is.

@@ -12,8 +12,20 @@ not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
 2. **Server anchor/window lookup:** `/message-window` supports exact anchors and
    both tuple-cursor directions; parent/membership/expiry checks share a snapshot.
    Additive navigation indexes are in `20261028_history_navigation.sql`.
-3. **Very large threads:** incremental transport/rendering work remains.
-4. **Cross-page reconciliation:** implementation work remains.
+3. **Very large threads:** Android primary/Mirror and iOS thread screens now
+   request and replace bounded windows, with earlier/later navigation. Exact
+   reply jumps no longer assemble the complete thread. Android observes only the
+   selected cached replies plus pending local sends and a single root; offline
+   tuple slices preserve saved-history browsing. iOS replaces its cached page
+   rather than accumulating it. **Still reviewing:** main-room observers behind
+   Android thread sheets can independently materialize all cached room replies;
+   the new thread paths require native SDK/instrumented validation.
+4. **Cross-page reconciliation:** displayed windows are refreshed, rather than
+   claimed to be a single immutable full-thread snapshot. Position-based centers
+   survive deleted anchors and include same-time backfills. Reconnect/event and
+   foreground periodic refreshes retain the current reader center; existing
+   cache/session/revision fences remain. Mounted viewport behavior and the
+   underlying main-room cache observer still need validation.
 5. **Streaming exports:** implemented bounded authorized export pages and direct
    temporary-file writers on Android/iOS. No whole-conversation array/string or
    50,000-row export ceiling. Scan positions advance through expiring pages;
@@ -23,12 +35,20 @@ not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
 7. **Exhaustive mentions:** implementation work remains.
 8. **Exact mention entry points:** Android primary/Mirror callbacks and the iOS
    mention sheet now pass the message identity through the room-navigation path.
-   Deep reply navigation still depends on the large-thread work in item 3.
+   Exact reply navigation now uses the bounded thread window too.
 9. **Mention badge freshness:** implementation work remains.
 10. **Saved pagination:** implementation work remains.
 11. **Durable ordered saved state:** implementation work remains.
 
-Window tests use real Prisma/SQLite, 6,000 equal-time rows, deleted cursor anchors,
-thread/root checks, and authorization/expiry failures. Native SDK validation is
+Window tests use real Prisma/SQLite, 16,000-reply traversal, equal-time rows,
+deleted centers/cursors, backfills, thread/root checks, and authorization/expiry
+failures. Missing reply errors are separate from bound root refusal, preventing
+thread-denial poisoning. Native window decoders reject duplicates, wrong order,
+scope and malformed continuation metadata. Added native transport and bounded
+Room observation tests; they have not yet completed in the SDK runners.
+
+Latest full server run: **480 passed, 0 failed, 0 skipped** (468 top-level tests).
+Streaming export/mention commit: `8d112ac`; its iOS archive succeeded while other
+native jobs were still running at the last inspection. Native SDK validation is
 still required for this new implementation. No item is closed merely because a
 historical backlog label was removed.

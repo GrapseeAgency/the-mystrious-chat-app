@@ -95,14 +95,41 @@ public struct PulseAPIClient: Sendable {
     /// Pure query building lives in messagesPath so unit tests can pin the
     /// wire shape without network.
     public func messageWindow(conversationId: String, anchorId: String? = nil, threadId: String? = nil,
-                              before: WireMessageWindowPosition? = nil, after: WireMessageWindowPosition? = nil) async throws -> WireMessageWindow {
+                              before: WireMessageWindowPosition? = nil, after: WireMessageWindowPosition? = nil,
+                              center: WireMessageWindowPosition? = nil) async throws -> WireMessageWindow {
         var query = URLComponents()
         query.queryItems = [("messageId", anchorId), ("threadId", threadId),
             ("before", before?.createdAt), ("beforeId", before?.id),
-            ("after", after?.createdAt), ("afterId", after?.id)].compactMap { key, value in
+            ("after", after?.createdAt), ("afterId", after?.id), ("center", center?.createdAt), ("centerId", center?.id)].compactMap { key, value in
                 value.map { URLQueryItem(name: key, value: $0) }
             }
-        let page: WireMessageWindow = try await get("/api/conversations/\(conversationId)/message-window?\(query.percentEncodedQuery ?? "")")
+        let page: WireMessageWindow
+        do { page = try await get("/api/conversations/\(conversationId)/message-window?\(query.percentEncodedQuery ?? "")") }
+        catch let failure as Failure {
+            if threadId != nil, [403, 404, 410].contains(failure.status ?? 0) {
+                let expected = failure.status == 403 ? "thread_access" : failure.status == 404 ? "thread_missing" : "thread_gone"
+                if failure.code != expected {
+                    throw Failure(kind: .validation, message: "This reply or gateway could not be verified. Refresh the thread.", code: failure.code, status: 409)
+                }
+            }
+            throw failure
+        }
+        let positions = page.messages.map { PulseHistoryCursor(createdAt: $0.createdAt, id: $0.id) }
+        let older = page.olderCursor.map { PulseHistoryCursor(createdAt: $0.createdAt, id: $0.id) }
+        let newer = page.newerCursor.map { PulseHistoryCursor(createdAt: $0.createdAt, id: $0.id) }
+        let beforePosition = before.map { PulseHistoryCursor(createdAt: $0.createdAt, id: $0.id) }
+        let afterPosition = after.map { PulseHistoryCursor(createdAt: $0.createdAt, id: $0.id) }
+        guard (positions + [older, newer].compactMap { $0 }).allSatisfy({
+            !$0.id.isEmpty && !$0.id.hasPrefix("local_") && PulseFormat.date($0.createdAt) != nil
+        }), Set(positions.map(\.id)).count == positions.count,
+              zip(positions, positions.dropFirst()).allSatisfy({ pair in pair.0.precedes(pair.1) }),
+              !page.hasOlder || older != nil, !page.hasNewer || newer != nil,
+              older == nil || !positions.contains(where: { $0.precedes(older!) }),
+              newer == nil || !positions.contains(where: { newer!.precedes($0) }),
+              beforePosition == nil || positions.allSatisfy({ $0.precedes(beforePosition!) }),
+              afterPosition == nil || positions.allSatisfy({ afterPosition!.precedes($0) }) else {
+            throw Failure(kind: .validation, message: "Invalid message window order or continuation.")
+        }
         guard page.messageWindowVersion == 1, page.conversationId == conversationId, page.anchorId == anchorId,
               threadId == nil || page.threadId == threadId, page.messages.count <= 200,
               page.messages.allSatisfy({ $0.conversationId == conversationId && $0.parentId == page.threadId }),

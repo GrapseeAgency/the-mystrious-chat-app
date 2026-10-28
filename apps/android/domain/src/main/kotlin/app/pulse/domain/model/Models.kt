@@ -512,6 +512,7 @@ class PulseApiException(
     message: String?,
     val status: Int? = null,
     val retryAfter: Int? = null,
+    val code: String? = null,
 ) : IllegalStateException(message ?: "Request failed")
 
 /** Stored separately from caller-writable rich payloads. */

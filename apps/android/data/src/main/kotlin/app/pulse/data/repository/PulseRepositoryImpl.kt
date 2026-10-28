@@ -838,6 +838,12 @@ class PulseRepositoryImpl constructor(
     override fun observeMessages(conversationId: String): Flow<List<Message>> =
         messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
+    override fun observeMessage(conversationId: String, messageId: String): Flow<Message?> =
+        messageDao.observeMessage(conversationId, messageId).map { listOfNotNull(it?.toDomain()) }.withMessageExpiry().map { it.firstOrNull() }
+
+    override fun observeThreadWindow(rootId: String, selectedIds: List<String>?): Flow<List<Message>> =
+        messageDao.observeThreadWindow(rootId, selectedIds.orEmpty(), selectedIds == null).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
+
     override fun observeThreadMessages(rootId: String): Flow<List<Message>> =
         messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
@@ -1578,6 +1584,7 @@ class PulseRepositoryImpl constructor(
         message = f.message?.let { "${f.kind.name}: $it" } ?: f.kind.name,
         status = f.status,
         retryAfter = f.retryAfter,
+        code = f.code,
     )
 
     // R5-B - send-envelope mapping (server { message, streak?, xpAwarded })
@@ -2082,6 +2089,104 @@ class PulseRepositoryImpl constructor(
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            if (app.pulse.domain.sync.threadAccessDenied((error as? PulseApiException)?.status)) {
+                // Navigation cancellation must not forget an explicit refusal already received.
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    messageCacheMutex.withLock {
+                        if (viewerId == owner && attachmentSession == epoch && threadValidationFence.isCurrent(rootId, ticket)) {
+                            deniedThreads.value = deniedThreads.value + rootId
+                            try {
+                                wave7Dao.upsert(Wave7CacheEntity(app.pulse.domain.sync.threadDenialKey(rootId), "denied", System.currentTimeMillis()))
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (storage: Exception) {
+                                Log.w(TAG, "Thread refusal could not be persisted", storage)
+                            }
+                        }
+                    }
+                }
+            }
+            throw error
+        } finally { threadValidationFence.finish(rootId, ticket) }
+    }
+
+    /** Transport-only fallback. Never renews authorization or clears a denial. */
+    private suspend fun cachedThreadWindow(room: String, rootId: String, anchorId: String?,
+        before: app.pulse.domain.sync.MessageHistoryCursor?, after: app.pulse.domain.sync.MessageHistoryCursor?,
+        center: app.pulse.domain.sync.MessageHistoryCursor?): app.pulse.domain.sync.MessageWindow? {
+        if (threadIsDenied(rootId)) return null
+        val parent = messageDao.byId(rootId)?.toDomain() ?: return null
+        if (!app.pulse.domain.sync.threadRootAvailable(parent, room, rootId)) return null
+        val now = System.currentTimeMillis()
+        val anchor = (anchorId ?: center?.id)?.let { messageDao.byId(it)?.toDomain() }
+            ?.takeIf { it.conversationId == room && it.threadRootId == rootId && (center == null || it.createdAt == center.createdAt) }
+        if (anchorId != null && app.pulse.domain.sync.cachedThreadTarget(parent, anchor, room, rootId, anchorId, false, now) == null) return null
+        suspend fun slice(position: app.pulse.domain.sync.MessageHistoryCursor?, forward: Boolean, size: Int) =
+            messageDao.cachedThreadSlice(room, rootId, position?.createdAt, position?.id, forward, size, now).map { it.toDomain() }
+        val midpoint = anchor?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) } ?: center
+        val rows = if (midpoint != null) slice(midpoint, false, 30).reversed() + listOfNotNull(anchor) + slice(midpoint, true, 30)
+            else if (after != null) slice(after, true, 60) else slice(before, false, 60).reversed()
+        val older = rows.firstOrNull()?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) } ?: before ?: after ?: center
+        val newer = rows.lastOrNull()?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) } ?: after ?: before ?: center
+        return app.pulse.domain.sync.MessageWindow(rows, parent, rootId, older, newer,
+            older != null && slice(older, false, 1).isNotEmpty(), newer != null && slice(newer, true, 1).isNotEmpty(), cachedOnly = true)
+    }
+
+    override suspend fun threadWindow(conversationId: String, rootId: String, anchorId: String?,
+        before: app.pulse.domain.sync.MessageHistoryCursor?, after: app.pulse.domain.sync.MessageHistoryCursor?, center: app.pulse.domain.sync.MessageHistoryCursor?): app.pulse.domain.sync.MessageWindow {
+        val owner = viewerId ?: throw kotlinx.coroutines.CancellationException("No active account")
+        val epoch = attachmentSession
+        val ticket = messageCacheMutex.withLock { requireConversationOwner(owner, epoch); threadValidationFence.begin(rootId) }
+        val watermark = messageFetchFence()
+        try {
+            requireConversationOwner(owner, epoch)
+            val page = when (val r = api.messageWindow(conversationId, anchorId, rootId, before, after, center)) {
+                is PulseResult.Success -> r.value
+                is PulseResult.Failure -> throw apiExceptionOf(r)
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireConversationOwner(owner, epoch)
+            return messageCacheMutex.withLock {
+                requireConversationOwner(owner, epoch)
+                if (!threadValidationFence.isCurrent(rootId, ticket)) throw PulseApiException("CONFLICT", "A newer thread check superseded this one. Try again.", 409)
+                check(page.messageWindowVersion == 1 && page.conversationId == conversationId && page.threadId == rootId &&
+                    page.anchorId == anchorId && page.messages.size <= 200 &&
+                    page.messages.all { it.conversationId == conversationId && it.parentId == rootId } &&
+                    (anchorId == null || page.messages.any { it.id == anchorId })) { "Unexpected thread window" }
+                val parent = page.parent?.toDomain() ?: throw IllegalStateException("Thread parent missing")
+                if (parent.id != rootId || parent.threadRootId != null || parent.conversationId != conversationId) throw IllegalStateException("Unexpected thread parent")
+                val known = messageDao.byId(rootId)
+                check(known == null || known.conversationId == parent.conversationId) { "Unexpected thread room" }
+                val accepted = database.withTransaction {
+                    requireConversationOwner(owner, epoch)
+                    val raw = listOf(parent) + page.messages.map { it.toDomain() }.filter {
+                        it.threadRootId == rootId && it.conversationId == parent.conversationId
+                    }
+                    val merged = cacheFetchedMessagesLocked(raw, watermark)
+                    val currentParent = merged.firstOrNull { it.id == rootId }
+                    if (!app.pulse.domain.sync.threadRootAvailable(currentParent, parent.conversationId, rootId)) {
+                        throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
+                    }
+                    wave7Dao.delete(app.pulse.domain.sync.threadDenialKey(rootId))
+                    requireConversationOwner(owner, epoch)
+                    checkNotNull(currentParent) to merged.filter { it.threadRootId == rootId }
+                }
+                deniedThreads.value = deniedThreads.value - rootId
+                app.pulse.domain.sync.MessageWindow(accepted.second, accepted.first, rootId,
+                    page.olderCursor?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) },
+                    page.newerCursor?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) }, page.hasOlder, page.hasNewer)
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (app.pulse.domain.sync.mayUseOfflineThread(error)) {
+                val cached = messageCacheMutex.withLock {
+                    requireConversationOwner(owner, epoch)
+                    if (!threadValidationFence.isCurrent(rootId, ticket)) throw error
+                    database.withTransaction { cachedThreadWindow(conversationId, rootId, anchorId, before, after, center) }
+                }
+                if (cached != null) return cached
+            }
             if (app.pulse.domain.sync.threadAccessDenied((error as? PulseApiException)?.status)) {
                 // Navigation cancellation must not forget an explicit refusal already received.
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {

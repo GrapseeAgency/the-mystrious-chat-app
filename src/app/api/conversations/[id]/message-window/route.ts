@@ -19,14 +19,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
     const anchorId = query.get('messageId') ?? undefined, threadId = query.get('threadId') ?? undefined
     if (anchorId === '' || threadId === '') throw new MessageWindowError(400, 'Empty identity.')
-    const page = await readMessageWindow(db, id, actor.userId, { anchorId, threadId, before: position('before'), after: position('after'),
+    const page = await readMessageWindow(db, id, actor.userId, { anchorId, threadId, before: position('before'), after: position('after'), center: position('center'),
       limit: query.has('limit') ? Number(query.get('limit')) : undefined },
       (tx, where, order, take) => tx.message.findMany({ where, orderBy: [{ createdAt: order }, { id: order }], take,
         include: { ...MESSAGE_FULL_INCLUDE, parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } } } }))
     return NextResponse.json({ ...page, parent: page.parent ? mapMessage(page.parent, actor.userId) : null,
       messages: page.messages.map(row => mapMessage(row, actor.userId)) }, { headers })
   } catch (error) {
-    if (error instanceof MessageWindowError) return NextResponse.json({ error: error.message, code: 'message_window_unavailable' }, { status: error.status, headers })
+    if (error instanceof MessageWindowError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status, headers })
     throw error
   }
 }

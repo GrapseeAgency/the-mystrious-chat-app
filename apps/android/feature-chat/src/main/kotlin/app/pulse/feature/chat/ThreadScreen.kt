@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.sync.withLock
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -124,6 +126,7 @@ class ThreadViewModel @Inject constructor(
         val downloadingFileId: String? = null,
         val openedFile: FileReady? = null,
         val loadedReplyIds: Set<String>? = null,
+        val window: app.pulse.domain.sync.MessageWindow? = null,
         // Exact cached target is not a complete server reply inventory.
         val offlineJumpId: String? = null,
     )
@@ -132,9 +135,9 @@ class ThreadViewModel @Inject constructor(
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** The thread root - rehydrated from Room, refreshed by loadThread. */
-    val parent: StateFlow<Message?> = combine(repo.observeMessages(conversationId),
-        _state.map { it.unavailable }.distinctUntilChanged(), repo.observeThreadAccessDenied(rootId)) { rows, denied, persistedDenial ->
-            if (denied || persistedDenial) null else rows.firstOrNull { threadRootAvailable(it, conversationId, rootId) }
+    val parent: StateFlow<Message?> = combine(repo.observeMessage(conversationId, rootId),
+        _state.map { it.unavailable }.distinctUntilChanged(), repo.observeThreadAccessDenied(rootId)) { row, denied, persistedDenial ->
+            if (denied || persistedDenial) null else row?.takeIf { threadRootAvailable(it, conversationId, rootId) }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -144,7 +147,8 @@ class ThreadViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Replies asc - live Room flow (realtime appends ride message:new upserts). */
-    val replies: StateFlow<List<Message>> = combine(repo.observeThreadMessages(rootId), parent) { rows, root ->
+    val replies: StateFlow<List<Message>> = combine(_state.map { it.window?.messages?.map { message -> message.id } }.distinctUntilChanged()
+        .flatMapLatest { ids -> repo.observeThreadWindow(rootId, ids) }, parent) { rows, root ->
         if (root == null || root.isDeleted) emptyList() else rows
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -194,6 +198,14 @@ class ThreadViewModel @Inject constructor(
     }
     private fun refreshUnread() = unreadRefresh.request()
 
+    private var viewportCenter: app.pulse.domain.sync.MessageHistoryCursor? = null
+    private var followTail = true
+    fun viewport(firstId: String?, atTail: Boolean) {
+        followTail = atTail
+        viewportCenter = replies.value.firstOrNull { it.id == firstId && !it.id.startsWith("local_") }
+            ?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) }
+    }
+    private val windowMutex = kotlinx.coroutines.sync.Mutex()
     private val threadRefresh = app.pulse.domain.sync.CoalescedRefresh(viewModelScope) { reloadThread() }
 
     private var composerRevision = 0L
@@ -233,7 +245,7 @@ class ThreadViewModel @Inject constructor(
                     is PulseEvent.MessageDeleted -> event.conversationId
                     else -> null
                 }
-                if (changedRoom == conversationId) refreshUnread()
+                if (changedRoom == conversationId) { refreshUnread(); threadRefresh.request() }
                 if (event is PulseEvent.OutboxDropped && event.conversationId == conversationId && event.threadRootId == rootId) {
                     _state.value = _state.value.copy(
                         notice = RoomNotice(event.reason, isError = true),
@@ -283,17 +295,33 @@ class ThreadViewModel @Inject constructor(
         threadRefresh.request()
     }
 
-    private suspend fun reloadThread() {
+    fun pageReplies(earlier: Boolean) {
+        if (_state.value.loading) return
+        viewModelScope.launch { loadWindow(if (earlier) -1 else 1) }
+    }
+
+    private suspend fun reloadThread() = loadWindow(0)
+
+    private suspend fun loadWindow(direction: Int) = windowMutex.withLock {
         _state.value = _state.value.copy(loading = true, error = null, offlineJumpId = null)
         try {
-            val (root, loadedReplies) = threadRepository.loadThread(rootId)
+            val previous = _state.value.window
+            val anchor = if (direction == 0 && _state.value.loadedReplyIds == null) initialJumpMessageId else null
+            val middle = previous?.messages?.let { it.getOrNull(it.size / 2) }
+            val center = if (direction == 0 && anchor == null && previous != null && (!followTail || previous.hasNewer))
+                viewportCenter ?: middle?.let { app.pulse.domain.sync.MessageHistoryCursor(it.id, it.createdAt) } else null
+            val page = threadRepository.threadWindow(conversationId, rootId, anchorId = anchor,
+                before = if (direction < 0) previous?.older else null,
+                after = if (direction > 0) previous?.newer else null, center = center)
+            val root = checkNotNull(page.parent)
+            val loadedReplies = page.messages
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (!threadRootAvailable(root, conversationId, rootId)) throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
             val now = System.currentTimeMillis()
             val liveIds = loadedReplies.filter { it.conversationId == conversationId && it.threadRootId == rootId &&
                 !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
                 .mapTo(mutableSetOf()) { it.id }
-            _state.value = _state.value.copy(loading = false, unavailable = false, error = null, loadedReplyIds = liveIds, offlineJumpId = null)
+            _state.value = _state.value.copy(loading = false, unavailable = false, error = if (page.cachedOnly) "Offline — showing saved replies" else null, loadedReplyIds = liveIds, offlineJumpId = null, window = page)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -308,7 +336,9 @@ class ThreadViewModel @Inject constructor(
                 }
             } else null
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val targetGone = (failure as? PulseApiException)?.code in setOf("message_missing", "message_gone")
             _state.value = _state.value.copy(loading = false, error = failure.message, offlineJumpId = offlineTarget,
+                loadedReplyIds = if (targetGone) emptySet() else _state.value.loadedReplyIds,
                 unavailable = _state.value.unavailable || denied,
                 openedFile = if (denied) null else _state.value.openedFile)
         }
@@ -415,7 +445,7 @@ fun ThreadScreen(
         revealLifecycle.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
             // A foreground return is a catch-up boundary even when relay state
             // stayed true. Queue a trailing load if another load is still busy.
-            viewModel.retry()
+            while (true) { viewModel.retry(); kotlinx.coroutines.delay(15_000) }
         }
     }
     val clipboard = LocalClipboardManager.current
@@ -519,13 +549,22 @@ fun ThreadScreen(
         }
     }
 
+    val viewportReplies = androidx.compose.runtime.rememberUpdatedState(replies)
+    LaunchedEffect(viewModel, listState) {
+        androidx.compose.runtime.snapshotFlow {
+            val rows = viewportReplies.value
+            val visible = listState.layoutInfo.visibleItemsInfo
+            val first = visible.firstOrNull { item -> rows.any { it.id == item.key } }?.key as? String
+            first to visible.any { it.key == rows.lastOrNull()?.id }
+        }.collect { (first, tail) -> viewModel.viewport(first, tail) }
+    }
     // Stick to the newest reply as the thread grows (realtime appends);
     // the first non-empty emission jumps straight to the end.
     LaunchedEffect(replies.lastOrNull()?.id) {
         if (replies.isEmpty() || (jumpMessageId != null && !jumpResolved)) return@LaunchedEffect
         val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         val nearBottom = lastVisible >= replies.size - 1
-        if (!anchoredToLatest || nearBottom) {
+        if (state.window?.hasNewer != true && (!anchoredToLatest || nearBottom)) {
             listState.scrollToItem(replies.size) // include the parent header
             anchoredToLatest = true
         }
@@ -584,6 +623,12 @@ fun ThreadScreen(
             }
         }
 
+        state.window?.let { window ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(enabled = window.hasOlder && !state.loading, onClick = { viewModel.pageReplies(true) }) { Text("Earlier replies") }
+                TextButton(enabled = window.hasNewer && !state.loading, onClick = { viewModel.pageReplies(false) }) { Text("Later replies") }
+            }
+        }
         Box(Modifier.weight(1f)) {
             LazyColumn(
                 state = listState,

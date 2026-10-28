@@ -52,7 +52,8 @@ fun cachedThreadTarget(root: Message?, reply: Message?, roomId: String, rootId: 
 /** A transport outage can open saved history; HTTP refusal/cancellation can never fall back. */
 suspend fun resolveThreadJump(repo: app.pulse.domain.repository.PulseRepository, roomId: String, rootId: String,
     targetId: String): Pair<Message, List<Message>> = try {
-    repo.loadThread(rootId)
+    val window = repo.threadWindow(roomId, rootId, anchorId = targetId)
+    checkNotNull(window.parent) to window.messages
 } catch (cancelled: kotlinx.coroutines.CancellationException) {
     throw cancelled
 } catch (error: Exception) {

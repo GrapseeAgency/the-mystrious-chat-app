@@ -100,3 +100,53 @@ test('export scan positions survive a fully expired page without publishing inac
   assert.ok(next.messages.length>0)
   assert.ok(next.messages.every(m=>m.id!=='hidden'))
 }))
+
+test('sixteen thousand replies are traversed as bounded windows, without a full-thread ceiling', () => fixture(async f => {
+  await f.db.$executeRawUnsafe("INSERT INTO Message(id,conversationId,createdAt) VALUES ('root','room',0)")
+  await f.db.$executeRawUnsafe("UPDATE Message SET parentId='root' WHERE id != 'root'")
+  await f.db.$executeRawUnsafe(`INSERT INTO Message(id,conversationId,parentId,createdAt) VALUES ${Array.from({length:10000},(_,i)=>`('m-${String(i+6000).padStart(6,'0')}','room','root',1000)`).join(',')}`)
+  const ids = new Set(); let before
+  do {
+    const page = await f.page({threadId:'root',before,limit:60})
+    assert.ok(page.messages.length<=60)
+    assert.equal(page.parent.id,'root')
+    for(const row of page.messages) { assert.ok(!ids.has(row.id));ids.add(row.id) }
+    before=page.hasOlder?page.olderCursor:null
+  } while(before)
+  assert.equal(ids.size,16000)
+  const exact=await f.page({threadId:'root',anchorId:'m-000001',limit:60})
+  assert.ok(exact.messages.some(row=>row.id==='m-000001'))
+}))
+
+test('center reconciliation includes same-time backfills and edits even after the center is deleted', () => fixture(async f => {
+  const center={id:'m-003000',createdAt:new Date(1000).toISOString()}
+  const original=await f.page({center,limit:60})
+  assert.ok(original.messages.some(m=>m.id===center.id))
+  await f.db.message.deleteMany({where:{id:center.id}})
+  await f.db.message.updateMany({where:{id:'m-003001'},data:{deletedAt:new Date()}})
+  await f.db.$executeRawUnsafe("INSERT INTO Message(id,conversationId,createdAt) VALUES ('m-003000a','room',1000)")
+  const refreshed=await f.page({center,limit:60})
+  assert.equal(refreshed.messages.length,60)
+  assert.ok(refreshed.messages.some(m=>m.id==='m-003000a'))
+  assert.ok(refreshed.messages.find(m=>m.id==='m-003001').deletedAt)
+  assert.ok(!refreshed.messages.some(m=>m.id===center.id))
+  assert.equal(refreshed.hasOlder,true);assert.equal(refreshed.hasNewer,true)
+  await assert.rejects(f.page({center:{id:'a',createdAt:'invalid'}}),e=>e.status===400)
+}))
+
+test('missing replies do not authorize denying the thread; bound root and membership refusals do', () => fixture(async f => {
+  await assert.rejects(f.page({threadId:'m-000001',anchorId:'missing'}),e=>e.status===404 && e.code==='message_missing')
+  assert.equal((await f.page({threadId:'m-000001'})).parent.id,'m-000001')
+  await assert.rejects(f.page({threadId:'m-000001'},'outsider'),e=>e.status===403 && e.code==='thread_access')
+  await f.db.message.updateMany({where:{id:'m-000001'},data:{deletedAt:new Date()}})
+  await assert.rejects(f.page({threadId:'m-000001',anchorId:'missing'}),e=>e.status===410 && e.code==='thread_gone')
+}))
+
+test('an empty direction keeps a usable opposite cursor', () => fixture(async f => {
+  const early={id:'m-000000',createdAt:new Date(1000).toISOString()}
+  const empty=await f.page({before:early})
+  assert.equal(empty.messages.length,0)
+  assert.equal(empty.hasNewer,true)
+  assert.deepEqual(empty.newerCursor,early)
+  assert.ok((await f.page({after:empty.newerCursor})).messages.length>0)
+}))
