@@ -26,5 +26,7 @@ HTTP creator. Architectural source tripwires supplement runtime tests.
 The local demo companion is intentionally on-device, not an HTTP sender. Domain
 operations that may create server-side event/gift/game/system notices are not
 ordinary composer sends; their full behavior remains in their later sections.
-This audit does not turn untested UI behavior into a runtime pass. New PiP,
-checkpoint and picker changes still require hosted compilation and native tests.
+This audit does not turn untested UI behavior into a runtime pass. The verified
+`6f87622` implementation passed the entire Android run (including API30/API34)
+and all 108 selected iOS regressions. Comprehensive physical UI acceptance is
+still deferred; exact results and limits are in NATIVE-COMPOSER-VERIFICATION.md.

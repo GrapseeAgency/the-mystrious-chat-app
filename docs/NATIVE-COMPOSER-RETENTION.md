@@ -26,4 +26,6 @@ loss are not solved by a second write path on the same device.
 
 Evidence: scheduled-access/push-delivery/composer-operation server contracts,
 native recovery SQL contracts, retry reopen tests, and new checkpoint bounded
-scan/consumption tests. New native changes require hosted results before closure.
+scan/consumption tests. The `6f87622` implementation passed Android JVM/API30/API34
+and all 108 selected iOS regressions; exact outcomes are recorded in
+NATIVE-COMPOSER-VERIFICATION.md. Deployment and physical acceptance remain deferred.

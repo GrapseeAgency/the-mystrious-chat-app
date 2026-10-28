@@ -1,58 +1,65 @@
 # Section 3 — authoritative eleven-item checklist
 
-The user supplied this original list after `bdd04f7`. It supersedes the
-reconstructed grouping in the earlier implementation/verification ledgers.
-**Not complete.** Earlier 102-test scoped iOS success cannot close newly identified
-requirements. Deployment and real-device auditing remain deferred; autumn remains.
+**Implementation and scoped regression verification complete** for the original
+user-supplied eleven items below, on source
+`6f8762228e3178816e5a6d17ee8073a4980a118d`. This is not the earlier reconstructed
+checklist, a zero-defect guarantee, or full-app/device acceptance. Autumn is
+preserved. No advance to section 4, deployment, or PR merge is included.
 
-| # | User's exact item | Reconciliation / remaining work |
+## Original requirements and implemented behavior
+
+| # | User's exact item | Implementation / evidence |
 | --- | --- | --- |
-| 1 | Cross-device draft conflicts: Remote draft mirrors lack a server revision/precondition contract. | Implemented server draft CAS and immutable native replay. Final writer audit also closed the compatibility /draft endpoint: blind writes now return 428, and revision/operation-ID writes use the same CAS ledger. Current web mirror preserves immutable flights and observed baselines; conflicts never silently rebase. Backend suite now 535/535; native replay covered by scoped regressions. Current shared-store additions still await native verification. |
-| 2 | Thread draft synchronization: Thread drafts remain device-local rather than cross-device synchronized. | Current server ThreadDraftState + scoped native composer intents cover threads as well as main drafts. Both thread composers hydrate/stage root-scoped intents through the same CAS contract; scoped thread handoff tests passed at f6f1e46. |
-| 3 | Failed-storage durability: An in-memory recovery buffer cannot preserve the last keystrokes through process death when SQLite cannot commit. | Independent atomic private-file checkpoints now cover normal/thread drafts and edit snapshots, with SQLite consumption UUIDs preventing send/clear resurrection. File-only manager rows and exact deletion added. New native fault tests await hosted execution. No software can guarantee survival of unwritten bytes when all storage fails. |
-| 4 | Continuous draft observation failure: Buffer-first restoration does not establish recovery from every later Room observation failure. | Added independent buffer events, Room resubscription and periodic snapshot-error recovery for main/thread observations; cancellation propagates and failed reads never invent a clear. Hosted f6f1e46 scoped iOS passed 103/103; current Android/checkpoint changes still need terminal native results. |
-| 5 | Durable edit recovery: Message edits do not have the same complete durable intent/replay treatment as ordinary outgoing messages. | Durable edit intents, original baseline, failed-write buffer, revision-owned ACK and explicit recovery implemented. Independent JSON checkpoints also preserve the original edit baseline when SQLite fails; new lost-buffer/reopen/acceptance test pending. All-storage-failure limitation remains item 3. |
-| 6 | Retry scheduling persistence: Process-local cooldowns/retry deadlines and conservative queue blocking still need restart/fairness follow-through. | Added persisted account/room/global cooldowns on both platforms, restored once into monotonic gates; 503 Retry-After also respected. Expired retry metadata cleanup capped at 500. iOS restart regression passed in the 103/103 f6f1e46 run; Android/current candidate verification pending. Existing room-head fairness remains. |
-| 7 | Every send entry point: Ancillary rich-message, alternate-screen, and background paths still need a complete ownership/durable-dispatch audit. | Source inventory in NATIVE-COMPOSER-SEND-PATHS.md. Audit found and fixed Android PiP pre-persistence clear/memory-only draft, alternate sticker/location swallowed failures, and rich/poll account capture gaps. Added PiP handoff tests and architectural tripwires; new native runtime verification pending. |
-| 8 | Legacy scheduled-create duplication: Older/no-operation-ID callers remain non-idempotent; cross-device semantic deduplication is also absent. | Implemented deterministic legacy identities, cross-device exact-instruction semantic deduplication, legacy-row adoption, and terminal protection. Different operation IDs receive an explicit duplicate conflict rather than an unsafe aliased success. Scheduled suite 27/27 and full server suite 535/535 pass locally. Additive semantic index patch not deployed. |
-| 9 | Offline scheduling queue: Scheduled-message creation is not a complete durable offline scheduling feature. | Native pending/held schedule journals now persist before HTTP. Expired offline instructions must be retained for review, not silently moved into the future. Verify all entry points. |
-| 10 | Recoverable pending-schedule UI: Closing/reopening or restarting does not fully restore an uncertain schedule’s exact selected instruction. | Paged recovery preserves exact original time/body/identity; retry does not open a new instruction. The final review found held/error notices hid the original time: both apps now show that exact time alongside the refusal reason. New assertions cover the held-state display; hosted execution pending. |
-| 11 | Operation-record retention: Long-term retention/cleanup policies for uncertain and terminal operation receipts need completion. | Per-family policy in NATIVE-COMPOSER-RETENTION.md. Compact replay receipts are deliberately permanent; uncertain bodies never age out. Added bounded (100 payloads/pass), restart-cursored consumption-file cleanup on both apps, alongside 500-row retry/500-child+100-parent notice cleanup. New native maintenance tests pending. |
+| 1 | Cross-device draft conflicts: Remote draft mirrors lack a server revision/precondition contract. | Shared server CAS, immutable operation identities and native replay protect drafts against stale writes. The legacy `/draft` endpoint now uses the same contract: missing preconditions return 428; conflicts/superseded flights return 409. The current browser mirror preserves its first observed baseline and retries exact frozen flights. `settings-write-order` and `draft-mirror` server tests, native ComposerJournal tests. |
+| 2 | Thread draft synchronization: Thread drafts remain device-local rather than cross-device synchronized. | Server ThreadDraftState and native root-scoped composer intents synchronize thread drafts through the same CAS contract. A thread cannot consume the main draft or another root's draft. Native thread handoff/token and server composer-operation regressions. |
+| 3 | Failed-storage durability: An in-memory recovery buffer cannot preserve the last keystrokes through process death when SQLite cannot commit. | Independent atomic private-file checkpoints preserve normal/thread drafts and edit snapshots after their writer completes. Transactional SQLite UUID acknowledgements prevent consumed files from resurrecting text; file-only drafts are visible in recovery. Actual failed-SQL/reopened-store tests pass on both platforms. The physical limits below remain explicit. |
+| 4 | Continuous draft observation failure: Buffer-first restoration does not establish recovery from every later Room observation failure. | RecoveringDraftObservation combines independent buffer signals, Room resubscription and periodic snapshot retries for main/thread drafts. Cancellation propagates; failed reads never invent a clear. RecoveringDraftObservationTest and checkpoint/reopen regressions passed. |
+| 5 | Durable edit recovery: Message edits do not have the same complete durable intent/replay treatment as ordinary outgoing messages. | Durable immutable edit intents retain the original server baseline, uncertain replay identity and independently checkpointed unsubmitted text. Revision-owned ACKs and pre-launch editor guards preserve newer edits, including same-text ABA during a suspended lookup. Native ComposerJournal, DraftSnapshotIntegrity and checkpoint tests. |
+| 6 | Retry scheduling persistence: Process-local cooldowns/retry deadlines and conservative queue blocking still need restart/fairness follow-through. | Account/room/global outgoing-message cooldowns persist across restart, restore into monotonic gates once, and retire expired cache entries. Retry-After/503 handling and per-room FIFO/head rotation avoid letting a blocked room monopolize healthy work. Native OutboxRetryJournal/PulseOutbox restart and fairness regressions plus actual-query SQL tests. |
+| 7 | Every send entry point: Ancillary rich-message, alternate-screen, and background paths still need a complete ownership/durable-dispatch audit. | Producer inventory is in NATIVE-COMPOSER-SEND-PATHS.md. Main, alternate, thread, PiP, rich/poll/forward/attachment handoff, notification, background, edit and schedule paths were traced. Repairs include account capture before async dispatch, guarded PiP hydration, picker failure retention and exact draft consumption. Recovery-manager retry/discard/clear actions also capture ownership and use snapshots rather than deleting newer work. Native runtime tests and source tripwires supplement this source audit; comprehensive UI/device acceptance remains deferred. |
+| 8 | Legacy scheduled-create duplication: Older/no-operation-ID callers remain non-idempotent; cross-device semantic deduplication is also absent. | Deterministic legacy identities, exact-instruction cross-device semantic deduplication, legacy-row adoption and terminal protection are implemented. Different IDs for the same instruction return an explicit duplicate conflict, not an unsafe aliased success. Scheduled contracts and the complete server suite pass. The additive semantic index patch is supplied but not deployed. |
+| 9 | Offline scheduling queue: Scheduled-message creation is not a complete durable offline scheduling feature. | Both platforms persist create/cancel commands before HTTP, replay immutable instructions after reconnect/restart, and retain uncertain/held work for review. Expired instructions are not silently moved into the future. An unresolved room head cannot be replaced accidentally with a newly selected instruction. Native ScheduledCommandJournal/ScheduledCreationRetry and backend contracts. |
+| 10 | Recoverable pending-schedule UI: Closing/reopening or restarting does not fully restore an uncertain schedule’s exact selected instruction. | Paged recovery retains original body/time/identity and retries that instruction rather than opening a new one. Both apps show the exact original time even when a held/error notice is present. Current Android instrumentation and Swift reopened-store assertions verify this held-state display. Removing recovery is explicitly not remote cancellation. |
+| 11 | Operation-record retention: Long-term retention/cleanup policies for uncertain and terminal operation receipts need completion. | NATIVE-COMPOSER-RETENTION.md defines per-family policies. Compact replay identities are deliberately permanent; uncertain user instructions never age out. Checkpoint maintenance reads at most 100 payloads/pass with a restart cursor; retry cleanup is capped at 500 rows, and notice cleanup at 500 children/100 parents. Matching UUID/version checks protect newer recovery. Native maintenance and server retention tests pass. |
+
+## Verification of this implementation
+
+- **Android:** [40722095034](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40722095034)
+  completed successfully on the source above: JVM tests, API30/API34
+  instrumentation, signed-release assembly and both release smoke checks.
+  Publishing was skipped for the pull request; no release/deployment is implied.
+- **Scoped iOS:** [40722094764](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40722094764),
+  check `122935436308`, completed successfully on the same source. The retrieved
+  annotation explicitly reports **108 expected / 108 passed / 0 unverified**,
+  `verified=true`, across all eleven selected XCTest suites. This is not inferred
+  from the absence of failure messages. Full counts/digest are in the verification ledger.
+- **Backend:** 535 local tests passed, zero failed/skipped (523 top-level tests).
+  Server source is unchanged since that run; current native-server contracts run
+  `40722095029` also succeeded. Local Python SQL/source/reporter contracts: **20 passed**.
+- Standalone strict TypeScript checking of `draft-mirror.ts` passed. This is not
+  a successful whole-project TypeScript check or a whole-web-app audit.
+
+## Explicit limits and deferred work
+
+Checkpoint durability starts when its asynchronous writer completes—not before
+a pending UI task runs. Independent files address SQLite-commit failure, not
+failure of all physical storage, unwritten keystrokes, whole-database startup
+corruption or device loss. Corrupt recovery bytes are preserved, not guessed.
 
 Retry deadlines use persisted wall-clock admission times across restart and
-monotonic deadlines during one process lifetime. They are bounded to one day;
-manual wall-clock manipulation across restart is not a trusted server clock.
-Server-side admission remains authoritative. No on-device exact wake-time guarantee.
+monotonic deadlines within a process. Holds are bounded to one day; changing the
+wall clock across restart is not a trusted server clock. Server admission remains
+authoritative, and neither platform promises an exact background wake time.
 
-Checkpoint durability begins after its asynchronous writer completes, not before a pending UI task runs. These files are independent SQLite-failure recovery, not redundant physical storage. All-storage failure and whole-database startup corruption remain explicit limits. Current native checkpoint additions are not yet compiler/runtime verified.
+Permanent compact receipts imply growing metadata, not constant total storage.
+Directory-name enumeration is not constant-memory. Coordinated account erasure
+is a separate privacy policy, not an age-based deletion of uncertain operations.
 
-Latest intermediate iOS evidence: `73049c2`, run 40713138802, **107/107
-passed, zero unverified**, including bounded checkpoint maintenance. Later
-file-only recovery, mini-chat hydration and exact-revision restoration changes
-still require their own hosted result. Android checkpoint fault fixtures exposed
-two fixture defects (duplicate DataStore instances, then the iOS spelling of the
-Android cache table); both corrected, without removing the failed-storage tests.
-Local contracts now 20/20. No native SDK builds run in the sandbox.
+The separate full iOS workflow `40722094861` had passed archive but was still
+building/testing at this observation. The historical ReadPresentation failure
+is not waived or declared fixed by scoped composer success. Full-app acceptance,
+physical-device testing, migrations and deployment remain later work.
 
-Compatibility note: old unconditional web draft PATCH clients now receive 428
-and must upgrade; allowing them to overwrite a protected native draft would
-leave item 1 open. Current web client was updated alongside the endpoint. This
-is a targeted safety migration, not a whole-web-app audit.
-
-Additional producer review: main/alternate edit launch checks now reject displaced
-composer revisions, and Android edit ACK ownership captures the typing generation
-before the first suspended read. Alternate schedule submission also captures the
-Android account receiver and checks the Swift sheet/session before async dispatch.
-These latest producer changes still need their own hosted native verification.
-
-Recovery-manager follow-through: Android main-manager retry/discard/clear actions
-now bind the account before launch. Draft clears match captured revision and
-shown text; queue removal targets captured snapshots rather than whatever happens
-to exist when the coroutine runs. Swift recovery and schedule-cancel tasks reject
-retired sessions before mutation. Android checkpoint instrumentation now also
-covers same-text ABA, foreign-owner/wrong-text deletion, and failed-SQL deletion
-preserving the recovery snapshot. These additions await hosted native execution.
-
-Scoped iOS follow-up at `9d9f57a`, run 40714146325/check 122907113066,
-explicitly passed **108/108, zero unverified**. This verifies the file-only
-maintenance import addition, but not the newer PiP/edit/scheduler/manager changes.
+Old unconditional web draft PATCH clients must upgrade: accepting their blind
+writes would reopen item 1. The current browser client was migrated alongside
+the endpoint; no whole-web account-isolation claim is made.

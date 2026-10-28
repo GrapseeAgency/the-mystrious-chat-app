@@ -141,7 +141,7 @@ Exact-candidate native run IDs and per-suite counts are recorded below. Earlier
   both all-passed and all-missing cases. No production test is skipped to obtain
   a green result; the ordinary full iOS workflow is unchanged.
 
-## Verified scoped result — final follow-up
+## Historical scoped result — 7542dcb follow-up
 
 ### iOS: explicit outcomes, not inferred from absent failures
 
@@ -187,7 +187,7 @@ Exact-candidate native run IDs and per-suite counts are recorded below. Earlier
 
 This resolves the lack of explicit scoped iOS outcomes and verifies the new
 Android stale-failure ownership repair. It does **not** establish equivalence to
-the then-unavailable original eleven-item list. That list has since been supplied; current closure remains open pending the new native implementation and verification, not missing wording.
+the then-unavailable original eleven-item list. That list was subsequently supplied. Closure at this historical checkpoint remained open pending new implementation/verification; the final original-list reconciliation is below.
 The unrelated full-suite read-presentation failure, deployment and comprehensive
 physical-device acceptance are not waived by these scoped successes.
 
@@ -215,3 +215,71 @@ physical-device acceptance are not waived by these scoped successes.
 - Latest local Python contracts: **20 passed**. Source tripwires include
   alternate-scheduler pre-dispatch account ownership. Source checks are not
   native UI runtime proof. Current hosted native outcomes remain pending.
+
+
+## Verified original-list implementation — `6f87622`
+
+Source: `6f8762228e3178816e5a6d17ee8073a4980a118d`. The original eleven-item
+mapping and explicit limits are in NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md.
+
+### Android
+
+Run [40722095034](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40722095034)
+**completed successfully**: build and API30/API34 jobs, JVM tests, instrumentation,
+signed-release assembly and both release smoke checks. Publishing was skipped
+for the pull request; this is not deployment or physical-device acceptance.
+
+Current instrumentation includes failed-SQL recovery, same-text ABA,
+foreign-owner/wrong-text manager deletion, failed deletion retaining its
+checkpoint, and exact held-schedule time display.
+
+### iOS: exact current-source outcomes
+
+Run [40722094764](https://github.com/GrapseeAgency/the-mystrious-chat-app/actions/runs/40722094764),
+check `122935436308`, **completed successfully** on the exact source above.
+The retrieved annotation was decoded and checked for that source SHA,
+`verified=true`, **108 expected / 108 passed / 0 unverified**.
+
+| XCTest suite | Explicitly passed / expected |
+| --- | --- |
+| ComposerAttentionTests | 4 / 4 |
+| ComposerJournalTests | 9 / 9 |
+| DraftHandoffTests | 9 / 9 |
+| DraftJournalTests | 8 / 8 |
+| DraftReceiptTests | 1 / 1 |
+| PulseOutboxTests | 49 / 49 |
+| ScheduledAcceptanceTests | 6 / 6 |
+| ScheduledCommandJournalTests | 3 / 3 |
+| ScheduledCreationRetryTests | 3 / 3 |
+| TextDeliveryTests | 11 / 11 |
+| ThreadDraftHandoffTests | 5 / 5 |
+
+Case-map digest: `46e47f4d5fe813734f96f577884da2ee6e3ffd0a7816d289a37e8067845a1cf9`.
+Full per-method outcomes remain in the run's evidence artifact and summary.
+The current assertions include the original selected time alongside held-schedule
+errors. Old 108-test runs are not substituted for this current-source result.
+
+### Backend and local contracts
+
+Native-server contracts run `40722095029` and web run `40722094842` succeeded.
+Local server suite: **535 passed / zero failed/skipped** (523 top-level tests).
+Server production/test source is unchanged since that complete run. Local Python
+SQL/source/reporter contracts: **20 passed**. Standalone strict TypeScript checking
+of `draft-mirror.ts` passed, not whole-project typechecking. No local native SDK
+builds or native artifact downloads were required.
+
+### Boundaries
+
+Implementation and scoped regression verification are complete for the supplied
+original eleven items, not every feature in the app. Source tripwires supplement,
+not replace, runtime tests. The producer inventory records the audited pathways;
+comprehensive physical UI/device acceptance remains deferred.
+
+The separate full iOS run `40722094861` had passed archive and was still in its
+build-test job at this observation. Its historical ReadPresentation failure is
+not waived or declared repaired by these scoped successes. Migration/deployment,
+PR merge and section 4 have not been performed. Checkpoint/all-storage and retry
+clock limits remain explicit in the authoritative checklist.
+
+The final evidence reconciliation changes documentation only; native/backend
+source remains byte-for-byte the verified `6f87622` implementation.

@@ -1,16 +1,18 @@
 # Section 3 — drafts, outgoing messages, edits and scheduling
 
-> **Current status:** The original eleven items have now been supplied and are
-> tracked in [the authoritative checklist](NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md).
-> The reconstructed grouping and older counts below are historical, not the
-> acceptance boundary. Latest local backend run: 528/528; current architectural /
-> SQL / reporter contracts: 16/16. Hosted scoped iOS at `f6f1e46`: 103/103,
-> zero unverified (run 40709607487). Independent checkpoints and later producer /
-> retention fixes are newer and still require native verification. Section 3
-> remains open; no advance to section 4.
+> **Current status:** Implementation and scoped regression verification are
+> complete for the supplied original eleven items. See
+> [the authoritative checklist](NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md).
+> Verified native source: `6f8762228e3178816e5a6d17ee8073a4980a118d`.
+> The entire Android run passed, including API30/API34 and release smoke;
+> scoped iOS explicitly passed 108/108, zero unverified, on the same source.
+> Backend: 535 passed, zero failed/skipped; local Python contracts: 20 passed.
+> The grouping and older counts below are historical, not the acceptance boundary.
+> Durability limits and deferred full-app/device acceptance remain explicit.
+> No section 4, deployment or PR merge is included.
 
 
-**Original-checklist closure still open; scoped native verification now complete.**
+**Historical scoped verification—not closure of the supplied original list.**
 The previous implementation-closure statement was
 stronger than the available evidence. Android and backend checks passed, but a
 failed full iOS run with no reported composer failures is not explicit proof that
@@ -24,7 +26,7 @@ its historical sources and must not quietly substitute this list as the original
 Autumn styling remains unchanged. Deployment and physical-device auditing stay
 deferred. The existing hosted read-presentation failure remains unresolved.
 
-## Eleven acceptance areas
+## Historical reconstructed implementation areas
 
 1. Server draft revision/conflict ordering, including explicit clears.
 2. Durable retry and cross-device reconciliation of draft mirrors.
