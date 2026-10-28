@@ -1974,9 +1974,12 @@ class PulseRepositoryImpl constructor(
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
     }
 
-    private suspend fun acceptSavedState(owner: String, state: app.pulse.protocol.SavedStateReceiptDto) {
+    private suspend fun acceptSavedState(owner: String, incoming: app.pulse.protocol.SavedStateReceiptDto) {
+        val key = "saved-canonical:v1|$owner|${incoming.messageId}"
+        val previous = wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.SavedStateReceiptDto.serializer(), it.json) }
+        val state = if (previous != null && app.pulse.protocol.compareSavedRevisions(checkNotNull(previous.revision), checkNotNull(incoming.revision)) > 0) previous else incoming
+        wave7Dao.upsert(Wave7CacheEntity(key, app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.SavedStateReceiptDto.serializer(), state), 0))
         wave7Dao.upsert(Wave7CacheEntity(savedVersionKey(owner, state.messageId), checkNotNull(state.revision), System.currentTimeMillis()))
-        // A canonical snapshot must not erase a later locally queued desire.
         if (wave7Dao.lastSavedIntent(savedIntentPrefix(owner, state.messageId)) != null) return
         if (!state.saved || state.visible == false) savedDao.deleteById(state.messageId)
         else messageDao.byId(state.messageId)?.let { row ->
@@ -2011,6 +2014,8 @@ class PulseRepositoryImpl constructor(
                                             else "A saved change was refused because the message or access changed."
                                         wave7Dao.upsert(Wave7CacheEntity("saved-sync-notice:v1|$owner", text, System.currentTimeMillis()))
                                         eventsBus.tryEmit(PulseEvent.SavedSyncNotice(text))
+                                    } else if (wave7Dao.get("saved-head:v1|$owner|${intent.messageId}")?.json == intent.clientId) {
+                                        wave7Dao.delete("saved-sync-notice:v1|$owner")
                                     }
                                     requireConversationOwner(owner, epoch)
                                 }
@@ -4016,12 +4021,13 @@ class PulseRepositoryImpl constructor(
                             val items = response.value.items
                             require(items.size <= 100 && items.map { it.message.id }.toSet().size == items.size && items.all {
                                 it.message.id.isNotBlank() && it.message.conversationId.isNotBlank() && it.message.conversationId == it.conversation.id &&
-                                    (it.revision?.let { version -> version.isNotBlank() && version.length <= 128 } != false)
+                                    (it.revision?.let { version -> app.pulse.protocol.validSavedRevision(version) } != false)
                             }) { "Invalid saved page identities" }
                             cacheFetchedMessagesLocked(response.value.items.map { it.message.toDomain() }, watermark)
                             response.value.items.forEach { item ->
-                                item.revision?.let { wave7Dao.upsert(Wave7CacheEntity(savedVersionKey(owner, item.message.id), it, System.currentTimeMillis())) }
-                                if (wave7Dao.lastSavedIntent(savedIntentPrefix(owner, item.message.id)) == null) savedDao.upsertAll(listOf(item.toSavedEntity()))
+                                if (item.revision != null) acceptSavedState(owner, app.pulse.protocol.SavedStateReceiptDto(
+                                    2, owner, item.message.id, true, item.savedAt, item.revision, visible = true))
+                                else if (wave7Dao.lastSavedIntent(savedIntentPrefix(owner, item.message.id)) == null) savedDao.upsertAll(listOf(item.toSavedEntity()))
                             }
                             val index = app.pulse.protocol.SavedPageIndexDto(response.value.items.map { it.message.id }, cursor, response.value.nextCursor, response.value.hasMore)
                             wave7Dao.upsert(Wave7CacheEntity(savedPageKey(owner, cursor), app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.SavedPageIndexDto.serializer(), index), System.currentTimeMillis()))

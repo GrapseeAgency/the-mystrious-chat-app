@@ -32,4 +32,18 @@ final class MentionBadgeTests: XCTestCase {
         }
         XCTAssertEqual(snapshot.count, 1)
     }
+    func testMultiStepCursorCycleDoesNotLoopForever() async throws {
+        var calls = 0
+        do {
+            _ = try await PulseMentionBadgeSnapshot.load { cursor in
+                calls += 1
+                guard calls <= 20 else { throw CancellationError() }
+                let next = cursor == "a" ? "b" : cursor == "b" ? "c" : "a"
+                return try JSONDecoder().decode(WireMentionEntriesPage.self, from: JSONSerialization.data(withJSONObject:
+                    ["items": [], "feedPageVersion": 1, "hasMore": true, "nextCursor": next]))
+            }
+            XCTFail("Cycle accepted")
+        } catch { XCTAssertLessThanOrEqual(calls, 7) }
+    }
+
 }

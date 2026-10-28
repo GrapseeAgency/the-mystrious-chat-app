@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test
 
 class SavedIntentReceiptTest {
     private val intent = SavedIntentDto("owner", "m", "r", true, "operation", expectedRevision = "0")
-    private val accepted = SavedStateReceiptDto(2, "owner", "m", true, "2026-10-28T00:00:00.000Z", "v1", "operation", "applied", visible = true)
+    private val accepted = SavedStateReceiptDto(2, "owner", "m", true, "2026-10-28T00:00:00.000Z", "1", "operation", "applied", visible = true)
     @Test fun `receipt binds actor identity and verdict while conflict can return different canonical state`() {
         accepted.validateSavedState("owner", "m", intent)
         accepted.copy(saved = false, savedAt = null, outcome = "conflict", visible = false).validateSavedState("owner", "m", intent)
@@ -20,4 +20,10 @@ class SavedIntentReceiptTest {
         assertEquals(intent, PulseJson.decodeFromString(SavedIntentDto.serializer(), json))
         assertEquals("saved-intent:v1|owner|m|operation", intent.key)
     }
+    @Test fun `saved revisions compare numerically without floating point or machine integer limits`() {
+        assertTrue(compareSavedRevisions("10", "9") > 0)
+        assertTrue(compareSavedRevisions("9007199254740993", "9007199254740992") > 0)
+        listOf("", "01", "-1", "1\n", "1.0", "v1", "1".repeat(41)).forEach { assertFalse(validSavedRevision(it)) }
+    }
+
 }

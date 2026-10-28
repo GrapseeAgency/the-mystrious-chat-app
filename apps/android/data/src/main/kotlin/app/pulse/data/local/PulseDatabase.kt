@@ -1199,7 +1199,7 @@ interface Wave7Dao {
     suspend fun delete(key: String)
 
     // Access refusals are durable metadata, not disposable feature snapshots.
-    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|' AND substr(`key`, 1, 16) != 'read-journal:v1|' AND substr(`key`, 1, 14) != 'read-fence:v1|' AND `key` NOT LIKE 'saved-intent:v1|%' AND `key` NOT LIKE 'saved-version:v1|%' AND `key` NOT LIKE 'saved-head:v1|%' AND `key` NOT LIKE 'saved-sync-notice:v1|%'")
+    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|' AND substr(`key`, 1, 16) != 'read-journal:v1|' AND substr(`key`, 1, 14) != 'read-fence:v1|' AND `key` NOT LIKE 'saved-intent:v1|%' AND `key` NOT LIKE 'saved-version:v1|%' AND `key` NOT LIKE 'saved-canonical:v1|%' AND `key` NOT LIKE 'saved-head:v1|%' AND `key` NOT LIKE 'saved-sync-notice:v1|%'")
     suspend fun clearAll()
 }
 

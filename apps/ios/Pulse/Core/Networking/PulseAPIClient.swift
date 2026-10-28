@@ -1330,7 +1330,7 @@ public struct PulseAPIClient: Sendable {
         guard page.items != nil else { throw Failure(kind: .validation, message: "Saved results are missing.") }
         guard let rows = page.items, rows.count <= 100, Set(rows.map { $0.message.id }).count == rows.count,
               rows.allSatisfy({ !$0.message.id.isEmpty && !$0.message.conversationId.isEmpty && $0.message.conversationId == $0.conversation.id &&
-                  ($0.revision == nil || (!$0.revision!.isEmpty && $0.revision!.count <= 128)) }) else {
+                  ($0.revision == nil || WireSavedStateReceipt.validRevision($0.revision!)) }) else {
             throw Failure(kind: .validation, message: "Invalid saved page identities.")
         }
         try Task.checkCancellation()

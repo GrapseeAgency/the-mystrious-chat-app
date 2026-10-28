@@ -57,4 +57,15 @@ class MentionBadgeTest {
         }
         runCurrent(); assertEquals(listOf<Int?>(null), values); job.cancel()
     }
+    @Test fun `multi step cursor cycles stop without retaining every visited page`() = runTest {
+        var calls = 0
+        val error = runCatching {
+            mentionBadgeSnapshot(now = { 0L }) { cursor ->
+                check(++calls <= 20) { "cycle guard failed" }
+                FeedPage(emptyList(), when (cursor) { null -> "a"; "a" -> "b"; "b" -> "c"; else -> "a" }, true)
+            }
+        }.exceptionOrNull()
+        assertNotNull(error); assertTrue(calls <= 7)
+    }
+
 }

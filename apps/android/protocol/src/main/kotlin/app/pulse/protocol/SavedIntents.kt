@@ -19,7 +19,7 @@ data class SavedChangedDto(val userId: String, val messageId: String)
 data class SavedPageIndexDto(val ids: List<String>, val cursor: String?, val nextCursor: String?, val hasMore: Boolean)
 
 fun SavedStateReceiptDto.validateSavedState(owner: String, id: String, intent: SavedIntentDto? = null) {
-    require(savedReceiptVersion == 2 && userId == owner && messageId == id && !revision.isNullOrBlank() && revision.length <= 128)
+    require(savedReceiptVersion == 2 && userId == owner && messageId == id && revision != null && validSavedRevision(revision))
     require(visible != null && (visible == false || saved))
     if (saved) java.time.Instant.parse(requireNotNull(savedAt)) else require(savedAt == null)
     if (intent != null) {
@@ -33,3 +33,9 @@ data class SavedOfflineCursorDto(val owner: String, val at: String, val id: Stri
 
 @Serializable
 data class PrivateFeedsChangedDto(val userId: String)
+
+fun validSavedRevision(value: String): Boolean = value.matches(Regex("0|[1-9][0-9]{0,39}"))
+fun compareSavedRevisions(left: String, right: String): Int {
+    require(validSavedRevision(left) && validSavedRevision(right))
+    return if (left.length != right.length) left.length.compareTo(right.length) else left.compareTo(right)
+}

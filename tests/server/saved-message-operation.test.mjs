@@ -156,3 +156,34 @@ test('saved state reconciliation withdraws unavailable bodies even when the book
   await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId='me'`
   assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].visible, false)
 }))
+
+
+test('saved revisions order actual commits across explicit and legacy operations without wall clocks', () => fixture(async (db, legacy) => {
+  let revision = '0'
+  for (let i = 1; i <= 12; i++) {
+    const result = await mutateSavedIntent(db, 'me', 'reply', i % 2 === 1, { clientId: `ordered-${i}`, expectedRevision: revision })
+    assert.equal(result.revision, String(i)); revision = result.revision
+  }
+  await legacy(true)
+  assert.equal((await readSavedMessageStates(db, 'me', ['reply']))[0].revision, '13')
+  for (const expectedRevision of ['01', '-1', '1.0', '1\n', 'v1']) {
+    await assert.rejects(mutateSavedIntent(db, 'me', 'reply', false, { clientId: 'bad-revision', expectedRevision }), { status: 400 })
+  }
+}))
+test('visibility loss does not falsify the saved marker or supersede an applied operation', () => fixture(async db => {
+  const intent = { clientId: 'save-before-revoke', expectedRevision: '0' }
+  const first = await mutateSavedIntent(db, 'me', 'reply', true, intent)
+  await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId='me'`
+  const replay = await mutateSavedIntent(db, 'me', 'reply', true, intent)
+  assert.equal(replay.outcome, 'applied'); assert.equal(replay.saved, true); assert.equal(replay.visible, false)
+  assert.equal(replay.revision, first.revision); assert.equal(replay.savedAt, first.savedAt)
+}))
+test('a rejected save permits a subsequent explicit remove only while its causal baseline remains current', () => fixture(async db => {
+  await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId='me'`
+  const rejected = await mutateSavedIntent(db, 'me', 'reply', true, { clientId: 'refused', expectedRevision: '0' })
+  assert.equal(rejected.outcome, 'rejected')
+  const removed = await mutateSavedIntent(db, 'me', 'reply', false, { clientId: 'remove-after-refusal', predecessorClientId: 'refused' })
+  assert.equal(removed.outcome, 'applied'); assert.equal(removed.saved, false)
+  const stale = await mutateSavedIntent(db, 'me', 'reply', false, { clientId: 'stale-after-refusal', predecessorClientId: 'refused' })
+  assert.equal(stale.outcome, 'conflict')
+}))

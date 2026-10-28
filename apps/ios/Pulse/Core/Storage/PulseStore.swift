@@ -1089,6 +1089,13 @@ public final class PulseStore: Sendable {
                     try Self.writeMessage(item.message, db: db)
                     accepted.append(item.message.id)
                 }
+                if let owner = savedOwner, let revision = item.revision {
+                    let state = WireSavedStateReceipt(savedReceiptVersion: 2, userId: owner, messageId: item.message.id,
+                        saved: true, savedAt: item.savedAt, revision: revision, visible: true)
+                    try state.validate(owner: owner, id: item.message.id)
+                    try mergeSavedState(state, db: db, snapshot: savedSnapshot ?? beginSavedSnapshot())
+                    continue
+                }
                 guard savedSnapshotVersions.accepts(item.message.id, request: savedSnapshot) else { continue }
                 if let owner = savedOwner {
                     if let revision = item.revision { try Self.savedMetadata(db, key: Self.savedVersionKey(owner,item.message.id), json: revision) }
@@ -1835,7 +1842,7 @@ private final class MessageSnapshotVersions: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         for id in Set(ids) {
             versions[id, default: 0] &+= 1
-            if let request { requests[id] = request }
+            if let request { requests[id] = max(requests[id] ?? 0, request) }
         }
     }
 }
@@ -1890,22 +1897,40 @@ extension PulseStore {
                 .map { try JSONDecoder().decode(PulseSavedIntent.self, from: Data($0.utf8)) }
         }
     }
+    /// Server revisions order commits, not HTTP starts. Keep the canonical state
+    /// even behind an optimistic marker so a late terminal ACK can retire its
+    /// intent without restoring an older marker or losing a newer visibility read.
+    private func mergeSavedState(_ incoming: WireSavedStateReceipt, db: Database, snapshot: UInt64) throws {
+        let key = "saved-canonical:v1|\(incoming.userId)|\(incoming.messageId)"
+        let previous = try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [key])
+            .map { try JSONDecoder().decode(WireSavedStateReceipt.self, from: Data($0.utf8)) }
+        let comparison = previous.map { WireSavedStateReceipt.compareRevisions(incoming.revision!, $0.revision!) } ?? 1
+        let accepts = comparison > 0 || (comparison == 0 && savedSnapshotVersions.accepts(incoming.messageId, request: snapshot))
+        let state = accepts ? incoming : previous!
+        if accepts {
+            try Self.savedMetadata(db, key: key, json: String(decoding: JSONEncoder().encode(state), as: UTF8.self))
+            try Self.savedMetadata(db, key: Self.savedVersionKey(state.userId,state.messageId), json: state.revision!)
+            savedSnapshotVersions.note([state.messageId], request: snapshot)
+        }
+        if try !Self.savedPending(db, owner: state.userId, id: state.messageId) {
+            if state.saved && state.visible == true {
+                try db.execute(sql: "INSERT INTO savedMessages(messageId,conversationId,savedAt) SELECT id,conversationId,? FROM message WHERE id=? ON CONFLICT(messageId) DO UPDATE SET savedAt=excluded.savedAt", arguments: [state.savedAt,state.messageId])
+            } else { try db.execute(sql: "DELETE FROM savedMessages WHERE messageId=?", arguments: [state.messageId]) }
+        }
+    }
     func acceptSavedState(_ state: WireSavedStateReceipt, intent: PulseSavedIntent? = nil, snapshot: UInt64) throws {
         try state.validate(owner: intent?.owner ?? state.userId, id: intent?.messageId ?? state.messageId, intent: intent)
         try dbQueue.write { db in
             if let intent { try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?", arguments: [intent.key]) }
-            guard savedSnapshotVersions.accepts(state.messageId, request: snapshot) else { return }
-            try Self.savedMetadata(db, key: Self.savedVersionKey(state.userId,state.messageId), json: state.revision!)
-            if try !Self.savedPending(db, owner: state.userId, id: state.messageId) {
-                if state.saved && state.visible == true {
-                    try db.execute(sql: "INSERT INTO savedMessages(messageId,conversationId,savedAt) SELECT id,conversationId,? FROM message WHERE id=? ON CONFLICT(messageId) DO UPDATE SET savedAt=excluded.savedAt", arguments: [state.savedAt,state.messageId])
-                } else { try db.execute(sql: "DELETE FROM savedMessages WHERE messageId=?", arguments: [state.messageId]) }
+            try mergeSavedState(state, db: db, snapshot: snapshot)
+            if let intent {
+                if ["conflict", "rejected"].contains(state.outcome ?? "") {
+                    let text = state.outcome == "conflict" ? "Saved state changed on another device. Review it before trying again." : "A saved change was refused because the message or access changed."
+                    try Self.savedMetadata(db, key: "saved-sync-notice:v1|\(state.userId)", json: text)
+                } else if try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: ["saved-head:v1|\(state.userId)|\(state.messageId)"]) == intent.clientId {
+                    try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?", arguments: ["saved-sync-notice:v1|\(state.userId)"])
+                }
             }
-            if intent != nil, ["conflict", "rejected"].contains(state.outcome ?? "") {
-                let text = state.outcome == "conflict" ? "Saved state changed on another device. Review it before trying again." : "A saved change was refused because the message or access changed."
-                try Self.savedMetadata(db, key: "saved-sync-notice:v1|\(state.userId)", json: text)
-            }
-            savedSnapshotVersions.note([state.messageId], request: snapshot)
         }
     }
     func deferSavedIntent(_ intent: PulseSavedIntent) throws {

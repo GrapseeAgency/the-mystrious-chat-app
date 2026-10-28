@@ -26,9 +26,18 @@ struct PulseSavedCachedPage {
     let nextCursor: String?
 }
 extension WireSavedStateReceipt {
+    static func validRevision(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard (1...40).contains(bytes.count) else { return false }
+        return bytes == [48] || ((49...57).contains(bytes[0]) && bytes.allSatisfy { (48...57).contains($0) })
+    }
+    static func compareRevisions(_ left: String, _ right: String) -> Int {
+        if left.count != right.count { return left.count < right.count ? -1 : 1 }
+        return left == right ? 0 : left.lexicographicallyPrecedes(right) ? -1 : 1
+    }
     func validate(owner: String, id: String, intent: PulseSavedIntent? = nil) throws {
         guard savedReceiptVersion == 2, userId == owner, messageId == id,
-              let revision, !revision.isEmpty, revision.count <= 128,
+              let revision, Self.validRevision(revision),
               let visible, !visible || saved,
               saved ? savedAt.flatMap(PulseFormat.date) != nil : savedAt == nil else {
             throw PulseAPIClient.Failure(kind: .validation, message: "Saved state was not confirmed.")

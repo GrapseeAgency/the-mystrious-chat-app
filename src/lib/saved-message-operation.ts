@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import type { PrismaClient, Prisma } from '../../prisma/generated-client'
 import { threadRootAvailable } from './message-visibility.ts'
 
@@ -17,8 +17,7 @@ export async function mutateSavedMessage(db: PrismaClient, userId: string, messa
   try {
     return await db.$transaction(async tx => {
       const receipt = await applySavedMessage(tx, userId, messageId, desired, readReceipt, clock)
-      await tx.savedMessageState.upsert({ where: { userId_messageId: { userId, messageId } },
-        create: { userId, messageId, revision: randomUUID() }, update: { revision: randomUUID() } })
+      await advanceSavedRevision(tx, userId, messageId)
       return receipt
     }, { isolationLevel: 'Serializable' })
   } catch (error) {
@@ -27,6 +26,14 @@ export async function mutateSavedMessage(db: PrismaClient, userId: string, messa
     }
     throw error
   }
+}
+
+async function advanceSavedRevision(tx: Prisma.TransactionClient, userId: string, messageId: string) {
+  const where = { userId_messageId: { userId, messageId } }
+  const current = await tx.savedMessageState.findUnique({ where })
+  const revision = (BigInt(current?.revision ?? '0') + BigInt(1)).toString()
+  await tx.savedMessageState.upsert({ where, create: { userId, messageId, revision }, update: { revision } })
+  return revision
 }
 
 async function applySavedMessage(tx: Prisma.TransactionClient, userId: string, messageId: string, desired: boolean | undefined,
@@ -62,7 +69,7 @@ export type SavedIntent = { clientId: string; expectedRevision?: string; predece
 const token = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value)
 export function validateSavedIntent(value: SavedIntent) {
   if (!token(value.clientId) || (!!value.expectedRevision === !!value.predecessorClientId) ||
-      (value.expectedRevision !== undefined && !token(value.expectedRevision)) ||
+      (value.expectedRevision !== undefined && (typeof value.expectedRevision !== 'string' || !/^(0|[1-9][0-9]{0,39})$/.test(value.expectedRevision) || value.expectedRevision.trim() !== value.expectedRevision)) ||
       (value.predecessorClientId !== undefined && (!token(value.predecessorClientId) || value.predecessorClientId === value.clientId))) {
     throw new SavedMessageError(400, 'A stable action identity and exactly one causal predecessor or revision are required.')
   }
@@ -119,7 +126,7 @@ export async function mutateSavedIntent(db: PrismaClient, userId: string, messag
         const predecessor = await tx.savedMessageOperation.findUnique({ where: { userId_clientId: { userId, clientId: intent.predecessorClientId } } })
         if (!predecessor) throw new SavedMessageError(409, 'The preceding saved action must finish first.')
         if (predecessor.messageId !== messageId) throw new SavedMessageError(400, 'Saved predecessor belongs to another message.')
-        expected = predecessor.outcome === 'applied' ? predecessor.revision : undefined
+        expected = predecessor.outcome !== 'conflict' ? predecessor.revision : undefined
       }
       if (expected !== current.revision) {
         await tx.savedMessageOperation.create({ data: { userId, clientId: intent.clientId, messageId, requestHash, revision: current.revision, outcome: 'conflict' } })
@@ -131,8 +138,7 @@ export async function mutateSavedIntent(db: PrismaClient, userId: string, messag
         await tx.savedMessageOperation.create({ data: { userId, clientId: intent.clientId, messageId, requestHash, revision: current.revision, outcome: 'rejected' } })
         return { ...current, clientId: intent.clientId, outcome: 'rejected' }
       }
-      const revision = randomUUID()
-      await tx.savedMessageState.upsert({ where: { userId_messageId: { userId, messageId } }, create: { userId, messageId, revision }, update: { revision } })
+      const revision = await advanceSavedRevision(tx, userId, messageId)
       await tx.savedMessageOperation.create({ data: { userId, clientId: intent.clientId, messageId, requestHash, revision, outcome: 'applied' } })
       const confirmed = await savedSnapshot(tx, userId, messageId)
       return { ...confirmed, clientId: intent.clientId, outcome: confirmed.saved === saved ? 'applied' : 'superseded' }

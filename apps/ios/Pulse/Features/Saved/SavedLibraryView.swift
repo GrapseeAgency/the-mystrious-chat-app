@@ -25,6 +25,7 @@ struct SavedLibraryView: View {
     @State private var pageLoading = false
     @State private var cachedPage = false
     @State private var libraryObservation: AnyCancellable?
+    @State private var observationGeneration = UUID()
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -63,7 +64,7 @@ struct SavedLibraryView: View {
             await load()
         }
         .onChange(of: session.sessionGeneration) { _, _ in
-            libraryObservation?.cancel(); libraryObservation = nil
+            observationGeneration = UUID(); libraryObservation?.cancel(); libraryObservation = nil
             loadGeneration = UUID(); items = []; cursor = nil; nextCursor = nil; previous = []; selectedIds = nil; phase = .failed("Reopen Saved messages for the current account")
         }
         .onReceive(session.signals) { signal in
@@ -71,7 +72,7 @@ struct SavedLibraryView: View {
                 liveRefresh.request { await load() }
             }
         }
-        .onDisappear { liveRefresh.cancel(); libraryObservation?.cancel(); libraryObservation = nil; loadGeneration = UUID() }
+        .onDisappear { observationGeneration = UUID(); liveRefresh.cancel(); libraryObservation?.cancel(); libraryObservation = nil; loadGeneration = UUID() }
         .onReceive(session.messageVisibilityClock) { now in
             let visible = visibleItems(items, now: now)
             if visible.count != items.count { items = visible }
@@ -88,12 +89,18 @@ struct SavedLibraryView: View {
 
     private func observePage() {
         libraryObservation?.cancel()
-        let epoch = session.sessionGeneration
+        observationGeneration = UUID()
+        let epoch = session.sessionGeneration, ticket = observationGeneration
         guard let store = session.store else { return }
         libraryObservation = store.observeSavedPage(ids: selectedIds).receive(on: DispatchQueue.main)
             .sink(receiveCompletion: { completion in
-                if case .failure = completion { session.toasts.show("Saved messages could not be read from storage") }
-            }, receiveValue: { rows in if session.sessionGeneration == epoch { items = visibleItems(rows) } })
+                guard session.sessionGeneration == epoch, observationGeneration == ticket else { return }
+                if case .failure = completion {
+                    items = []; phase = .failed("Saved messages could not be read from storage. Retry when storage is available.")
+                }
+            }, receiveValue: { rows in
+                if session.sessionGeneration == epoch, observationGeneration == ticket { items = visibleItems(rows) }
+            })
     }
     private func movePage(older: Bool) {
         guard !pageLoading else { return }

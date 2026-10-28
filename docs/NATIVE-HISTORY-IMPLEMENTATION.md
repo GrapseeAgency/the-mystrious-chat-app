@@ -59,8 +59,10 @@ not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
     journal explicit desire plus the local projection before HTTP. Immutable
     action identities and causal predecessors survive restart/lost responses;
     retry order is separate from the causal head. Server compare-and-set
-    revisions and retained receipts prevent old devices/replays undoing newer
-    writes. Conflicts/rejections are owner/action-bound, persisted and surfaced;
+    decimal commit revisions and retained receipts prevent old devices/replays
+    undoing newer writes. Both clients retain canonical state behind optimistic
+    markers; commit order beats HTTP-start order without restoring visibility
+    from an older equal-revision response. Conflicts/rejections are owner/action-bound, persisted and surfaced;
     they are not silently rebased. Logical bookmark state is separate from
     preview visibility, so revoked/expired content cannot be restored by sync.
     Reconnect/foreground/background replay, owner-only live hints and bounded
@@ -76,15 +78,15 @@ Room observation tests; they have not yet completed in the SDK runners.
 
 ## Validation and rollout ledger
 
-Latest executed full server run: **494 passed, 0 failed, 0 skipped**
-(482 top-level tests; `/home/user/private-feed-sync-full.log`). Real SQLite
+Latest executed full server run: **497 passed, 0 failed, 0 skipped**
+(485 top-level tests; `/home/user/saved-commit-order-full.log`). Real SQLite
 coverage includes 6,000 tied feed rows, empty scan windows, historical route
 results, 230 saved markers, response-loss replay, save/remove/save causal chains,
 conflicting devices, legacy writes, root expiry and membership revocation.
 
 Native regressions include bounded thread/cache windows, 50,100-row streaming
 exports, mention scan/expiry/lifetime behavior, strict receipts, durable saved
-journals and 2,400-row offline saved traversal. `b414cf0` and `03d4e22` iOS
+journals and 2,400-row offline saved traversal. `b414cf0`, `03d4e22` and `0344d10` iOS
 archives succeeded. Their Android unit jobs exposed outdated test adapters and
 an event-registry expectation; those fixtures are corrected. Current-candidate
 SDK/unit/instrumented completion is still being checked. Syntax parsing and
