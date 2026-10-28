@@ -65,6 +65,16 @@ final class ComposerJournalTests: XCTestCase {
         XCTAssertEqual(store.draftSnapshot(conversationId: "room"),"main")
         XCTAssertEqual(store.draftSnapshot(conversationId: key),"thread")
     }
+    func testUnknownDraftBaselineCannotOverwriteARemoteClear() {
+        let intent = PulseComposerIntent(owner: "me",kind: "draft",targetId: "room",conversationId: "room",rootId: nil,
+            desiredId: UUID().uuidString,text: "offline text",baseText: "",baseEditedAt: nil,flight: nil,blocked: nil)
+        let state = PulseComposerReceipt(composerVersion: 1,userId: "me",kind: "draft",targetId: "room",rootId: nil,
+            conversationId: "room",text: "",revision: "member:2",editedAt: nil,clientId: nil,outcome: nil)
+        XCTAssertFalse(state.hasSafeDraftBaseline(intent))
+        var verified = intent; verified.baseRevision = "member:2"
+        XCTAssertTrue(state.hasSafeDraftBaseline(verified))
+    }
+
 }
 
 @MainActor

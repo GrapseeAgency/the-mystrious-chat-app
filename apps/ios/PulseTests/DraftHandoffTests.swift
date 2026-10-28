@@ -80,4 +80,21 @@ final class DraftHandoffTests: XCTestCase {
         XCTAssertEqual(try other.countOutbox(), 0)
         XCTAssertEqual(journal.snapshot, "unfinished")
     }
+    func testScheduleAcknowledgementWaitsForAFailedLocalWriteToBecomeDurable() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+        defer { for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path,composerOwner: "sender")
+        let connection = try DatabaseQueue(path: path)
+        try await connection.write { try $0.execute(sql: "CREATE TRIGGER fail_draft BEFORE INSERT ON draft BEGIN SELECT RAISE(ABORT, 'disk full'); END") }
+        let journal = PulseDraftJournal(store: store,conversationId: "room")
+        do { try await journal.submit("keep original",revision: 1).value; XCTFail("Injected write must fail") } catch { }
+        XCTAssertTrue(PulseDraftJournal.hasPending(store: store,conversationId: "room"))
+        do { try await PulseDraftJournal.flushPending(store: store,conversationId: "room"); XCTFail("Must not acknowledge failed durability") } catch { }
+        XCTAssertEqual(journal.snapshot, "keep original")
+        try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_draft") }
+        try await PulseDraftJournal.flushPending(store: store,conversationId: "room")
+        XCTAssertFalse(PulseDraftJournal.hasPending(store: store,conversationId: "room"))
+        XCTAssertEqual(store.draftSnapshot(conversationId: "room"),"keep original")
+    }
+
 }

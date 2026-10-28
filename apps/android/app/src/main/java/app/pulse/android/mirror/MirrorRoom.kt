@@ -1134,8 +1134,13 @@ internal fun MirrorRoom(
 
     // R74 - the slash fast-path (web handleSlashSelect L3000+): the palette
     // and the tray Commands tile dispatch through the same parser branches.
+    fun openPoll() {
+        if (anonNext || replyTo != null || editing != null || activeTopicId != null || pendingEffect != null) {
+            sendError = "This poll composer sends a named poll. Clear anonymous mode, reply, edit, topic or effect first."
+        } else { pollOpen = true }
+    }
     fun openSchedule() {
-        if (anonNext || replyTo != null || editing != null || activeTopicId != null) {
+        if (anonNext || replyTo != null || editing != null || activeTopicId != null || pendingEffect != null) {
             sendError = "Scheduling supports plain named messages only. Clear anonymous mode, reply, edit or topic first."
         } else { scheduleOpen = true }
     }
@@ -1147,7 +1152,7 @@ internal fun MirrorRoom(
             draftValue = TextFieldValue(if (args.isNotEmpty()) "$cmd $args" else "$cmd ")
         }
         when {
-            cmd == "/poll" -> { draftValue = TextFieldValue(""); pollOpen = true }
+            cmd == "/poll" -> { openPoll() }
             cmd == "/schedule" -> { openSchedule() }
             cmd == "/sticker" -> { draftValue = TextFieldValue(""); stickerOpen = true }
             cmd == "/location" -> { draftValue = TextFieldValue(""); locationOpen = true }
@@ -2309,7 +2314,7 @@ internal fun MirrorRoom(
                             },
                             MirrorTrayTileSpec("LVote", "Poll", "Live votes in this chat", TrayToneViolet) {
                                 trayOpen = false
-                                pollOpen = true
+                                openPoll()
                             },
                             MirrorTrayTileSpec("LCalendarClock", "Schedule", "Send this message later", TrayToneOrange) {
                                 trayOpen = false

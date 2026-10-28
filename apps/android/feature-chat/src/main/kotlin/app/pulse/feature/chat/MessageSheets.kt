@@ -85,10 +85,12 @@ internal val QUICK_REACTIONS: List<String> = REACTION_IDS
 @Composable
 internal fun PollBuilderSheet(
     onDismiss: () -> Unit,
-    onCreate: (question: String, options: List<String>) -> Unit,
+    onCreate: suspend (question: String, options: List<String>) -> Boolean,
 ) {
     var question by remember { mutableStateOf("") }
     var options by remember { mutableStateOf(listOf("", "")) }
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
     val ready = question.isNotBlank() && options.count { it.isNotBlank() } >= 2
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -112,7 +114,7 @@ internal fun PollBuilderSheet(
             Spacer(Modifier.height(10.dp))
             BasicField(
                 value = question,
-                onValueChange = { if (it.length <= 140) question = it },
+                onValueChange = { if (!busy && it.length <= 140) question = it },
                 placeholder = "Ask a question…",
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -125,7 +127,7 @@ internal fun PollBuilderSheet(
                     BasicField(
                         value = value,
                         onValueChange = { next ->
-                            if (next.length <= 80) {
+                            if (!busy && next.length <= 80) {
                                 options = options.toMutableList().also { it[index] = next }
                             }
                         },
@@ -133,14 +135,14 @@ internal fun PollBuilderSheet(
                         modifier = Modifier.weight(1f),
                     )
                     if (options.size > 2) {
-                        IconButton(onClick = { options = options.filterIndexed { i, _ -> i != index } }) {
+                        IconButton(enabled = !busy, onClick = { options = options.filterIndexed { i, _ -> i != index } }) {
                             Icon(PulseIcons.X, contentDescription = "Remove option", modifier = Modifier.size(16.dp))
                         }
                     }
                 }
             }
             if (options.size < 6) {
-                TextButton(onClick = { options = options + "" }) {
+                TextButton(enabled = !busy, onClick = { options = options + "" }) {
                     Icon(PulseIcons.Plus, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Add option", color = PulsePalette.Emerald)
@@ -149,11 +151,17 @@ internal fun PollBuilderSheet(
             Spacer(Modifier.height(4.dp))
             Button(
                 onClick = {
-                    if (ready) {
-                        onCreate(question.trim(), options.map { it.trim() }.filter { it.isNotBlank() })
+                    if (ready && !busy) {
+                        val q = question.trim()
+                        val choices = options.map { it.trim() }.filter { it.isNotBlank() }
+                        busy = true
+                        scope.launch {
+                            try { if (onCreate(q, choices)) onDismiss() }
+                            finally { busy = false }
+                        }
                     }
                 },
-                enabled = ready,
+                enabled = ready && !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Post poll")

@@ -55,6 +55,9 @@ final class PulseDraftJournal {
         guard store.captureDraftConsumption(conversationId: conversationId).revision == pending.storageRevision else {
             throw CocoaError(.userCancelled)
         }
+        if let current = snapshots[key], current.owner == pending.owner, current.revision == pending.revision {
+            snapshots[key] = Snapshot(owner: pending.owner,revision: pending.revision,text: nil,storageRevision: pending.storageRevision)
+        }
     }
     private static let writer = Writer()
     private let store: PulseStore

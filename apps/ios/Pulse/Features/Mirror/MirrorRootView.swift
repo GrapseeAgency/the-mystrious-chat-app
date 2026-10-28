@@ -2819,7 +2819,11 @@ struct MirrorRoomSheetView: View {
                 .task { await loadPins() }
             // R102 - the tray surfaces
             case .poll:
-                MirrorPollBuilder(session: session, row: row, onSent: onSent)
+                if schedulingSupported {
+                    MirrorPollBuilder(session: session, row: row, onSent: onSent)
+                } else {
+                    MirrorPanelHint("This poll composer sends a named poll. Turn off anonymous mode and effects first; your draft is unchanged.")
+                }
             case .schedule:
                 if schedulingSupported {
                     MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent,

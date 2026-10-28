@@ -2038,7 +2038,6 @@ fun ChatRoomScreen(
         PollBuilderSheet(
             onDismiss = { pollBuilderOpen = false },
             onCreate = { question, options ->
-                pollBuilderOpen = false
                 viewModel.createPoll(question, options)
             },
         )

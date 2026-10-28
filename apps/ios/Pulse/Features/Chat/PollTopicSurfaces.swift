@@ -240,12 +240,11 @@ struct PollBuilderSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Post") {
-                        viewModel.createPoll(
+                        if viewModel.createPoll(
                             question: question,
                             options: trimmedOptions.filter { !$0.isEmpty },
                             session: session,
-                        )
-                        dismiss()
+                        ) { dismiss() }
                     }
                     .disabled(!canPost)
                 }

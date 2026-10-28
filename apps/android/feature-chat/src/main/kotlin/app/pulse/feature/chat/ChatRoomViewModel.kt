@@ -1525,15 +1525,22 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── Wave 2: polls (spec §1 rows 2/3/4) ─────────────────────────────
 
-    fun createPoll(question: String, options: List<String>) {
-        viewModelScope.launch {
-            repo.createPoll(conversationId, question.trim(), options)
-                .onSuccess {
-                    app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
-                    afterOwnSend(it)
-                }
-                .onFailure { notify(it.message ?: "Couldn't create the poll", isError = true) }
+    suspend fun createPoll(question: String, options: List<String>): Boolean {
+        if (_anonNext.value || _state.value.replyTo != null || _state.value.editing != null || _activeTopicId.value != null) {
+            notify("This poll composer sends a named poll. Clear anonymous mode, reply, edit or topic first.", isError = true)
+            return false
         }
+        val epoch = repo.attachmentSessionKey()
+        return try {
+            val message = repo.boundToCurrentAccount().createPoll(conversationId, question.trim(), options).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() != epoch) false else {
+                app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
+                afterOwnSend(message)
+                true
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Couldn't queue the poll", isError = true); false }
     }
 
     /** Explicit single-choice selection; server owns open/closed availability. */

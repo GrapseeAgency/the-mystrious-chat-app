@@ -843,13 +843,14 @@ internal fun MirrorPollBuilderSheet(
     onDismiss: () -> Unit,
     onPosted: (String) -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var question by remember { mutableStateOf("") }
     var options by remember { mutableStateOf(listOf("", "")) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     MirrorSheet(title = "New poll", onDismiss = onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MirrorSheetInput(value = question, placeholder = "Ask a question", max = 160, onValue = { question = it })
+            MirrorSheetInput(value = question, placeholder = "Ask a question", max = 140, onValue = { if (!busy) question = it })
             for ((index, option) in options.withIndex()) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(Modifier.weight(1f)) {
@@ -857,7 +858,7 @@ internal fun MirrorPollBuilderSheet(
                             value = option,
                             placeholder = if (index < 2) "Option ${index + 1} (required)" else "Option ${index + 1}",
                             max = 80,
-                            onValue = { v -> options = options.toMutableList().also { it[index] = v } },
+                            onValue = { v -> if (!busy) options = options.toMutableList().also { it[index] = v } },
                         )
                     }
                     if (options.size > 2) {
@@ -865,7 +866,7 @@ internal fun MirrorPollBuilderSheet(
                             Modifier
                                 .size(30.dp)
                                 .clip(CircleShape)
-                                .mirrorPressClick(onClick = { options = options.filterIndexed { i, _ -> i != index } }),
+                                .mirrorPressClick(enabled = !busy, onClick = { options = options.filterIndexed { i, _ -> i != index } }),
                             contentAlignment = Alignment.Center,
                         ) {
                             MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(14.dp))
@@ -880,7 +881,7 @@ internal fun MirrorPollBuilderSheet(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
-                        .clickable { options = options + "" }
+                        .clickable(enabled = !busy) { options = options + "" }
                         .padding(vertical = 4.dp),
                 )
             }
@@ -896,15 +897,17 @@ internal fun MirrorPollBuilderSheet(
                                 error = "A poll needs a question and at least two options"
                             } else {
                                 busy = true
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    val result = runCatching {
-                                        repository.createPoll(conversationId, question.trim(), clean).getOrThrow()
-                                    }
-                                    CoroutineScope(Dispatchers.Main).launch {
-                                        busy = false
-                                        result.onSuccess { onPosted("Poll posted") }
-                                            .onFailure { error = "Could not post the poll" }
-                                    }
+                                val q = question.trim()
+                                val epoch = repository.attachmentSessionKey()
+                                val owned = repository.boundToCurrentAccount()
+                                scope.launch {
+                                    try {
+                                        val message = owned.createPoll(conversationId, q, clean).getOrThrow()
+                                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                        if (repository.attachmentSessionKey() == epoch) onPosted(if (message.id.startsWith("local_")) "Poll queued" else "Poll posted")
+                                    } catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (failure: Exception) { if (repository.attachmentSessionKey() == epoch) error = failure.message ?: "Could not queue the poll" }
+                                    finally { busy = false }
                                 }
                             }
                         })

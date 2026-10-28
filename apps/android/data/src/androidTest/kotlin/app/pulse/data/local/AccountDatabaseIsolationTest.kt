@@ -136,6 +136,12 @@ class AccountDatabaseIsolationTest {
                     repo.stageThreadDraft("thread-room", "disk-failure", "keep failed draft")
                     val failedSnapshot = repo.observeThreadDraft("thread-room", "disk-failure").first { it.saveFailed }
                     assertEquals("keep failed draft", failedSnapshot.text)
+                    // With no gateway configured this succeeds ONLY by respecting
+                    // the failed-write front buffer before attempting an import.
+                    val hydration = repo.refreshComposerDraft("thread-room", "disk-failure")
+                    assertTrue(hydration.isSuccess)
+                    assertNull(hydration.getOrThrow())
+                    assertEquals("keep failed draft", repo.loadThreadDraft("thread-room", "disk-failure"))
                     val failedThread = checkNotNull(repo.captureThreadDraftToken("thread-room", "disk-failure"))
                     assertTrue(runCatching { repo.sendMessage("thread-room", "keep failed draft", parentId = "disk-failure", draftToken = failedThread).getOrThrow() }.isFailure)
                     assertEquals(before, repo.observeOutbox().first().size)

@@ -56,7 +56,8 @@ final class DraftJournalTests: XCTestCase {
         let lateDisposal = old.submit("stale room text", revision: 99)
         try await pending.value
         try await newer.value
-        try await lateDisposal.value
+        do { try await lateDisposal.value; XCTFail("Displaced draft must report recovery") }
+        catch { XCTAssertTrue(error is PulseDraftJournal.Failure) }
         XCTAssertEqual(store.draft(conversationId: "room"), "new room edit")
     }
 

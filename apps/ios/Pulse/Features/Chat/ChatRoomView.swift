@@ -5087,10 +5087,11 @@ final class RoomViewModel: ObservableObject {
         enqueueRich(kind: "sticker", content: emoji, payload: ["emoji": emoji, "pack": pack], session: session)
     }
 
-    private func enqueueRich(kind: String, content: String, payload: [String: Any], session: PulseSession) {
+    @discardableResult
+    private func enqueueRich(kind: String, content: String, payload: [String: Any], session: PulseSession) -> Bool {
         guard let viewer = session.viewer, let store = session.store, session.ready else {
             session.toasts.show("Local storage is not ready. Nothing was queued.")
-            return
+            return false
         }
         do {
             let message = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: conversationId,
@@ -5100,7 +5101,8 @@ final class RoomViewModel: ObservableObject {
             if isGroupRoom { anonOn = false }
             session.outbox?.reloadPending()
             session.flushOutbox()
-        } catch { session.toasts.show("Message was not queued. " + Self.describe(error)) }
+            return true
+        } catch { session.toasts.show("Message was not queued. " + Self.describe(error)); return false }
     }
 
     // ── R1-W2B F-MD-06 - translate ───────────────────────
@@ -5858,10 +5860,10 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 2 polls (spec §1 rows 2/3/4) ────────────────
 
-    func createPoll(question: String, options: [String], session: PulseSession) {
+    func createPoll(question: String, options: [String], session: PulseSession) -> Bool {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         let choices = options.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        enqueueRich(kind: "poll", content: question, payload: ["question": question, "options": choices], session: session)
+        return enqueueRich(kind: "poll", content: question, payload: ["question": question, "options": choices], session: session)
     }
 
     func votePoll(pollID: String, optionID: String, session: PulseSession) {
