@@ -131,7 +131,7 @@ import { REACTION_IDS, REACTION_LABELS, reactionId, stampId } from '@/lib/icon-i
 import { reactionGlyphFor, stampGlyphFor } from '@/components/ui/icons'
 import { haptic, pulseSettingsStore } from '@/lib/pulse-settings'
 import { spring, ease, pressSpring, fireParticles, type ParticleKind } from '@/lib/motion'
-import { pulseDraftsStore } from '@/lib/pulse-drafts'
+import { pulseDraftsStore, primeDraftMirror } from '@/lib/pulse-drafts'
 import { pulseOutboxStore, outboxCount } from '@/lib/pulse-outbox'
 import { ForwardSheet } from '@/components/chat/forward-sheet'
 import {
@@ -870,10 +870,20 @@ export function ChatRoom({
     if (!detail.isSuccess) return
     serverDraftSeededRef.current = conversationId
     const serverDraft = detail.data.myDraft ?? null
+    primeDraftMirror(conversationId, pulseDraftsStore.getState().drafts[conversationId] ?? serverDraft ?? '')
     if (!serverDraft) return
     if (pulseDraftsStore.getState().drafts[conversationId] !== undefined) return // local wins
     setInput(serverDraft)
   }, [conversationId, detail.isSuccess, detail.data?.myDraft])
+
+  useEffect(() => {
+    const failed = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId: string; message: string }>).detail
+      if (detail?.conversationId === conversationId) toast.error(detail.message)
+    }
+    window.addEventListener('pulse:draft-sync-error', failed)
+    return () => window.removeEventListener('pulse:draft-sync-error', failed)
+  }, [conversationId])
 
   // R38: Signal "Screen security" - frost the message area while unfocused 
   // R42: the veil engages when EITHER flag is on - the room-wide switch

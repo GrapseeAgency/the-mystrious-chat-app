@@ -12,6 +12,7 @@ import * as sync from '../../src/lib/message-sync.ts'
 import * as feedPagination from '../../src/lib/feed-pagination.ts'
 import * as visibility from '../../src/lib/message-visibility.ts'
 import { visibleSearchHit } from '../../src/lib/search-visibility.ts'
+import { readComposer, writeComposer, composerFailure } from '../../src/lib/composer-operation.ts'
 import { clipUtf16 } from '../../src/lib/text-limits.ts'
 import { deriveSafetyNumber } from '../../src/lib/safety.ts'
 import { peerBlock, PeerBlockError } from '../../src/lib/peer-block.ts'
@@ -30,7 +31,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'UserVerification', 'Message', 'SavedMessage', 'SavedMessageState', 'Reminder']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'UserVerification', 'Message', 'SavedMessage', 'SavedMessageState', 'Reminder', 'ComposerOperation']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -42,6 +43,7 @@ async function fixture(run, database = db => db) {
       })
       await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
     }
+    await db.$executeRawUnsafe('CREATE UNIQUE INDEX ComposerOperation_identity ON ComposerOperation(userId,clientId)')
     const readSQL = await readFile(new URL('../../prisma/patches/20261026_exact_read_observations.sql', import.meta.url), 'utf8')
     await db.$transaction(async tx => {
       for (const statement of readSQL.replace(/^--.*$/gm, '').split(';').map(s => s.trim()).filter(s => s && !['BEGIN IMMEDIATE','COMMIT'].includes(s))) await tx.$executeRawUnsafe(statement)
@@ -149,10 +151,17 @@ async function fixture(run, database = db => db) {
         ...(reading?{}:{body:JSON.stringify({userId:'owner',creatorId:'owner',senderId:'owner',...body})}),
       }),{params:Promise.resolve({id:'room'})})
     }
-    const draftRoute=await load('src/app/api/conversations/[id]/draft/route.ts',blockDeps,'({GET,PATCH})')
-    const draft=(method,text,token='synthetic-owner',userId='owner')=>draftRoute[method](new Request(`https://settings.test/api/conversations/room/draft?userId=${userId}`,{
-      method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='GET'?{}:{body:JSON.stringify({userId,draft:text})}),
-    }),{params:Promise.resolve({id:'room'})})
+    const draftRoute=await load('src/app/api/conversations/[id]/draft/route.ts',{...blockDeps,readComposer,writeComposer,composerFailure},'({GET,PATCH})')
+    let draftSequence = 0
+    const draft=async(method,text,token='synthetic-owner',userId='owner',instruction)=>{
+      if(method==='PATCH' && instruction===undefined){
+        const current = await draftRoute.GET(new Request(`https://settings.test/api/conversations/room/draft?userId=${userId}`,{headers:token?{authorization:`Bearer ${token}`}:{}}),{params:Promise.resolve({id:'room'})})
+        instruction={clientId:`fixture-${++draftSequence}`,expectedRevision:(await current.json()).revision??'missing'}
+      }
+      return draftRoute[method](new Request(`https://settings.test/api/conversations/room/draft?userId=${userId}`,{
+        method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='GET'?{}:{body:JSON.stringify({userId,draft:text,...instruction})}),
+      }),{params:Promise.resolve({id:'room'})})
+    }
     const feeds={}
     for(const kind of ['search','mentions']) feeds[kind]=await load(`src/app/api/${kind}/route.ts`,{
       ...blockDeps,...visibility,...feedPagination,clipUtf16,visibleSearchHit,MESSAGE_FULL_INCLUDE:{sender:true},
@@ -533,14 +542,34 @@ test('drafts require the exact owner and an oversize write never clips or change
   for(const text of ['🌿'.repeat(1000),'  spaces stay  ','','']) {
     const written=await draft('PATCH',text);assert.equal(written.status,200)
     assert.equal(written.headers.get('cache-control'),'private, no-store')
-    assert.deepEqual(await written.json(),{ok:true,draftReceiptVersion:1,conversationId:'room',userId:'owner',draft:text})
+    const receipt=await written.json()
+    assert.equal(receipt.ok,true);assert.equal(receipt.draftReceiptVersion,1);assert.equal(receipt.draft,text)
+    assert.equal(receipt.userId,'owner');assert.equal(receipt.conversationId,'room');assert.equal(receipt.outcome,'applied')
     const fetched=await draft('GET');assert.equal(fetched.headers.get('cache-control'),'private, no-store')
-    assert.deepEqual(await fetched.json(),{draft:text||null})
+    assert.deepEqual(await fetched.json(),{draft:text||null,revision:receipt.revision,userId:'owner',conversationId:'room'})
   }
   await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
   assert.equal((await draft('PATCH','lost membership')).status,403)
 }))
 
+
+test('compatibility draft endpoint refuses blind writers and cannot bypass native CAS',()=>fixture(async({db,draft})=>{
+  const original=await (await draft('GET')).json()
+  const native=await writeComposer(db,'owner','draft','room','','native text',{clientId:'native-first',expectedRevision:original.revision})
+  assert.equal((await draft('PATCH','blind old tab','synthetic-owner','owner',{})).status,428)
+  const stale=await draft('PATCH','stale web text','synthetic-owner','owner',{clientId:'stale-web',expectedRevision:original.revision})
+  assert.equal(stale.status,409);assert.equal((await stale.json()).outcome,'conflict')
+  assert.equal((await readComposer(db,'owner','draft','room','')).text,'native text')
+  const instruction={clientId:'web-valid',expectedRevision:native.revision}
+  const accepted=await draft('PATCH','web text','synthetic-owner','owner',instruction)
+  assert.equal(accepted.status,200)
+  const receipt=await accepted.json()
+  const replay=await draft('PATCH','web text','synthetic-owner','owner',instruction)
+  assert.equal(replay.status,200);assert.equal((await replay.json()).revision,receipt.revision)
+  await writeComposer(db,'owner','draft','room','','newer native',{clientId:'native-next',expectedRevision:receipt.revision})
+  assert.equal((await draft('PATCH','web text','synthetic-owner','owner',instruction)).status,409)
+  assert.equal((await readComposer(db,'owner','draft','room','')).text,'newer native')
+}))
 
 test('private search and mentions exclude unauthorized readers, expired roots and anonymous identity disclosure',()=>fixture(async({db,feed})=>{
   const future=new Date(Date.now()+60_000)

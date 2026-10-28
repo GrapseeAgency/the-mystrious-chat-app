@@ -13,6 +13,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { getPulseUser } from '@/lib/pulse-store'
+import { DraftMirror } from '@/lib/draft-mirror'
 
 interface PulseDraftsState {
   drafts: Record<string, string>
@@ -25,27 +26,42 @@ const MAX_DRAFT = 2000
 /** Per-conversation debounce timers so typing bursts collapse into one PATCH. */
 const syncTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
-/**
- * Mirror a local draft mutation to the server (best-effort, silent on
- * failure - drafts keep working offline/local-first either way).
- */
-function scheduleServerSync(conversationId: string, text: string) {
+const mirrors = new Map<string, DraftMirror>()
+function mirrorFor(conversationId: string) {
   const user = getPulseUser()
-  if (!user) return // logged out - nothing to sync against
-  const prev = syncTimers.get(conversationId)
+  if (!user) return null
+  const key = user.id + '|' + conversationId
+  let mirror = mirrors.get(key)
+  if (!mirror) {
+    mirror = new DraftMirror(user.id, conversationId, () => getPulseUser()?.id === user.id,
+      (...args) => fetch(...args), () => crypto.randomUUID(), message => {
+        window.dispatchEvent(new CustomEvent('pulse:draft-sync-error', { detail: { conversationId, message } }))
+      })
+    mirrors.set(key, mirror)
+  }
+  return { key, mirror }
+}
+
+/** Capture the text actually shown by the room, not a fresh overwrite baseline. */
+export function primeDraftMirror(conversationId: string, observed: string) {
+  const selected = mirrorFor(conversationId)
+  if (selected) void selected.mirror.prime(observed).catch(error => {
+    window.dispatchEvent(new CustomEvent('pulse:draft-sync-error', { detail: { conversationId, message: error.message } }))
+  })
+}
+
+function scheduleServerSync(conversationId: string, text: string, previous: string) {
+  const selected = mirrorFor(conversationId)
+  if (!selected) return
+  // Prime immediately on the first edit, before subsequent debounced keystrokes
+  // change the local predecessor. Transport failures never erase local drafts.
+  void selected.mirror.prime(previous).catch(() => {})
+  const prev = syncTimers.get(selected.key)
   if (prev) clearTimeout(prev)
-  syncTimers.set(
-    conversationId,
-    setTimeout(() => {
-      syncTimers.delete(conversationId)
-      void fetch(`/api/conversations/${encodeURIComponent(conversationId)}/draft`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, draft: text }),
-        keepalive: true,
-      }).catch(() => {}) // sync failure never breaks local drafting
-    }, 600),
-  )
+  syncTimers.set(selected.key, setTimeout(() => {
+    syncTimers.delete(selected.key)
+    void selected.mirror.submit(text, previous)
+  }, 600))
 }
 
 export const pulseDraftsStore = create<PulseDraftsState>()(
@@ -58,12 +74,12 @@ export const pulseDraftsStore = create<PulseDraftsState>()(
           const drafts = { ...state.drafts }
           if (trimmed.length === 0) delete drafts[conversationId]
           else drafts[conversationId] = trimmed
-          scheduleServerSync(conversationId, trimmed) // R45 cross-device mirror
+          scheduleServerSync(conversationId, trimmed, state.drafts[conversationId] ?? '') // R45 cross-device mirror
           return { drafts }
         }),
       clearDraft: (conversationId) =>
         set((state) => {
-          scheduleServerSync(conversationId, '') // R45 mirror the clear too
+          scheduleServerSync(conversationId, '', state.drafts[conversationId] ?? '') // R45 mirror the clear too
           if (!(conversationId in state.drafts)) return state
           const drafts = { ...state.drafts }
           delete drafts[conversationId]
