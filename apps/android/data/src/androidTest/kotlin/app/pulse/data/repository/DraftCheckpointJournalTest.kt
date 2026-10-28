@@ -77,6 +77,9 @@ class DraftCheckpointJournalTest {
                 val next = repository()
                 try {
                     assertEquals("last keystrokes", next.observeDraft("room").first())
+                    val restored = next.observeDraftSnapshot("room").first()
+                    assertEquals("last keystrokes", restored.text)
+                    assertEquals(next.captureDraftToken("room")?.revision, restored.revision)
                     assertTrue(next.refreshComposerDraft("room", null).isSuccess)
                     connection!!.execSQL("DROP TRIGGER fail_draft")
                     val token = checkNotNull(next.captureDraftToken("room"))

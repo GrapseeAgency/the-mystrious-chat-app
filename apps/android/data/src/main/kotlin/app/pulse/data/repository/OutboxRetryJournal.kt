@@ -34,6 +34,7 @@ internal class OutboxRetryJournal(
     }
     suspend fun restore(owner: String) {
         val now = wallNow()
+        loaded.entries.removeIf { it.value <= now }
         // These are only retry-admission rows, never user messages/receipts.
         for (row in db.wave7Dao().readJournal(prefix(owner))) {
             if (row.updatedAt > now) restore(row)

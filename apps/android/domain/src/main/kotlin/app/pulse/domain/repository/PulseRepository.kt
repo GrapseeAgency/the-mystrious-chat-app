@@ -540,6 +540,10 @@ interface PulseRepository {
     /** Live draft text for the composer restore (null when none). */
     fun observeDraft(conversationId: String): Flow<String?>
 
+    /** Text plus its read revision; a late restoration must not consume a newer writer. */
+    fun observeDraftSnapshot(conversationId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> =
+        kotlinx.coroutines.flow.flowOf(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
+
     // Wave 1 messaging surface (spec WAVE1 §1.1 - all routes exist on the wire)
 
     /** PATCH /api/messages/{id} {userId, content} - sender-only edit → fresh row (editedAt set). */

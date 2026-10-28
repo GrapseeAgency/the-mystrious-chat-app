@@ -3387,6 +3387,16 @@ class PulseRepositoryImpl constructor(
         draftWrites.currentSnapshot(key, null) ?: persistedDraftOrCheckpoint(key)
     }
 
+    override fun observeDraftSnapshot(conversationId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> =
+        recoveringDraftObservation(buffers=draftWrites.bufferChanges, database={ draftDao.observe(conversationId) },
+            onFailure={ Log.w(TAG,"Composer snapshot observation will retry",it) }) {
+            draftMutex.withLock {
+                val revision = draftVersions[conversationId]?.get() ?: 0L
+                val buffered = threadDraftBuffers[conversationId]?.takeIf { it.first == revision }
+                app.pulse.domain.model.ThreadDraftSnapshot(buffered?.second ?: persistedDraftOrCheckpoint(conversationId),revision)
+            }
+        }
+
     override fun observeThreadDraft(conversationId: String, rootId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> {
         val key = threadDraftKey(conversationId, rootId)
         return recoveringDraftObservation(

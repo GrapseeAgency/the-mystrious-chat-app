@@ -86,7 +86,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -376,12 +375,14 @@ private fun PipExpandedPane(
     var paneDraft by remember(repository, pane.conversationId) { mutableStateOf("") }
     var touched by remember(repository, pane.conversationId) { mutableStateOf(false) }
     var sending by remember(repository, pane.conversationId) { mutableStateOf(false) }
-    // Capture before the read; a concurrent room writer must never be consumed
-    // by this older mini-pane even if its text arrives while restoration waits.
-    var draftToken by remember(repository, pane.conversationId) { mutableStateOf(repository.captureDraftToken(pane.conversationId)) }
+    var draftToken by remember(repository, pane.conversationId) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }
     LaunchedEffect(repository, pane.conversationId) {
-        val restored = repository.observeDraft(pane.conversationId).first()
-        if (!touched) paneDraft = restored ?: ""
+        repository.observeDraftSnapshot(pane.conversationId).collect { snapshot ->
+            val current = repository.captureDraftToken(pane.conversationId)
+            if (!touched && current?.revision == snapshot.revision) {
+                paneDraft = snapshot.text ?: ""; draftToken = current
+            }
+        }
     }
     fun changeDraft(value: String) {
         touched = true; paneDraft = value

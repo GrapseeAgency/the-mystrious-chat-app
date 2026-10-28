@@ -19,7 +19,8 @@ class NativeSendEntrypoints(unittest.TestCase):
     def test_mini_chat_keeps_text_until_owned_durable_result(self):
         source = (ROOT / 'apps/android/feature-chat/src/main/kotlin/app/pulse/feature/chat/PipOverlay.kt').read_text()
         self.assertIn('repository.stageDraft(pane.conversationId, value)', source)
-        self.assertIn('repository.observeDraft(pane.conversationId).first()', source)
+        self.assertIn('repository.observeDraftSnapshot(pane.conversationId).collect', source)
+        self.assertIn('current?.revision == snapshot.revision', source)
         self.assertIn('SendMessageUseCase(owned)(conversationId, body, draftToken = token)', source)
         self.assertIn('paneMayClearAfterSend(result, text, paneDraft, token, draftToken)', source)
         self.assertNotRegex(source, r'paneDraft\s*=\s*""\s*\n\s*onSend\(')
