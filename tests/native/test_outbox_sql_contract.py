@@ -59,10 +59,12 @@ class FailedIntentSQLTest(unittest.TestCase):
         self.assertEqual(row['content'], 'original intent')
         self.assertEqual(self.db.execute('SELECT text FROM draft').fetchone()[0], 'my next thought')
 
+    # Room expands list parameters; this fixture uses a non-room empty sentinel
+    # to represent no excluded rooms without claiming Room binding coverage.
     def test_rejection_hides_echo_without_deleting_intent_or_new_draft(self):
         self.db.execute(query('markFailed'), {'clientId': 'old', 'reason': 'forbidden'})
         self.assertEqual(len(self.db.execute(query('observeFor'), {'conversationId': 'room'}).fetchall()), 0)
-        self.assertEqual(len(self.db.execute(query('allForOwner'), {'owner': 'owner'}).fetchall()), 0)
+        self.assertEqual(len(self.db.execute(query('allForOwner'), {'owner': 'owner', 'excludedRooms': ''}).fetchall()), 0)
         self.assertEqual(self.db.execute('SELECT failureReason FROM outbox').fetchone()[0], 'forbidden')
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM messages').fetchone()[0], 1)
         self.assertEqual(self.db.execute('SELECT text FROM draft').fetchone()[0], 'my next thought')
@@ -74,7 +76,7 @@ class FailedIntentSQLTest(unittest.TestCase):
             self.seed(str(i))
         self.db.execute("UPDATE outbox SET failureReason='held'")
         self.seed('next')
-        pending = self.db.execute(query('allForOwner'), {'owner': 'owner'}).fetchall()
+        pending = self.db.execute(query('allForOwner'), {'owner': 'owner', 'excludedRooms': ''}).fetchall()
         self.assertEqual([r['clientId'] for r in pending], ['next'])
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM outbox').fetchone()[0], 57)
 

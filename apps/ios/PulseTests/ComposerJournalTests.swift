@@ -93,7 +93,7 @@ final class ComposerJournalTests: XCTestCase {
             XCTAssertNotEqual(newer.desiredId, original.desiredId)
             XCTAssertEqual(newer.text, "newer text")
             XCTAssertNil(newer.blocked)
-            XCTAssertTrue(try store.composerPage(owner: "me", held: true).isEmpty())
+            XCTAssertTrue(try store.composerPage(owner: "me", held: true).isEmpty)
             let frozen = try XCTUnwrap(store.freezeComposer(newer, revision: "member:0"))
             try store.acceptComposer(frozen, receipt: receipt(frozen, text: "newer text", revision: "member:1"))
             XCTAssertEqual(try store.pendingComposerCount(owner: "me"), 0)

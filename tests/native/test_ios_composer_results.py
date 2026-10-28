@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 
@@ -39,6 +40,20 @@ Test Case '-[PulseTests.Suite testMissing]' started.
         self.assertEqual(actual['Suite.testSkip'], ['skipped'])
         self.assertEqual(actual['Suite.testMissing'], ['missing'])
         self.assertFalse(any(status == ['passed'] for status in actual.values()))
+
+    def test_annotation_preserves_suite_counts_without_truncating_at_checks_limit(self):
+        expected = report.expected_tests()
+        for status in ['passed', 'missing']:
+            cases = {name: [status] for name in sorted(expected)}
+            payload = {'sourceCommit': 'a' * 40, 'scope': 'section3-ios-composer',
+                       'expected': len(expected), 'passed': len(expected) if status == 'passed' else 0,
+                       'verified': status == 'passed', 'cases': cases}
+            notice = report.annotation_report(payload)
+            self.assertLess(len(json.dumps(notice).encode()), 3500)
+            self.assertEqual(sum(suite['expected'] for suite in notice['suites'].values()), len(expected))
+            self.assertEqual(sum(suite['passed'] for suite in notice['suites'].values()), payload['passed'])
+            self.assertEqual(notice['unverifiedCount'], len(expected) - payload['passed'])
+            self.assertLessEqual(len(notice['firstUnverified']), 5)
 
     def test_empty_log_is_not_evidence(self):
         self.assertEqual(report.evaluate({'Suite.testOne'}, report.results('')), {'Suite.testOne': ['missing']})

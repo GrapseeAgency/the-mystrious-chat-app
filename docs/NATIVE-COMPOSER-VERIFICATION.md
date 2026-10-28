@@ -102,3 +102,33 @@ new Android correction or added native regression methods.
   deadline rather than silently choosing a new send time.
 - Schema rollout, legacy-web compatibility, production deployment and physical
   Android/iOS acceptance remain separate work. No merge/release is performed.
+
+## Exact results and scope decision (2026-10-28)
+
+- The user explicitly selected **require the original list**, not approval of
+  this reconstructed checklist. Exact eleven-item closure remains unresolved
+  until the original subitems are supplied/recovered.
+- Scoped iOS run `40699358631`, job `122854640124`, source `12e7290`:
+  **101 expected, 101 explicitly passed, verified=true**. This includes the
+  cancellation before/after-acknowledgement tests and all eleven selected suites.
+  Its annotation was truncated at 4096 bytes, but its complete counts/commit/
+  verified header was retrieved. The full per-method report is in the run's
+  evidence artifact and job summary. This is not full-suite acceptance.
+- Scoped iOS run `40699700531`, source `293bc74`: **0/102 verified** because the
+  newly added test called Swift's `isEmpty` property as a function at line 96.
+  The compiler error is corrected; this failed run is not counted as execution
+  of the new regression. The next run must explicitly verify all 102 methods.
+- Android `293bc74`, run `40699700570`: build succeeded and both API30/API34
+  instrumentation steps succeeded; release smoke jobs were still running at
+  this observation. Backend `40699700624` succeeded on the same source.
+- Broad local Python test discovery exposed two stale fixtures, not runtime
+  product defects: the outbox query gained `excludedRooms`, and Swift saved
+  selection moved into `savedItems` with expiry/root/page parameters. Repaired
+  the fixtures, added expiry/root-denial SQL checks and included these tests in
+  the backend contract workflow so they no longer silently drift unused.
+  **13 Python checks passed**, plus **2 actual-native-query Node checks passed**.
+- The reporter now emits bounded per-suite counts and a full-case-report digest
+  in Checks annotations (rather than truncated JSON). Full per-method results
+  remain in the artifact/summary. A regression checks the annotation size for
+  both all-passed and all-missing cases. No production test is skipped to obtain
+  a green result; the ordinary full iOS workflow is unchanged.

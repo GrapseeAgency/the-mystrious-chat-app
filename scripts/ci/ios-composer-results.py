@@ -4,6 +4,7 @@ This scoped check supplements, and never replaces, the full iOS workflow.
 Only terminal raw XCTest records count, not compilation or an absent error.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -52,6 +53,25 @@ def evaluate(expected, observed):
     return {name: sorted(observed.get(name, {'missing'})) for name in sorted(expected)}
 
 
+def annotation_report(report):
+    # Checks annotations truncate messages at 4096 bytes. Publish per-suite
+    # counts and a digest here; retain full per-method results in the artifact
+    # and job summary. Do not emit a JSON document that will be cut in half.
+    cases = report['cases']
+    suites = {}
+    for name, status in cases.items():
+        suite = suites.setdefault(name.split('.')[0], {'expected': 0, 'passed': 0})
+        suite['expected'] += 1
+        suite['passed'] += status == ['passed']
+    unverified = [(name, status) for name, status in cases.items() if status != ['passed']]
+    result = {key: value for key, value in report.items() if key != 'cases'}
+    result['suites'] = suites
+    result['unverifiedCount'] = len(unverified)
+    result['firstUnverified'] = [{'test': name[:200], 'outcomes': status} for name, status in unverified[:5]]
+    result['caseResultsSHA256'] = hashlib.sha256(json.dumps(cases, sort_keys=True).encode()).hexdigest()
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--selectors', action='store_true')
@@ -76,7 +96,7 @@ def main():
     # One compact, bounded annotation is retrievable through the Checks API,
     # even when artifact/log download hosts are unreachable. Contains test IDs
     # and outcomes only, never a raw log tail or test message contents.
-    message = json.dumps(report, separators=(',', ':'))
+    message = json.dumps(annotation_report(report), separators=(',', ':'))
     escaped = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
     level = 'notice' if report['verified'] else 'error'
     print(f'::{level} title=Section 3 explicit iOS results::{escaped}')
