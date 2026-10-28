@@ -1162,7 +1162,7 @@ class PulseApi(
         }
     }
 
-    /** GET /api/users/{id}/saved → { items: [{savedAt, conversation, message}] } (newest first, cap 100). */
+    /** One newest-first saved window (up to 100 rows); follow its explicit continuation. */
     suspend fun savedList(userId: String, cursor: String? = null): PulseResult<SavedPageDto> =
         get("/api/users/$userId/saved?limit=100" + feedCursorQuery(cursor)) {
             PulseJson.decodeFromString(SavedPageDto.serializer(), it)

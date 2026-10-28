@@ -41,6 +41,8 @@ not a guarantee that no undiscovered defects exist. Autumn styling is unchanged.
 7. **Exhaustive mentions:** all-history scan cursors replace the 14-day/per-room
    omission. Both native apps navigate bounded pages, including empty windows;
    profile-name changes invalidate the scoped query rather than reuse its cursor.
+   Matching normalizes canonical Unicode spelling and respects letter/number/mark
+   boundaries instead of treating non-Latin name suffixes as punctuation.
 8. **Exact mention entry points:** Android primary/Mirror callbacks and the iOS
    mention sheet now pass the message identity through the room-navigation path.
    Exact reply navigation now uses the bounded thread window too.
@@ -84,8 +86,8 @@ Room observation tests; they have not yet completed in the SDK runners.
 
 ## Validation and rollout ledger
 
-Latest executed full server run: **497 passed, 0 failed, 0 skipped**
-(485 top-level tests; `/home/user/saved-commit-order-full.log`). Real SQLite
+Latest executed full server run: **498 passed, 0 failed, 0 skipped**
+(486 top-level tests; `/home/user/section2-final-server.log`). Real SQLite
 coverage includes 6,000 tied feed rows, empty scan windows, historical route
 results, 230 saved markers, response-loss replay, save/remove/save causal chains,
 conflicting devices, legacy writes, root expiry and membership revocation.
@@ -93,9 +95,13 @@ conflicting devices, legacy writes, root expiry and membership revocation.
 Native regressions include bounded thread/cache windows, 50,100-row streaming
 exports, mention scan/expiry/lifetime behavior, strict receipts, durable saved
 journals and 2,400-row offline saved traversal. Android API 30 and API 34
-instrumented/smoke jobs passed for `03d4e22`. iOS archives succeeded for
-`b414cf0`, `03d4e22`, `0344d10` and `490888d`. Their Android unit jobs exposed outdated test adapters and
-an event-registry expectation; those fixtures are corrected. Current-candidate
+instrumented/smoke jobs passed for `03d4e22`; its iOS full test job passed too.
+Android JVM/release build passed for `0344d10`, and API 34 instrumentation passed
+for `490888d`. iOS archives succeeded through `91befc0` (including the canonical
+saved-state ordering and durable damaged-row handling). Their Android unit jobs exposed outdated test adapters and
+an event-registry expectation; those fixtures are corrected. The stricter
+missing-list contract exposed one older Wave2 fixture that expected `{}` to mean
+an empty library; it now checks rejection and a separately explicit empty page. Current-candidate
 SDK/unit/instrumented completion is still being checked. The older `b414cf0`
 iOS unit run failed its existing hosted read-presentation fixture (a sheet
 transition stayed at progress zero); this is not evidence that the production

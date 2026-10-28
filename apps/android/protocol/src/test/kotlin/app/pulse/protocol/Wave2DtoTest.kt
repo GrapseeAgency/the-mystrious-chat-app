@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 /**
@@ -140,7 +141,9 @@ class Wave2DtoTest {
                     "createdAt": "2026-02-20T11:30:00.000Z"}
                 }
               ],
-              "serverSays": "cap 100, no pagination"
+              "feedPageVersion": 1,
+              "hasMore": false,
+              "serverSays": "unknown keys remain tolerated"
             }
             """.trimIndent(),
         )
@@ -156,8 +159,9 @@ class Wave2DtoTest {
         val second = page.items[1]
         assertFalse(second.conversation.isGroup)
         assertEquals("Alice", second.conversation.name)
-        // Tolerant: {} → empty items.
-        assertEquals(emptyList<SavedItemDto>(), PulseJson.decodeFromString(SavedPageDto.serializer(), "{}").items)
+        // Missing private data is not proof of an empty library.
+        assertThrows(Exception::class.java) { PulseJson.decodeFromString(SavedPageDto.serializer(), "{}") }
+        assertEquals(emptyList<SavedItemDto>(), PulseJson.decodeFromString(SavedPageDto.serializer(), """{"items":[],"feedPageVersion":1,"hasMore":false}""").items)
     }
 
     @Test

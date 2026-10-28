@@ -19,9 +19,10 @@ export async function GET(req: Request) {
     const page = await db.$transaction(async tx => {
       const me = await tx.user.findUnique({ where: { id: userId }, select: { name: true } })
       if (!me) return null
-      const escaped = me.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const pattern = new RegExp(`@${escaped}(?=\\s|$|[^A-Za-z0-9])`, 'i'), now = new Date()
-      return scanFeed({ cursor: query.get('cursor'), scope: feedScope('mentions', userId, me.name), limit,
+      const name = me.name.normalize('NFC')
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const pattern = new RegExp(`@${escaped}(?![\\p{L}\\p{N}\\p{M}_\\u200c\\u200d])`, 'iu'), now = new Date()
+      return scanFeed({ cursor: query.get('cursor'), scope: feedScope('mentions', userId, `unicode-v1:${name}`), limit,
         load: (before, upper, take) => tx.message.findMany({
           where: { deletedAt: null, viewOnce: false, senderId: { not: userId }, content: { contains: '@' }, ...unexpiredMessages(now),
             conversation: { participants: { some: { userId } } },
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
         }), position: row => ({ id: row.id, at: row.createdAt.toISOString() }),
         project: row => {
           const m = visibleInboxPreview(row, row.conversationId, new Date())
-          if (!m || !m.content || !pattern.test(m.content)) return null
+          if (!m || !m.content || !pattern.test(m.content.normalize('NFC'))) return null
           return { messageId: m.id, conversationId: m.conversationId, conversationName: m.conversation.name, isGroup: m.conversation.isGroup,
             author: m.anon ? { id: '', name: m.anonAlias || 'Anonymous', color: 'orange', avatar: null } : m.sender,
             snippet: clipUtf16(m.content, 160), expiresAt: m.expiresAt?.toISOString() ?? null, createdAt: m.createdAt.toISOString() }

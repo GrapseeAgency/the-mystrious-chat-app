@@ -640,3 +640,21 @@ test('saved route requires identity without an optional-header bypass and pages 
   }while(cursor)
   assert.equal(ids.length,230);assert.equal(new Set(ids).size,230)
 }))
+
+
+test('mention identities respect Unicode word boundaries and canonical spelling',()=>fixture(async({db,feed})=>{
+  const cases = [
+    {name:'ফেনী', yes:'hello @ফেনী!', no:['@ফেনীপুর', '@ফেনী_অন্য', '@ফেনী\u200dপুর']},
+    {name:'Ann', yes:'hello @ann!', no:['@Annette', '@Ann_Else', '@Anné']},
+    {name:'Café', yes:'hello @Cafe\u0301!', no:['@Caféteria', '@Café\u0301more']},
+    {name:'a+b', yes:'hello @a+b!', no:['@aaab', '@a+bigger']},
+  ]
+  for (const sample of cases) {
+    await db.message.deleteMany({})
+    await db.user.update({where:{id:'owner'},data:{name:sample.name}})
+    await db.message.createMany({data:[sample.yes,...sample.no].map((content,i)=>({id:`mention-${i}`,conversationId:'room',senderId:'other',content}))})
+    const response=await feed('mentions');assert.equal(response.status,200)
+    const page=await response.json()
+    assert.deepEqual(page.items.map(row=>row.messageId),['mention-0'],sample.name)
+  }
+}))
