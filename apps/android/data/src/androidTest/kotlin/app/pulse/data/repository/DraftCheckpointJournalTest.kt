@@ -53,8 +53,9 @@ class DraftCheckpointJournalTest {
                     connection!!.execSQL("DROP TRIGGER fail_draft")
                     val token = checkNotNull(next.captureDraftToken("room"))
                     assertTrue(next.sendMessage("room", "last keystrokes", draftToken=token).isSuccess)
-                    // Clear committed with the UUID receipt, but file still exists.
-                    assertEquals(checkpoint.id, DraftCheckpointJournal(directory).read("room")?.id)
+                    // Simulate a crash leaving the old file even if background cleanup ran.
+                    val name = java.security.MessageDigest.getInstance("SHA-256").digest("room".toByteArray()).joinToString("") { "%02x".format(it) } + ".json"
+                    File(directory,name).writeText(app.pulse.protocol.PulseJson.encodeToString(DraftCheckpointJournal.Snapshot.serializer(),checkpoint))
                     val afterSend = repository()
                     try {
                         assertEquals("", afterSend.observeDraft("room").first())
@@ -71,6 +72,24 @@ class DraftCheckpointJournalTest {
             first.stop(); connection?.close(); http.close(); directory.deleteRecursively()
             PulseEndpoints.gatewayHttpUrl = oldGateway; PulseEndpoints.socketUrl = oldSocket
         }
+    }
+
+    @Test fun cleanupPagesAreBoundedAndRetainCorruptAndUnconsumedFiles() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val directory = File(context.cacheDir, "checkpoint-${UUID.randomUUID()}")
+        try {
+            val journal = DraftCheckpointJournal(directory)
+            repeat(105) { journal.write("room-$it", "retained") }
+            File(directory,"corrupt.json").writeText("unreadable recovery")
+            val first = journal.page("")
+            assertTrue(first.snapshots.size <= 100)
+            assertTrue(first.next.isNotEmpty())
+            val second = DraftCheckpointJournal(directory).page(first.next)
+            assertEquals(105, first.snapshots.size + second.snapshots.size)
+            assertEquals("", second.next)
+            assertEquals(106, directory.listFiles()!!.size)
+            assertEquals("unreadable recovery", File(directory,"corrupt.json").readText())
+        } finally { directory.deleteRecursively() }
     }
 
     @Test fun obsoleteCheckpointRemovalCannotDeleteNewerTextOrAnExplicitClear() {

@@ -1985,6 +1985,9 @@ class PulseRepositoryImpl constructor(
         catch (error: Exception) { Result.failure(error) }
     }
     override suspend fun flushComposerIntents(): Result<Int> = try {
+        try { pruneConsumedDraftCheckpoints() }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { Log.w(TAG,"Deferred checkpoint cleanup",error) }
         val owner = viewerId
         val epoch = attachmentSession
         if (owner == null || sessionTokenStore.cached.isNullOrBlank()) Result.success(0)
@@ -2094,7 +2097,7 @@ class PulseRepositoryImpl constructor(
         check(listOf("composer-intent","composer-blocked","composer-local-edit","composer-schedule","composer-schedule-blocked","composer-schedule-ack").any { entry.key.startsWith("$it:v1|$owner|") }) { "Recovery belongs to another account" }
         val row = wave7Dao.get(entry.key) ?: error("Already resolved; refresh this list")
         check(recoveryVersion(row.json) == entry.version) { "Recovery changed; refresh this list" }
-        if (action == "remove") database.withTransaction {
+        if (action == "remove") draftMutex.withLock { database.withTransaction {
             requireConversationOwner(owner,epoch)
             check(wave7Dao.get(row.key)?.json == row.json) { "Recovery changed; refresh this list" }
             if (row.key.startsWith("composer-schedule:") || row.key.startsWith("composer-schedule-blocked:")) {
@@ -2109,8 +2112,14 @@ class PulseRepositoryImpl constructor(
                     wave7Dao.delete("composer-schedule-reference:v1|$owner|${accepted.id}")
                 }
             }
+            if (row.key.startsWith("composer-local-edit:")) {
+                check(draftWrites.editBuffers[row.key] == null) { "Recover the edit still open in its composer first" }
+                val snapshot = recoverableDraftCheckpoint(row.key)
+                check(snapshot == null || snapshot.text == row.json) { "A newer edit is saved separately; reopen the message first" }
+                if (snapshot != null) wave7Dao.upsert(Wave7CacheEntity(draftCheckpoints.receiptKey(row.key),snapshot.id,0))
+            }
             wave7Dao.acknowledgeReadIntent(row.key,row.json)
-        } else if (row.key.startsWith("composer-schedule-blocked:") && action == "retry") {
+        } } else if (row.key.startsWith("composer-schedule-blocked:") && action == "retry") {
             val command = app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ScheduledCommandDto.serializer(),row.json)
             check(command.owner == owner); scheduledJournal.stage(command.copy(notice=null))
         } else {
@@ -3297,6 +3306,18 @@ class PulseRepositoryImpl constructor(
     private val draftCheckpoints = DraftCheckpointJournal(database.openHelper.databaseName?.let {
         java.io.File(context.noBackupFilesDir, "draft-checkpoints/" + java.io.File(it).name)
     })
+    private suspend fun pruneConsumedDraftCheckpoints() = draftMutex.withLock {
+        val cursorKey = "draft-checkpoint-scan:v1"
+        val cursor = wave7Dao.get(cursorKey)?.json ?: ""
+        val page = draftCheckpoints.page(cursor)
+        if (page.snapshots.isEmpty() && cursor.isEmpty() && page.next.isEmpty()) return@withLock
+        for (snapshot in page.snapshots) {
+            if (wave7Dao.get(draftCheckpoints.receiptKey(snapshot.scope))?.json == snapshot.id) {
+                draftCheckpoints.remove(snapshot.scope,snapshot.id)
+            }
+        }
+        wave7Dao.upsert(Wave7CacheEntity(cursorKey,page.next,0))
+    }
     private suspend fun recoverableDraftCheckpoint(key: String): DraftCheckpointJournal.Snapshot? {
         val snapshot = kotlinx.coroutines.withContext(Dispatchers.IO) { draftCheckpoints.read(key) } ?: return null
         if (wave7Dao.get(draftCheckpoints.receiptKey(key))?.json == snapshot.id) {

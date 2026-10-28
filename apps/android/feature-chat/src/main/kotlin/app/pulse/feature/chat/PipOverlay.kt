@@ -35,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,6 +86,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -116,6 +118,10 @@ sealed interface PipSendResult {
     data class Failed(val message: String) : PipSendResult
 }
 
+internal fun paneMayClearAfterSend(result: PipSendResult, sentText: String, currentText: String,
+    sentToken: app.pulse.domain.model.ComposerDraftToken?, currentToken: app.pulse.domain.model.ComposerDraftToken?): Boolean =
+    result !is PipSendResult.Failed && sentToken != null && sentToken == currentToken && sentText == currentText
+
 /** Frame geometry reserves - web pip-store.ts constants, dp on Android. */
 internal val PIP_MARGIN_X: Dp = 10.dp
 internal val PIP_TOP_RESERVE: Dp = 64.dp
@@ -131,7 +137,6 @@ internal val PIP_PANE_MAX_H: Dp = 400.dp
 @HiltViewModel
 class PipOverlayViewModel @Inject constructor(
     private val repo: PulseRepository,
-    private val sendUseCase: SendMessageUseCase,
     /** The process-singleton pane store (web usePipChat). */
     val pip: PulsePiPStore,
 ) : ViewModel() {
@@ -185,19 +190,22 @@ class PipOverlayViewModel @Inject constructor(
      * optimistic echo + outbox queue on network-class failure (web pip send
      * hits the same POST /messages as the main composer).
      */
-    fun sendFromPane(conversationId: String, body: String, onResult: (PipSendResult) -> Unit) {
+    fun accountKey(): String? = repo.attachmentSessionKey()
+    fun paneRepository(): PulseRepository = repo.boundToCurrentAccount()
+
+    fun sendFromPane(owned: PulseRepository, conversationId: String, body: String,
+        token: app.pulse.domain.model.ComposerDraftToken?, onResult: (PipSendResult) -> Unit) {
+        // Capture the account and draft token BEFORE launching asynchronous work.
         viewModelScope.launch {
-            sendUseCase(conversationId, body)
-                .onSuccess { receipt ->
-                    if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
-                        onResult(PipSendResult.Queued)
-                    } else {
-                        onResult(PipSendResult.Delivered)
-                    }
-                }
-                .onFailure { onResult(PipSendResult.Failed(it.message ?: "Could not send")) }
+            try {
+                SendMessageUseCase(owned)(conversationId, body, draftToken = token)
+                    .onSuccess { receipt -> onResult(if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) PipSendResult.Queued else PipSendResult.Delivered) }
+                    .onFailure { onResult(PipSendResult.Failed(it.message ?: "Could not send")) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { onResult(PipSendResult.Failed(error.message ?: "Could not save the message")) }
         }
     }
+
 }
 
 /**
@@ -220,9 +228,17 @@ fun PipPaneOverlay(
     startInset: Dp = 0.dp,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val accountKey = viewModel.accountKey()
+    val owned = remember(viewerId, accountKey) { viewModel.paneRepository() }
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
     val unread by viewModel.unread.collectAsStateWithLifecycle()
     val haptics = app.pulse.ui.rememberGatedHaptics()
+    LaunchedEffect(owned) {
+        owned.events().collect { event ->
+            if (event is app.pulse.domain.repository.PulseEvent.ComposerSaveFailed &&
+                viewModel.state.value.panes.any { it.conversationId == event.conversationId }) onNotice(event.reason)
+        }
+    }
 
     // The Android dock (108dp + system nav) is taller than web's ~76px
     // capsule - the effective bottom reserve honors whichever is larger so
@@ -263,6 +279,7 @@ fun PipPaneOverlay(
         focused?.let { pane ->
             val conv = conversations.firstOrNull { it.id == pane.conversationId }
             PipExpandedPane(
+                repository = owned,
                 pane = pane,
                 conversation = conv,
                 unreadCount = unread[pane.conversationId] ?: 0,
@@ -283,10 +300,11 @@ fun PipPaneOverlay(
                 },
                 onMinimize = { viewModel.pip.minimize() },
                 onClose = { viewModel.closePane(pane.conversationId) },
-                onSend = { text ->
-                    viewModel.sendFromPane(pane.conversationId, text) { result ->
+                onSend = { text, token, complete ->
+                    viewModel.sendFromPane(owned, pane.conversationId, text, token) { result ->
+                        complete(result)
                         when (result) {
-                            is PipSendResult.Failed -> onNotice("Could not send from the mini chat")
+                            is PipSendResult.Failed -> onNotice("Mini-chat draft kept: " + result.message)
                             // the pane has no queued bubble - the notice is the
                             // honest receipt for an outbox-queued mini send
                             PipSendResult.Queued -> onNotice("Message queued - sends when you're back online")
@@ -333,6 +351,7 @@ fun PipPaneOverlay(
  */
 @Composable
 private fun PipExpandedPane(
+    repository: PulseRepository,
     pane: PipPane,
     conversation: Conversation?,
     unreadCount: Int,
@@ -350,11 +369,40 @@ private fun PipExpandedPane(
     onOpen: () -> Unit,
     onMinimize: () -> Unit,
     onClose: () -> Unit,
-    onSend: (String) -> Unit,
+    onSend: (String, app.pulse.domain.model.ComposerDraftToken?, (PipSendResult) -> Unit) -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    var paneDraft by remember(pane.conversationId) { mutableStateOf("") }
+    var paneDraft by remember(repository, pane.conversationId) { mutableStateOf("") }
+    var touched by remember(repository, pane.conversationId) { mutableStateOf(false) }
+    var sending by remember(repository, pane.conversationId) { mutableStateOf(false) }
+    // Capture before the read; a concurrent room writer must never be consumed
+    // by this older mini-pane even if its text arrives while restoration waits.
+    var draftToken by remember(repository, pane.conversationId) { mutableStateOf(repository.captureDraftToken(pane.conversationId)) }
+    LaunchedEffect(repository, pane.conversationId) {
+        val restored = repository.observeDraft(pane.conversationId).first()
+        if (!touched) paneDraft = restored ?: ""
+    }
+    fun changeDraft(value: String) {
+        touched = true; paneDraft = value
+        repository.stageDraft(pane.conversationId, value)
+        draftToken = repository.captureDraftToken(pane.conversationId)
+    }
+    fun submitDraft() {
+        val text = paneDraft
+        val token = draftToken
+        if (sending || text.isBlank() || token == null) return
+        sending = true
+        onSend(text, token) { result ->
+            sending = false
+            // A failed SQLite write leaves the input and checkpoint untouched.
+            // An older send cannot clear typing entered while it was in flight.
+            if (paneMayClearAfterSend(result, text, paneDraft, token, draftToken)) {
+                paneDraft = ""; touched = true
+                draftToken = repository.captureDraftToken(pane.conversationId)
+            }
+        }
+    }
     var dragging by remember { mutableStateOf(false) }
     var velocity by remember { mutableStateOf(Offset.Zero) }
     var lastDragMs by remember { mutableStateOf(0L) }
@@ -559,10 +607,10 @@ private fun PipExpandedPane(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                val canSend = paneDraft.isNotBlank()
+                val canSend = paneDraft.isNotBlank() && !sending && draftToken != null
                 BasicTextField(
                     value = paneDraft,
-                    onValueChange = { if (it.length <= 2000) paneDraft = it },
+                    onValueChange = ::changeDraft,
                     modifier = Modifier.weight(1f).heightIn(min = 34.dp),
                     textStyle = TextStyle(
                         fontSize = 13.sp,
@@ -571,13 +619,7 @@ private fun PipExpandedPane(
                     cursorBrush = SolidColor(PulsePalette.Emerald),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(
-                        onSend = {
-                            val text = paneDraft.trim()
-                            if (text.isNotEmpty()) {
-                                paneDraft = ""
-                                onSend(text)
-                            }
-                        },
+                        onSend = { submitDraft() },
                     ),
                     maxLines = 3,
                     decorationBox = { inner ->
@@ -608,13 +650,7 @@ private fun PipExpandedPane(
                         .size(34.dp)
                         .clip(CircleShape)
                         .background(if (canSend) PulsePalette.Emerald else PulsePalette.Emerald.copy(alpha = 0.4f))
-                        .clickable(enabled = canSend) {
-                            val text = paneDraft.trim()
-                            if (text.isNotEmpty()) {
-                                paneDraft = ""
-                                onSend(text)
-                            }
-                        },
+                        .clickable(enabled = canSend) { submitDraft() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(

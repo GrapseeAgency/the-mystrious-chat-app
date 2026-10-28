@@ -100,6 +100,26 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Compact consumption receipts survive; only independently acknowledged
+    /// checkpoint bodies are removed. Persist the scan cursor across restarts.
+    func pruneConsumedDraftCheckpoints() throws -> Int {
+        let cursorKey = "draft-checkpoint-scan:v1"
+        let cursor = try dbQueue.read { try String.fetchOne($0, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [cursorKey]) ?? "" }
+        let page = try draftCheckpoints.page(after: cursor)
+        guard !page.snapshots.isEmpty || !cursor.isEmpty || !page.next.isEmpty else { return 0 }
+        let consumed = try dbQueue.read { db in
+            try page.snapshots.filter { snapshot in
+                try String.fetchOne(db, sql: "SELECT json FROM wave7Cache WHERE key=?", arguments: [draftCheckpoints.receiptKey(snapshot.scope)]) == snapshot.id.uuidString
+            }
+        }
+        // Never unlink on the strength of an uncommitted SQLite transaction.
+        for snapshot in consumed { try draftCheckpoints.remove(snapshot.scope, id: snapshot.id) }
+        try dbQueue.write { db in
+            try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,0) ON CONFLICT(key) DO UPDATE SET json=excluded.json", arguments: [cursorKey,page.next])
+        }
+        return consumed.count
+    }
+
     private var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
         m.registerMigration("v1") { db in
@@ -2486,9 +2506,17 @@ extension PulseStore {
     }
     func recoverComposer(_ row: PulseComposerRecovery, owner: String, action: String, state: PulseComposerReceipt? = nil) throws {
         guard composerOwner == nil || composerOwner == owner else { throw CocoaError(.coderInvalidValue) }
-        try dbQueue.write { db in
+        try draftFence.withEditSnapshot(row.id) { memory in
+          if action == "remove", row.id.hasPrefix("composer-local-edit:"), memory != nil { throw CocoaError(.fileWriteUnknown) }
+          try dbQueue.write { db in
             let json = try Self.recoveryJSON(db,row: row,owner: owner)
             if action == "remove" {
+                if row.id.hasPrefix("composer-local-edit:") {
+                    if let snapshot = try recoverableDraftCheckpoint(db, room: row.id), snapshot.text != json {
+                        throw CocoaError(.fileWriteUnknown) // A newer failed write must be recovered first.
+                    }
+                    try acknowledgeDraftCheckpoint(db, scope: row.id)
+                }
                 if row.id.hasPrefix("composer-schedule:") || row.id.hasPrefix("composer-schedule-blocked:"),
                    let command = try? JSONDecoder().decode(PulseScheduledCommand.self,from: Data(json.utf8)), command.owner == owner, command.kind == "create" {
                     try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [command.headKey,command.clientId])
@@ -2521,6 +2549,7 @@ extension PulseStore {
             value.blocked = nil
             try Self.putComposer(db,key: Self.composerKey(value),value: value)
             try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [row.id])
+          }
         }
     }
 }

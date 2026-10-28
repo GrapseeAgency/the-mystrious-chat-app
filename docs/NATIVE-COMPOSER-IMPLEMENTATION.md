@@ -1,5 +1,15 @@
 # Section 3 — drafts, outgoing messages, edits and scheduling
 
+> **Current status:** The original eleven items have now been supplied and are
+> tracked in [the authoritative checklist](NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md).
+> The reconstructed grouping and older counts below are historical, not the
+> acceptance boundary. Latest local backend run: 528/528; current architectural /
+> SQL / reporter contracts: 16/16. Hosted scoped iOS at `f6f1e46`: 103/103,
+> zero unverified (run 40709607487). Independent checkpoints and later producer /
+> retention fixes are newer and still require native verification. Section 3
+> remains open; no advance to section 4.
+
+
 **Original-checklist closure still open; scoped native verification now complete.**
 The previous implementation-closure statement was
 stronger than the available evidence. Android and backend checks passed, but a
@@ -47,7 +57,7 @@ isolation. Native execution results and their limits are recorded below.
 
 ## Implementation reconciliation (2026-10-28)
 
-The eleven rows above remain the implementation boundary. Implementation has been traced in both apps and the backend, but item-by-item
+The eleven rows above are historical implementation groupings; the supplied original list is now authoritative. Implementation has been traced in both apps and the backend, but item-by-item
 evidence and explicit iOS test outcomes are being reconciled. This is not a
 completion declaration.
 

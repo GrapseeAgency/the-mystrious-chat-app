@@ -2035,10 +2035,11 @@ fun ChatRoomScreen(
     }
 
     if (pollBuilderOpen) {
+        val submitPoll = remember(viewModel, viewerId) { viewModel.pollSubmission() }
         PollBuilderSheet(
             onDismiss = { pollBuilderOpen = false },
             onCreate = { question, options ->
-                viewModel.createPoll(question, options)
+                submitPoll(question, options)
             },
         )
     }

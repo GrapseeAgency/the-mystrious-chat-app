@@ -32,6 +32,20 @@ internal class DraftCheckpointJournal(private val directory: File?) {
             record.scope
         }
     }
+    data class Page(val snapshots: List<Snapshot>, val next: String)
+    /** Bound payload reads/removals; corrupt files are preserved, not expired. */
+    fun page(after: String, limit: Int = 100): Page = synchronized(lock) {
+        require(limit in 1..100)
+        val names = directory?.listFiles().orEmpty().map { it.name.removeSuffix(".bak") }
+            .filter { it.endsWith(".json") && it > after }.distinct().sorted()
+        val selected = names.take(limit)
+        val records = selected.mapNotNull { name -> runCatching {
+            val record = PulseJson.decodeFromString(Snapshot.serializer(), AtomicFile(File(directory,name)).readFully().toString(Charsets.UTF_8))
+            check(name == digest(record.scope) + ".json" && UUID.fromString(record.id).toString() == record.id)
+            record
+        }.getOrNull() }
+        Page(records, if (names.size > limit) selected.last() else "")
+    }
     fun read(scope: String): Snapshot? = synchronized(lock) { readUnlocked(scope) }
     fun write(scope: String, text: String): Snapshot? = synchronized(lock) {
         val dir = directory ?: return@synchronized null

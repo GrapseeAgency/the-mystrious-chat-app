@@ -772,8 +772,10 @@ class ChatRoomViewModel @Inject constructor(
         val reply = _state.value.replyTo
         val replyId = reply?.id
         _state.value = _state.value.copy(replyTo = null)
+        val owned = repo.boundToCurrentAccount()
+        val epoch = owned.attachmentSessionKey()
         viewModelScope.launch {
-            safelySend { repo.sendRichMessage(
+            safelySend { owned.sendRichMessage(
                 conversationId = conversationId,
                 body = body,
                 kind = kind,
@@ -784,6 +786,7 @@ class ChatRoomViewModel @Inject constructor(
                 draftToken = draftToken,
             ) }
                 .onSuccess { receipt ->
+                    if (repo.attachmentSessionKey() != epoch) return@onSuccess
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         if (consumeDraft) consumeComposer(revision)
                     } else {
@@ -796,6 +799,7 @@ class ChatRoomViewModel @Inject constructor(
                     }
                 }
                 .onFailure { failure ->
+                    if (repo.attachmentSessionKey() != epoch) return@onFailure
                     _state.value = _state.value.copy(error = failureNotice(failure))
                     if (composerRevision == revision) {
                         if (_state.value.replyTo == null) _state.value = _state.value.copy(replyTo = reply)
@@ -1525,14 +1529,19 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── Wave 2: polls (spec §1 rows 2/3/4) ─────────────────────────────
 
-    suspend fun createPoll(question: String, options: List<String>): Boolean {
+    fun pollSubmission(): suspend (String, List<String>) -> Boolean {
+        val owned = repo.boundToCurrentAccount()
+        val epoch = owned.attachmentSessionKey()
+        return { question, options -> createPoll(question, options, owned, epoch) }
+    }
+    private suspend fun createPoll(question: String, options: List<String>, owned: PulseRepository, epoch: String?): Boolean {
+        if (epoch == null || repo.attachmentSessionKey() != epoch) return false
         if (_anonNext.value || _state.value.replyTo != null || _state.value.editing != null || _activeTopicId.value != null) {
             notify("This poll composer sends a named poll. Clear anonymous mode, reply, edit or topic first.", isError = true)
             return false
         }
-        val epoch = repo.attachmentSessionKey()
         return try {
-            val message = repo.boundToCurrentAccount().createPoll(conversationId, question.trim(), options).getOrThrow()
+            val message = owned.createPoll(conversationId, question.trim(), options).getOrThrow()
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (repo.attachmentSessionKey() != epoch) false else {
                 app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)

@@ -46,6 +46,23 @@ final class PulseDraftCheckpointJournal: @unchecked Sendable {
                 return record.scope
             }
     }
+    struct Page { let snapshots: [Snapshot]; let next: String }
+    /// At most 100 payload reads per pass. Corrupt bytes are retained for recovery.
+    func page(after: String, limit: Int = 100) throws -> Page {
+        lock.lock(); defer { lock.unlock() }
+        precondition((1...100).contains(limit))
+        guard let directory, FileManager.default.fileExists(atPath: directory.path) else { return Page(snapshots: [], next: "") }
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" && $0.lastPathComponent > after }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let selected = files.prefix(limit)
+        let records: [Snapshot] = selected.compactMap { file in
+            guard let bytes = try? Data(contentsOf: file), let record = try? JSONDecoder().decode(Snapshot.self, from: bytes),
+                  file.lastPathComponent == hash(record.scope) + ".json" else { return nil }
+            return record
+        }
+        return Page(snapshots: records, next: files.count > limit ? selected.last!.lastPathComponent : "")
+    }
     func read(_ scope: String) throws -> Snapshot? {
         lock.lock(); defer { lock.unlock() }
         return try readUnlocked(scope)

@@ -310,6 +310,7 @@ public final class PulseOutboxEngine: ObservableObject {
     }
 
     private func restoreRetryHolds() throws {
+        _ = try? store.pruneConsumedDraftCheckpoints()
         for (scope, until) in unsavedRetryDeadlines {
             _ = try store.holdOutboxRetry(scope: scope, until: until)
             unsavedRetryDeadlines.removeValue(forKey: scope)

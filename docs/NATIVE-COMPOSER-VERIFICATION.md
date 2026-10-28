@@ -1,5 +1,15 @@
 # Section 3 — source-to-regression reconciliation
 
+> **Current status:** The original eleven items have now been supplied and are
+> tracked in [the authoritative checklist](NATIVE-COMPOSER-AUTHORITATIVE-CHECKLIST.md).
+> The reconstructed grouping and older counts below are historical, not the
+> acceptance boundary. Latest local backend run: 528/528; current architectural /
+> SQL / reporter contracts: 16/16. Hosted scoped iOS at `f6f1e46`: 103/103,
+> zero unverified (run 40709607487). Independent checkpoints and later producer /
+> retention fixes are newer and still require native verification. Section 3
+> remains open; no advance to section 4.
+
+
 Status: **scoped regression execution verified; original eleven-item checklist
 still required for closure**.
 This supplements `NATIVE-COMPOSER-IMPLEMENTATION.md`, whose previous blanket
@@ -90,8 +100,7 @@ Exact-candidate native run IDs and per-suite counts are recorded below. Earlier
 
 ## Boundaries that remain explicit
 
-- Original eleven-item wording is still unavailable; this is a source-derived
-  reconciliation, not a recovered original or proof that nothing was omitted.
+- Historical limitation resolved: the original eleven-item wording is now available in the authoritative checklist; this older grouping is not proof of closure.
 - The existing full-suite `ReadPresentationTests` failure is unresolved. A green
   scoped composer result cannot turn it into a green full iOS result.
 - No guarantee of exact-time scheduling under arbitrary load, exactly-once
@@ -106,9 +115,7 @@ Exact-candidate native run IDs and per-suite counts are recorded below. Earlier
 
 ## Exact results and scope decision (2026-10-28)
 
-- The user explicitly selected **require the original list**, not approval of
-  this reconstructed checklist. Exact eleven-item closure remains unresolved
-  until the original subitems are supplied/recovered.
+- The user required and subsequently supplied the original list. Closure now depends on implementing/verifying those requirements, not obtaining that list again.
 - Scoped iOS run `40699358631`, job `122854640124`, source `12e7290`:
   **101 expected, 101 explicitly passed, verified=true**. This includes the
   cancellation before/after-acknowledgement tests and all eleven selected suites.
@@ -180,7 +187,6 @@ Exact-candidate native run IDs and per-suite counts are recorded below. Earlier
 
 This resolves the lack of explicit scoped iOS outcomes and verifies the new
 Android stale-failure ownership repair. It does **not** establish equivalence to
-the unavailable original eleven-item list. The user explicitly required that
-original list; overall section closure therefore remains open pending it.
+the then-unavailable original eleven-item list. That list has since been supplied; current closure remains open pending the new native implementation and verification, not missing wording.
 The unrelated full-suite read-presentation failure, deployment and comprehensive
 physical-device acceptance are not waived by these scoped successes.

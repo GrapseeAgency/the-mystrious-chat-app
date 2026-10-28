@@ -6,6 +6,31 @@ import GRDB
 final class DraftHandoffTests: XCTestCase {
     private let viewer = PulseViewer(id: "sender", name: "Sender")
 
+    func testCheckpointCleanupIsBoundedResumesAndNeverExpiresUnacknowledgedText() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+        defer { for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        let store = try PulseStore(path: path, composerOwner: "sender")
+        let files = PulseDraftCheckpointJournal(path: path)
+        var records: [PulseDraftCheckpointJournal.Snapshot] = []
+        for i in 0..<105 { records.append(try XCTUnwrap(files.write("room-\(i)", text: "consumed"))) }
+        let connection = try DatabaseQueue(path: path)
+        let acknowledgements = records.map { (files.receiptKey($0.scope), $0.id.uuidString) }
+        try await connection.write { db in
+            for (key,id) in acknowledgements {
+                try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,0)", arguments: [key,id])
+            }
+        }
+        _ = try files.write("pending", text: "keep indefinitely")
+        let first = try store.pruneConsumedDraftCheckpoints()
+        XCTAssertLessThanOrEqual(first, 100)
+        XCTAssertGreaterThanOrEqual(first, 99)
+        let reopened = try PulseStore(path: path, composerOwner: "sender")
+        let second = try reopened.pruneConsumedDraftCheckpoints()
+        XCTAssertEqual(first + second, 105)
+        XCTAssertEqual(try files.read("pending")?.text, "keep indefinitely")
+        XCTAssertEqual(try files.scopes(), ["pending"])
+    }
+
     func testFileOnlyDraftManagerClearIsExactAndSurvivesReopen() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
         defer { for suffix in ["", "-wal", "-shm", ".draft-recovery"] { try? FileManager.default.removeItem(atPath: path + suffix) } }

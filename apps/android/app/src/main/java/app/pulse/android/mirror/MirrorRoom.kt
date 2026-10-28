@@ -443,6 +443,7 @@ internal fun MirrorRoom(
     var infoFor by remember { mutableStateOf<Message?>(null) }
     var pollOpen by remember { mutableStateOf(false) }
     var stickerOpen by remember { mutableStateOf(false) }
+    var smallRichBusy by remember(groupId, viewerId) { mutableStateOf(false) }
     var locationOpen by remember { mutableStateOf(false) }
     val mediaSession = repository.attachmentSessionKey()
     var captionFor by remember(repository, groupId, viewerId, mediaSession) { mutableStateOf<MirrorMediaSelection?>(null) }
@@ -2811,17 +2812,23 @@ internal fun MirrorRoom(
     if (stickerOpen) {
         MirrorStickerSheet(
             onDismiss = { stickerOpen = false },
-            onPick = { emoji, pack ->
-                stickerOpen = false
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching {
-                        repository.sendRichMessage(
-                            conversationId = groupId,
-                            body = "",
-                            kind = "sticker",
-                            payload = "{\"emoji\":\"$emoji\",\"pack\":\"$pack\"}",
-                        )
-                    }
+            onPick = pick@{ emoji, pack ->
+                if (smallRichBusy) return@pick
+                val owned = repository.boundToCurrentAccount()
+                val epoch = owned.attachmentSessionKey()
+                smallRichBusy = true
+                historyScope.launch {
+                    try {
+                        val payload = kotlinx.serialization.json.buildJsonObject {
+                            put("emoji", kotlinx.serialization.json.JsonPrimitive(emoji))
+                            put("pack", kotlinx.serialization.json.JsonPrimitive(pack))
+                        }.toString()
+                        owned.sendRichMessage(conversationId = groupId, body = "", kind = "sticker", payload = payload).getOrThrow()
+                        if (roomActionsLive.get() && repository.attachmentSessionKey() == epoch) stickerOpen = false
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) {
+                        if (roomActionsLive.get() && repository.attachmentSessionKey() == epoch) sendError = error.message ?: "Sticker was not queued. Try again."
+                    } finally { if (repository.attachmentSessionKey() == epoch) smallRichBusy = false }
                 }
             },
         )
@@ -2829,21 +2836,20 @@ internal fun MirrorRoom(
     if (locationOpen) {
         MirrorLocationSheet(
             onDismiss = { locationOpen = false },
-            onSend = { lat, lng, label ->
-                locationOpen = false
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching {
-                        val payload = Json.encodeToString(
-                            LocationPayload.serializer(),
-                            LocationPayload(lat = lat, lng = lng, label = label),
-                        )
-                        repository.sendRichMessage(
-                            conversationId = groupId,
-                            body = label,
-                            kind = "location",
-                            payload = payload,
-                        )
-                    }
+            onSend = send@{ lat, lng, label ->
+                if (smallRichBusy) return@send
+                val owned = repository.boundToCurrentAccount()
+                val epoch = owned.attachmentSessionKey()
+                smallRichBusy = true
+                historyScope.launch {
+                    try {
+                        val payload = Json.encodeToString(LocationPayload.serializer(), LocationPayload(lat = lat, lng = lng, label = label))
+                        owned.sendRichMessage(conversationId = groupId, body = label, kind = "location", payload = payload).getOrThrow()
+                        if (roomActionsLive.get() && repository.attachmentSessionKey() == epoch) locationOpen = false
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) {
+                        if (roomActionsLive.get() && repository.attachmentSessionKey() == epoch) sendError = error.message ?: "Location was not queued. Your selection is kept."
+                    } finally { if (repository.attachmentSessionKey() == epoch) smallRichBusy = false }
                 }
             },
         )
