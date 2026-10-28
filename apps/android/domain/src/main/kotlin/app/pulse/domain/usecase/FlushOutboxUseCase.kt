@@ -6,7 +6,7 @@ import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
 import app.pulse.domain.repository.PulseRepository
 
-/** Single writer: FIFO within each room, with bypass only for explicit room cooldowns.
+/** Single writer: FIFO within each room, round-robin across eligible rooms.
  * Unknown network/auth/gateway failures still stop the pass. Rejected intents
  * remain recoverable but no longer hold up later operations.
  */
@@ -15,10 +15,17 @@ class FlushOutboxUseCase(private val repo: PulseRepository) {
     suspend operator fun invoke(): FlushReport {
         val heldRooms = mutableSetOf<String>()
         val attempted = mutableSetOf<String>()
+        val servedRooms = mutableSetOf<String>()
         var sent = 0
         var dropped = 0
         while (attempted.size < MAX_BATCH) {
-            val entry = repo.outboxReady(heldRooms).firstOrNull { it.clientId !in attempted } ?: break
+            var entry = repo.outboxReady(heldRooms + servedRooms).firstOrNull { it.clientId !in attempted }
+            if (entry == null && servedRooms.isNotEmpty()) {
+                servedRooms.clear()
+                entry = repo.outboxReady(heldRooms).firstOrNull { it.clientId !in attempted }
+            }
+            entry ?: break
+            servedRooms += entry.conversationId
             attempted += entry.clientId
             val outcome = repo.attemptOutboxSend(entry)
             if (outcome.isSuccess) {

@@ -148,7 +148,7 @@ class FlushOutboxUseCaseTest {
         override fun observeOutbox() = MutableStateFlow(queue.toList())
         override suspend fun outboxPending(): List<OutboxEntry> = queue.toList()
         override suspend fun outboxReady(excludingRooms: Set<String>): List<OutboxEntry> =
-            queue.filter { it.conversationId !in excludingRooms }.take(50)
+            queue.filter { it.conversationId !in excludingRooms }.distinctBy { it.conversationId }.sortedWith(compareBy<OutboxEntry> { it.attempts }.thenBy { it.id }).take(50)
 
         override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> {
             deliveryOrder += entry.clientId
@@ -177,6 +177,8 @@ class FlushOutboxUseCaseTest {
 
         override suspend fun bumpOutboxAttempts(clientId: String) {
             bumped += clientId
+            val index = queue.indexOfFirst { it.clientId == clientId }
+            if (index >= 0) queue[index] = queue[index].copy(attempts = queue[index].attempts + 1)
         }
 
         override suspend fun flushOutbox(): FlushReport = FlushOutboxUseCase(this).invoke()
@@ -516,6 +518,22 @@ class FlushOutboxUseCaseTest {
         assertEquals(1, report.sent)
         assertEquals(75, report.pending)
         assertEquals((0 until 75).map { "slow-$it" }, repo.queue.map { it.clientId })
+    }
+
+    @Test fun `large healthy backlog cannot monopolize a drain batch`() = runTest {
+        val repo = FakeRepo()
+        repeat(80) { n -> repo.enqueueOutbox(entry("a-$n", "a")); repo.scripts["a-$n"] = Script.Ok("real-a-$n") }
+        repo.enqueueOutbox(entry("b", "b")); repo.scripts["b"] = Script.Ok("real-b")
+        FlushOutboxUseCase(repo)()
+        assertEquals(listOf("a-0", "b", "a-1"), repo.deliveryOrder.take(3))
+    }
+    @Test fun `failed head rotates between passes without letting its successor overtake`() = runTest {
+        val repo = FakeRepo()
+        repo.enqueueOutbox(entry("a", "a")); repo.enqueueOutbox(entry("a-next", "a")); repo.enqueueOutbox(entry("b", "b"))
+        repo.scripts["a"] = Script.Retry("unavailable"); repo.scripts["b"] = Script.Ok("real-b")
+        FlushOutboxUseCase(repo)(); FlushOutboxUseCase(repo)()
+        assertEquals(listOf("a", "b", "a"), repo.deliveryOrder)
+        assertEquals(listOf("a", "a-next"), repo.queue.map { it.clientId })
     }
 
 }

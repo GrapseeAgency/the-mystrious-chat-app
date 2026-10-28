@@ -2849,7 +2849,7 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun outboxReady(excludingRooms: Set<String>): List<OutboxEntry> {
         val owner = viewerId ?: return emptyList()
-        return outboxDao.allForOwner(owner, (excludingRooms + dispatchGate.blockedConversations()).toList()).map { it.toEntry() }
+        return outboxDao.readyHeadsForOwner(owner, (excludingRooms + dispatchGate.blockedConversations()).toList()).map { it.toEntry() }
     }
 
     override suspend fun pendingOutboxCount(): Int = viewerId?.let { outboxDao.pendingCountForOwner(it) } ?: 0

@@ -902,6 +902,30 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(try store.countPendingOutbox(), 0)
     }
 
+    func testHealthyBacklogSharesEachDrainRoundWithOtherRooms() async throws {
+        let store = try PulseStore()
+        for i in 0..<80 { try store.appendOutbox(conversationId: "a", clientId: "a-\(i)", content: "a-\(i)") }
+        try store.appendOutbox(conversationId: "b", clientId: "b", content: "b")
+        let sender = StubSender(behaviors: [:])
+        let draining = makeEngine(store, sender)
+        defer { draining.stop() }
+        _ = await draining.flush()
+        XCTAssertEqual(Array(sender.operationIds.prefix(3)), ["a-0", "b", "a-1"])
+    }
+
+    func testFailedHeadRotatesOnNextPassWithoutOvertakingItsOwnRoom() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "a", clientId: "a", content: "a")
+        try store.appendOutbox(conversationId: "a", clientId: "a-next", content: "a-next")
+        try store.appendOutbox(conversationId: "b", clientId: "b", content: "b")
+        let sender = StubSender(behaviors: ["a": .networkError])
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        _ = await engine.flush(); _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["a", "b", "a"])
+        XCTAssertEqual(try store.outboxPending().map(\.clientId), ["a", "a-next"])
+    }
+
     func testRoomCooldownBypassesLongPrefixButPreservesThatRoomsFIFOAndIdentity() async throws {
         let store = try PulseStore()
         for i in 0..<75 { try store.appendOutbox(conversationId: "slow", clientId: "slow-\(i)", content: "slow-\(i)") }

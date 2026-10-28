@@ -361,12 +361,19 @@ public final class PulseOutboxEngine: ObservableObject {
             reloadPending()
         }
 
+        var servedRooms = Set<String>()
         for _ in 0..<Self.maxEntries {
             if Task.isCancelled || !canWork { break }
             let entry: OutboxRow
             do {
-                guard let next = try store.nextPendingOutbox(excludingConversations: blockedConversations()) else { break }
+                var next = try store.nextPendingOutbox(excludingConversations: blockedConversations().union(servedRooms))
+                if next == nil && !servedRooms.isEmpty {
+                    servedRooms.removeAll()
+                    next = try store.nextPendingOutbox(excludingConversations: blockedConversations())
+                }
+                guard let next else { break }
                 entry = next
+                servedRooms.insert(entry.conversationId)
             } catch { return false }
             var postingMessage = false
             do {

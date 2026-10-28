@@ -1303,7 +1303,8 @@ public final class PulseStore: Sendable {
         let placeholders = Array(repeating: "?", count: rooms.count).joined(separator: ",")
         let exclusion = rooms.isEmpty ? "" : " AND conversationId NOT IN (\(placeholders))"
         return try dbQueue.read { db in
-            try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE failureReason IS NULL" + exclusion + " ORDER BY id ASC LIMIT 1",
+            try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE failureReason IS NULL" + exclusion +
+                " AND NOT EXISTS (SELECT 1 FROM outbox earlier WHERE earlier.conversationId = outbox.conversationId AND earlier.failureReason IS NULL AND earlier.id < outbox.id) ORDER BY attempts ASC, id ASC LIMIT 1",
                 arguments: StatementArguments(rooms))
         }
     }

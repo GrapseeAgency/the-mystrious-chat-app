@@ -921,6 +921,17 @@ interface OutboxDao {
         "WHERE m.authorId = :owner AND m.conversationId = o.conversationId AND o.failureReason IS NULL AND o.conversationId NOT IN (:excludedRooms) ORDER BY o.id ASC LIMIT 50")
     suspend fun allForOwner(owner: String, excludedRooms: List<String> = emptyList()): List<OutboxEntity>
 
+    /** Choose only each room's oldest owned pending operation. Retry counts rank
+     * room heads, never individual later messages, so fairness cannot break FIFO. */
+    @Query("SELECT o.* FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId AND o.failureReason IS NULL " +
+        "AND o.conversationId NOT IN (:excludedRooms) AND NOT EXISTS (" +
+        "SELECT 1 FROM outbox earlier JOIN messages em ON em.id = 'local_' || earlier.clientId " +
+        "WHERE earlier.conversationId = o.conversationId AND earlier.id < o.id AND earlier.failureReason IS NULL " +
+        "AND em.authorId = :owner AND em.conversationId = earlier.conversationId) " +
+        "ORDER BY o.attempts ASC, o.id ASC LIMIT 1")
+    suspend fun readyHeadsForOwner(owner: String, excludedRooms: List<String> = emptyList()): List<OutboxEntity>
+
     @Query("SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
         "WHERE m.authorId = :owner AND m.conversationId = o.conversationId AND o.failureReason IS NULL")
     suspend fun pendingCountForOwner(owner: String): Int
