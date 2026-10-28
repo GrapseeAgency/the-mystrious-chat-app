@@ -313,3 +313,10 @@ Local recheck after fixes: **75 focused server tests passed, zero failed/skipped
 **20 Python contracts passed**. Hosted native verification is pending. The old
 535-test server and 108-test iOS results above must not be relabeled as current
 verification of these new changes.
+
+
+Recheck follow-through: Android bulk Clear also captures the collection rendered
+by Compose, rather than reading a possibly newer StateFlow value inside the tap.
+The complete local server rerun now passes **536 tests, zero failed/skipped**
+(including the new independent-client scheduling test). Native verification of
+these recheck changes remains pending; no earlier run is substituted for it.

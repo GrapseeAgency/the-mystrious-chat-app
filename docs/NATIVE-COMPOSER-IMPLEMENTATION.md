@@ -149,3 +149,10 @@ and the newly discovered Android preflight-refusal ownership correction. Both
 Android instrumentation steps passed the new regression; the corrected scoped
 iOS run explicitly passed 102/102 methods. The user requires the original list,
 so these results do not authorize closing all eleven reconstructed rows.
+
+
+Recheck follow-through: Android bulk Clear also captures the collection rendered
+by Compose, rather than reading a possibly newer StateFlow value inside the tap.
+The complete local server rerun now passes **536 tests, zero failed/skipped**
+(including the new independent-client scheduling test). Native verification of
+these recheck changes remains pending; no earlier run is substituted for it.

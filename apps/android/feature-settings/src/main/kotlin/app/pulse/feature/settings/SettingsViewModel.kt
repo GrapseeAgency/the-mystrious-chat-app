@@ -396,7 +396,7 @@ class SettingsViewModel @Inject constructor(
 
     fun deleteDraft(row: DraftRow) = deleteDraftSnapshots(listOf(row))
 
-    fun clearDrafts() = deleteDraftSnapshots(drafts.value.toList())
+    fun clearDrafts(displayed: List<DraftRow>) = deleteDraftSnapshots(displayed.toList())
 
     private fun deleteDraftSnapshots(rows: List<DraftRow>) {
         val owner = rows.firstOrNull()?.snapshot?.owner ?: return
@@ -475,7 +475,7 @@ class SettingsViewModel @Inject constructor(
 
     fun deleteOutboxEntry(row: OutboxRow) = discardOutboxSnapshots(listOf(row))
 
-    fun clearOutbox() = discardOutboxSnapshots(outbox.value.toList())
+    fun clearOutbox(displayed: List<OutboxRow>) = discardOutboxSnapshots(displayed.toList())
 
     private fun discardOutboxSnapshots(rows: List<OutboxRow>) {
         val owner = rows.firstOrNull()?.owner ?: return

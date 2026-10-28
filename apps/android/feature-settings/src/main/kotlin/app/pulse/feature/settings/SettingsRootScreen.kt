@@ -716,6 +716,9 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
     val drafts by viewModel.drafts.collectAsStateWithLifecycle()
     val outbox by viewModel.outbox.collectAsStateWithLifecycle()
+    // Freeze the rendered collection, not a newer delegated StateFlow value at a delayed tap.
+    val displayedDrafts = drafts.toList()
+    val displayedOutbox = outbox.toList()
     val outboxNotice by viewModel.outboxNotice.collectAsStateWithLifecycle()
     val recovery by viewModel.composerRecovery.collectAsStateWithLifecycle()
     val recoveryCursor by viewModel.composerRecoveryCursor.collectAsStateWithLifecycle()
@@ -784,7 +787,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    viewModel.clearDrafts()
+                    viewModel.clearDrafts(displayedDrafts)
                 }) { Text("Clear all drafts", color = EmberPalette.Amber) }
             }
             drafts.forEach { draft ->
@@ -805,7 +808,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    viewModel.clearOutbox()
+                    viewModel.clearOutbox(displayedOutbox)
                 }) { Text("Clear all", color = EmberPalette.Amber) }
             }
             outbox.forEach { row ->

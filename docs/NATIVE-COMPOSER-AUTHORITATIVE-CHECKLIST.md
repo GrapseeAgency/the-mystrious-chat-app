@@ -75,3 +75,10 @@ physical-device testing, migrations and deployment remain later work.
 Old unconditional web draft PATCH clients must upgrade: accepting their blind
 writes would reopen item 1. The current browser client was migrated alongside
 the endpoint; no whole-web account-isolation claim is made.
+
+
+Recheck follow-through: Android bulk Clear also captures the collection rendered
+by Compose, rather than reading a possibly newer StateFlow value inside the tap.
+The complete local server rerun now passes **536 tests, zero failed/skipped**
+(including the new independent-client scheduling test). Native verification of
+these recheck changes remains pending; no earlier run is substituted for it.
