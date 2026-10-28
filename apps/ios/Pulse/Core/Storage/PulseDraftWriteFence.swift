@@ -81,5 +81,23 @@ enum PulseThreadDraft {
         guard let parentId else { return room }
         return "thread-draft:v1|\(room.utf16.count):\(room)|\(parentId.utf16.count):\(parentId)"
     }
+    static func scope(_ key: String) throws -> (room: String, root: String?) {
+        guard isThread(key) else { return (key,nil) }
+        let units = Array(key.utf16)
+        var offset = "thread-draft:v1|".utf16.count
+        func field() throws -> String {
+            guard let colon = units[offset...].firstIndex(of: 58),
+                  let size = Int(String(decoding: units[offset..<colon], as: UTF16.self)),
+                  (1...128).contains(size), colon + 1 + size <= units.count else { throw CocoaError(.coderInvalidValue) }
+            offset = colon + 1 + size
+            return String(decoding: units[(colon + 1)..<offset], as: UTF16.self)
+        }
+        let room = try field()
+        guard offset < units.count, units[offset] == 124 else { throw CocoaError(.coderInvalidValue) }
+        offset += 1
+        let root = try field()
+        guard offset == units.count, Self.key(room,parentId: root).utf16.elementsEqual(key.utf16) else { throw CocoaError(.coderInvalidValue) }
+        return (room,root)
+    }
     static func isThread(_ key: String) -> Bool { key.hasPrefix("thread-draft:v1|") }
 }

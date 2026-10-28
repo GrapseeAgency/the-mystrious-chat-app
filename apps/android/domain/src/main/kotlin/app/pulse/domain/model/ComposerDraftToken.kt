@@ -13,3 +13,20 @@ fun threadDraftKey(conversationId: String, parentId: String?): String = if (pare
 fun isThreadDraftKey(key: String): Boolean = key.startsWith(THREAD_DRAFT_PREFIX)
 
 data class ThreadDraftSnapshot(val text: String?, val revision: Long, val saveFailed: Boolean = false)
+
+/** Parse the length-delimited local namespace without splitting IDs on delimiters. */
+fun composerDraftScope(key: String): Pair<String, String?> {
+    if (!isThreadDraftKey(key)) return key to null
+    var offset = THREAD_DRAFT_PREFIX.length
+    fun field(): String {
+        val colon = key.indexOf(':', offset)
+        require(colon >= offset)
+        val size = key.substring(offset, colon).toInt()
+        require(size in 1..128 && colon + 1 + size <= key.length)
+        offset = colon + 1 + size
+        return key.substring(colon + 1, offset)
+    }
+    val room = field(); require(offset < key.length && key[offset++] == '|')
+    val root = field(); require(offset == key.length)
+    return room to root
+}

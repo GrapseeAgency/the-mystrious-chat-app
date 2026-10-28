@@ -171,6 +171,7 @@ class ChatRoomViewModel @Inject constructor(
         val partnerLastReadAt: Long? = null,
         // ── Wave 1 ─────────────────────────────────────────────
         val editing: Message? = null,
+        val editingDraft: String? = null,
         val hasMore: Boolean = false,
         val loadingOlder: Boolean = false,
         val pins: List<Message> = emptyList(),
@@ -540,20 +541,13 @@ class ChatRoomViewModel @Inject constructor(
 
         restoreAttachmentDraft()
         viewModelScope.launch {
-            // Wave 0 draft restore: the local draft table wins; when it is
-            // empty fall back to the server-mirrored myDraft on the summary.
             val local = runCatching { repo.observeDraft(conversationId).firstOrNull() }.getOrNull()
-            if (local != null) {
-                if (composerRevision == 0L) _initialDraft.value = local
-            } else {
-                val server = runCatching {
-                    repo.observeConversations()
-                        .map { list -> list.firstOrNull { it.id == conversationId }?.myDraft }
-                        .firstOrNull { !it.isNullOrBlank() }
-                }.getOrNull()
-                if (composerRevision == 0L && !server.isNullOrBlank()) _initialDraft.value = server
-            }
+            val seed = local ?: runCatching { repo.observeConversations().first().firstOrNull { it.id == conversationId }?.myDraft }.getOrNull()
+            if (composerRevision == 0L && seed != null) _initialDraft.value = seed
+            val remote = repo.refreshComposerDraft(conversationId).getOrNull()
+            if (composerRevision == 0L && remote != null) _initialDraft.value = remote
         }
+
         retry()
         val initialHistoryTicket = historyRevision
         viewModelScope.launch {
@@ -635,9 +629,11 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── drafts (Wave 0 core) + typing ───────────────────────────
 
+    fun canRestoreDraft(): Boolean = composerRevision == 0L
+
     fun onDraftChanged(text: String) {
         composerRevision++
-        if (_state.value.editing != null) return // Track newer edit text, but do not persist it as a draft.
+        _state.value.editing?.let { repo.stageEditDraft(it,text); return }
         repo.stageDraft(conversationId, text) // reserve/write locally before the debounce
         val draftToken = repo.captureDraftToken(conversationId)
         val userName = viewerName()
@@ -890,12 +886,18 @@ class ChatRoomViewModel @Inject constructor(
     fun beginEdit(message: Message) {
         if (_state.value.editing == null) replyBeforeEdit = _state.value.replyTo
         editGeneration++
-        _state.value = _state.value.copy(editing = message, replyTo = null)
+        val ticket = editGeneration
+        val owner = repo.attachmentSessionKey()
+        viewModelScope.launch {
+            val recovered = runCatching { repo.recoveredEditDraft(message.id) }.getOrNull()
+            if (editGeneration == ticket && owner == repo.attachmentSessionKey())
+                _state.value = _state.value.copy(editing = message, editingDraft = recovered, replyTo = null)
+        }
     }
 
     fun cancelEdit() {
         editGeneration++
-        _state.value = _state.value.copy(editing = null, replyTo = replyBeforeEdit)
+        _state.value = _state.value.copy(editing = null, editingDraft = null, replyTo = replyBeforeEdit)
         replyBeforeEdit = null
     }
 

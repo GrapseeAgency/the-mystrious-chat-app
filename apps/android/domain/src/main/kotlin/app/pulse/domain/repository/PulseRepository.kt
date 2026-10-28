@@ -541,6 +541,13 @@ interface PulseRepository {
     // Wave 1 messaging surface (spec WAVE1 §1.1 - all routes exist on the wire)
 
     /** PATCH /api/messages/{id} {userId, content} - sender-only edit → fresh row (editedAt set). */
+    /** Unsubmitted edits stay local; Save separately makes an immutable command dispatchable. */
+    fun stageEditDraft(message: Message, text: String) {}
+    suspend fun recoveredEditDraft(messageId: String): String? = null
+    suspend fun flushComposerIntents(): Result<Int> = Result.success(0)
+    suspend fun refreshComposerDraft(conversationId: String, rootId: String? = null): Result<String?> = Result.success(null)
+    fun observePendingComposer(): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+
     suspend fun editMessage(messageId: String, content: String): Result<Message>
 
     /** POST /api/messages/{id}/pin-state {userId, pinned:true} - replay-safe addition, never a toggle. */

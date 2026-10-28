@@ -657,6 +657,19 @@ public struct PulseAPIClient: Sendable {
         return filePath
     }
 
+    func composerState(_ intent: PulseComposerIntent) async throws -> PulseComposerReceipt {
+        guard intent.owner == userId else { throw Failure(kind: .validation, message: "Composer belongs to another account.") }
+        return try await get("/api/composer-state?userId=\(q(userId))&kind=\(q(intent.kind))&targetId=\(q(intent.targetId))" +
+            (intent.rootId.map { "&rootId=\(q($0))" } ?? ""))
+    }
+    func writeComposer(_ intent: PulseComposerIntent, flight: PulseComposerFlight) async throws -> PulseComposerReceipt {
+        guard intent.owner == userId else { throw Failure(kind: .validation, message: "Composer belongs to another account.") }
+        var body: [String: Any] = ["userId": userId, "kind": intent.kind, "targetId": intent.targetId,
+            "text": flight.text, "clientId": flight.clientId, "expectedRevision": flight.expectedRevision]
+        if let root = intent.rootId { body["rootId"] = root }
+        return try decoder.decode(PulseComposerReceipt.self, from: await patchRaw("/api/composer-state", body: body))
+    }
+
     /// PATCH /api/conversations/{id}/draft {userId, draft} - server-side draft
     /// mirror ("" clears). The local draft stays authoritative; the mirror
     /// only seeds cross-device. Call sites are allowed to silent-fail this.

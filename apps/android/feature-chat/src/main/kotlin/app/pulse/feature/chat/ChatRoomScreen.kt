@@ -345,9 +345,12 @@ fun ChatRoomScreen(
     // Wave 0 draft restore - the VM seeds from the local draft table (or the
     // server myDraft fallback) exactly once; never stomp live typing.
     val initialDraft by viewModel.initialDraft.collectAsStateWithLifecycle()
+    var lastRestoredDraft by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(initialDraft) {
         val seed = initialDraft
-        if (!seed.isNullOrBlank() && draft.isBlank() && state.editing == null) draft = seed
+        if (seed != null && viewModel.canRestoreDraft() && (draft.isEmpty() || draft == lastRestoredDraft) && state.editing == null) {
+            draft = seed; lastRestoredDraft = seed
+        }
     }
 
     // Keep the unsent composer separate from the edit buffer; errors retain
@@ -356,7 +359,7 @@ fun ChatRoomScreen(
         val editing = state.editing
         if (editing != null) {
             if (!wasEditing) draftBeforeEdit = draft
-            draft = editing.body
+            draft = state.editingDraft ?: editing.body
             wasEditing = true
         } else if (wasEditing) {
             draft = draftBeforeEdit.orEmpty()

@@ -888,6 +888,19 @@ class PulseApi(
         }
     }
 
+    suspend fun composerState(intent: app.pulse.protocol.ComposerIntentDto): PulseResult<app.pulse.protocol.ComposerReceiptDto> {
+        fun encoded(value: String) = java.net.URLEncoder.encode(value, "UTF-8")
+        return get("/api/composer-state?userId=${encoded(intent.owner)}&kind=${encoded(intent.kind)}&targetId=${encoded(intent.targetId)}" +
+            (intent.rootId?.let { "&rootId=${encoded(it)}" } ?: "")) { raw ->
+            PulseJson.decodeFromString(app.pulse.protocol.ComposerReceiptDto.serializer(), raw)
+        }
+    }
+    suspend fun writeComposer(intent: app.pulse.protocol.ComposerIntentDto, flight: app.pulse.protocol.ComposerFlight): PulseResult<app.pulse.protocol.ComposerReceiptDto> =
+        patch("/api/composer-state", jsonOf("userId" to intent.owner, "kind" to intent.kind, "targetId" to intent.targetId,
+            "rootId" to intent.rootId, "text" to flight.text, "clientId" to flight.clientId, "expectedRevision" to flight.expectedRevision)) { raw ->
+            PulseJson.decodeFromString(app.pulse.protocol.ComposerReceiptDto.serializer(), raw)
+        }
+
     /** PATCH /api/conversations/{id}/draft { userId, draft } → { ok, draft } ('' clears). */
     suspend fun setDraft(conversationId: String, userId: String, draft: String): PulseResult<Unit> {
         if (conversationId.isBlank() || userId.isBlank() || draft.length > 2000) {

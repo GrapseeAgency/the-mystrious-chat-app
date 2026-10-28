@@ -106,6 +106,10 @@ struct PulseApp: App {
                 PulseKeychain.shared.loadSessionToken() == token && PulseEndpoints.gatewayURL == api.baseURL
             }
             let engine = PulseOutboxEngine(store: store, isCurrent: ownsColdWake) { api }
+            engine.onComposerJournalFlush = {
+                do { return try await PulseComposerReplay.flush(store: store,client: api,current: ownsColdWake) == 0 }
+                catch { return false }
+            }
             engine.onSavedJournalFlush = {
                 await PulseSavedReplay.flush(store: store, owner: viewer.id, isCurrent: ownsColdWake,
                     send: { try await api.applySavedIntent($0) })

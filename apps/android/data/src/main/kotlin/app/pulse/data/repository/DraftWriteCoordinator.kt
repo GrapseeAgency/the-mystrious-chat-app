@@ -12,6 +12,8 @@ import kotlinx.coroutines.sync.withLock
 /** AccountRepositories reuses a Room handle on return to an account. Its old,
  * finite journal tasks must share ordering with the replacement repository. */
 internal class DraftWriteCoordinator internal constructor() {
+    val editVersions = ConcurrentHashMap<String, AtomicLong>()
+    val editBuffers = ConcurrentHashMap<String, Pair<Long, app.pulse.protocol.ComposerLocalEditDto>>()
     val versions = ConcurrentHashMap<String, AtomicLong>()
     val threadBuffers = ConcurrentHashMap<String, Pair<Long, String>>()
     val threadFailures = MutableStateFlow<Map<String, Long>>(emptyMap())

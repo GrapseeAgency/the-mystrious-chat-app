@@ -53,8 +53,9 @@ class OutboxWorker(
             val complete = app.pulse.domain.sync.flushBackgroundQueues(
                 messages = { kotlinx.coroutines.coroutineScope {
                     val bookmarks = async { target.flushSavedIntents().getOrThrow() == 0 }
+                    val composer = async { target.flushComposerIntents().getOrThrow() == 0 }
                     val messages = async { target.flushOutbox().pending == 0 }
-                    bookmarks.await() && messages.await()
+                    bookmarks.await() && messages.await() && composer.await()
                 } },
                 readState = {
                     val pendingReads = target.flushReadReceipts().getOrThrow()

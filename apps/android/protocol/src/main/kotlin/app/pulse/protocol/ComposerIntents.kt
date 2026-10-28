@@ -1,0 +1,33 @@
+package app.pulse.protocol
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class ComposerReceiptDto(
+    val composerVersion: Int, val userId: String, val kind: String, val targetId: String,
+    val rootId: String? = null, val conversationId: String, val text: String, val revision: String,
+    val editedAt: String? = null, val clientId: String? = null, val outcome: String? = null,
+)
+@Serializable
+data class ComposerFlight(val clientId: String, val text: String, val expectedRevision: String)
+@Serializable
+data class ComposerIntentDto(
+    val owner: String, val kind: String, val targetId: String, val conversationId: String,
+    val rootId: String? = null, val desiredId: String, val text: String,
+    val baseText: String, val baseEditedAt: String? = null, val ready: Boolean = true,
+    val flight: ComposerFlight? = null, val blocked: String? = null, val baseRevision: String? = null,
+)
+fun ComposerReceiptDto.validateComposer(intent: ComposerIntentDto, flight: ComposerFlight? = null) {
+    require(composerVersion == 1 && userId == intent.owner && kind == intent.kind && targetId == intent.targetId &&
+        rootId == intent.rootId && conversationId == intent.conversationId && text.length <= 2000 &&
+        revision.matches(Regex("[A-Za-z0-9_.:-]{1,256}"))) { "Composer state was not confirmed" }
+    if (editedAt != null) require(runCatching { java.time.Instant.parse(editedAt) }.isSuccess) { "Invalid edit timestamp" }
+    if (kind == "edit" && flight != null && outcome == "applied") require(editedAt != null) { "Edit timestamp missing" }
+    if (flight != null) require(clientId == flight.clientId && outcome in setOf("applied", "conflict", "superseded") &&
+        (outcome != "applied" || text == flight.text)) { "Composer operation was not confirmed" }
+}
+
+@Serializable
+data class ComposerLocalEditDto(val text: String, val baseText: String, val baseEditedAt: String? = null)
+
+fun validateComposerReceipt(receipt: ComposerReceiptDto, intent: ComposerIntentDto) = receipt.validateComposer(intent)

@@ -334,6 +334,12 @@ class PulseRepositoryImpl constructor(
                     kotlinx.coroutines.delay(15_000)
                 }
             }
+            launch {
+                while (viewerId == userId && attachmentSession == savedEpoch) {
+                    flushComposerIntents()
+                    kotlinx.coroutines.delay(15_000)
+                }
+            }
             launch { runCatching { flushOutbox() } }
             launch { runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() } }
         }
@@ -500,7 +506,7 @@ class PulseRepositoryImpl constructor(
                     draftVersions.getOrPut(room) { java.util.concurrent.atomic.AtomicLong() }.get()
                 }
                 database.withTransaction {
-                    rooms.forEach { draftDao.upsert(DraftEntity(it, "", java.time.OffsetDateTime.now().toString())) }
+                    rooms.forEach { persistDraftWithMirror(it, "") }
                 }
                 revisions.forEach { (room, revision) ->
                     if (draftVersions[room]?.compareAndSet(revision, revision + 1) == true) {
@@ -1528,7 +1534,7 @@ class PulseRepositoryImpl constructor(
                 val consume = token != null && counter?.get() == token.revision
                 database.withTransaction {
                     write()
-                    if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).storageKey, "", java.time.OffsetDateTime.now().toString()))
+                    if (consume) persistDraftWithMirror(checkNotNull(token).storageKey, "")
                 }
                 if (consume) {
                     val consumed = checkNotNull(token)
@@ -1871,8 +1877,125 @@ class PulseRepositoryImpl constructor(
         }.getOrDefault(emptyMap())
     }
 
-    override suspend fun editMessage(messageId: String, content: String): Result<Message> =
-        mutateOwnedMessage(messageId, app.pulse.domain.sync.MessageMutationKind.EDIT, content)
+    private val composerJournal by lazy { ComposerJournal(database) }
+    override fun observePendingComposer(): Flow<Boolean> = queueOwner.flatMapLatest { owner ->
+        if (owner == null) kotlinx.coroutines.flow.flowOf(false)
+        else wave7Dao.observeReadJournalCount("composer-intent:v1|$owner|").map { it > 0 }
+    }
+    private fun localEditKey(owner: String, id: String) = "composer-local-edit:v1|$owner|$id"
+    override fun stageEditDraft(message: Message, text: String) {
+        val owner = viewerId ?: return
+        if (message.authorId != owner || message.id.startsWith("local_")) return
+        val key = localEditKey(owner,message.id)
+        val revision = draftWrites.editVersions.getOrPut(key) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
+        draftWrites.editBuffers[key] = revision to app.pulse.protocol.ComposerLocalEditDto(text,message.body,message.editedAt)
+        draftWriteScope.launch {
+            try { draftMutex.withLock {
+                if (draftWrites.editVersions[key]?.get() != revision) return@withLock
+                val previous = wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
+                val local = app.pulse.protocol.ComposerLocalEditDto(text,previous?.baseText ?: message.body,if (previous != null) previous.baseEditedAt else message.editedAt)
+                wave7Dao.upsert(Wave7CacheEntity(key,app.pulse.protocol.PulseJson.encodeToString(app.pulse.protocol.ComposerLocalEditDto.serializer(),local),System.currentTimeMillis()))
+                draftWrites.editBuffers.computeIfPresent(key) { _, value -> value.takeIf { it.first != revision } }
+            } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { Log.w(TAG,"Edited text could not be saved",error) }
+        }
+    }
+    override suspend fun recoveredEditDraft(messageId: String): String? {
+        val owner = viewerId ?: return null
+        val key = localEditKey(owner,messageId)
+        return draftMutex.withLock {
+            draftWrites.editBuffers[key]?.second?.text ?: wave7Dao.get(key)?.let {
+                app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json).text
+            } ?: composerJournal.editText(owner,messageId)
+        }
+    }
+    override suspend fun editMessage(messageId: String, content: String): Result<Message> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            val message = messageDao.byId(messageId)?.toDomain() ?: error("Refresh this message before editing")
+            requireConversationOwner(owner,epoch)
+            check(message.authorId == owner && !message.id.startsWith("local_")) { "Only a delivered message from this account can be edited" }
+            val local = draftMutex.withLock {
+                val key = localEditKey(owner,messageId)
+                wave7Dao.get(key)?.let { app.pulse.protocol.PulseJson.decodeFromString(app.pulse.protocol.ComposerLocalEditDto.serializer(),it.json) }
+                    ?: draftWrites.editBuffers[key]?.second
+            }
+            composerJournal.stage(owner,"edit",message.id,message.conversationId,null,content.trim(),local?.baseText ?: message.body,if (local != null) local.baseEditedAt else message.editedAt)
+            flushComposerIntents().getOrThrow()
+            requireConversationOwner(owner,epoch)
+            check(composerJournal.editText(owner,messageId) == null) { "Your edit is saved on this device but is not confirmed. Reopen it to recover the text." }
+            Result.success(checkNotNull(messageDao.byId(messageId)).toDomain())
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { Result.failure(error) }
+    }
+    override suspend fun flushComposerIntents(): Result<Int> = try {
+        val owner = viewerId
+        val epoch = attachmentSession
+        if (owner == null || sessionTokenStore.cached.isNullOrBlank()) Result.success(0)
+        else Result.success(composerJournal.flush(owner,api,{ viewerId == owner && attachmentSession == epoch }) { intent, receipt ->
+            if (intent.kind == "edit") messageCacheMutex.withLock {
+                database.withTransaction {
+                    requireConversationOwner(owner,epoch)
+                    val current = messageDao.byId(intent.targetId)?.toDomain()
+                    if (current != null && current.conversationId == intent.conversationId && current.authorId == owner && current.deletedAt == null) {
+                        val oldAt = current.editedAt?.let(::messageExpiryEpochMs) ?: Long.MIN_VALUE
+                        val newAt = receipt.editedAt?.let(::messageExpiryEpochMs) ?: error("Edit receipt has no timestamp")
+                        if (newAt >= oldAt) {
+                            val updated = current.copy(body=receipt.text,editedAt=receipt.editedAt)
+                            messageDao.upsertAll(listOf(MessageEntity.from(updated,reactionsJsonOf(updated))))
+                            messageEventRevisions[current.id] = messageEventClock.incrementAndGet()
+                            messageCacheChanges.value = messageEventClock.get()
+                        }
+                    }
+                }
+            }
+        })
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+    catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun refreshComposerDraft(conversationId: String, rootId: String?): Result<String?> {
+        val owner = viewerId ?: return Result.success(null)
+        val epoch = attachmentSession
+        val key = if (rootId == null) conversationId else threadDraftKey(conversationId,rootId)
+        val revision = draftVersions.getOrPut(key) { java.util.concurrent.atomic.AtomicLong() }.get()
+        return try {
+            val before = draftMutex.withLock { draftDao.get(key) }
+            if (composerJournal.hasIntent(owner,conversationId,rootId)) return Result.success(null)
+            val intent = app.pulse.protocol.ComposerIntentDto(owner,"draft",conversationId,conversationId,rootId,
+                java.util.UUID.randomUUID().toString(),"",before?.text ?: "")
+            val state = when(val response = api.composerState(intent)) {
+                is PulseResult.Success -> response.value
+                is PulseResult.Failure -> throw IllegalStateException(response.message ?: "Draft could not be refreshed")
+            }
+            app.pulse.protocol.validateComposerReceipt(state,intent)
+            val imported = draftMutex.withLock {
+                requireConversationOwner(owner,epoch)
+                if (draftVersions[key]?.get() != revision) return@withLock false
+                database.withTransaction {
+                    if (draftDao.get(key) != before || composerJournal.hasIntent(owner,conversationId,rootId)) false
+                    else {
+                        draftDao.upsert(DraftEntity(key,state.text,java.time.OffsetDateTime.now().toString()))
+                        composerJournal.recordBaseline(state)
+                        true
+                    }
+                }.also { if (it) nextDraftVersion(key) }
+            }
+            Result.success(state.text.takeIf { imported })
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { Result.failure(error) }
+    }
+
+    private suspend fun persistDraftWithMirror(key: String, text: String) = database.withTransaction {
+        val before = draftDao.get(key)?.text ?: ""
+        draftDao.upsert(DraftEntity(key,text,java.time.OffsetDateTime.now().toString()))
+        val owner = reminderOwner?.userId ?: viewerId
+        if (owner != null) {
+            val (room,root) = app.pulse.domain.model.composerDraftScope(key)
+            if (!app.pulse.domain.model.PulseDemo.isDemoConversation(room))
+                composerJournal.stage(owner,"draft",room,room,root,text,before)
+        }
+    }
 
     override suspend fun pinMessage(messageId: String): Result<Message> =
         mutateOwnedMessage(messageId, app.pulse.domain.sync.MessageMutationKind.PIN)
@@ -1895,7 +2018,7 @@ class PulseRepositoryImpl constructor(
             }
             val watermark = messageEventClock.get()
             val response = when (kind) {
-                app.pulse.domain.sync.MessageMutationKind.EDIT -> api.editMessage(messageId, owner, checkNotNull(content))
+                app.pulse.domain.sync.MessageMutationKind.EDIT -> error("Edits must use the durable composer journal")
                 app.pulse.domain.sync.MessageMutationKind.PIN -> api.pinMessage(messageId, owner)
                 app.pulse.domain.sync.MessageMutationKind.DELETE -> api.deleteMessage(messageId, owner)
             }
@@ -2496,12 +2619,8 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun setServerDraft(conversationId: String, draft: String) {
-        val id = viewerId ?: return
-        try {
-            api.setDraft(conversationId, id, draft)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Draft mirror was not confirmed; local text is retained", error) }
-        // Fire-and-forget: the local draft wins; the server only seeds
-        // cross-device restore - failures are silently ignored.
+        // Ancillary writers use the same local journal rather than bypass CAS.
+        saveDraft(conversationId,draft)
     }
 
     override suspend fun myRole(conversationId: String): Result<String?> =
@@ -3064,7 +3183,7 @@ class PulseRepositoryImpl constructor(
                 if (buffered != null) app.pulse.domain.model.ThreadDraftSnapshot(buffered.second, buffered.first, failures[key] == buffered.first)
                 else app.pulse.domain.model.ThreadDraftSnapshot(draftDao.get(key)?.text, revision, failures[key] == revision)
             }
-        }
+        }.onStart { scope.launch { refreshComposerDraft(conversationId,rootId) } }
     }
 
     override fun captureThreadDraftToken(conversationId: String, rootId: String): app.pulse.domain.model.ComposerDraftToken? {
@@ -3080,7 +3199,7 @@ class PulseRepositoryImpl constructor(
         if (draftVersions[id]?.get() != version) return@withLock false
         val value = DraftWriteCoordinator.localSnapshot(text)
         // Empty is an explicit local clear, not permission to restore stale server text.
-        draftDao.upsert(DraftEntity(id, value, java.time.OffsetDateTime.now().toString()))
+        persistDraftWithMirror(id, value)
         draftWrites.finishSnapshot(id, version)
         true
     }
@@ -3106,13 +3225,10 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    private suspend fun mirrorDraft(conversationId: String, text: String, revision: Long) = draftServerMutex.withLock {
-        if (isThreadDraftKey(conversationId)) return@withLock // No server thread-draft API exists.
-        // Serialize attempted mirrors; skip revisions replaced before the request.
-        // This is best effort, not server-side cross-device conflict resolution.
-        if (!app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId) && draftVersions[conversationId]?.get() == revision) {
-            setServerDraft(conversationId, text)
-        }
+    private suspend fun mirrorDraft(conversationId: String, text: String, revision: Long) {
+        // The local transaction already journaled the exact desired state. Never
+        // recreate an old mirror from a debounce callback after a newer write.
+        if (draftVersions[conversationId]?.get() == revision) flushComposerIntents()
     }
 
     override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")

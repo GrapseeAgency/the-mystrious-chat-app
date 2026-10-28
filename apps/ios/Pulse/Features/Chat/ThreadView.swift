@@ -684,6 +684,13 @@ struct ThreadView: View {
         draftSession = session.sessionGeneration
         draftJournal = journal
         draft = journal.snapshot ?? ""
+        let revision = draftRevision, epoch = session.sessionGeneration
+        Task {
+            if let text = try? await session.refreshComposerDraft(room: conversation.id,root: root.id),
+               session.sessionGeneration == epoch, draftRevision == revision, journal.isCurrentOwner {
+                draft = text
+            }
+        }
         return true
     }
 

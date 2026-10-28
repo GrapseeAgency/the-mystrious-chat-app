@@ -408,7 +408,7 @@ internal fun MirrorRoom(
             if (editing == null) {
                 repository.stageDraft(groupId, text)
                 stagedDraftToken = repository.captureDraftToken(groupId)
-            }
+            } else editing?.let { repository.stageEditDraft(it,text) }
         }
     }
     var draftValue by composerDraft
@@ -477,8 +477,14 @@ internal fun MirrorRoom(
     LaunchedEffect(groupId) {
         val initialRevision = composerDraft.revision
         val saved = runCatching { repository.observeDraft(groupId).firstOrNull() }.getOrNull()
-        if (composerDraft.revision == initialRevision && !saved.isNullOrBlank()) draftValue = TextFieldValue(saved)
+        if (composerDraft.revision == initialRevision && saved != null) composerDraft.update(TextFieldValue(saved),notify=false)
         draftRestored = true
+        val expected = composerDraft.revision
+        val remote = repository.refreshComposerDraft(groupId).getOrNull()
+        if (composerDraft.revision == expected && editing == null && remote != null) {
+            composerDraft.update(TextFieldValue(remote),notify=false)
+            stagedDraftToken = null
+        }
     }
     LaunchedEffect(draftValue.text, draftRestored, editing?.id) {
         if (!draftRestored || editing != null) return@LaunchedEffect
@@ -2733,8 +2739,15 @@ internal fun MirrorRoom(
                     draftBeforeEdit = draftValue
                     replyBeforeEdit = replyTo
                 }
-                editing = target
-                draftValue = TextFieldValue(target.body)
+                val actionRepository = repository.boundToCurrentAccount()
+                val owner = actionRepository.attachmentSessionKey()
+                historyScope.launch {
+                    val recovered = runCatching { actionRepository.recoveredEditDraft(target.id) }.getOrNull()
+                    if (roomActionsLive.get() && owner == actionRepository.attachmentSessionKey()) {
+                        editing = target
+                        draftValue = TextFieldValue(recovered ?: target.body)
+                    }
+                }
             },
             onThread = { threadJumpId = null; threadFor = target },
             onForward = { forwardFor = target },

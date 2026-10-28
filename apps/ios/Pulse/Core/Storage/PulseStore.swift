@@ -42,7 +42,7 @@ public final class PulseStore: Sendable {
         )
         return try PulseStore(path: directory.appendingPathComponent(
             accountFilename(gateway: gateway, viewerId: viewerId)
-        ).path)
+        ).path, composerOwner: viewerId)
     }
 
     private let dbQueue: DatabaseQueue
@@ -56,14 +56,17 @@ public final class PulseStore: Sendable {
 
     let storageIdentity: String
 
-    public init(path: String) throws {
+    let composerOwner: String?
+    public init(path: String, composerOwner: String? = nil) throws {
+        self.composerOwner = composerOwner
         storageIdentity = URL(fileURLWithPath: path).standardizedFileURL.path
         dbQueue = try DatabaseQueue(path: path)
         try migrator.migrate(dbQueue)
     }
 
     /// In-memory store (previews/tests).
-    public init() throws {
+    public init(owner: String? = nil) throws {
+        composerOwner = owner
         storageIdentity = "memory:" + UUID().uuidString
         dbQueue = try DatabaseQueue()
         try migrator.migrate(dbQueue)
@@ -688,7 +691,7 @@ public final class PulseStore: Sendable {
                 try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
                     content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
                     attempts: 0, payloadJson: payload).insert(db)
-                if consume, let token { try Self.writeDraftSnapshot(db, room: token.storageKey, text: "") }
+                if consume, let token { try self.writeDraftSnapshot(db, room: token.storageKey, text: "") }
             }
         }
         if let token {
@@ -1434,11 +1437,17 @@ public final class PulseStore: Sendable {
 
     func saveDraftSnapshot(conversationId: String, text: String, expectedRevision: UInt64? = nil) throws {
         try draftFence.write(conversationId, expected: expectedRevision) {
-            try dbQueue.write { db in try Self.writeDraftSnapshot(db, room: conversationId, text: text) }
+            try dbQueue.write { db in try self.writeDraftSnapshot(db, room: conversationId, text: text) }
         }
     }
 
-    private static func writeDraftSnapshot(_ db: Database, room: String, text: String) throws {
+    private func writeDraftSnapshot(_ db: Database, room: String, text: String) throws {
+        if let owner = composerOwner {
+            let scope = try PulseThreadDraft.scope(room)
+            let before = try String.fetchOne(db, sql: "SELECT text FROM draft WHERE conversationId=?", arguments: [room]) ?? ""
+            try Self.stageComposer(db, owner: owner, kind: "draft", target: scope.room, room: scope.room, root: scope.root,
+                text: text, baseText: before, editedAt: nil)
+        }
         try db.execute(sql: """
             INSERT INTO draft (conversationId, text, updatedAt) VALUES (:cid, :text, :updatedAt)
             ON CONFLICT(conversationId) DO UPDATE SET text=:text, updatedAt=:updatedAt
@@ -1490,7 +1499,7 @@ public final class PulseStore: Sendable {
             try dbQueue.write { db in
                 let current = try DraftRow.fetchOne(db, sql: "SELECT * FROM draft WHERE conversationId = ?", arguments: [row.conversationId])
                 guard current == row else { return false }
-                try Self.writeDraftSnapshot(db, room: row.conversationId, text: "")
+                try self.writeDraftSnapshot(db, room: row.conversationId, text: "")
                 return true
             }
         }
@@ -1999,6 +2008,195 @@ extension PulseStore {
                 next = "local-saved:" + (try JSONEncoder().encode(PulseSavedOfflineCursor(owner: owner, at: last["savedAt"], id: last["messageId"]))).base64EncodedString()
             }
             return PulseSavedCachedPage(items: try Self.savedItems(in: db, now: Date(), selectedIds: page.map { $0["messageId"] }, limit: 100), nextCursor: next)
+        }
+    }
+}
+
+// Composer operations intentionally live outside ordinary cache eviction. Draft
+// consumption and its server-clear command share the outgoing SQLite transaction.
+extension PulseStore {
+    struct ComposerRow { let intent: PulseComposerIntent }
+    private static func composerPrefix(_ owner: String) -> String { "composer-intent:v1|\(owner)|" }
+    private static func composerHead(_ key: String) -> String { key.replacingOccurrences(of: "composer-intent:v1|", with: "composer-head:v1|") }
+    private static func heldComposer(_ key: String) -> String { key.replacingOccurrences(of: "composer-intent:v1|", with: "composer-blocked:v1|") }
+    private static func composerKey(owner: String, kind: String, target: String, root: String?) -> String {
+        let scope = [kind,target,root ?? ""].map { "\($0.utf16.count):\($0)" }.joined()
+        return composerPrefix(owner) + SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x",$0) }.joined()
+    }
+    private static func composerKey(_ intent: PulseComposerIntent) -> String {
+        composerKey(owner: intent.owner,kind: intent.kind,target: intent.targetId,root: intent.rootId)
+    }
+    private static func decodeComposer(_ json: String, key: String) throws -> PulseComposerIntent {
+        let value = try JSONDecoder().decode(PulseComposerIntent.self,from: Data(json.utf8))
+        let expected = composerKey(value)
+        guard ["edit","draft"].contains(value.kind), !value.owner.isEmpty, !value.targetId.isEmpty,
+              !value.conversationId.isEmpty, UUID(uuidString: value.desiredId) != nil,
+              key == expected || key == heldComposer(expected) else { throw CocoaError(.coderInvalidValue) }
+        return value
+    }
+    private static func composer(_ db: Database, key: String) throws -> PulseComposerIntent? {
+        guard let json = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [key]) else { return nil }
+        return try decodeComposer(json,key: key)
+    }
+    private static func putComposer(_ db: Database, key: String, value: PulseComposerIntent) throws {
+        let prefix = composerPrefix(value.owner)
+        let order = try Double.fetchOne(db,sql: "SELECT COALESCE(MAX(updatedAt),0)+1 FROM wave7Cache WHERE substr(key,1,length(?))=?",arguments: [prefix,prefix]) ?? 1
+        let json = String(decoding: try JSONEncoder().encode(value),as: UTF8.self)
+        try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt",arguments: [key,json,order])
+    }
+    private static func stageComposer(_ db: Database, owner: String, kind: String, target: String, room: String, root: String?, text: String, baseText: String, editedAt: String?) throws {
+        let key = composerKey(owner: owner,kind: kind,target: target,root: root)
+        let previous = try composer(db,key: key) ?? composer(db,key: heldComposer(key))
+        if let previous, previous.text.utf16.elementsEqual(text.utf16), previous.blocked == nil { return }
+        let baseline = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [composerHead(key)])
+            .map { try JSONDecoder().decode(PulseComposerReceipt.self,from: Data($0.utf8)) }
+        let value = PulseComposerIntent(owner: owner,kind: kind,targetId: target,conversationId: room,rootId: root,
+            desiredId: UUID().uuidString.lowercased(),text: text,baseText: previous?.baseText ?? baseText,
+            baseEditedAt: previous != nil ? previous!.baseEditedAt : editedAt,
+            baseRevision: previous != nil ? previous!.baseRevision : baseline?.revision,flight: previous?.flight,blocked: nil)
+        try putComposer(db,key: key,value: value)
+        try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [heldComposer(key)])
+    }
+    func enqueueComposerEdit(_ message: WireChatMessage, text: String, owner: String) throws {
+        guard composerOwner == nil || composerOwner == owner, message.senderId == owner else { throw CocoaError(.coderInvalidValue) }
+        try dbQueue.write { db in
+            let local = try Self.localEdit(db,owner: owner,id: message.id)
+            try Self.stageComposer(db,owner: owner,kind: "edit",target: message.id,room: message.conversationId,root: nil,
+                text: text,baseText: local?.baseText ?? message.content,editedAt: local != nil ? local!.baseEditedAt : message.editedAt)
+        }
+    }
+    func composerEditPending(owner: String, id: String) throws -> Bool {
+        try dbQueue.read { db in
+            let key = Self.composerKey(owner: owner,kind: "edit",target: id,root: nil)
+            return try Bool.fetchOne(db,sql: "SELECT EXISTS(SELECT 1 FROM wave7Cache WHERE key IN (?,?))",arguments: [key,Self.heldComposer(key)]) ?? false
+        }
+    }
+    func pendingComposerCount(owner: String) throws -> Int {
+        try dbQueue.read { db in
+            let prefix = Self.composerPrefix(owner)
+            return try Int.fetchOne(db,sql: "SELECT COUNT(*) FROM wave7Cache WHERE substr(key,1,length(?))=?",arguments: [prefix,prefix]) ?? 0
+        }
+    }
+    func composerPage(owner: String, held: Bool = false) throws -> [ComposerRow] {
+        try dbQueue.write { db in
+            let prefix = held ? Self.heldComposer(Self.composerPrefix(owner)) : Self.composerPrefix(owner)
+            let rows = try Row.fetchAll(db,sql: "SELECT key,json,updatedAt FROM wave7Cache WHERE substr(key,1,length(?))=? ORDER BY updatedAt,key LIMIT 100",arguments: [prefix,prefix])
+            var result: [ComposerRow] = []
+            for row in rows {
+                let key: String = row["key"], json: String = row["json"]
+                do { result.append(ComposerRow(intent: try Self.decodeComposer(json,key: key))) }
+                catch {
+                    // Keep unparseable bytes; isolate them from the transport queue.
+                    if !held {
+                        let order: Double = row["updatedAt"]
+                        try db.execute(sql: "INSERT OR IGNORE INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?)",arguments: [Self.heldComposer(key),json,order])
+                        try db.execute(sql: "DELETE FROM wave7Cache WHERE key=? AND json=?",arguments: [key,json])
+                    }
+                }
+            }
+            return result
+        }
+    }
+    func freezeComposer(_ desired: PulseComposerIntent, revision: String) throws -> PulseComposerIntent? {
+        try dbQueue.write { db in
+            let key = Self.composerKey(desired)
+            guard var latest = try Self.composer(db,key: key), latest.desiredId == desired.desiredId, latest.flight == nil else { return nil }
+            latest.flight = PulseComposerFlight(clientId: latest.desiredId,text: latest.text,expectedRevision: revision)
+            try Self.putComposer(db,key: key,value: latest)
+            return latest
+        }
+    }
+    func blockComposer(_ requested: PulseComposerIntent, notice: String) throws {
+        try dbQueue.write { db in
+            let key = Self.composerKey(requested)
+            guard var latest = try Self.composer(db,key: key),
+                  (requested.flight != nil ? latest.flight?.clientId == requested.flight?.clientId : latest.desiredId == requested.desiredId) else { return }
+            latest.blocked = notice
+            try Self.putComposer(db,key: Self.heldComposer(key),value: latest)
+            try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [key])
+        }
+    }
+    func deferComposer(_ requested: PulseComposerIntent) throws {
+        try dbQueue.write { db in
+            let key = Self.composerKey(requested)
+            if let latest = try Self.composer(db,key: key) { try Self.putComposer(db,key: key,value: latest) }
+        }
+    }
+    func acceptComposer(_ requested: PulseComposerIntent, receipt: PulseComposerReceipt) throws {
+        try receipt.validate(requested,flight: requested.flight)
+        try dbQueue.write { db in
+            let key = Self.composerKey(requested)
+            guard var latest = try Self.composer(db,key: key), let flight = requested.flight,
+                  latest.flight?.clientId == flight.clientId else { return }
+            if receipt.outcome != "applied" {
+                latest.flight = nil; latest.blocked = "A newer server change won. Your text is retained for review."
+                try Self.putComposer(db,key: Self.heldComposer(key),value: latest)
+                try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [key])
+            } else {
+                try Self.recordComposerBaseline(db,receipt: receipt)
+                if requested.kind == "edit", let row = try Row.fetchOne(db,sql: "SELECT * FROM message WHERE id=?",arguments: [requested.targetId]),
+                   var current = Self.messageRow(from: row), current.senderId == requested.owner, current.deletedAt == nil,
+                   (PulseFormat.date(current.editedAt) ?? .distantPast) <= (PulseFormat.date(receipt.editedAt) ?? .distantPast) {
+                    current.content = receipt.text; current.editedAt = receipt.editedAt
+                    _ = try Self.writeAcknowledgedMessage(current,db: db)
+                    messageSnapshotVersions.note([current.id])
+                }
+                if latest.desiredId == flight.clientId { try db.execute(sql: "DELETE FROM wave7Cache WHERE key=?",arguments: [key]) }
+                else {
+                    latest.flight = nil; latest.baseText = receipt.text; latest.baseEditedAt = receipt.editedAt; latest.baseRevision = receipt.revision
+                    try Self.putComposer(db,key: key,value: latest)
+                }
+            }
+        }
+    }
+    private static func recordComposerBaseline(_ db: Database, receipt: PulseComposerReceipt) throws {
+        let key = composerHead(composerKey(owner: receipt.userId,kind: receipt.kind,target: receipt.targetId,root: receipt.rootId))
+        let json = String(decoding: try JSONEncoder().encode(receipt),as: UTF8.self)
+        try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt",arguments: [key,json,Date().timeIntervalSince1970])
+    }
+    private static func localEditKey(owner: String, id: String) -> String { "composer-local-edit:v1|\(owner)|\(id)" }
+    private static func localEdit(_ db: Database, owner: String, id: String) throws -> PulseComposerLocalEdit? {
+        guard let json = try String.fetchOne(db,sql: "SELECT json FROM wave7Cache WHERE key=?",arguments: [localEditKey(owner: owner,id: id)]) else { return nil }
+        return try JSONDecoder().decode(PulseComposerLocalEdit.self,from: Data(json.utf8))
+    }
+    func saveComposerEdit(_ message: WireChatMessage, text: String, owner: String) throws {
+        guard composerOwner == nil || composerOwner == owner, message.senderId == owner else { throw CocoaError(.coderInvalidValue) }
+        try dbQueue.write { db in
+            let previous = try Self.localEdit(db,owner: owner,id: message.id)
+            let value = PulseComposerLocalEdit(text: text,baseText: previous?.baseText ?? message.content,baseEditedAt: previous != nil ? previous!.baseEditedAt : message.editedAt)
+            let json = String(decoding: try JSONEncoder().encode(value),as: UTF8.self)
+            try db.execute(sql: "INSERT INTO wave7Cache(key,json,updatedAt) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json,updatedAt=excluded.updatedAt",arguments: [Self.localEditKey(owner: owner,id: message.id),json,Date().timeIntervalSince1970])
+        }
+    }
+    func recoveredComposerEdit(owner: String, id: String) throws -> String? {
+        try dbQueue.read { db in
+            if let local = try Self.localEdit(db,owner: owner,id: id) { return local.text }
+            let key = Self.composerKey(owner: owner,kind: "edit",target: id,root: nil)
+            return try (Self.composer(db,key: key) ?? Self.composer(db,key: Self.heldComposer(key)))?.text
+        }
+    }
+}
+
+extension PulseStore {
+    func hasComposerDraft(owner: String, room: String, root: String?) throws -> Bool {
+        try dbQueue.read { db in
+            let key = Self.composerKey(owner: owner,kind: "draft",target: room,root: root)
+            return try Bool.fetchOne(db,sql: "SELECT EXISTS(SELECT 1 FROM wave7Cache WHERE key IN (?,?))",arguments: [key,Self.heldComposer(key)]) ?? false
+        }
+    }
+    func importComposerDraft(_ state: PulseComposerReceipt, token: PulseDraftConsumption, previous: String?) throws -> Bool {
+        guard state.kind == "draft", state.targetId == token.conversationId, state.rootId == token.parentId,
+              composerOwner == nil || composerOwner == state.userId else { throw CocoaError(.coderInvalidValue) }
+        return try draftFence.removeIfCurrent(token.storageKey,expected: token.revision) {
+            try dbQueue.write { db in
+                let key = Self.composerKey(owner: state.userId,kind: "draft",target: state.targetId,root: state.rootId)
+                guard try Self.composer(db,key: key) == nil, Self.composer(db,key: Self.heldComposer(key)) == nil else { return false }
+                let current = try String.fetchOne(db,sql: "SELECT text FROM draft WHERE conversationId=?",arguments: [token.storageKey])
+                guard current == previous else { return false }
+                try db.execute(sql: "INSERT INTO draft(conversationId,text,updatedAt) VALUES(?,?,?) ON CONFLICT(conversationId) DO UPDATE SET text=excluded.text,updatedAt=excluded.updatedAt",arguments: [token.storageKey,state.text,PulseOutboxClock.now()])
+                try Self.recordComposerBaseline(db,receipt: state)
+                return true
+            }
         }
     }
 }

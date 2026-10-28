@@ -3761,12 +3761,17 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var partnerLastReadAt: Date?
     @Published var draft = "" {
         didSet {
-            if oldValue != draft {
+            if oldValue != draft && !hydratingDraft {
                 draftEditRevision &+= 1
-                if editingTarget == nil { journalDraft(draft) }
+                if let target = editingTarget, let session, session.sessionGeneration == readSessionGeneration,
+                   let owner = session.viewer?.id, let store = session.store {
+                    do { try store.saveComposerEdit(target,text: draft,owner: owner) }
+                    catch { errorText = "Edited text could not be saved: check device storage" }
+                } else if editingTarget == nil { journalDraft(draft) }
             }
         }
     }
+    private var hydratingDraft = false
     private var draftEditRevision: UInt64 = 0
     private var draftBeforeEdit: String?
     private var replyBeforeEdit: WireChatMessage?
@@ -4065,6 +4070,15 @@ final class RoomViewModel: ObservableObject {
         if beginAutomaticWork {
             observe(session: session)
             seedLocalState(conversation: conversation, session: session)
+            let revision = draftEditRevision
+            Task { [weak self] in
+                guard let self else { return }
+                if let text = try? await session.refreshComposerDraft(room: conversation.id),
+                   session.sessionGeneration == self.readSessionGeneration, self.draftEditRevision == revision,
+                   self.editingTarget == nil, self.draftJournal?.isCurrentOwner == true {
+                    self.hydratingDraft = true; self.draft = text; self.hydratingDraft = false
+                }
+            }
             loadPins(session: session)
             startTopicTicker()
             loadTopics(session: session)
@@ -4110,6 +4124,8 @@ final class RoomViewModel: ObservableObject {
     ///   • messages rehydrate from the GRDB cache (relaunch works offline)
     ///   • the composer seeds from the local draft, falling back to myDraft
     private func seedLocalState(conversation: WireConversationSummary, session: PulseSession) {
+        hydratingDraft = true
+        defer { hydratingDraft = false }
         if let store = session.store {
             let cached = (try? store.messages(conversationId: conversationId)) ?? []
             if !cached.isEmpty {
@@ -4900,18 +4916,12 @@ final class RoomViewModel: ObservableObject {
     }
 
     private func scheduleDraftSave(session: PulseSession) {
-        let text = draft
         draftSaveTask?.cancel()
-        let client = session.api
         let epoch = session.sessionGeneration
-        let room = conversationId
-        guard let viewer = session.viewer else { return }
         draftSaveTask = Task {
-            do { try await Task.sleep(nanoseconds: 600_000_000) }
-            catch { return }
+            do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-            try? await client.setDraft(conversationId: room, userId: viewer.id,
-                draft: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : text)
+            session.requestComposerSync()
         }
     }
 
@@ -5330,9 +5340,11 @@ final class RoomViewModel: ObservableObject {
             draftBeforeEdit = draft
             replyBeforeEdit = replyTarget
         }
+        guard let session, session.sessionGeneration == readSessionGeneration, let owner = session.viewer?.id else { return }
+        let recovered = try? session.store?.recoveredComposerEdit(owner: owner,id: message.id)
         editingTarget = message
         replyTarget = nil
-        draft = message.content
+        draft = recovered ?? message.content
     }
 
     func cancelEdit() {

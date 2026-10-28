@@ -439,6 +439,7 @@ public final class PulseSession: ObservableObject {
             while !Task.isCancelled {
                 guard let self, self.generation == epoch else { return }
                 self.requestSavedSync()
+                self.requestComposerSync()
                 do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
             }
         }
@@ -520,6 +521,41 @@ public final class PulseSession: ObservableObject {
         requestSavedSync(ids: [requested.id])
     }
 
+    func refreshComposerDraft(room: String, root: String? = nil) async throws -> String? {
+        guard ready, let store, let owner = viewer?.id else { return nil }
+        let epoch = generation, client = api
+        let token = store.captureDraftConsumption(conversationId: room,parentId: root)
+        let previous = store.draftSnapshot(conversationId: token.storageKey)
+        guard try !store.hasComposerDraft(owner: owner,room: room,root: root) else { return nil }
+        let intent = PulseComposerIntent(owner: owner,kind: "draft",targetId: room,conversationId: room,rootId: root,
+            desiredId: UUID().uuidString.lowercased(),text: "",baseText: previous ?? "",baseEditedAt: nil,flight: nil,blocked: nil)
+        let state = try await client.composerState(intent)
+        try state.validate(intent)
+        guard generation == epoch, viewer?.id == owner else { throw CancellationError() }
+        return try store.importComposerDraft(state,token: token,previous: previous) ? state.text : nil
+    }
+
+    private var composerSyncTask: Task<Void,Never>?
+    func requestComposerSync() {
+        guard ready, isForeground, composerSyncTask == nil else { return }
+        composerSyncTask = Task { [weak self] in
+            guard let self else { return }
+            _ = await self.flushComposerIntentsNow()
+            self.composerSyncTask = nil
+        }
+    }
+    func flushComposerIntentsNow() async -> Bool {
+        guard ready, let store, let owner = viewer?.id else { return false }
+        let epoch = generation, client = api
+        do {
+            let remaining = try await PulseComposerReplay.flush(store: store,client: client,
+                current: { self.generation == epoch && self.viewer?.id == owner }) { intent, _ in
+                    if intent.kind == "edit", let current = try store.message(id: intent.targetId) { try self.recordMessageMutation(current) }
+                }
+            return remaining == 0 && generation == epoch
+        } catch { return false }
+    }
+
     public enum MessageAction { case edit(String), pin, unpin, delete }
     private var messageActions: [String: UUID] = [:]
 
@@ -536,7 +572,14 @@ public final class PulseSession: ObservableObject {
         defer { if messageActions[requested.id] == ticket { messageActions.removeValue(forKey: requested.id) } }
         let incoming: WireChatMessage?
         switch action {
-        case .edit(let content): incoming = try await client.editMessage(id: requested.id, userId: viewer.id, content: content)
+        case .edit(let content):
+            try store.enqueueComposerEdit(requested,text: content,owner: viewer.id)
+            _ = await flushComposerIntentsNow()
+            guard generation == epoch else { throw CancellationError() }
+            guard try !store.composerEditPending(owner: viewer.id,id: requested.id) else {
+                throw PulseAPIClient.Failure(kind: .network,message: "Your edit is saved on this device but is not confirmed. Reopen it to recover the text.")
+            }
+            incoming = try store.message(id: requested.id)
         case .pin: incoming = try await client.pinMessage(id: requested.id, userId: viewer.id)
         case .delete: incoming = try await client.deleteOwnMessage(id: requested.id)
         case .unpin:
@@ -1096,6 +1139,7 @@ public final class PulseSession: ObservableObject {
         PulsePushNotifications.deactivate()
         generation = UUID()
         savedRefresh.cancel(); savedSyncTimer?.cancel(); savedSyncTimer = nil
+        composerSyncTask?.cancel(); composerSyncTask = nil
         savedSyncObservation?.cancel(); savedSyncObservation = nil; savedSyncStatus = nil
         savedRefreshIds.removeAll(); savedScanAfter = ""; savedFullRefresh = true; savedReplayBusy = false
         notificationRefreshTask?.cancel(); notificationRefreshTask = nil
@@ -1383,6 +1427,10 @@ public final class PulseSession: ObservableObject {
         engine.onReadStateInvalidation = { [weak self] room in
             guard let self, self.ready, self.generation == readHintEpoch else { return }
             self.noteReadStateChanged(room)
+        }
+        engine.onComposerJournalFlush = { [weak self] in
+            guard let self, self.generation == readHintEpoch else { return false }
+            return await self.flushComposerIntentsNow()
         }
         engine.onSavedJournalFlush = { [weak self] in
             guard let self, self.generation == readHintEpoch else { return false }

@@ -174,6 +174,7 @@ public final class PulseOutboxEngine: ObservableObject {
     public var onAcknowledgement: ((PulseSendResult) -> Void)?
     /// The background task awaits this pass, rather than returning success with
     /// an unowned fire-and-forget read delivery still in flight.
+    public var onComposerJournalFlush: (() async -> Bool)?
     public var onSavedJournalFlush: (() async -> Bool)?
     public var onReadJournalFlush: (() async -> Bool)?
     public var onBadgeRefresh: (() async -> Bool)?
@@ -192,8 +193,9 @@ public final class PulseOutboxEngine: ObservableObject {
         async let messages = flush()
         async let attention = flushBackgroundReadState()
         async let bookmarks = onSavedJournalFlush?() ?? true
-        let (sent, reconciled, saved) = await (messages, attention, bookmarks)
-        return sent && reconciled && saved && !Task.isCancelled && canWork
+        async let composer = onComposerJournalFlush?() ?? true
+        let (sent, reconciled, saved, composed) = await (messages, attention, bookmarks, composer)
+        return sent && reconciled && saved && composed && !Task.isCancelled && canWork
     }
 
     private func flushBackgroundReadState() async -> Bool {
