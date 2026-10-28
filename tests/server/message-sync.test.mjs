@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
-import { messageSyncWhere, messagesBefore, encodeMessageSyncCursor, decodeMessageSyncCursor,
+import { readMessageSyncPage, readMessagesBefore, encodeMessageSyncCursor, decodeMessageSyncCursor,
   MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC } from '../../src/lib/message-sync.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 const at = '2026-10-19T00:00:00.000Z'
@@ -29,7 +29,7 @@ test('450 timestamp-tied messages reconcile across bounded ascending pages witho
   let cursor = start
   const ids = []
   while (true) {
-    const rows = await db.message.findMany({ where: messageSyncWhere(cursor), orderBy: MESSAGE_ORDER_ASC, take: 101, select })
+    const rows = await readMessageSyncPage(cursor, 101, (where,take)=>db.message.findMany({where,take,orderBy:MESSAGE_ORDER_ASC,select}))
     const page = rows.slice(0, 100)
     ids.push(...page.map(m => m.id))
     if (rows.length <= 100) break
@@ -46,12 +46,12 @@ test('450 timestamp-tied messages reconcile across bounded ascending pages witho
 test('cached-range reconciliation returns edits and tombstones, not only new timestamps', () => fixture(async db => {
   await db.$executeRaw`UPDATE Message SET content='edited' WHERE id='m010'`
   await db.$executeRaw`UPDATE Message SET deletedAt=${new Date(at)} WHERE id='m020'`
-  const rows = await db.message.findMany({ where: messageSyncWhere(start), orderBy: MESSAGE_ORDER_ASC, select })
+  const rows = await readMessageSyncPage(start, 500, (where,take)=>db.message.findMany({where,take,orderBy:MESSAGE_ORDER_ASC,select}))
   assert.equal(rows.find(m => m.id === 'm010').content, 'edited')
   assert.ok(rows.find(m => m.id === 'm020').deletedAt)
 }))
 test('backward history cursor preserves earlier rows with the same timestamp', () => fixture(async db => {
-  const page = await db.message.findMany({ where: { conversationId: 'room', ...messagesBefore(new Date(at), 'm100') }, orderBy: MESSAGE_ORDER_DESC, take: 40, select })
+  const page = await readMessagesBefore(new Date(at),'m100',40,(boundary,take)=>db.message.findMany({where:{conversationId:'room',...boundary},take,orderBy:MESSAGE_ORDER_DESC,select}))
   assert.equal(page.length, 40)
   assert.equal(page[0].id, 'm099')
   assert.equal(page.at(-1).id, 'm060')
@@ -63,4 +63,14 @@ test('cursor is scoped to its room/topic and malformed input is rejected', () =>
   assert.throws(() => decodeMessageSyncCursor(encoded, 'room', 'other-topic'))
   assert.throws(() => decodeMessageSyncCursor('bad!', 'room', null))
   assert.throws(() => decodeMessageSyncCursor('x'.repeat(4097), 'room', null))
+})
+
+
+test('cursor rejects inverted or out-of-floor intervals instead of escaping its fixed upper fence', () => {
+  for(const cursor of [
+    {...start,from:'2026-10-20T00:00:00.000Z'},
+    {...start,after:{at:'2026-10-18T00:00:00.000Z',id:'a'}},
+    {...start,after:{at:'2026-10-20T00:00:00.000Z',id:'a'}},
+    {...start,after:{at,id:'zzz'}},
+  ]) assert.throws(()=>decodeMessageSyncCursor(encodeMessageSyncCursor(cursor),'room',null),/bounds/)
 })

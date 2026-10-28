@@ -4,7 +4,7 @@ import { requireActionOwner } from '@/lib/wallet-authorization'
 import { unexpiredMessages, visibleInboxPreview } from '@/lib/message-visibility'
 import { clipUtf16 } from '@/lib/text-limits'
 import { db } from '@/lib/db'
-import { scanFeed, feedScope, feedBounds, FeedCursorError } from '@/lib/feed-pagination'
+import { scanFeed, feedScope, readFeedBatch, FeedCursorError } from '@/lib/feed-pagination'
 export const dynamic = 'force-dynamic'
 const headers = { 'Cache-Control': 'private, no-store' }
 export async function GET(req: Request) {
@@ -23,15 +23,15 @@ export async function GET(req: Request) {
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const pattern = new RegExp(`@${escaped}(?![\\p{L}\\p{N}\\p{M}_\\u200c\\u200d])`, 'iu'), now = new Date()
       return scanFeed({ cursor: query.get('cursor'), scope: feedScope('mentions', userId, `unicode-v1:${name}`), limit,
-        load: (before, upper, take) => tx.message.findMany({
+        load: (before, upper, take) => readFeedBatch(before, upper, take, (range, take) => tx.message.findMany({
           where: { deletedAt: null, viewOnce: false, senderId: { not: userId }, content: { contains: '@' }, ...unexpiredMessages(now),
             conversation: { participants: { some: { userId } } },
-            AND: [...feedBounds(before, upper), { OR: [{ parentId: null }, { parent: { is: { parentId: null, deletedAt: null, ...unexpiredMessages(now) } } }] }],
+            AND: [{ createdAt: range.time, id: range.id }, { OR: [{ parentId: null }, { parent: { is: { parentId: null, deletedAt: null, ...unexpiredMessages(now) } } }] }],
           }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take,
           select: { id: true, conversationId: true, content: true, createdAt: true, expiresAt: true, parentId: true, anon: true, anonAlias: true,
             parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
             sender: { select: { id: true, name: true, color: true, avatar: true } }, conversation: { select: { isGroup: true, name: true } } },
-        }), position: row => ({ id: row.id, at: row.createdAt.toISOString() }),
+        })), position: row => ({ id: row.id, at: row.createdAt.toISOString() }),
         project: row => {
           const m = visibleInboxPreview(row, row.conversationId, new Date())
           if (!m || !m.content || !pattern.test(m.content.normalize('NFC'))) return null

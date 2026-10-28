@@ -1,3 +1,4 @@
+import { readTupleSide } from './tuple-page.ts'
 import type { Prisma, PrismaClient } from '../../prisma/generated-client'
 import { inboxMessagesWhere, threadRootAvailable, visibleInboxPreview } from './message-visibility.ts'
 
@@ -7,14 +8,11 @@ export class MessageWindowError extends Error {
 type Row = { id: string; conversationId: string; createdAt: Date; deletedAt: Date | null; expiresAt: Date | null; parentId: string | null;
   parent?: { conversationId: string; parentId: string | null; deletedAt: Date | null; expiresAt: Date | null } | null }
 export type WindowPosition = { id: string; createdAt: string }
-export function windowBoundary(position: WindowPosition, direction: 'before' | 'after'): Prisma.MessageWhereInput {
-  if (!position.id || position.id.length > 256 || !Number.isFinite(Date.parse(position.createdAt))) {
+function validatePosition(position: WindowPosition): void {
+  if (typeof position.id !== 'string' || !position.id || position.id.length > 256 ||
+      typeof position.createdAt !== 'string' || !Number.isFinite(Date.parse(position.createdAt))) {
     throw new MessageWindowError(400, 'Invalid history position.')
   }
-  const at = new Date(position.createdAt)
-  return direction === 'before'
-    ? { OR: [{ createdAt: { lt: at } }, { createdAt: at, id: { lt: position.id } }] }
-    : { OR: [{ createdAt: { gt: at } }, { createdAt: at, id: { gt: position.id } }] }
 }
 
 /** Indexed exact lookup, not a scan from the newest page. Authorization, target,
@@ -44,27 +42,37 @@ export async function readMessageWindow<M extends Row>(db: PrismaClient, room: s
     const parent = requestedParent ?? (threadId ? (await read(tx, { id: threadId, conversationId: room }, 'asc', 1))[0] : null)
     if (threadId && !threadRootAvailable(parent ?? null, room, now)) throw new MessageWindowError(410, 'Thread is no longer available.', 'thread_gone')
     const scope: Prisma.MessageWhereInput = { AND: [inboxMessagesWhere(room, now), { parentId: threadId }] }
+    const side = (position: WindowPosition, direction: 'before' | 'after', take: number, inclusive = false) => {
+      validatePosition(position)
+      return readTupleSide({ id: position.id, at: new Date(position.createdAt).toISOString() }, direction, take,
+        (range, count) => read(tx, { AND: [scope, { createdAt: range.time, id: range.id }] }, direction === 'before' ? 'desc' : 'asc', count), inclusive)
+    }
     let messages: M[]
     if (anchor) {
       const position = { id: anchor.id, createdAt: anchor.createdAt.toISOString() }
-      const older = await read(tx, { AND: [scope, windowBoundary(position, 'before')] }, 'desc', Math.floor((limit - 1) / 2))
-      const newer = await read(tx, { AND: [scope, windowBoundary(position, 'after')] }, 'asc', limit - 1 - older.length)
+      const older = await side(position, 'before', Math.floor((limit - 1) / 2))
+      const newer = await side(position, 'after', limit - 1 - older.length)
       messages = [...older.reverse(), anchor, ...newer]
     } else if (options.center) {
-      const older = await read(tx, { AND: [scope, windowBoundary(options.center, 'before')] }, 'desc', Math.floor(limit / 2))
-      const newer = await read(tx, { AND: [scope, { NOT: windowBoundary(options.center, 'before') }] }, 'asc', limit - older.length)
+      const older = await side(options.center, 'before', Math.floor(limit / 2))
+      const newer = await side(options.center, 'after', limit - older.length, true)
       messages = [...older.reverse(), ...newer]
     } else {
-      const boundary = options.before ? windowBoundary(options.before, 'before') : options.after ? windowBoundary(options.after, 'after') : {}
-      messages = await read(tx, { AND: [scope, boundary] }, options.after ? 'asc' : 'desc', limit)
+      messages = options.before ? await side(options.before, 'before', limit)
+        : options.after ? await side(options.after, 'after', limit) : await read(tx, scope, 'desc', limit)
       if (!options.after) messages.reverse()
     }
     const position = (row: M): WindowPosition => ({ id: row.id, createdAt: row.createdAt.toISOString() })
     const first = messages[0], last = messages.at(-1)
     const older = first ? position(first) : options.before ?? options.after ?? null
     const newer = last ? position(last) : options.after ?? options.before ?? null
-    const hasOlder = older ? !!await tx.message.findFirst({ where: { AND: [scope, windowBoundary(older, 'before')] }, select: { id: true } }) : false
-    const hasNewer = newer ? !!await tx.message.findFirst({ where: { AND: [scope, windowBoundary(newer, 'after')] }, select: { id: true } }) : false
+    const exists = async (position: WindowPosition, direction: 'before' | 'after') => (await readTupleSide(
+      { at: position.createdAt, id: position.id }, direction, 1, (range, take) => tx.message.findMany({
+        where: { AND: [scope, { createdAt: range.time, id: range.id }] },
+        orderBy: [{ createdAt: direction === 'before' ? 'desc' : 'asc' }, { id: direction === 'before' ? 'desc' : 'asc' }], take, select: { id: true },
+      }))).length > 0
+    const hasOlder = older ? await exists(older, 'before') : false
+    const hasNewer = newer ? await exists(newer, 'after') : false
     const delivered = clock()
     if (parent && !threadRootAvailable(parent, room, delivered)) throw new MessageWindowError(410, 'Thread expired during lookup.', 'thread_gone')
     if (anchor && !visibleInboxPreview(anchor, room, delivered)) throw new MessageWindowError(410, 'Message expired during lookup.', 'message_gone')

@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { visibleSearchHit } from '@/lib/search-visibility'
 import { unexpiredMessages, visibleInboxPreview } from '@/lib/message-visibility'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
-import { scanFeed, feedScope, feedBounds, FeedCursorError } from '@/lib/feed-pagination'
+import { scanFeed, feedScope, readFeedBatch, FeedCursorError } from '@/lib/feed-pagination'
 export const dynamic = 'force-dynamic'
 const headers = { 'Cache-Control': 'private, no-store' }
 export async function GET(req: Request) {
@@ -18,16 +18,16 @@ export async function GET(req: Request) {
     const page = await db.$transaction(async tx => {
       const now = new Date(), needle = q.toLowerCase()
       return scanFeed({ cursor: query.get('cursor'), scope: feedScope('search', userId, needle), limit: 30,
-        load: (before, upper, take) => tx.message.findMany({
+        load: (before, upper, take) => readFeedBatch(before, upper, take, (range, take) => tx.message.findMany({
           where: { deletedAt: null, viewOnce: false, ...unexpiredMessages(now),
             conversation: { participants: { some: { userId } } },
-            AND: [...feedBounds(before, upper), { OR: [{ parentId: null }, { parent: { is: { parentId: null, deletedAt: null, ...unexpiredMessages(now) } } }] }],
+            AND: [{ createdAt: range.time, id: range.id }, { OR: [{ parentId: null }, { parent: { is: { parentId: null, deletedAt: null, ...unexpiredMessages(now) } } }] }],
           }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take,
           include: { ...MESSAGE_FULL_INCLUDE,
             parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
             conversation: { select: { name: true, isGroup: true, participants: { where: { userId: { not: userId } }, take: 1, select: { user: { select: { name: true } } } } } },
           },
-        }), position: row => ({ id: row.id, at: row.createdAt.toISOString() }),
+        })), position: row => ({ id: row.id, at: row.createdAt.toISOString() }),
         project: row => {
           if (!(row.content.toLowerCase().includes(needle) || (row.fileName ?? '').toLowerCase().includes(needle))) return null
           const visible = visibleInboxPreview(row, row.conversationId, new Date())

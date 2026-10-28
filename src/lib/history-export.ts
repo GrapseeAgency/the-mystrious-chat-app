@@ -1,6 +1,7 @@
+import { readTupleInterval } from './tuple-page.ts'
 import type { Prisma, PrismaClient } from '../../prisma/generated-client'
 import { inboxMessagesWhere, visibleInboxPreview } from './message-visibility.ts'
-import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, type MessageSyncCursor } from './message-sync.ts'
+import { decodeMessageSyncCursor, encodeMessageSyncCursor, type MessageSyncCursor } from './message-sync.ts'
 import { MessageWindowError } from './message-window.ts'
 
 type Row = { id: string; createdAt: Date; conversationId: string; parentId: string | null; expiresAt: Date | null;
@@ -26,7 +27,8 @@ export async function readExportPage<M extends Row>(db: PrismaClient, room: stri
       if (!last) return { exportVersion: 1, syncVersion: 1, messages: [], hasMore: false, total: 0, nextSyncCursor: null, exportPosition: null }
       cursor = { v: 1, room, topic: null, from: START, upper: { id: last.id, at: last.createdAt.toISOString() } }
     }
-    const rawRows = await read(tx, { AND: [available, messageSyncWhere(cursor)] }, 201)
+    const rawRows = await readTupleInterval(cursor.after, cursor.upper, 201,
+      (range, take) => read(tx, { AND: [available, { createdAt: range.time, id: range.id }] }, take), START)
     const rows = rawRows.slice(0, 200), tail = rows.at(-1), hasMore = rawRows.length > 200
     const at = clock()
     const messages = rows.flatMap(row => { const live = visibleInboxPreview(row, room, at); return live ? [live] : [] })

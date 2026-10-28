@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -9,11 +9,14 @@ import { readMessageWindow, MessageWindowError } from '../../src/lib/message-win
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function fixture(run) {
   const directory = await mkdtemp(join(tmpdir(), 'message-window-'))
-  const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
+  const sql = []
+  const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}`, log: [{emit:'event',level:'query'}] })
+  db.$on('query',event=>{if(event.query.startsWith('SELECT')) sql.push(event)})
   try {
     await db.$executeRawUnsafe('CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY,userId TEXT,conversationId TEXT,UNIQUE(userId,conversationId))')
     await db.$executeRawUnsafe('CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,parentId TEXT,createdAt DATETIME,deletedAt DATETIME,expiresAt DATETIME)')
-    await db.$executeRawUnsafe('CREATE INDEX message_room_position ON Message(conversationId,createdAt,id)')
+    const indexes=await readFile(new URL('../../prisma/patches/20261028_history_navigation.sql',import.meta.url),'utf8')
+    for(const sql of indexes.split('\n').filter(line=>line.startsWith('CREATE INDEX IF NOT EXISTS Message_'))) await db.$executeRawUnsafe(sql)
     await db.$executeRawUnsafe("INSERT INTO ConversationParticipant VALUES ('member','reader','room')")
     await db.$executeRawUnsafe(`INSERT INTO Message(id,conversationId,createdAt) VALUES ${Array.from({length: 6000}, (_, i) => `('m-${String(i).padStart(6, '0')}','room',1000)`).join(',')}`)
     const select = { id: true, conversationId: true, parentId: true, createdAt: true, deletedAt: true, expiresAt: true,
@@ -23,7 +26,7 @@ async function fixture(run) {
     const page = (options = {}, owner = 'reader', clock) => readMessageWindow(db, 'room', owner, options, read, clock)
     const exportPage = (cursor = null, owner = 'reader', clock) => readExportPage(db, 'room', owner, cursor,
       (tx, where, take) => tx.message.findMany({where,take,orderBy:[{createdAt:'asc'},{id:'asc'}],select}), clock)
-    await run({ db, page, exportPage, queries: () => queries })
+    await run({ db, page, exportPage, queries: () => queries, sql })
   } finally { await db.$disconnect(); await rm(directory, { recursive: true, force: true }) }
 }
 
@@ -34,7 +37,7 @@ test('an arbitrarily old uncached equal-time anchor uses a bounded indexed neigh
   assert.equal(result.messages.length,40)
   assert.ok(result.messages.some(m=>m.id==='m-000010'))
   assert.equal(result.hasOlder,false); assert.equal(result.hasNewer,true)
-  assert.equal(f.queries(),3)
+  assert.equal(f.queries(),4) // point lookup + tied/older date ranges + tied newer range
 }))
 
 test('both window directions traverse timestamp ties after a boundary is removed', () => fixture(async f => {
@@ -149,4 +152,54 @@ test('an empty direction keeps a usable opposite cursor', () => fixture(async f 
   assert.equal(empty.hasNewer,true)
   assert.deepEqual(empty.newerCursor,early)
   assert.ok((await f.page({after:empty.newerCursor})).messages.length>0)
+}))
+
+
+test('actual Prisma anchor and export SQL seeks timestamp plus identity, not just the room prefix', () => fixture(async f => {
+  await f.page({anchorId:'m-000050',limit:20})
+  const first=await f.exportPage()
+  await f.exportPage(first.nextSyncCursor)
+  const tied=f.sql.filter(q=>/createdAt[`"] = /.test(q.query) && /id[`"] [<>]/.test(q.query))
+  assert.ok(tied.length>=5,JSON.stringify(f.sql.map(q=>q.query)))
+  for(const query of tied) {
+    const plan=await f.db.$queryRawUnsafe('EXPLAIN QUERY PLAN '+query.query,...JSON.parse(query.params))
+    const details=plan.map(row=>row.detail).join('\n')
+    assert.match(details,/Message_room_(?:thread_)?order \(conversationId=\? AND (?:parentId=\? AND )?createdAt=\? AND id[<>]/,details)
+  }
+}))
+
+test('export rejects forged reversed cursors and accepts equivalent timestamp spellings without duplicates', () => fixture(async f => {
+  const first=await f.exportPage()
+  const cursor=JSON.parse(Buffer.from(first.nextSyncCursor,'base64url').toString())
+  cursor.after.at='1970-01-01T00:00:01Z'
+  const equivalent=Buffer.from(JSON.stringify(cursor)).toString('base64url')
+  const second=await f.exportPage(equivalent)
+  assert.equal(second.messages.length,200)
+  assert.equal(second.messages[0].id,'m-000200')
+  cursor.after.at='1970-01-01T00:00:02.000Z'
+  await assert.rejects(f.exportPage(Buffer.from(JSON.stringify(cursor)).toString('base64url')),e=>e.status===400)
+}))
+
+test('main-history seeks constrain both room and null parent instead of walking a huge reply run', () => fixture(async f => {
+  await f.db.$executeRawUnsafe("UPDATE Message SET parentId='m-000000' WHERE id>'m-000049'")
+  const page=await f.page({before:{id:'m-003000',createdAt:new Date(1000).toISOString()},limit:20})
+  assert.deepEqual(page.messages.map(row=>row.id),Array.from({length:20},(_,i)=>`m-${String(i+30).padStart(6,'0')}`))
+  const tied=f.sql.filter(q=>/createdAt[`"] = /.test(q.query) && /id[`"] </.test(q.query))
+  assert.ok(tied.length)
+  for(const query of tied) {
+    const plan=await f.db.$queryRawUnsafe('EXPLAIN QUERY PLAN '+query.query,...JSON.parse(query.params))
+    assert.match(plan.map(row=>row.detail).join('\n'),/Message_room_thread_order \(conversationId=\? AND parentId=\? AND createdAt=\? AND id</)
+  }
+}))
+
+test('export pages cross timestamp groups without omissions or duplicate boundary rows', () => fixture(async f => {
+  await f.db.$executeRawUnsafe("UPDATE Message SET createdAt=2000 WHERE id>='m-002000' AND id<'m-004000'")
+  await f.db.$executeRawUnsafe("UPDATE Message SET createdAt=3000 WHERE id>='m-004000'")
+  const ids=[];let cursor=null
+  do {
+    const page=await f.exportPage(cursor)
+    ids.push(...page.messages.map(row=>row.id));cursor=page.nextSyncCursor
+  }while(cursor)
+  assert.equal(ids.length,6000);assert.equal(new Set(ids).size,6000)
+  assert.deepEqual(ids,[...ids].sort())
 }))

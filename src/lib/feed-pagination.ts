@@ -1,3 +1,4 @@
+import { readTupleSide, type TupleRange } from './tuple-page.ts'
 import { createHash } from 'node:crypto'
 
 export type FeedPosition = { id: string; at: string }
@@ -11,11 +12,11 @@ const stamp = (p: unknown): p is FeedPosition => {
 }
 const less = (a: FeedPosition, b: FeedPosition) => a.at < b.at || (a.at === b.at && a.id < b.id)
 export function feedScope(...parts: string[]): string { return createHash('sha256').update(JSON.stringify(parts)).digest('hex') }
-export function feedBounds(before?: FeedPosition, upper?: FeedPosition, time = 'createdAt', identity = 'id') {
-  return [
-    ...(before ? [{ OR: [{ [time]: { lt: new Date(before.at) } }, { [time]: new Date(before.at), [identity]: { lt: before.id } }] }] : []),
-    ...(upper ? [{ OR: [{ [time]: { lt: new Date(upper.at) } }, { [time]: new Date(upper.at), [identity]: { lte: upper.id } }] }] : []),
-  ]
+/** Fixed-upper descending feed. Once a before cursor exists, its strict
+ * boundary is already below the upper fence. Split it into index-seekable pieces. */
+export async function readFeedBatch<T>(before: FeedPosition | undefined, upper: FeedPosition | undefined,
+  take: number, read: (range: TupleRange, take: number) => Promise<T[]>): Promise<T[]> {
+  return readTupleSide(before ?? upper, 'before', take, read, before === undefined && upper !== undefined)
 }
 
 /** Run inside the caller's authorized transaction. Bounded work is a page, not

@@ -5,7 +5,7 @@ import { savedMessagesWhere, visibleInboxPreview } from '@/lib/message-visibilit
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
-import { scanFeed, feedScope, feedBounds, FeedCursorError } from '@/lib/feed-pagination'
+import { scanFeed, feedScope, readFeedBatch, FeedCursorError } from '@/lib/feed-pagination'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,8 +33,8 @@ export async function GET(req: Request, { params }: RouteCtx) {
   const items = await db.$transaction(async tx => {
     const now = new Date()
     const page = await scanFeed({ cursor: new URL(req.url).searchParams.get('cursor'), scope: feedScope('saved', userId), limit: 100,
-      load: (before, upper, take) => tx.savedMessage.findMany({
-      where: { AND: [savedMessagesWhere(userId, now), ...feedBounds(before, upper, 'savedAt', 'messageId')] },
+      load: (before, upper, take) => readFeedBatch(before, upper, take, (range, take) => tx.savedMessage.findMany({
+      where: { AND: [savedMessagesWhere(userId, now), { savedAt: range.time, messageId: range.id }] },
       orderBy: [{ savedAt: 'desc' }, { messageId: 'desc' }], take,
       include: {
         message: {
@@ -52,7 +52,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
           },
         },
       },
-    }),
+    })),
     position: row => ({ id: row.messageId, at: row.savedAt.toISOString() }),
     project: row => {
       const visible = visibleInboxPreview(row.message, row.message.conversationId, new Date())

@@ -7,7 +7,7 @@ import { db } from '@/lib/db'
 import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
 import { createAutomationReply } from '@/lib/automation-delivery'
 import { threadRootAvailable } from '@/lib/message-visibility'
-import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, messagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
+import { decodeMessageSyncCursor, encodeMessageSyncCursor, readMessageSyncPage, readMessagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
 import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
 import {
   dayKey,
@@ -191,8 +191,8 @@ export async function GET(req: Request, { params }: RouteCtx) {
     }
     // Includes soft-deleted rows, including in topic views. The client must
     // receive the tombstone instead of keeping its cached live version.
-    const rows = await db.message.findMany({ where: messageSyncWhere(cursor),
-      orderBy: [...MESSAGE_ORDER_ASC], take: limit + 1, include: MESSAGE_FULL_INCLUDE })
+    const rows = await readMessageSyncPage(cursor, limit + 1, (where, take) => db.message.findMany({ where,
+      orderBy: [...MESSAGE_ORDER_ASC], take, include: MESSAGE_FULL_INCLUDE }))
     const hasMore = rows.length > limit
     const page = rows.slice(0, limit)
     const last = page.at(-1)
@@ -229,16 +229,10 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (before) {
     // Older page: take N older than the cursor, then flip to ascending.
     const [rows, total] = await Promise.all([
-      db.message.findMany({
-        where: {
-          conversationId: id,
-          ...messagesBefore(before, strField(url.searchParams.get('beforeId')) || undefined),
-          ...(topicFilter ?? {}),
-        },
-        orderBy: [...MESSAGE_ORDER_DESC],
-        take: limit,
-        include: MESSAGE_FULL_INCLUDE,
-      }),
+      readMessagesBefore(before, strField(url.searchParams.get('beforeId')) || undefined, limit, (boundary, take) => db.message.findMany({
+        where: { conversationId: id, ...boundary, ...(topicFilter ?? {}) },
+        orderBy: [...MESSAGE_ORDER_DESC], take, include: MESSAGE_FULL_INCLUDE,
+      })),
       db.message.count({ where: { conversationId: id, ...(topicFilter ?? {}) } }),
     ])
     rows.reverse()

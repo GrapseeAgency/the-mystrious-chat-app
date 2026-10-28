@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from '../../prisma/generated-client'
 import { readThreadSnapshot, ThreadReadError } from './message-visibility.ts'
-import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, type MessageSyncCursor } from './message-sync.ts'
+import { decodeMessageSyncCursor, encodeMessageSyncCursor, readMessageSyncPage, type MessageSyncCursor } from './message-sync.ts'
 
 type Root = { id: string; conversationId: string; parentId: string | null; deletedAt: Date | null; expiresAt: Date | null }
 type Reply = { id: string; createdAt: Date; expiresAt: Date | null }
@@ -37,7 +37,8 @@ export async function readThreadPage<R extends Root, M extends Reply>(
         cursor = { v: 1, root: rootId, room: root!.conversationId, topic: null, from: '0001-01-01T00:00:00.000Z',
           upper: { at: last.createdAt.toISOString(), id: last.id } }
       }
-      const rows = await readReplies(tx, { AND: [available, messageSyncWhere(cursor)] }, limit + 1)
+      const rows = await readMessageSyncPage(cursor, limit + 1,
+        (where, take) => readReplies(tx, { AND: [available, where] }, take))
       const batch = rows.slice(0, limit)
       hasMore = rows.length > limit
       // Advance by raw positions, not the expiry-filtered wire rows. An entire

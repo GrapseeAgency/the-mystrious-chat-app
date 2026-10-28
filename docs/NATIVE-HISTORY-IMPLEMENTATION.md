@@ -81,32 +81,61 @@ Window tests use real Prisma/SQLite, 16,000-reply traversal, equal-time rows,
 deleted centers/cursors, backfills, thread/root checks, and authorization/expiry
 failures. Missing reply errors are separate from bound root refusal, preventing
 thread-denial poisoning. Native window decoders reject duplicates, wrong order,
-scope and malformed continuation metadata. Added native transport and bounded
-Room observation tests; they have not yet completed in the SDK runners.
+scope and malformed continuation metadata. Native transport and bounded Room
+observation regressions are included in the SDK validation below.
 
 ## Validation and rollout ledger
 
-Latest executed full server run: **498 passed, 0 failed, 0 skipped**
-(486 top-level tests; `/home/user/section2-final-server.log`). Real SQLite
+Latest executed full server run: **508 passed, 0 failed, 0 skipped**
+(496 top-level tests; `/home/user/section2-seek-server.log`). Real SQLite
 coverage includes 6,000 tied feed rows, empty scan windows, historical route
 results, 230 saved markers, response-loss replay, save/remove/save causal chains,
 conflicting devices, legacy writes, root expiry and membership revocation.
 
 Native regressions include bounded thread/cache windows, 50,100-row streaming
 exports, mention scan/expiry/lifetime behavior, strict receipts, durable saved
-journals and 2,400-row offline saved traversal. Android API 30 and API 34
-instrumented/smoke jobs passed for `03d4e22`; its iOS full test job passed too.
-Android JVM/release build passed for `0344d10`, and API 34 instrumentation passed
-for `490888d`. iOS archives succeeded through `91befc0` (including the canonical
-saved-state ordering and durable damaged-row handling). Their Android unit jobs exposed outdated test adapters and
-an event-registry expectation; those fixtures are corrected. The stricter
-missing-list contract exposed one older Wave2 fixture that expected `{}` to mean
-an empty library; it now checks rejection and a separately explicit empty page. Current-candidate
-SDK/unit/instrumented completion is still being checked. The older `b414cf0`
-iOS unit run failed its existing hosted read-presentation fixture (a sheet
-transition stayed at progress zero); this is not evidence that the production
-reading gate should be relaxed, or a cause attribution for historical device
-failures. Syntax parsing and backend passes alone are not native SDK validation.
+journals and 2,400-row offline saved traversal. Full iOS build/test and archive,
+Android JVM/release build and API 30/API 34 instrumentation passed for `490888d`.
+Android build and both instrumentation levels also passed for `420d513`.
+The stricter missing-list contract exposed one older Wave2 fixture that expected
+`{}` to mean an empty library; `36e527b` fixes that expectation without weakening
+the production contract. Its Android build and API 34 instrumentation passed.
+The latest native source is `078035f`: Android JVM tests passed; release assembly,
+instrumentation and its iOS validation are still being checked. iOS archives
+passed for `c429739` and `36e527b`. The older `b414cf0` hosted read-presentation
+failure remains historical, without a demonstrated production cause; later full
+native passes are not a reason to relax that gate. Syntax parsing and backend
+passes alone are not native SDK validation.
+
+### Seek efficiency and cursor boundaries
+
+The original OR-based tuple predicates were logically correct but failed to
+seek the complete SQLite index on equal timestamps. Message windows and their
+edge flags, export, search/mention/saved feeds, legacy history synchronization,
+and legacy thread pages now read disjoint equality/ID and strict-date ranges.
+Each side uses at most two ranges; a bounded ascending interval uses at most
+three, retaining only the requested page. Cursor dates compare by instant, not
+spelling, and reversed/out-of-floor sync/export cursors are rejected.
+
+Real Prisma SQL is captured and checked with `EXPLAIN QUERY PLAN`, not merely
+counted. The index patch includes `(conversationId, parentId, createdAt, id)` so
+main-history reads also seek past a huge reply population instead of filtering
+it from a room-only index. Export fixtures cross timestamp groups and retain
+fixed upper fences; model-based tests cover gaps, inclusive centers, both
+traversal directions and bounded intervals.
+
+A separate 100,000-row SQLite experiment measured approximately 799,800 VM steps
+for an old tied OR boundary versus 100 for its equality/ID seek. A main-history
+read among many replies fell from approximately 449,900 to 100 VM steps with the
+room/parent/time/ID index. These are synthetic query-work measurements, not
+production latency guarantees (`/home/user/section2-seek-measurements.txt`).
+Prisma client generation remains 6.19.2. Whole-project TypeScript checking still
+reports unrelated existing web/tool errors; no diagnostics named the changed
+history/feed/seek files (`/home/user/section2-seek-tsc.log`).
+
+Empty saved and mention pages distinguish other pages from globally empty
+libraries; cached/offline and current-page filtering states are explicit. The
+old Swift 100-save-library claim is removed. Autumn styling is unchanged.
 
 Android history storage is Room v19, with a physical expiry projection and a
 200-row additive/backfill migration registered for every account. Saved journals

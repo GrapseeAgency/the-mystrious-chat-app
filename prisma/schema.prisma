@@ -462,6 +462,7 @@ model Message {
   @@index([conversationId, createdAt])
   @@index([conversationId, createdAt, id], map: "Message_room_order")
   @@index([parentId, createdAt, id], map: "Message_thread_order")
+  @@index([conversationId, parentId, createdAt, id], map: "Message_room_thread_order")
   @@index([createdAt, id], map: "Message_history_order")
   @@index([replyToId])
   @@index([parentId])
