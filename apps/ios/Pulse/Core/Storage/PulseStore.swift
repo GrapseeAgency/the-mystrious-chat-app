@@ -360,7 +360,9 @@ public final class PulseStore: Sendable {
             // active-recording journal (interrupted-recording reconstruction).
             try db.create(table: "stagedAttachment") { t in
                 t.column("selectionId", .text).primaryKey()
-                t.column("conversationId", .text).notNull().indexed()
+                // One staged selection per room: the UNIQUE constraint backs
+                // the ON CONFLICT(conversationId) upsert.
+                t.column("conversationId", .text).notNull().unique()
                 t.column("kind", .text).notNull()
                 t.column("dataUrl", .text).notNull()
                 t.column("caption", .text).notNull().defaults(to: "")
