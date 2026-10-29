@@ -1603,8 +1603,8 @@ public final class PulseStore: Sendable {
     public func stageAttachment(_ staged: StagedAttachmentRow) throws {
         try dbQueue.write { db in
             try db.execute(sql: """
-                INSERT INTO stagedAttachment (\(Self.stagedColumns))
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO stagedAttachment (\(Self.stagedColumns), createdAt)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(conversationId) DO UPDATE SET
                     selectionId=excluded.selectionId, kind=excluded.kind, dataUrl=excluded.dataUrl,
                     caption=excluded.caption, viewOnce=excluded.viewOnce, fileName=excluded.fileName,
@@ -1613,7 +1613,8 @@ public final class PulseStore: Sendable {
                     revision=excluded.revision, createdAt=(SELECT createdAt FROM stagedAttachment WHERE conversationId = excluded.conversationId)
                 """, arguments: [staged.selectionId, staged.conversationId, staged.kind, staged.dataUrl,
                     staged.caption, staged.viewOnce, staged.fileName, staged.fileSize, staged.durationMs,
-                    staged.replyToId, staged.parentId, staged.topicId, staged.anon, staged.revision])
+                    staged.replyToId, staged.parentId, staged.topicId, staged.anon, staged.revision,
+                    Date().timeIntervalSince1970])
         }
     }
 
