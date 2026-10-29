@@ -33,7 +33,7 @@ class DraftCheckpointJournalTest {
             handles += db
             return PulseRepositoryImpl(app.pulse.data.remote.PulseApi(http, bearerToken={ null }, gateway={ "" }),
                 db,db.conversationDao(),db.messageDao(),db.outboxDao(),db.draftDao(),db.topicDao(),db.savedDao(),
-                db.callLogDao(),db.storyDao(),db.wave7Dao(),
+                db.callLogDao(),db.storyDao(),db.wave7Dao(),db.attachmentConsumptionDao(),db.recordingJournalDao(),
                 app.pulse.data.remote.PulseSocketClient("", tokenProvider={ null }, allowEndpointFallback=false),
                 preferences,tokens,context,reminderOwner=app.pulse.domain.notify.ReminderOwner(owner,AccountStorageKey.origin(PulseEndpoints.gatewayHttpUrl)))
                 .also { repositories += it; it.start(owner) }

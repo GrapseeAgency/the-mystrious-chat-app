@@ -430,6 +430,7 @@ class ReadSnapshotOrderingTest {
         val repo = PulseRepositoryImpl(PulseApi(http, gateway = { "https://read-order.test" }), db,
             db.conversationDao(), db.messageDao(), db.outboxDao(), db.draftDao(), db.topicDao(),
             db.savedDao(), db.callLogDao(), db.storyDao(), db.wave7Dao(),
+            db.attachmentConsumptionDao(), db.recordingJournalDao(),
             PulseSocketClient("", allowEndpointFallback = false), prefs, tokens, context)
         try {
             if (cached) db.messageDao().upsertAll(listOf(MessageEntity.from(Message(

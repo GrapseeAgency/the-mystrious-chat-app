@@ -386,8 +386,10 @@ public final class PulseStore: Sendable {
                 t.column("conversationId", .text).notNull().indexed()
                 t.column("filePath", .text).notNull()
                 t.column("startedAt", .double).notNull()
-                t.column("stoppedAt", .double?)
-                t.column("cancelledAt", .double?)
+                // GRDB columns are nullable by default; stopped/cancelled
+                // start unset and gain a timestamp at their lifecycle edge.
+                t.column("stoppedAt", .double)
+                t.column("cancelledAt", .double)
             }
         }
         return m
