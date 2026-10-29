@@ -1,8 +1,10 @@
 package app.pulse.data.local
 
 import app.pulse.domain.model.Message
-import org.junit.jupiter.api.Assertions.*
-import org.junit.jupiter.api.Test
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 /** Section-5 "Old Android expiry loss": the raw wire deadline rides the frozen
  * payload so a poisoned (malformed sentinel) stored value rebuilds from the
