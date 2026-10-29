@@ -57,16 +57,18 @@ class Section5MergeHardeningTest {
         assertEquals("cached", merged.replyToBody)
     }
 
-    @Test fun `machine marked rows are never the member's outgoing action`() {
+    @Test fun `machine marked rows follow the server flag not client metadata`() {
         val automation = base.copy(viaAutomation = true, authorId = "me")
         assertFalse(automation.isOutgoingFor("me"))
-        // Legacy client-writable payload flags on a non-automation row.
-        val legacy = base.copy(authorId = "me", payload = """{"bot": true}""")
+        // Pinned contract (IncomingMessagePreviewTest): legacy client-writable
+        // payload flags are display-only ("Unverified integration") and keep
+        // the member's own rows classified as outgoing.
+        val legacy = base.copy(authorId = "me", payload = """{"bot": true}""".trimIndent())
         assertEquals("Unverified integration", legacy.integrationLabel)
-        assertFalse(legacy.isOutgoingFor("me"))
+        assertTrue(legacy.isOutgoingFor("me"))
         // A plain human row still counts as outgoing for its author.
         assertTrue(base.copy(authorId = "me").isOutgoingFor("me"))
-        // Machine rows keep their label on tombstones? No - deleted rows drop it.
+        // Deleted rows drop the integration label entirely.
         assertNull(automation.copy(deletedAt = "now").integrationLabel)
     }
 }

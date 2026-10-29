@@ -1121,7 +1121,7 @@ public final class PulseSession: ObservableObject {
         let room = rooms[revalidationCursor % rooms.count]
         revalidationCursor = (revalidationCursor + 1) % rooms.count
         let epoch = sessionGeneration
-        Task.detached(priority: .utility) { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self, self.sessionGeneration == epoch else { return }
             await self.revalidateRoomHeadless(room)
         }
@@ -1938,11 +1938,12 @@ public final class PulseSession: ObservableObject {
                 // Section-5 "Privacy propagation delay": own prefs are pulled
                 // once per session start; a privacy toggle made on another
                 // device must land on reconnect too, not only on cold start.
-                if let prefs, let owner = self {
-                    let prefsEpoch = owner.sessionGeneration
-                    let prefsApi = owner.api
-                    Task { [weak owner] in
-                        await prefs.syncFromServer(api: prefsApi, isCurrent: { [weak owner] in owner?.sessionGeneration == prefsEpoch })
+                if let prefs {
+                    let prefsEpoch = generation
+                    let prefsApi = api
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        await prefs.syncFromServer(api: prefsApi, isCurrent: { [weak self] in self?.generation == prefsEpoch })
                     }
                 }
                 readFailureCount = 0

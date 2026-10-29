@@ -598,10 +598,11 @@ data class Message(
 
     val isDeleted: Boolean get() = deletedAt != null
     /** Attention/unread classification, never an ownership/permission check.
-     * Section-5 "Machine-sender semantics": rows carrying a machine/integration
-     * marker are the automation's action, not the member's outgoing one - even
-     * when the automation posted under that member's own sender id. */
-    fun isOutgoingFor(viewerId: String?): Boolean = !viewerId.isNullOrBlank() && authorId == viewerId && !viaAutomation && integrationLabel == null
+     * Section-5 "Machine-sender semantics" (pinned contract): only the SERVER
+     * automation flag flips attention - legacy client-writable payload flags
+     * stay display-only ("Unverified integration"), so metadata alone must
+     * not silently reclassify the member's own rows. */
+    fun isOutgoingFor(viewerId: String?): Boolean = !viewerId.isNullOrBlank() && authorId == viewerId && !viaAutomation
     val displayAuthorName: String get() = if (anon) anonAlias?.takeIf { it.isNotBlank() } ?: "Anonymous" else integrationLabel ?: authorName
     val integrationLabel: String? get() = app.pulse.domain.sync.MessageOrigin.label(payload, viaAutomation, isDeleted)
 }

@@ -1973,7 +1973,7 @@ class PulseRepositoryImpl constructor(
      */
     private suspend fun sweepDownloadCopies() {
         val dir = java.io.File(context.cacheDir, "downloads")
-        val files = withContext(Dispatchers.IO) { dir.listFiles() ?: return }
+        val files = withContext(Dispatchers.IO) { dir.listFiles() } ?: return
         if (files.isEmpty()) return
         val names = files.filter { it.isFile }.map { it.name }.toSet()
         // Live references: any non-deleted cached row still carrying the path.
@@ -1996,7 +1996,7 @@ class PulseRepositoryImpl constructor(
      */
     private suspend fun sweepExportCopies() {
         val dir = java.io.File(context.cacheDir, "exports")
-        val files = withContext(Dispatchers.IO) { dir.listFiles() ?: return }
+        val files = withContext(Dispatchers.IO) { dir.listFiles() } ?: return
         if (files.isEmpty()) return
         val now = System.currentTimeMillis()
         withContext(Dispatchers.IO) {

@@ -78,13 +78,14 @@ final class Section5MergeHardeningTests: XCTestCase {
         XCTAssertEqual(try store.message(id:"owner")?.replyTo?.deleted, true)
     }
 
-    func testMachineMarkedRowsAreNeverTheMembersOutgoingAction() throws {
+    func testMachineMarkedRowsFollowTheServerFlagNotClientMetadata() throws {
         let automation = try message("m1", extra:["senderId":"me","viaAutomation":true])
         XCTAssertFalse(automation.isOutgoingFor("me"))
-        // Legacy client-writable payload flags on a non-automation row.
+        // Pinned contract: legacy client-writable payload flags are display-only
+        // ("Unverified integration") and keep the member's own rows outgoing.
         let legacy = try message("m1", extra:["senderId":"me","payload":"{\"bot\":true}"])
         XCTAssertEqual(legacy.integrationLabel, "Unverified integration")
-        XCTAssertFalse(legacy.isOutgoingFor("me"))
+        XCTAssertTrue(legacy.isOutgoingFor("me"))
         // A plain human row still counts as outgoing for its author.
         let human = try message("m1", extra:["senderId":"me"])
         XCTAssertTrue(human.isOutgoingFor("me"))
