@@ -84,6 +84,16 @@ class NewChatViewModel @Inject constructor(
         val error: String? = null,
         /** R14 gap 11 - the staged channel photo (uploaded "/api/uploads/…" path). */
         val channelPhoto: String? = null,
+        /**
+         * R46 section-5 re-audit: the LOCAL data URL for the staged photo.
+         * The uploaded path has NO referencing row until the channel is
+         * created, so an authenticated fetch of the path is denied 403 by
+         * the server's media-access gate (the app-wide Coil loader attaches
+         * the session bearer to every /api/uploads/ fetch). The preview tile
+         * renders THESE bytes (the story-composer pattern); the path rides
+         * only the create call.
+         */
+        val channelPhotoPreview: String? = null,
         /** The pick → convert → upload chain in flight. */
         val channelPhotoBusy: Boolean = false,
     )
@@ -172,7 +182,10 @@ class NewChatViewModel @Inject constructor(
             )
             result
                 .onSuccess { channel ->
-                    _state.value = _state.value.copy(creating = false)
+                    // R46: the staged photo (path + local preview) retires with
+                    // the successful create - the next sheet open starts clean
+                    // (iOS resets photoPath on success the same way).
+                    _state.value = _state.value.copy(creating = false, channelPhoto = null, channelPhotoPreview = null)
                     notify("Channel “${channel.name}” created")
                     // The wire's channel row id IS the created conversation id
                     // (channels/route.ts: id: conv.id) - open it directly.
@@ -199,7 +212,7 @@ class NewChatViewModel @Inject constructor(
                 .onSuccess { dataUrl ->
                     repo.uploadMedia(dataUrl)
                         .onSuccess { path ->
-                            _state.value = _state.value.copy(channelPhotoBusy = false, channelPhoto = path)
+                            _state.value = _state.value.copy(channelPhotoBusy = false, channelPhoto = path, channelPhotoPreview = dataUrl)
                         }
                         .onFailure {
                             _state.value = _state.value.copy(channelPhotoBusy = false)
@@ -214,7 +227,7 @@ class NewChatViewModel @Inject constructor(
     }
 
     fun clearChannelPhoto() {
-        _state.value = _state.value.copy(channelPhoto = null)
+        _state.value = _state.value.copy(channelPhoto = null, channelPhotoPreview = null)
     }
 }
 
@@ -384,10 +397,17 @@ fun NewChatSheet(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            val photo = state.channelPhoto
+                            // R46 section-5 re-audit: preview the LOCAL bytes,
+                            // never the uploaded path - the path has no
+                            // referencing row until the channel exists, so
+                            // the authenticated fetch is denied 403 by the
+                            // media-access gate (the app-wide Coil loader
+                            // attaches the session bearer). Coil renders the
+                            // data: URL directly.
+                            val photo = state.channelPhotoPreview
                             if (photo != null) {
                                 AsyncImage(
-                                    model = app.pulse.core.PulseEndpoints.http(photo),
+                                    model = photo,
                                     contentDescription = "Channel photo preview",
                                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                     modifier = Modifier.size(56.dp).clip(CircleShape),

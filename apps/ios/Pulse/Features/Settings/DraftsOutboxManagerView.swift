@@ -95,7 +95,10 @@ struct DraftsOutboxManagerView: View {
                     if !row.text.isEmpty { Text(row.text).font(.footnote).lineLimit(3) }
                     Text(row.notice).font(.caption).foregroundStyle(.secondary)
                     HStack {
-                        if !row.text.isEmpty { Button("Copy text") { if ownedStore(ticket: ticket) != nil { UIPasteboard.general.string = row.text } } }
+                        // R46 section-5 re-audit: recovered message text is
+                        // message content - the copy rides PulseClipboard's
+                        // 60s expiration, not a raw pasteboard write.
+                        if !row.text.isEmpty { Button("Copy text") { if ownedStore(ticket: ticket) != nil { PulseClipboard.copyText(row.text) } } }
                         if row.canRetry { Button("Retry original") { performRecovery(row,action: "retry",ticket: ticket) } }
                     }.font(.caption)
                     if row.canReplace { Button("Use this version") { recoveryAction = "replace"; recoveryConfirmation = row; recoveryConfirmationTicket = ticket }.font(.caption) }
@@ -259,7 +262,10 @@ struct DraftsOutboxManagerView: View {
                 Text(envelope.uploadDataUrl == nil ? "Upload kept; message awaits delivery." : "Attachment bytes kept on this device.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            Button("Copy text") { if ownedStore(ticket: ticket) != nil { UIPasteboard.general.string = row.content } }
+            // R46 section-5 re-audit: outbox message content copy rides
+            // PulseClipboard's 60s expiration too (same class as the room
+            // copy surfaces).
+            Button("Copy text") { if ownedStore(ticket: ticket) != nil { PulseClipboard.copyText(row.content) } }
                 .font(.system(size: 12, weight: .semibold))
             Text(row.content)
                 .textSelection(.enabled)

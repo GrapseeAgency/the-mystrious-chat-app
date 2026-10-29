@@ -723,7 +723,10 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
     val recovery by viewModel.composerRecovery.collectAsStateWithLifecycle()
     val recoveryCursor by viewModel.composerRecoveryCursor.collectAsStateWithLifecycle()
     val owner by viewModel.viewerId.collectAsStateWithLifecycle()
-    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    // R46 section-5 re-audit: "Copy text" of a recovered draft is message
+    // content leaving message storage - it rides the sensitive clip flag
+    // (Android 13+ hides it from previews and cross-app overlays).
+    val copyContext = LocalContext.current
     var recoveryConfirmation by remember(owner) { mutableStateOf<Pair<ComposerManagerRecoverySnapshot,String>?>(null) }
     LaunchedEffect(owner) { viewModel.refreshComposerRecovery() }
     recoveryConfirmation?.let { (entry,action) ->
@@ -771,7 +774,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                 if (entry.text.isNotEmpty()) Text(entry.text,fontSize=12.sp,maxLines=3)
                 Text(entry.notice,fontSize=11.5.sp,color=Color.White.copy(alpha=0.6f))
                 Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                    if (entry.text.isNotEmpty()) TextButton(onClick={ viewModel.recoveryText(row)?.let { clipboard.setText(androidx.compose.ui.text.AnnotatedString(it)) } }) { Text("Copy text") }
+                    if (entry.text.isNotEmpty()) TextButton(onClick={ viewModel.recoveryText(row)?.let { app.pulse.ui.text.SensitiveClipboard.copy(copyContext, "draft-recovery", it) } }) { Text("Copy text") }
                     if (entry.canRetry) TextButton(onClick={ viewModel.recoverComposer(row,"retry") }) { Text("Retry original") }
                     if (entry.canReplace) TextButton(onClick={ recoveryConfirmation=row to "replace" }) { Text("Use this version") }
                 }

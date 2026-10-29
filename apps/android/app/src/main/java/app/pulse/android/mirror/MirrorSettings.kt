@@ -1308,6 +1308,7 @@ private val WALLPAPERS = listOf(
 
 @Composable
 private fun ChatSection(
+
     prefs: ResolvedPrefs,
     listFilter: String,
     drafts: Int,
@@ -1324,7 +1325,10 @@ private fun ChatSection(
     LaunchedEffect(discardArmed) {
         if (discardArmed != null) { delay(5_000); discardArmed = null }
     }
-    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    // R46 section-5 re-audit: "Copy text" of an outbox row is message
+    // content leaving message storage - it rides the sensitive clip flag
+    // (Android 13+ hides it from previews and cross-app overlays).
+    val copyContext = androidx.compose.ui.platform.LocalContext.current
     SettingsGroup("Message look") {
         SettingsPickerBlock(
             glyph = "LImage",
@@ -1417,7 +1421,7 @@ private fun ChatSection(
                 Text(row.content, fontSize = 13.sp, maxLines = 4)
                 row.failureReason?.let { Text(it, fontSize = 11.sp) }
                 androidx.compose.material3.TextButton(onClick = {
-                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(row.content))
+                    app.pulse.ui.text.SensitiveClipboard.copy(copyContext, "outbox-content", row.content)
                 }) { Text("Copy text") }
                 Row {
                     if (row.failureReason != null) {
@@ -2239,7 +2243,9 @@ private fun MirrorComposerRecovery(repository: PulseRepository, owner: String) {
     val epoch = repository.attachmentSessionKey()
     val target = remember(repository,owner,epoch) { repository.boundToCurrentAccount() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    // R46 section-5 re-audit: recovered composer text is message content
+    // leaving message storage - the copy rides the sensitive clip flag too.
+    val copyContext = androidx.compose.ui.platform.LocalContext.current
     var rows by remember(owner,epoch) { mutableStateOf<List<app.pulse.domain.model.ComposerRecoveryEntry>>(emptyList()) }
     var cursor by remember(owner,epoch) { mutableStateOf<String?>(null) }
     var busy by remember(owner,epoch) { mutableStateOf(false) }
@@ -2284,7 +2290,7 @@ private fun MirrorComposerRecovery(repository: PulseRepository, owner: String) {
                 Text(row.kind,fontSize=13.sp,color=SubPageInk.Amber400)
                 if (row.text.isNotEmpty()) Text(row.text,fontSize=12.sp,maxLines=3)
                 Text(row.notice,fontSize=11.sp,color=SubPageInk.Zinc500)
-                if (row.text.isNotEmpty()) androidx.compose.material3.TextButton(onClick={ clipboard.setText(androidx.compose.ui.text.AnnotatedString(row.text)) }) { Text("Copy text") }
+                if (row.text.isNotEmpty()) androidx.compose.material3.TextButton(onClick={ app.pulse.ui.text.SensitiveClipboard.copy(copyContext, "composer-recovery", row.text) }) { Text("Copy text") }
                 if (row.canRetry) androidx.compose.material3.TextButton(enabled=!busy,onClick={ act(row,"retry") }) { Text("Retry original") }
                 if (row.canReplace) androidx.compose.material3.TextButton(enabled=!busy,onClick={ act(row,"replace") }) { Text(if (armed == (row to "replace")) "Confirm replacement" else "Use this version") }
                 androidx.compose.material3.TextButton(enabled=!busy,onClick={ act(row,"remove") }) { Text(if (armed == (row to "remove")) "Confirm removal" else "Remove local copy") }

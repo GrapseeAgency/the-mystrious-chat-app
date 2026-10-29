@@ -81,3 +81,20 @@ test('R45 re-audit: a co-member avatar/cover stays reachable, a stranger avatar 
   assert.equal((await mediaAccessDecision(request('synthetic-member'), 'peer-avatar.png')).kind, 'denied')
   assert.equal((await mediaAccessDecision(request('synthetic-member'), 'peer-cover.jpg')).kind, 'denied')
 }))
+test('R46 re-audit: a just-uploaded file nothing references yet is denied for authenticated natives', () => fixture(async ({ db, mediaAccessDecision, request }) => {
+  // The channel-creation photo chain: POST /api/uploads lands the bytes, but
+  // no row references the file until POST /api/channels creates it. The
+  // authenticated fetch (the app-wide Android Coil loader attaches the
+  // session bearer to every /api/uploads/ fetch) is denied 403 - which is
+  // why the native composers preview LOCAL bytes, never the fresh upload.
+  // Headerless stays open (the web <img> migration window).
+  assert.equal((await mediaAccessDecision(request('synthetic-member'), 'fresh-upload.png')).kind, 'denied')
+  const denied = await mediaAccessDecision(request('synthetic-member'), 'fresh-upload.png')
+  assert.equal(denied.kind === 'denied' ? denied.status : 0, 403)
+  assert.equal((await mediaAccessDecision(request(null), 'fresh-upload.png')).kind, 'open')
+  // Once the channel row references it as its photo, the creating member is
+  // granted through the room-photo rule.
+  await db.conversation.create({ data: { id: 'fresh-room', isGroup: true, photo: 'fresh-upload.png' } })
+  await db.conversationParticipant.create({ data: { id: 'cp3', userId: 'member', conversationId: 'fresh-room' } })
+  assert.equal((await mediaAccessDecision(request('synthetic-member'), 'fresh-upload.png')).kind, 'granted')
+}))

@@ -29,6 +29,14 @@ struct ChannelsView: View {
     @State private var nameError: String?
     @State private var photoItem: PhotosPickerItem?
     @State private var photoPath: String?
+    // R46 section-5 re-audit: the LOCAL preview bytes for the staged photo.
+    // The uploaded path has no referencing row until POST /api/channels
+    // creates it, so an authenticated fetch of the path is denied 403 by the
+    // media-access gate, and a plain AsyncImage of it only worked through
+    // the headerless migration window (the web <img> window - this tile is
+    // NOT the web). The tile renders these bytes instead (the story-composer
+    // pattern); the path rides only the create call.
+    @State private var photoPreview: UIImage?
     @State private var photoBusy = false
     @State private var mounted = false
     @State private var ownerEpoch: UUID?
@@ -94,7 +102,7 @@ struct ChannelsView: View {
         .onAppear {
             mounted = true
             if ownerEpoch != session.sessionGeneration {
-                channels = []; optimistic = [:]; name = ""; descriptionText = ""; photoPath = nil; mode = .directory
+                channels = []; optimistic = [:]; name = ""; descriptionText = ""; photoPath = nil; photoPreview = nil; mode = .directory
             }
             ownerEpoch = session.sessionGeneration
             initialLoad = Task { await reload() }
@@ -375,14 +383,13 @@ struct ChannelsView: View {
 
     private var photoTile: some View {
         ZStack {
-            if let path = photoPath, let url = PulseTheme.photoURL(path) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Rectangle().fill(PulseTheme.chipFill)
-                }
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            if let preview = photoPreview {
+                // R46: local bytes - never a URL fetch for the unreferenced
+                // upload (the gate denies it; the window is not for natives).
+                Image(uiImage: preview)
+                    .resizable().scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -543,7 +550,7 @@ struct ChannelsView: View {
             channels.removeAll { $0.id == channel.id }
             channels.insert(channel, at: 0)
             optimistic.removeValue(forKey: channel.id)
-            name = ""; descriptionText = ""; photoPath = nil
+            name = ""; descriptionText = ""; photoPath = nil; photoPreview = nil
             photoTicket = UUID(); photoTask?.cancel(); photoTask = nil; photoBusy = false
             withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .directory }
             PulseHaptics.success()
@@ -576,6 +583,7 @@ struct ChannelsView: View {
             let path = try await api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
             guard owns(epoch), photoTicket == ticket, mode == .create else { return }
             photoPath = path
+            photoPreview = UIImage(data: jpeg)
         } catch {
             guard owns(epoch), photoTicket == ticket else { return }
             session.toasts.show(ChatsViewModel.describe(error))

@@ -56,8 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -556,7 +555,9 @@ fun GroupInfoScreen(
     val convThemes by viewModel.convThemes.collectAsStateWithLifecycle()
     val globalWallpaper by viewModel.globalWallpaper.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    val clipboard = LocalClipboardManager.current
+    // R46 section-5 re-audit: the invite code is a room-access credential
+    // copied out of the app - it rides the sensitive clip flag.
+    val copyContext = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var renameOpen by remember { mutableStateOf(false) }
@@ -870,7 +871,7 @@ fun GroupInfoScreen(
                                             modifier = Modifier.weight(1f),
                                         )
                                         TextButton(onClick = {
-                                            clipboard.setText(AnnotatedString("pulse://invite/$code"))
+                                            app.pulse.ui.text.SensitiveClipboard.copy(copyContext, "invite-code", "pulse://invite/$code")
                                             scope.launch { snackbar.showSnackbar("Invite link copied", withDismissAction = false) }
                                         }) {
                                             Icon(PulseIcons.Copy, contentDescription = null, modifier = Modifier.size(14.dp))

@@ -76,9 +76,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -569,7 +567,6 @@ internal fun MirrorRoomInfoPage(
     onOpenUser: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
     // server truth (fetched on open + after every mutation + 20s loop)
@@ -889,7 +886,10 @@ internal fun MirrorRoomInfoPage(
         val origin = PulseEndpoints.gatewayHttpUrl.trim().trimEnd('/')
         val base = if (origin.endsWith("/api")) origin.removeSuffix("/api") else origin
         val link = if (base.isNotBlank()) "$base/?join=$code" else code
-        clipboard.setText(AnnotatedString(link))
+        // R46 section-5 re-audit: the invite link is a room-access
+        // credential copied out of the app - it rides the sensitive clip
+        // flag like every other copy surface.
+        app.pulse.ui.text.SensitiveClipboard.copy(context, "invite-link", link)
         showNote("Invite link copied", false)
     }
 
