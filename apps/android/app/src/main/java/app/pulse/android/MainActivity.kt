@@ -289,7 +289,7 @@ class MainActivity : FragmentActivity() {
         // grace; the recording journal owns anything more recent) are removed.
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
-                val cutoff = android.os.System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                val cutoff = java.lang.System.currentTimeMillis() - 24 * 60 * 60 * 1000L
                 java.io.File(cacheDir, "camera").listFiles()?.forEach { f ->
                     if (f.name.startsWith("capture-") && f.lastModified() < cutoff) f.delete()
                 }

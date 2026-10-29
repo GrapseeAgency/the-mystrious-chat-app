@@ -33,7 +33,7 @@ struct ShareInSheet: View {
                             .foregroundStyle(.red)
                     }
                 }
-                Section("Share to") {
+                Section {
                     if conversations.isEmpty {
                         Text("No conversations yet - create one from the Chats tab.")
                             .font(.subheadline)
@@ -73,6 +73,8 @@ struct ShareInSheet: View {
                         }
                         .disabled(sendingTo != nil)
                     }
+                } header: {
+                    Text("Share to")
                 }
                 Section {
                     Button(role: .destructive) {

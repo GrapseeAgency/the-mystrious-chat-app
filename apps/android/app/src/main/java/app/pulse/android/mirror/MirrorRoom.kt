@@ -1475,7 +1475,8 @@ internal fun MirrorRoom(
         mediaSelectionRestored = true
         val epoch = mediaSession ?: return@LaunchedEffect
         if (captionFor != null || pendingPhoto != null || pendingDocument != null || preparingAttachment || uploadingImage) return@LaunchedEffect
-        val restored = runCatching { repository.loadAttachmentDraft(groupId, epoch) }.getOrNull() ?: return@LaunchedEffect
+        val restored = runCatching { repository.loadAttachmentDraft(groupId, epoch).getOrThrow() }.getOrNull()
+            ?: return@LaunchedEffect
         if (repository.attachmentSessionKey() != epoch) return@LaunchedEffect
         if (captionFor == null && pendingPhoto == null && pendingDocument == null) {
             captionFor = MirrorMediaSelection(draft = restored, sessionKey = epoch)
@@ -1503,7 +1504,7 @@ internal fun MirrorRoom(
         val selection = pendingPhoto; pendingPhoto = null
         prepareMedia(uri, selection)
     }
-    val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val selection = pendingDocument; pendingDocument = null
         prepareMedia(uri, selection)
     }
