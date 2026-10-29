@@ -248,6 +248,10 @@ private final class BlockedProviderStream: InputStream {
     private var _closed = false
     var entered: Bool { state.lock(); defer { state.unlock() }; return _entered }
     var closed: Bool { state.lock(); defer { state.unlock() }; return _closed }
+    // NSInputStream is an abstract class cluster: open() MUST be overridden
+    // (the inherited -open throws NSInvalidArgumentException, which is what
+    // failed the previous rounds), close() too.
+    override func open() { }
     override func read(_ buffer: UnsafeMutablePointer<UInt8>, maxLength: Int) -> Int {
         state.lock(); _entered = true; state.unlock()
         let valve = Date().addingTimeInterval(3)
