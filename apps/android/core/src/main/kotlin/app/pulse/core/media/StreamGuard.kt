@@ -68,12 +68,22 @@ object StreamGuard {
         }
         try {
             return coroutineScope {
-                val reader = async(Dispatchers.IO, start = CoroutineStart.ATOMIC) { block(stream) }
+                // The reader NEVER fails the scope: it captures the block's
+                // outcome instead, so a read unblocked by close() during
+                // cancellation surfaces as THIS coroutine's
+                // CancellationException - never as an unhandled IOException
+                // racing out of a cancelled scope.
+                var outcome: Result<R>? = null
+                val reader = async(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
+                    outcome = runCatching { block(stream) }
+                }
                 suspendCancellableCoroutine { cont ->
                     cont.invokeOnCancellation { closeOnce() }
                     reader.invokeOnCompletion { if (cont.isActive) cont.resume(Unit) { _ -> } }
                 }
                 reader.await()
+                outcome?.getOrThrow()
+                    ?: throw IllegalStateException("the guarded read finished without an outcome")
             }
         } finally {
             deadline?.cancel(false)
