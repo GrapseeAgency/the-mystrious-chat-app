@@ -22,69 +22,9 @@ struct ShareInSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Text(shareSummary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                    if let failureText {
-                        Text(failureText)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-                }
-                Section {
-                    if conversations.isEmpty {
-                        Text("No conversations yet - create one from the Chats tab.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(conversations, id: \.id) { conversation in
-                        Button {
-                            deliverTo(conversation)
-                        } label: {
-                            HStack(spacing: 12) {
-                                RowAvatar(
-                                    name: conversation.isGroup ? conversation.name : dmName(conversation),
-                                    colorName: conversation.isGroup ? nil : dmColor(conversation),
-                                    photoPath: conversation.photo,
-                                    size: 40,
-                                    groupID: conversation.isGroup ? conversation.id : nil,
-                                    avatarShape: conversation.isGroup ? .squircle : .circle,
-                                    showPresence: false,
-                                    online: false,
-                                )
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(conversation.isGroup ? (conversation.name ?? "Group") : dmName(conversation))
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                    if let last = conversation.lastMessage, !last.content.isEmpty {
-                                        Text(last.content)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                Spacer()
-                                if sendingTo == conversation.id {
-                                    ProgressView()
-                                }
-                            }
-                        }
-                        .disabled(sendingTo != nil)
-                    }
-                } header: {
-                    Text("Share to")
-                }
-                Section {
-                    Button(role: .destructive) {
-                        onRemoved(entry.id)
-                    } label: {
-                        Text("Remove this share")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .disabled(sendingTo != nil)
-                }
+                shareSummarySection
+                conversationSection
+                removeSection
             }
             .navigationTitle("Share to Pulse")
             .navigationBarTitleDisplayMode(.inline)
@@ -97,22 +37,59 @@ struct ShareInSheet: View {
         }
     }
 
+    private var shareSummarySection: some View {
+        Section {
+            Text(shareSummary)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+            if let failureText {
+                Text(failureText)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var conversationSection: some View {
+        Section {
+            if conversations.isEmpty {
+                Text("No conversations yet - create one from the Chats tab.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(conversations, id: \.id) { conversation in
+                    Button {
+                        deliverTo(conversation)
+                    } label: {
+                        ShareInRowLabel(conversation: conversation, viewerId: viewerId,
+                                        busy: sendingTo == conversation.id)
+                    }
+                    .disabled(sendingTo != nil)
+                }
+            }
+        } header: {
+            Text("Share to")
+        }
+    }
+
+    private var removeSection: some View {
+        Section {
+            Button(role: .destructive) {
+                onRemoved(entry.id)
+            } label: {
+                Text("Remove this share")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(sendingTo != nil)
+        }
+    }
+
     private var shareSummary: String {
         switch entry.kind {
         case "image": return "Photo - prepared and ready to send"
         default: return entry.text ?? ""
         }
-    }
-
-    private func dmName(_ conversation: WireConversationSummary) -> String {
-        if let member = conversation.members.first(where: { $0.id != viewerId }) {
-            return member.name
-        }
-        return conversation.name ?? "Chat"
-    }
-
-    private func dmColor(_ conversation: WireConversationSummary) -> String? {
-        conversation.members.first(where: { $0.id != viewerId })?.color
     }
 
     private func deliverTo(_ conversation: WireConversationSummary) {
@@ -127,5 +104,53 @@ struct ShareInSheet: View {
                 onConsumed(entry.id)
             }
         }
+    }
+}
+
+/// One conversation row (extracted so no generic inference rides the builder).
+private struct ShareInRowLabel: View {
+    let conversation: WireConversationSummary
+    let viewerId: String?
+    let busy: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RowAvatar(
+                name: conversation.isGroup ? (conversation.name ?? "Group") : dmName,
+                colorName: conversation.isGroup ? nil : dmColor,
+                photoPath: conversation.photo,
+                size: 40,
+                groupID: conversation.isGroup ? conversation.id : nil,
+                avatarShape: conversation.isGroup ? .squircle : .circle,
+                showPresence: false,
+                online: false
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(conversation.isGroup ? (conversation.name ?? "Group") : dmName)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                if let last = conversation.lastMessage, !last.content.isEmpty {
+                    Text(last.content)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            if busy {
+                ProgressView()
+            }
+        }
+    }
+
+    private var dmName: String {
+        if let member = conversation.members.first(where: { $0.id != viewerId }) {
+            return member.name
+        }
+        return conversation.name ?? "Chat"
+    }
+
+    private var dmColor: String? {
+        conversation.members.first(where: { $0.id != viewerId })?.color
     }
 }

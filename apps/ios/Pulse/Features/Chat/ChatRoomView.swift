@@ -5629,7 +5629,7 @@ final class RoomViewModel: ObservableObject {
     /// R42 - restore a staged selection persisted by a previous process.
     func rehydrateStagedAttachment(session: PulseSession) {
         guard staged == nil, let store = session.store else { return }
-        guard let row = try? store.loadStagedAttachment(conversationId: conversationId), let saved = row else { return }
+        guard let saved = try? store.loadStagedAttachment(conversationId: conversationId) else { return }
         guard session.sessionGeneration == readSessionGeneration else { return }
         let kind: StagedMedia.Kind
         switch saved.kind { case "image": kind = .image; case "file": kind = .file; case "audio": kind = .audio; default: return }
@@ -5703,10 +5703,11 @@ final class RoomViewModel: ObservableObject {
             switch media.kind { case .image: kind = "image"; case .file: kind = "file"; case .audio: kind = "audio" }
             let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
                 content: caption.trimmingCharacters(in: .whitespacesAndNewlines), dataUrl: media.dataUrl,
-                stagedSelectionId: media.selectionId,
                 envelope: PulseOutboxForward(kind: kind, durationMs: media.durationMs,
                     fileName: media.fileName, fileSize: media.fileSize, topicId: activeTopicId,
-                    anon: isGroupRoom && anonOn, viewOnce: media.viewOnce), replyTo: replyTarget)
+                    anon: isGroupRoom && anonOn, viewOnce: media.viewOnce),
+                stagedSelectionId: media.selectionId,
+                replyTo: replyTarget)
             upsert(message)
             stagedEditTask?.cancel()
             staged = nil; caption = ""; replyTarget = nil
