@@ -772,7 +772,7 @@ public final class PulseStore: Sendable {
 
     @discardableResult
     func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
-                        consumingDraft token: PulseDraftConsumption?, consumingStaged stagedSelectionId: String? = nil,
+                        consumingDraft token: PulseDraftConsumption? = nil, consumingStaged stagedSelectionId: String? = nil,
                         forwarding source: WireChatMessage? = nil) throws -> Bool {
         guard composerOwner == nil || composerOwner == message.senderId else { throw CocoaError(.coderInvalidValue) }
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }

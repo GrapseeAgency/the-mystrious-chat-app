@@ -52,7 +52,8 @@ final class ShareViewController: UIViewController {
             extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
             return
         }
-        store(entry: Entry(kind: "text", text: body, dataUrl: nil, fileName: nil, fileSize: nil))
+        store(entry: Entry(kind: "text", text: body, dataUrl: nil, fileName: nil, fileSize: nil,
+                           receivedAt: Date().timeIntervalSince1970))
     }
 
     private func finish(imageItem: NSSecureCoding?) {
@@ -72,7 +73,7 @@ final class ShareViewController: UIViewController {
         }
         store(entry: Entry(kind: "image", text: nil,
             dataUrl: "data:image/jpeg;base64," + jpeg.base64EncodedString(),
-            fileName: nil, fileSize: jpeg.count))
+            fileName: nil, fileSize: jpeg.count, receivedAt: Date().timeIntervalSince1970))
     }
 
     /// The same ≤1280px JPEG q0.82 policy the main app applies.

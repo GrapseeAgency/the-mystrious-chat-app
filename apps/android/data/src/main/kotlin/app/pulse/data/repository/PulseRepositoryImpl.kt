@@ -1759,7 +1759,7 @@ class PulseRepositoryImpl constructor(
                 attachmentConsumptionDao.upsert(app.pulse.data.local.AttachmentConsumptionEntity(
                     selectionId = selectionId, conversationId = conversationId,
                     fileKey = current.fileKey, outcome = "discarded",
-                    consumedAt = android.os.System.currentTimeMillis()))
+                    consumedAt = java.lang.System.currentTimeMillis()))
             }
             matches
         }
@@ -1805,7 +1805,7 @@ class PulseRepositoryImpl constructor(
             database.attachmentDraftDao().delete(conversationId, selectionId)
             attachmentConsumptionDao.upsert(app.pulse.data.local.AttachmentConsumptionEntity(
                 selectionId = selectionId, conversationId = conversationId, fileKey = record.fileKey,
-                outcome = "queued", consumedAt = android.os.System.currentTimeMillis()))
+                outcome = "queued", consumedAt = java.lang.System.currentTimeMillis()))
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             requireAttachmentSession(sessionKey)
             temp
@@ -1826,13 +1826,13 @@ class PulseRepositoryImpl constructor(
         requireAttachmentSession(sessionKey)
         recordingJournalDao.upsert(app.pulse.data.local.RecordingJournalEntity(
             id = id, conversationId = conversationId, filePath = file.absolutePath,
-            ownerKey = sessionKey, startedAt = android.os.System.currentTimeMillis()))
+            ownerKey = sessionKey, startedAt = java.lang.System.currentTimeMillis()))
         Result.success(Unit)
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
     override suspend fun recordingJournalStopped(id: String, sessionKey: String): Result<Unit> = try {
         requireAttachmentSession(sessionKey)
-        recordingJournalDao.markStopped(id, android.os.System.currentTimeMillis())
+        recordingJournalDao.markStopped(id, java.lang.System.currentTimeMillis())
         Result.success(Unit)
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
@@ -1840,7 +1840,7 @@ class PulseRepositoryImpl constructor(
         requireAttachmentSession(sessionKey)
         // The user's discard is a durable receipt: a later sweep must complete
         // the discard (file + row), never resurrect the take.
-        recordingJournalDao.markCancelled(id, android.os.System.currentTimeMillis())
+        recordingJournalDao.markCancelled(id, java.lang.System.currentTimeMillis())
         Result.success(Unit)
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
 
@@ -1982,7 +1982,7 @@ class PulseRepositoryImpl constructor(
                 content = validated.caption, kind = validated.kind, createdAt = temp.createdAt, uploadKey = key))
             attachmentConsumptionDao.upsert(app.pulse.data.local.AttachmentConsumptionEntity(
                 selectionId = clientId, conversationId = conversationId, fileKey = key,
-                outcome = "queued", consumedAt = android.os.System.currentTimeMillis()))
+                outcome = "queued", consumedAt = java.lang.System.currentTimeMillis()))
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             requireAttachmentSession(sessionKey)
             temp
