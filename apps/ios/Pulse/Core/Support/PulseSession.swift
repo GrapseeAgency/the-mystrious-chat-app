@@ -1096,6 +1096,71 @@ public final class PulseSession: ObservableObject {
                 self?.prefs?.refreshQuietGate() // Wave 8 - quiet window opens/closes on the minute
             }
             .store(in: &cancellables)
+        // Section-5 "Unknown offline revocation" + "Privacy propagation
+        // delay": iOS had no equivalent of Android's bounded round-robin, so
+        // an unopened room's offline tombstones/edits waited for the room to
+        // be mounted. This revalidates ONE cached room per 60s beat while
+        // foregrounded, so every cached room converges within N minutes.
+        Timer.publish(every: 60, on: .main, in: .common)
+            .autoconnect()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.runPrivacyRevalidationBeat() }
+            .store(in: &cancellables)
+    }
+
+    // MARK: - Section-5 offline-revocation revalidation sweep
+
+    private var revalidationCursor = 0
+
+    /// One cached room per beat: the same cached-range delta the mounted room
+    /// runs (edits AND tombstones across the whole cached range), headless.
+    func runPrivacyRevalidationBeat() {
+        guard ready, isForeground, let store else { return }
+        let rooms = (try? store.conversationIdsWithServerRows()) ?? []
+        guard !rooms.isEmpty else { return }
+        let room = rooms[revalidationCursor % rooms.count]
+        revalidationCursor = (revalidationCursor + 1) % rooms.count
+        let epoch = sessionGeneration
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self, self.sessionGeneration == epoch else { return }
+            await self.revalidateRoomHeadless(room)
+        }
+    }
+
+    private func revalidateRoomHeadless(_ conversationId: String) async {
+        guard let store else { return }
+        let cachedRows = (try? store.messages(conversationId: conversationId)) ?? []
+        let from = PulseHistoryCursor.reconciliationStart(cached: cachedRows, displayed: [])
+        var cursor: String?
+        var seenCursors = Set<String>()
+        let epoch = sessionGeneration
+        var pages = 0
+        repeat {
+            pages += 1
+            do {
+                try Task.checkCancellation()
+                guard sessionGeneration == epoch else { return }
+                let watermark = messageRevision
+                let snapshotRequest = store.beginMessageSnapshot()
+                let page = try await api.messages(conversationId: conversationId,
+                    syncFrom: cursor == nil ? from : nil, syncCursor: cursor)
+                try Task.checkCancellation()
+                guard sessionGeneration == epoch else { return }
+                if from != nil, page.syncVersion != 1 {
+                    // Same contract gate as the mounted refresh: do not guess.
+                    return
+                }
+                let eligible = page.messages.filter { acceptsSyncMessage($0.id, startedAt: watermark) }
+                _ = try? store.mergeMessages(eligible, snapshotRequest: snapshotRequest)
+                if from == nil { return }
+                if !page.hasMore { return }
+                guard let next = page.nextSyncCursor, seenCursors.insert(next).inserted else { return }
+                cursor = next
+            } catch {
+                // A beat failure is deferral, not a room-level error surface.
+                return
+            }
+        } while pages < 6
     }
 
     // Wave 8 - prefs handoff
@@ -1870,6 +1935,16 @@ public final class PulseSession: ObservableObject {
                 // events and not new read authority for the mounted visit.
                 realtimeRefreshTick += 1
                 noteInboxChanged()
+                // Section-5 "Privacy propagation delay": own prefs are pulled
+                // once per session start; a privacy toggle made on another
+                // device must land on reconnect too, not only on cold start.
+                if let prefs, let owner = self {
+                    let prefsEpoch = owner.sessionGeneration
+                    let prefsApi = owner.api
+                    Task { [weak owner] in
+                        await prefs.syncFromServer(api: prefsApi, isCurrent: { [weak owner] in owner?.sessionGeneration == prefsEpoch })
+                    }
+                }
                 readFailureCount = 0
                 readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
                 scheduleVisibleRead(after: PulseReadReceiptGate.dwell)

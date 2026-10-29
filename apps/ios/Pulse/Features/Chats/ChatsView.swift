@@ -2411,6 +2411,7 @@ private struct ChatActionSheet: View {
     /// A failed history page must never produce a successful partial export.
     @MainActor private func exportChat() async {
         guard session.ready, session.viewer != nil else { return }
+        Self.sweepStaleExports()
         let epoch = session.sessionGeneration, client = session.api
         var output: URL?
         var accepted = false
@@ -2451,6 +2452,19 @@ private struct ChatActionSheet: View {
         } catch is CancellationError { return } catch {
             guard session.sessionGeneration == epoch else { return }
             bulkError = RoomViewModel.describe(error)
+        }
+    }
+
+    /// Section-5 "Copies outside message storage": a SHARED export used to
+    /// survive in tmp forever. Every export run first sweeps prior export
+    /// copies (24h TTL) so the newest share cannot become a shadow archive.
+    private static func sweepStaleExports() {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: FileManager.default.temporaryDirectory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+        for file in files where file.lastPathComponent.hasPrefix("pulse-export-") {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modified < cutoff { try? FileManager.default.removeItem(at: file) }
         }
     }
 

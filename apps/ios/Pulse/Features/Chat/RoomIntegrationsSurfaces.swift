@@ -608,7 +608,7 @@ struct WebhooksSection: View {
             session.toasts.show("Webhook URL could not be formed")
             return
         }
-        UIPasteboard.general.string = url.absoluteString
+        PulseClipboard.copyText(url.absoluteString)
         PulseHaptics.tap()
         session.toasts.show("Webhook URL copied")
     }

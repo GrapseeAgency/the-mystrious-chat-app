@@ -353,7 +353,7 @@ struct GroupInfoView: View {
                     if let code = inviteCode {
                         LabeledContent("Code", value: code)
                         Button {
-                            UIPasteboard.general.string = "pulse://invite/\(code)"
+                            PulseClipboard.copyText("pulse://invite/\(code)")
                             session.toasts.show("Invite link copied")
                             PulseHaptics.tap()
                         } label: {

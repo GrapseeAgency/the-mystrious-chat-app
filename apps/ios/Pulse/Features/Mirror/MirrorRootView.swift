@@ -2517,6 +2517,45 @@ private struct MirrorReactionChip: Identifiable {
     var id: String { emoji }
 }
 
+/// Section-5 "Media URL authorization/revocation": the mirror no longer hands
+/// raw attachment URLs to Safari (header-less fetches bypass per-request
+/// authorization and drop an OS-managed copy outside app control). The tap
+/// downloads through the authenticated path and previews the local copy,
+/// which dies with the sheet.
+struct MirrorAttachmentPreviewButton: View {
+    let url: URL
+    let fileName: String?
+    let title: String
+    let systemImage: String
+
+    @State private var target: QuickLookTarget?
+    @State private var failed = false
+
+    var body: some View {
+        Button {
+            Task {
+                do {
+                    target = QuickLookTarget(url: try await PulseMediaOpener.downloadForPreview(url: url, fileName: fileName))
+                } catch {
+                    failed = true
+                }
+            }
+        } label: {
+            Label(title, systemImage: systemImage)
+        }
+        .fullScreenCover(item: $target) { item in
+            QuickLookView(url: item.url)
+                .ignoresSafeArea()
+                .onDisappear {
+                    try? FileManager.default.removeItem(at: item.url.deletingLastPathComponent())
+                }
+        }
+        .alert("Couldn't download the file", isPresented: $failed) {
+            Button("OK", role: .cancel) {}
+        }
+    }
+}
+
 struct MirrorBubble: View {
     let message: WireChatMessage
     let mine: Bool
@@ -2560,7 +2599,8 @@ struct MirrorBubble: View {
         HStack(alignment: .bottom, spacing: 0) {
             if !mine && isGroup {
                 if head {
-                    MirrorAvatarTile(name: message.integrationLabel ?? message.sender?.name ?? "?", color: message.sender?.color, isGroup: false, id: message.senderId, online: false, showPresence: false, size: 24, corner: 12)
+                    // Section-5 anonymity audit: the mirror avatar obeys the anon mask.
+                    MirrorAvatarTile(name: message.integrationLabel ?? (message.anon == true ? message.displayAuthorName : message.sender?.name ?? "?"), color: message.sender?.color, isGroup: false, id: message.senderId, online: false, showPresence: false, size: 24, corner: 12)
                         .padding(.trailing, 6).padding(.bottom, 20)
                 } else {
                     Color.clear.frame(width: 30, height: 1)
@@ -2578,7 +2618,9 @@ struct MirrorBubble: View {
                         if let origin = message.integrationLabel {
                             Text(origin).font(.system(size: 10, weight: .semibold)).foregroundColor(MirrorArt.accent2).padding(.bottom, 2)
                         } else if !mine && isGroup && head {
-                            Text(message.sender?.name ?? "")
+                            // Section-5 anonymity audit: mirror bubbles render the
+                            // masked attribution, never the raw account name.
+                            Text(message.anon == true ? message.displayAuthorName : message.sender?.name ?? "")
                                 .font(.system(size: 12, weight: .semibold)).foregroundColor(MirrorArt.textSoft)
                                 .padding(.bottom, 2)
                         }
@@ -2623,12 +2665,14 @@ struct MirrorBubble: View {
                                     .padding(2)
                             }
                         } else if let path = message.filePath {
-                            Link(destination: attachmentURL(path)) {
-                                Label(message.fileName ?? "Open document", systemImage: "doc")
-                            }
+                            MirrorAttachmentPreviewButton(url: attachmentURL(path),
+                                fileName: String(path.split(separator: "/").last ?? ""),
+                                title: message.fileName ?? "Open document", systemImage: "doc")
                             if !message.content.isEmpty { Text(message.content) }
                         } else if let path = message.audioPath {
-                            Link(destination: attachmentURL(path)) { Label("Open voice note", systemImage: "waveform") }
+                            MirrorAttachmentPreviewButton(url: attachmentURL(path),
+                                fileName: String(path.split(separator: "/").last ?? "voice.m4a"),
+                                title: "Open voice note", systemImage: "waveform")
                             if !message.content.isEmpty { Text(message.content) }
                         } else {
                             Text(MirrorBubbleText.make(message.content, mine: mine, memberNames: memberNames))

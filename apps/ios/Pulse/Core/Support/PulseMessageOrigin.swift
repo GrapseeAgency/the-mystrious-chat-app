@@ -37,9 +37,13 @@ enum PulseMessageOrigin {
 }
 extension WireChatMessage {
     /// Display/attention semantics only; ownership still uses the real sender ID.
+    /// Section-5 "Machine-sender semantics": rows carrying a machine marker are
+    /// the automation's action, not the member's outgoing one - even when the
+    /// automation posted under that member's own sender id (legacy payload-only
+    /// flags included: "Unverified integration" rows are incoming attention).
     func isOutgoingFor(_ viewerId: String?) -> Bool {
         guard let viewerId, !viewerId.isEmpty else { return false }
-        return senderId == viewerId && viaAutomation != true
+        return senderId == viewerId && viaAutomation != true && integrationLabel == nil
     }
     func incomingPreview(viewerId: String?, roomId: String, now: Date = Date()) -> (senderName: String, body: String)? {
         guard let viewerId, !viewerId.isEmpty, conversationId == roomId, !isOutgoingFor(viewerId),

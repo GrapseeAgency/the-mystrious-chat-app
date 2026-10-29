@@ -344,9 +344,12 @@ struct SavedLibraryView: View {
     }
 
     private func rowTitle(_ item: WireSavedItem) -> String {
+        // Section-5 anonymity audit: the saved library obeys the anon mask.
         let sender = item.message.integrationLabel ?? (item.message.senderId == session.viewer?.id
             ? "You"
-            : (item.message.sender?.name ?? "Someone"))
+            : (item.message.anon == true
+                ? item.message.displayAuthorName
+                : item.message.sender?.name ?? "Someone"))
         let place = item.conversation.name ?? "chat"
         return "\(sender) in \(place)"
     }

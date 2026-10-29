@@ -42,9 +42,16 @@ enum PulseMessageMerge {
         var result = incoming
         if let prior, prior.deletedAt != nil, incoming.deletedAt == nil { result = prior }
         if prior?.viewOnce == true { result.viewOnce = true }
-        if let expires = prior?.expiresAt, let deadline = PulseFormat.date(expires),
-           result.expiresAt == nil || result.expiresAt.flatMap(PulseFormat.date).map({ $0 > deadline }) == true {
-            result.expiresAt = expires
+        // Section-5 "Old Android expiry loss" parity: an unparseable incoming
+        // deadline is unavailable, not an unlimited lease. When the prior parses,
+        // it survives a malformed/absent incoming value; when both parse, the
+        // earliest deadline wins and a fresh authoritative value heals a prior
+        // that failed to parse.
+        if let expires = prior?.expiresAt, let deadline = PulseFormat.date(expires) {
+            let incomingDeadline = result.expiresAt.flatMap(PulseFormat.date)
+            if incomingDeadline == nil || incomingDeadline.map({ $0 > deadline }) == true {
+                result.expiresAt = expires
+            }
         }
         if let viewedAt = prior?.viewedAt {
             result.viewOnce = true
@@ -61,8 +68,13 @@ enum PulseMessageMerge {
             result.content = prior.content
             result.editedAt = prior.editedAt
         }
-        if let oldQuote = prior?.replyTo, let quote = result.replyTo {
-            result.replyTo = quote.mergingBounds(from: oldQuote)
+        if let oldQuote = prior?.replyTo, oldQuote.quoteVersion == 1 {
+            // Section-5 provenance parity: a certified prior survives an
+            // envelope whose snippet is missing OR fails the certification
+            // gate (v0/legacy); two certified bounds merge monotonically.
+            result.replyTo = result.replyTo.flatMap {
+                $0.quoteVersion == 1 ? $0.mergingBounds(from: oldQuote) : oldQuote
+            } ?? oldQuote
         }
         return result
     }

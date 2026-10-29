@@ -890,8 +890,23 @@ public final class PulseStore: Sendable {
     }
 
     public func deleteMessage(id: String) throws {
+        // Section-5 provenance: a hard DELETE orphans the cached quotes
+        // pointing at this row (their repair walk joins through the quoted
+        // child). Route through the tombstone writer so repairCachedQuotes
+        // runs in the same transaction instead of deleting under them.
         _ = try dbQueue.write { db in
-            try db.execute(sql: "DELETE FROM message WHERE id = :id", arguments: ["id": id])
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = :id", arguments: ["id": id]),
+                  let message = Self.messageRow(from: row) else { return }
+            try Self.writeMessage(message.deletedCopy(), db: db)
+        }
+    }
+
+    /// Section-5 offline-revocation sweep: rooms that actually carry cached
+    /// server rows (bounded, deterministic order) - the iOS counterpart of
+    /// Android's conversationsWithServerRows.
+    public func conversationIdsWithServerRows() throws -> [String] {
+        try dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT DISTINCT conversationId FROM message WHERE substr(id, 1, 6) != 'local_' ORDER BY conversationId")
         }
     }
 

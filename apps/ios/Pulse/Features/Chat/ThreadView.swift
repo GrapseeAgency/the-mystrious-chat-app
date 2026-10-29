@@ -641,7 +641,7 @@ struct ThreadView: View {
                         }.disabled(!retryAllowed)
                         Button("Copy text") {
                             guard draftSession == session.sessionGeneration else { return }
-                            UIPasteboard.general.string = row.content
+                            PulseClipboard.copyText(row.content)
                         }.disabled(row.content.isEmpty)
                         Button("Discard", role: .destructive) { discardReply = row }
                     }.font(.caption.weight(.semibold))

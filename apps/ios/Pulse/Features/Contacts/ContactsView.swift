@@ -371,13 +371,15 @@ private struct ContactRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(user.name).font(.body.weight(.semibold))
-                    if user.verified == true || safetyVerified {
-                        // F-CP-08 - verified sparkle (account badge OR the
-                        // pair's safety number is marked verified).
+                    // Section-5 "Encryption identity claims": the sparkle is the
+                    // pair's saved safety-number COMPARISON, not a platform badge
+                    // (no account-level verified flag exists on the wire) and not
+                    // a proof of end-to-end encryption.
+                    if safetyVerified {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.caption)
                             .foregroundStyle(PulseTheme.emberOnline)
-                            .accessibilityLabel("Verified")
+                            .accessibilityLabel("Comparison verified")
                     }
                     if isViewer {
                         Text("You")

@@ -260,7 +260,7 @@ private struct RoomMessageRow: View {
             }
         }
         Button {
-            UIPasteboard.general.string = message.content
+            PulseClipboard.copyText(message.content)
         } label: {
             Label("Copy", systemImage: "doc.on.doc.fill")
         }.disabled(message.deletedAt != nil || (message.viewOnce == true && message.senderId != session.viewer?.id))
@@ -1326,11 +1326,23 @@ private struct RoomContent: View {
         .fullScreenCover(item: $quicklook) { target in
             QuickLookView(url: target.url)
                 .ignoresSafeArea()
+                .onDisappear {
+                    // Section-5 "Copies outside message storage": the QuickLook
+                    // preview is a downloaded copy under tmp/pulse-preview-*.
+                    // It dies with the sheet, not at tmp garbage time.
+                    try? FileManager.default.removeItem(at: target.url.deletingLastPathComponent())
+                }
         }
         .onDisappear {
             // Wave 2 - honest teardown: a recording or playback must never
             // outlive the room (roomVisible off / conversation change).
             viewOnceTask?.cancel()
+            // Section-5 "Copies outside message storage": playback tmp copies
+            // share the same honest teardown.
+            for (_, stale) in voiceLocalFiles {
+                try? FileManager.default.removeItem(at: stale)
+            }
+            voiceLocalFiles.removeAll()
             viewModel.handleRoomDisappeared()
         }
     }
@@ -1460,7 +1472,8 @@ private struct RoomContent: View {
                         viewModel.jumpTo(hit.id)
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(hit.integrationLabel ?? hit.sender?.name ?? "Message")
+                            // Section-5 anonymity audit: search hits obey the anon mask.
+                            Text(hit.integrationLabel ?? (hit.anon == true ? hit.displayAuthorName : hit.sender?.name) ?? "Message")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(PulseTheme.emberGlowTop)
                             HighlightedSnippet(content: hit.content, query: searchQuery)
@@ -1527,7 +1540,8 @@ private struct RoomContent: View {
                     viewModel.jumpTo(pin.id)
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(pin.integrationLabel ?? pin.sender?.name ?? "Pinned")
+                        // Section-5 anonymity audit: pins obey the anon mask.
+                        Text(pin.integrationLabel ?? (pin.anon == true ? pin.displayAuthorName : pin.sender?.name) ?? "Pinned")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(PulseTheme.emberGlowTop)
                         Text(pin.content.isEmpty ? "Media message" : pin.content)
@@ -2972,7 +2986,10 @@ struct BubbleView: View {
                 if message.integrationLabel == nil && groupChat && !mine, isClusterHead, let sender = message.sender {
                     HStack(spacing: 5) {
                         Circle().fill(PulseTheme.color(named: sender.color)).frame(width: 6, height: 6)
-                        Text(sender.name)
+                        // Section-5 anonymity audit: an anon row whose alias
+                        // failed to arrive still renders the masked fallback,
+                        // never the raw account name.
+                        Text(message.anon == true ? message.displayAuthorName : sender.name)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(PulseTheme.emberGlowTop)
                     }
@@ -4217,6 +4234,12 @@ final class RoomViewModel: ObservableObject {
                         let tombstone = message.deletedCopy()
                         pins.removeAll { $0.id == message.id }
                         searchResults.removeAll { $0.id == message.id }
+                        // Section-5 "Copies outside message storage": the
+                        // playback tmp copy of a tombstoned voice note goes
+                        // with the tombstone, not at tmp-dir garbage time.
+                        if let stale = voiceLocalFiles.removeValue(forKey: message.id) {
+                            try? FileManager.default.removeItem(at: stale)
+                        }
                         upsert(tombstone)
                         try? session.store?.upsert(messages: [tombstone])
                     }
@@ -4717,7 +4740,7 @@ final class RoomViewModel: ObservableObject {
 
     func copyRecap() {
         if case .ready(let text, _)? = recap {
-            UIPasteboard.general.string = text
+            PulseClipboard.copyText(text)
             PulseHaptics.tap()
             session?.toasts.show("Recap copied")
         }
