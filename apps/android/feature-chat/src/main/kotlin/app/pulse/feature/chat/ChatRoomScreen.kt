@@ -100,6 +100,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import app.pulse.ui.text.SensitiveClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -1343,7 +1344,7 @@ fun ChatRoomScreen(
                         }
                         if (recap != null && !recapLoading) {
                             TextButton(onClick = {
-                                clipboard.setText(AnnotatedString(recap?.text.orEmpty()))
+                                SensitiveClipboard.copy(context, "recap", recap?.text.orEmpty())
                                 viewModel.notify("Recap copied")
                             }) {
                                 Text("Copy", fontSize = 11.sp, color = EmberPalette.Amber, fontWeight = FontWeight.Bold)
@@ -2196,7 +2197,7 @@ fun ChatRoomScreen(
             },
             onCopy = {
                 if (!target.viewOnce || target.authorId == viewerId) {
-                    clipboard.setText(AnnotatedString(target.body))
+                    SensitiveClipboard.copy(context, "message", target.body)
                     viewModel.notify("Copied to clipboard")
                 } else viewModel.notify("View-once content can't be copied", isError = true)
                 actionTarget = null
@@ -3532,9 +3533,10 @@ private fun MessageRow(
         // R53 reference rebuild - the group sender label moved INSIDE the
         // bubble (the artboard shows the name as the bubble's first line);
         // incognito rows (R3-B item 4) keep the server alias mask.
-        val anonMasked = message.anon && message.anonAlias != null
+        // Section-5 anonymity audit: an anon row whose alias failed to arrive
+        // still renders the masked fallback, never the raw account name.
         val inBubbleSender = if (integrationLabel == null && !mine && head && conversation?.isGroupish == true && !message.isDeleted) {
-            if (anonMasked) message.anonAlias.orEmpty() else message.authorName
+            if (message.anon) message.displayAuthorName else message.authorName
         } else {
             null
         }
@@ -3622,7 +3624,7 @@ private fun MessageRow(
             if (!mine) {
                 if (head && !message.isDeleted) {
                     PulseAvatar(
-                        name = integrationLabel ?: if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
+                        name = integrationLabel ?: message.displayAuthorName,
                         colorHex = message.senderColor,
                         size = 24.dp,
                         modifier = Modifier.align(Alignment.Bottom),
@@ -5162,7 +5164,7 @@ private fun SafetyNumberSheetHost(
                 )
                 Spacer(Modifier.width(10.dp))
                 Column {
-                    Text("Encryption", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text("Safety number", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     Text(
                         if (safety.state?.verified == true) "Verified" else "Not verified",
                         fontSize = 12.sp,
@@ -5170,6 +5172,16 @@ private fun SafetyNumberSheetHost(
                     )
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            // Section-5 "Encryption identity claims": the number is an owner-
+            // private comparison mark over public account IDs - not a device
+            // key proof, and not end-to-end encryption. Say so here, where the
+            // strongest claim lives (the mirror info page already does).
+            Text(
+                "This number compares public account IDs. It is not a device encryption key and does not prove end-to-end encryption.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+            )
             Spacer(Modifier.height(14.dp))
             when {
                 safety.busy && safety.state == null -> Row(Modifier.padding(vertical = 12.dp)) {

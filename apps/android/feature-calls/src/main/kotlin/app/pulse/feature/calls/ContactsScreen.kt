@@ -349,10 +349,6 @@ private fun ContactRow(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(user.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    if (user.verified) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(PulseIcons.Check, contentDescription = "Verified", tint = EmberPalette.Online, modifier = Modifier.size(13.dp))
-                    }
                 }
                 Text(
                     user.statusText ?: "@${user.handle.ifBlank { user.name.lowercase().replace(" ", "_") }}",

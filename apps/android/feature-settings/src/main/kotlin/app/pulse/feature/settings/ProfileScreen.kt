@@ -801,10 +801,6 @@ private fun IdentitySheet(
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(user.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
-                                    if (user.verified) {
-                                        Spacer(Modifier.width(4.dp))
-                                        Icon(PulseIcons.Check, contentDescription = null, tint = EmberPalette.Online, modifier = Modifier.size(13.dp))
-                                    }
                                 }
                                 Text("@${user.handle.ifBlank { user.name.lowercase().replace(" ", "_") }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }

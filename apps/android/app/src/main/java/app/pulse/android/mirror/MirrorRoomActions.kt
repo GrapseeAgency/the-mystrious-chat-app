@@ -135,6 +135,7 @@ internal fun MirrorMessageActionPanel(
     var pendingOp by remember(message.id) { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
+    val clipboardContext = LocalContext.current
 
     val actionScope = rememberCoroutineScope()
     val panelSession = remember(repository, viewerId) { repository.attachmentSessionKey() }
@@ -230,7 +231,7 @@ internal fun MirrorMessageActionPanel(
             }
             MirrorActionSeparator()
             MirrorActionRow(glyph = "LCopy", label = "Copy text", enabled = !deleted && (!message.viewOnce || mine)) {
-                clipboard.setText(AnnotatedString(message.body))
+                app.pulse.ui.text.SensitiveClipboard.copy(clipboardContext, "message", message.body)
                 onDismiss()
             }
             MirrorActionRow(glyph = "LExternalLink", label = "Forward to chat", enabled = !deleted && !message.viewOnce) { onDismiss(); onForward() }
@@ -459,6 +460,7 @@ internal fun MirrorThreadSheet(
     val recoveryFlow = remember(threadRepository, root.id) { threadRepository.observeFailedThreadReplies(root.conversationId, root.id) }
     val failedReplies by recoveryFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val clipboard = LocalClipboardManager.current
+    val recoveryClipboardContext = LocalContext.current
     var recoveryBusy by remember(root.id) { mutableStateOf(false) }
     var discardConfirm by remember(root.id) { mutableStateOf<String?>(null) }
     var threadWindow by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.sync.MessageWindow?>(null) }
@@ -766,7 +768,7 @@ internal fun MirrorThreadSheet(
                                         }
                                     })
                                 Text("Copy text", color = MirrorArt.Accent, fontSize = 12.sp,
-                                    modifier = Modifier.clickable(enabled = entry.content.isNotEmpty()) { clipboard.setText(AnnotatedString(entry.content)) })
+                                    modifier = Modifier.clickable(enabled = entry.content.isNotEmpty()) { app.pulse.ui.text.SensitiveClipboard.copy(recoveryClipboardContext, "failed reply", entry.content) })
                                 Text("Discard", color = MirrorArt.Accent, fontSize = 12.sp,
                                     modifier = Modifier.clickable(enabled = !recoveryBusy) { discardConfirm = entry.clientId })
                             }

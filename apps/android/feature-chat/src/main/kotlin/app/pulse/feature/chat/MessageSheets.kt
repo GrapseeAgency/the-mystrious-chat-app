@@ -565,7 +565,8 @@ internal fun PinsDialog(
                         ) {
                             Column(Modifier.padding(10.dp)) {
                                 Text(
-                                    pin.authorName,
+                                    // Section-5 anonymity audit: pins obey the anon mask.
+                                    pin.displayAuthorName,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = PulsePalette.Emerald,

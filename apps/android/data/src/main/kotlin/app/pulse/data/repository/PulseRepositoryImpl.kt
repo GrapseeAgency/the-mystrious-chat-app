@@ -336,6 +336,10 @@ class PulseRepositoryImpl constructor(
                 // R44 - retained download copies obey the 24h/tombstone policy.
                 runCatching { sweepDownloadCopies() }
                     .onFailure { Log.w(TAG, "Download copy sweep deferred", it) }
+                // Section-5 "Copies outside message storage": exported chat
+                // files are retained plain-text copies with a 24h TTL.
+                runCatching { sweepExportCopies() }
+                    .onFailure { Log.w(TAG, "Export copy sweep deferred", it) }
             }
             socket.connect(userId)
             launch { runCatching { ensureDemoSeeded(userId) } }
@@ -365,7 +369,11 @@ class PulseRepositoryImpl constructor(
                 kotlinx.coroutines.delay(60_000)
                 var cursor = 0
                 while (viewerId == userId && attachmentSession == savedEpoch) {
-                    val rooms = messageDao.conversationsWithServerRows()
+                    // Section-5 "Old Android expiry loss": rooms still holding a
+                    // malformed-deadline row are visited FIRST so the next
+                    // authoritative fetch rebuilds the poisoned value instead
+                    // of the row staying invisible until its natural turn.
+                    val rooms = (messageDao.roomsWithMalformedExpiry() + messageDao.conversationsWithServerRows()).distinct()
                     if (rooms.isNotEmpty()) {
                         val room = rooms[cursor % rooms.size]
                         cursor = (cursor + 1) % rooms.size
@@ -375,6 +383,8 @@ class PulseRepositoryImpl constructor(
                         // retained download copies immediately.
                         runCatching { sweepDownloadCopies() }
                             .onFailure { Log.w(TAG, "Download copy sweep deferred", it) }
+                        runCatching { sweepExportCopies() }
+                            .onFailure { Log.w(TAG, "Export copy sweep deferred", it) }
                     }
                     kotlinx.coroutines.delay(60_000)
                 }
@@ -591,6 +601,11 @@ class PulseRepositoryImpl constructor(
                             // Rejoining cannot replay missed read/unread events.
                             // Repair projections even when both journals are empty.
                             readStateRevisions.reconnected()
+                            // Section-5 "Privacy propagation delay": own privacy
+                            // preferences are fetched once per session bind; a
+                            // toggle made on another device must land here on
+                            // reconnect too, not only on cold start.
+                            scope.launch { runCatching { fetchSettings() } }
                             val savedOwner = viewerId
                             val savedEpoch = attachmentSession
                             if (savedOwner != null) scope.launch { flushSavedIntents(); synchronizeSavedCache(savedOwner, savedEpoch) }
@@ -1969,6 +1984,25 @@ class PulseRepositoryImpl constructor(
                 if (!file.isFile) continue
                 val stale = now - file.lastModified() > 24 * 60 * 60 * 1000L
                 if (stale || file.name !in referenced) runCatching { file.delete() }
+            }
+        }
+    }
+
+    /**
+     * Section-5 "Copies outside message storage": chat exports under
+     * cacheDir/exports are retained plain-text copies the user handed to the
+     * share sheet. Policy: 24h TTL - long enough to share, short enough not
+     * to become a shadow archive the tombstone sweep cannot see.
+     */
+    private suspend fun sweepExportCopies() {
+        val dir = java.io.File(context.cacheDir, "exports")
+        val files = withContext(Dispatchers.IO) { dir.listFiles() ?: return }
+        if (files.isEmpty()) return
+        val now = System.currentTimeMillis()
+        withContext(Dispatchers.IO) {
+            for (file in files) {
+                if (!file.isFile) continue
+                if (now - file.lastModified() > 24 * 60 * 60 * 1000L) runCatching { file.delete() }
             }
         }
     }
@@ -5913,6 +5947,9 @@ fun ChatMessageDto.toDomain(): Message = Message(
     anon = anon == true,
     anonAlias = anonAlias,
     expiresAtEpochMs = messageExpiryEpochMs(expiresAt),
+    // Section-5 "Old Android expiry loss": keep the authoritative wire value
+    // so a row whose deadline fails to parse can be rebuilt, not lost.
+    expiresAtRaw = expiresAt,
 )
 
 // Wave 2 wire → domain mappers (saved library + topics)

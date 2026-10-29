@@ -60,8 +60,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalContext
+import app.pulse.ui.text.SensitiveClipboard
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -449,6 +450,7 @@ fun ThreadScreen(
         }
     }
     val clipboard = LocalClipboardManager.current
+    val clipboardContext = LocalContext.current
     discardConfirm?.let { clientId ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { discardConfirm = null },
@@ -613,7 +615,9 @@ fun ThreadScreen(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        (parent?.integrationLabel ?: parent?.authorName)?.let { "Replies to $it" } ?: "…",
+                        // Section-5 anonymity audit: the thread header uses the
+                        // masked attribution, never the raw account name.
+                        parent?.displayAuthorName?.let { "Replies to $it" } ?: "…",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -713,7 +717,7 @@ fun ThreadScreen(
                         Row {
                             TextButton(onClick = { viewModel.recoverReply(entry.clientId, discard = false) },
                                 enabled = !state.unavailable && threadRootAvailable(parent, viewModel.conversationId, viewModel.rootId)) { Text("Retry original") }
-                            TextButton(enabled = entry.content.isNotEmpty(), onClick = { clipboard.setText(AnnotatedString(entry.content)) }) { Text("Copy") }
+                            TextButton(enabled = entry.content.isNotEmpty(), onClick = { SensitiveClipboard.copy(clipboardContext, "failed reply", entry.content) }) { Text("Copy") }
                             TextButton(onClick = { discardConfirm = entry.clientId }) { Text("Discard") }
                         }
                     }

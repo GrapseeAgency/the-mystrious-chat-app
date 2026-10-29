@@ -3898,7 +3898,9 @@ private fun MirrorBubbleRow(
                                 modifier = Modifier.padding(bottom = 2.dp))
                         } else if (!mine && isGroup && head) {
                             Text(
-                                message.authorName,
+                            // Section-5 anonymity audit: the mirror renders the
+                            // same masked attribution as the live room.
+                            message.displayAuthorName,
                                 color = MirrorArt.TextSoft,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -3929,7 +3931,7 @@ private fun MirrorBubbleRow(
                                     packetId = redPacketInfo.packetId,
                                     viewerId = viewerId,
                                     mine = mine,
-                                    senderName = message.authorName,
+                                    senderName = message.displayAuthorName,
                                     repository = repository!!,
                                 )
                             }

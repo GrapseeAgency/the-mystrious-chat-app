@@ -588,13 +588,20 @@ data class Message(
     val anonAlias: String? = null,
     /** Epoch ms when this row evaporates (wire expiresAt ISO → parsed). Null = forever. */
     val expiresAtEpochMs: Long? = null,
+    /** Raw wire expiresAt string. Section-5 "Old Android expiry loss": kept so a
+     * row whose deadline failed to parse (sentinel Long.MIN_VALUE) can be rebuilt
+     * from the authoritative value instead of being lost. Null = absent on wire. */
+    val expiresAtRaw: String? = null,
 ) {
     // R1-W2F (F-MD-07): wire kind "location" - pin rows carry payload {lat,lng,label}.
     enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, STICKER, LOCATION, SYSTEM }
 
     val isDeleted: Boolean get() = deletedAt != null
-    /** Attention/unread classification, never an ownership/permission check. */
-    fun isOutgoingFor(viewerId: String?): Boolean = !viewerId.isNullOrBlank() && authorId == viewerId && !viaAutomation
+    /** Attention/unread classification, never an ownership/permission check.
+     * Section-5 "Machine-sender semantics": rows carrying a machine/integration
+     * marker are the automation's action, not the member's outgoing one - even
+     * when the automation posted under that member's own sender id. */
+    fun isOutgoingFor(viewerId: String?): Boolean = !viewerId.isNullOrBlank() && authorId == viewerId && !viaAutomation && integrationLabel == null
     val displayAuthorName: String get() = if (anon) anonAlias?.takeIf { it.isNotBlank() } ?: "Anonymous" else integrationLabel ?: authorName
     val integrationLabel: String? get() = app.pulse.domain.sync.MessageOrigin.label(payload, viaAutomation, isDeleted)
 }

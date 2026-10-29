@@ -39,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import app.pulse.ui.text.SensitiveClipboard
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -369,6 +371,7 @@ internal fun WebhooksSection(
     var createOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Webhook?>(null) }
     val clipboard = LocalClipboardManager.current
+    val clipboardContext = LocalContext.current
 
     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -411,7 +414,7 @@ internal fun WebhooksSection(
                                 // origin (location.origin) - here the configured
                                 // gateway origin plays that role.
                                 val fullUrl = PulseEndpoints.gatewayHttpUrl.trimEnd('/') + webhook.url
-                                clipboard.setText(AnnotatedString(fullUrl))
+                                SensitiveClipboard.copy(clipboardContext, "webhook url", fullUrl)
                                 onNotice("Webhook URL copied", false)
                             },
                             onDelete = { if (!state.busy && !state.loading) deleteTarget = webhook },

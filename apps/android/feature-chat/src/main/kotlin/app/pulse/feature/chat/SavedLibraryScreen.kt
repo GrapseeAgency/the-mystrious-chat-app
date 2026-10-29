@@ -390,7 +390,7 @@ private fun SavedRow(
     val message = item.message
     val mine = message.authorId == viewerId
     val convName = item.conversationName ?: "chat"
-    val sender = message.integrationLabel ?: if (mine) "You" else message.authorName.ifBlank { "Someone" }
+    val sender = message.integrationLabel ?: if (mine) "You" else message.displayAuthorName.ifBlank { "Someone" }
     val title = "$sender in $convName"
     // R35 Neo - plain kind prefixes (the old glyph prefixes are gone).
     val prefix = when {

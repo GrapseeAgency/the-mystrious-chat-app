@@ -1452,7 +1452,8 @@ private fun MirrorPipChat(
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                     if (convo.isGroupish && message.authorName.isNotBlank()) {
                         Text(
-                            message.authorName,
+                            // Section-5 anonymity audit: glance cards obey the anon mask.
+                            message.displayAuthorName,
                             color = MirrorArt.Accent2,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,

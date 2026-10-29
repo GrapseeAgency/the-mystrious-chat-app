@@ -174,6 +174,7 @@ internal fun MirrorGroupManagerSheet(
 ) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val clipboardContext = LocalContext.current
 
     // live server truth - groupMeta on open, after every mutation, 30s beat
     var meta by remember { mutableStateOf<GroupMeta?>(null) }
@@ -809,7 +810,7 @@ private fun MgrWebhooksSection(
                                     url.startsWith("http://") || url.startsWith("https://") -> url
                                     else -> origin.removeSuffix("/api") + url
                                 }
-                                clipboard.setText(AnnotatedString(absolute))
+                                app.pulse.ui.text.SensitiveClipboard.copy(clipboardContext, "webhook url", absolute)
                                 onNote("Webhook URL copied")
                             },
                         ) {

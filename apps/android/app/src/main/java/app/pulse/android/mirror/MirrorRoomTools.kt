@@ -781,6 +781,7 @@ internal fun MirrorRecapSheet(
     var reloadKey by remember { mutableStateOf(0) }
     var copied by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
+    val clipboardContext = LocalContext.current
 
     // on open: real recap (web recapMutation)
     LaunchedEffect(reloadKey) {
@@ -842,7 +843,7 @@ internal fun MirrorRecapSheet(
                         .clickable {
                             val text = loadedForCopy.recap
                             if (text.isNotEmpty()) {
-                                clipboard.setText(AnnotatedString(text))
+                                app.pulse.ui.text.SensitiveClipboard.copy(clipboardContext, "recap", text)
                                 copied = true
                             }
                         }

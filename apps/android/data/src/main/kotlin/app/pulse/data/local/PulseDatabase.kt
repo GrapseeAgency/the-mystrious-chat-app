@@ -229,7 +229,16 @@ data class MessageEntity(
         }
         // REM-A - reserved pulse:* keys ride payloadJson (schema v9 frozen);
         // pop them back out so the domain payload stays the clean wire blob.
-        val (payloadClean, anon, anonAlias, expiresAt) = payloadPulseKeys(payloadJson)
+        val (payloadClean, anon, anonAlias, expiresAt, expiresAtRaw) = payloadPulseKeys(payloadJson)
+        // Section-5 "Old Android expiry loss": the stored min can be the
+        // malformed sentinel when both writes collapsed to it. If the retained
+        // raw wire string parses, it IS the authoritative deadline - rebuild
+        // the parsed value from it instead of dropping the row into the
+        // already-expired bucket forever.
+        val storedExpiry = listOfNotNull(expiresAt, expiresAtEpochMs).minOrNull()
+        val rawHealed = expiresAtRaw
+            ?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+            ?.takeIf { it != Long.MIN_VALUE }
         return app.pulse.domain.sync.mergeMessageState(null, Message(
             id = id, conversationId = conversationId, authorId = authorId,
             authorName = authorName, kind = Message.Kind.valueOf(kind), body = body,
@@ -265,7 +274,8 @@ data class MessageEntity(
             payload = payloadClean,
             anon = anon,
             anonAlias = anonAlias,
-            expiresAtEpochMs = listOfNotNull(expiresAt, expiresAtEpochMs).minOrNull(),
+            expiresAtEpochMs = if (storedExpiry == Long.MIN_VALUE && rawHealed != null) rawHealed else storedExpiry,
+            expiresAtRaw = expiresAtRaw,
         ))
     }
 
@@ -278,32 +288,38 @@ data class MessageEntity(
         private const val KEY_ANON = "pulse:anon"
         private const val KEY_ALIAS = "pulse:anonAlias"
         private const val KEY_EXPIRES = "pulse:expiresAtMs"
+        // Section-5 "Old Android expiry loss": the raw wire string rides the
+        // same frozen payload so a row whose deadline failed to parse can be
+        // rebuilt from the authoritative value instead of staying poisoned.
+        private const val KEY_EXPIRES_RAW = "pulse:expiresAtRaw"
 
         /** payloadJson → (clean payload, anon, anonAlias, expiresAtEpochMs). */
         internal fun expiryFromPayload(raw: String?): Long? = payloadPulseKeys(raw).expiresAtEpochMs
 
-        private fun payloadPulseKeys(raw: String?): Tuple4 = run {
+        private fun payloadPulseKeys(raw: String?): Tuple5 = run {
             val obj = raw?.let { r ->
                 runCatching {
                     app.pulse.protocol.PulseJson.parseToJsonElement(r) as? kotlinx.serialization.json.JsonObject
                 }.getOrNull()
             }
-            if (obj == null) return@run Tuple4(raw, false, null, null)
+            if (obj == null) return@run Tuple5(raw, false, null, null, null)
             val anon = (obj[KEY_ANON] as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull ?: false
             val alias = (obj[KEY_ALIAS] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
             val expires = if (KEY_EXPIRES in obj)
                 (obj[KEY_EXPIRES] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull ?: Long.MIN_VALUE
             else null
-            val clean = kotlinx.serialization.json.JsonObject(obj - KEY_ANON - KEY_ALIAS - KEY_EXPIRES - KEY_READERS)
+            val expiresRaw = (obj[KEY_EXPIRES_RAW] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+            val clean = kotlinx.serialization.json.JsonObject(obj - KEY_ANON - KEY_ALIAS - KEY_EXPIRES - KEY_EXPIRES_RAW - KEY_READERS)
                 .let { if (it.isEmpty()) null else it.toString() }
-            Tuple4(clean, anon, alias, expires)
+            Tuple5(clean, anon, alias, expires, expiresRaw)
         }
 
-        private data class Tuple4(
+        private data class Tuple5(
             val payload: String?,
             val anon: Boolean,
             val anonAlias: String?,
             val expiresAtEpochMs: Long?,
+            val expiresAtRaw: String?,
         )
 
         /** Message → payloadJson with the reserved pulse:* keys merged in. */
@@ -313,9 +329,10 @@ data class MessageEntity(
                     app.pulse.protocol.PulseJson.parseToJsonElement(raw) as? kotlinx.serialization.json.JsonObject
                 }.getOrNull()
             } ?: kotlinx.serialization.json.JsonObject(emptyMap())
+            val reserved = setOf(KEY_ANON, KEY_ALIAS, KEY_EXPIRES, KEY_EXPIRES_RAW, KEY_READERS)
             val withKeys = kotlinx.serialization.json.buildJsonObject {
                 base.forEach { (k, v) ->
-                    if (k !in setOf(KEY_ANON, KEY_ALIAS, KEY_EXPIRES, KEY_READERS)) put(k, v)
+                    if (k !in reserved) put(k, v)
                 }
                 put(KEY_READERS, kotlinx.serialization.json.JsonArray(m.readByMembershipIds.distinct().map { kotlinx.serialization.json.JsonPrimitive(it) }))
                 if (m.anon) put(KEY_ANON, kotlinx.serialization.json.JsonPrimitive(true))
@@ -323,6 +340,9 @@ data class MessageEntity(
                 m.expiresAtEpochMs?.let {
                     put(KEY_EXPIRES, kotlinx.serialization.json.JsonPrimitive(it))
                 }
+                // Section-5 "Old Android expiry loss": retain the authoritative
+                // wire value verbatim so the parsed column can be rebuilt.
+                if (!m.expiresAtRaw.isNullOrBlank()) put(KEY_EXPIRES_RAW, kotlinx.serialization.json.JsonPrimitive(m.expiresAtRaw))
             }
             return if (withKeys.isEmpty()) null else withKeys.toString()
         }
@@ -828,6 +848,14 @@ interface MessageDao {
      * server rows (bounded, deterministic order). */
     @Query("SELECT DISTINCT conversationId FROM messages WHERE substr(id, 1, 6) != 'local_' ORDER BY conversationId")
     suspend fun conversationsWithServerRows(): List<String>
+
+    /** Section-5 "Old Android expiry loss": rooms still caching a row whose
+     * deadline collapsed to the malformed sentinel. The revalidation loop
+     * visits these FIRST, so the authoritative server value can rebuild the
+     * poisoned column instead of the row staying invisible forever. */
+    @Query("SELECT DISTINCT conversationId FROM messages WHERE expiresAtEpochMs = -9223372036854775808 " +
+        "AND substr(id, 1, 6) != 'local_' LIMIT 16")
+    suspend fun roomsWithMalformedExpiry(): List<String>
 
     /** Live media filenames still referenced by a non-deleted cached row. */
     @Query("SELECT DISTINCT imagePath FROM messages WHERE deletedAt IS NULL AND imagePath IN (:names) " +
