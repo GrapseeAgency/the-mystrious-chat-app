@@ -161,9 +161,11 @@ enum PulseMediaSupport {
         // The blocking loop runs detached (never on the caller's actor - a
         // main-actor caller must not block on a provider read), and the
         // caller's cancellation is propagated by hand: outer cancel -> inner
-        // cancel -> closeOnce() unblocks the wedged provider read.
-        let inner = Task.detached(priority: .userInitiated) { () throws -> Data in
-            try withTaskCancellationHandler {
+        // cancel -> closeOnce() unblocks the wedged provider read. The inner
+        // closure is explicitly async so the cancellation-handler overload
+        // resolves cleanly (a sync closure inside picked the async overload).
+        let inner = Task.detached(priority: .userInitiated) { () async throws -> Data in
+            try await withTaskCancellationHandler {
                 try read()
             } onCancel: {
                 closeOnce()

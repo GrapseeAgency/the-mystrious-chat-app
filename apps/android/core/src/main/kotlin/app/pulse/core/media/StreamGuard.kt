@@ -71,7 +71,7 @@ object StreamGuard {
                 val reader = async(Dispatchers.IO, start = CoroutineStart.ATOMIC) { block(stream) }
                 suspendCancellableCoroutine { cont ->
                     cont.invokeOnCancellation { closeOnce() }
-                    reader.invokeOnCompletion { if (cont.isActive) cont.resume(Unit) { _, _ -> } }
+                    reader.invokeOnCompletion { if (cont.isActive) cont.resume(Unit) { _ -> } }
                 }
                 reader.await()
             }
