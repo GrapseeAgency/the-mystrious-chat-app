@@ -6,6 +6,7 @@ import XCTest
 /// restores the selection; consumption (queue or discard) is durable and
 /// atomic; interrupted recordings reconstruct or drop honestly; share-in
 /// entries decode exactly the bytes the extension writes.
+@MainActor
 final class StagedAttachmentAndRecordingJournalTests: XCTestCase {
 
     private func viewer() -> PulseViewer { PulseViewer(id: "me", name: "Me") }
