@@ -707,6 +707,7 @@ private fun MgrWebhooksSection(
     clipboard: androidx.compose.ui.platform.ClipboardManager,
     onNote: (String) -> Unit,
 ) {
+    val clipboardContext = androidx.compose.ui.platform.LocalContext.current
     if (!isAdmin) {
         Text("Webhook credentials are available to admins only.", color = MirrorArt.TextSoft, fontSize = 12.sp)
         return

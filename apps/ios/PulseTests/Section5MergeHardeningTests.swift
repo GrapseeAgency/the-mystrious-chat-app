@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import Pulse
 
 /// Section-5 merge hardening, parity with Android's Section5MergeHardeningTest:
