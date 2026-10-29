@@ -120,13 +120,16 @@ enum PulseMediaSupport {
     /// the OS gives up - a documented platform limit, not a silent hang.)
     static let documentReadDeadline: TimeInterval = 120
 
-    static func readDocument(url: URL) throws -> Data {
+    static func readDocument(url: URL) async throws -> Data {
         guard url.isFileURL else { throw CocoaError(.fileReadUnsupportedScheme) }
         guard let stream = InputStream(url: url) else { throw CocoaError(.fileReadUnknown) }
-        return try readDocument(stream: stream)
+        return try await readDocument(stream: stream)
     }
 
-    static func readDocument(stream: InputStream, deadline: TimeInterval = documentReadDeadline) throws -> Data {
+    static func readDocument(stream: InputStream, deadline: TimeInterval = documentReadDeadline) async throws -> Data {
+        // An already-cancelled caller fails here and now (the bridge below
+        // only propagates cancellation that lands mid-read).
+        try Task.checkCancellation()
         let lock = NSLock()
         var closed = false
         func closeOnce() {
@@ -136,7 +139,7 @@ enum PulseMediaSupport {
         let watchdog = DispatchWorkItem { closeOnce() }
         DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + deadline, execute: watchdog)
         defer { watchdog.cancel(); closeOnce() }
-        return try withTaskCancellationHandler {
+        let read: () throws -> Data = {
             stream.open()
             defer { closeOnce() }
             var result = Data()
@@ -154,9 +157,22 @@ enum PulseMediaSupport {
             try Task.checkCancellation()
             guard !result.isEmpty else { throw PulseAPIClient.Failure(kind: .validation, message: "The selected document is empty.") }
             return result
+        }
+        // The blocking loop runs detached (never on the caller's actor - a
+        // main-actor caller must not block on a provider read), and the
+        // caller's cancellation is propagated by hand: outer cancel -> inner
+        // cancel -> closeOnce() unblocks the wedged provider read.
+        let inner = Task.detached(priority: .userInitiated) { () throws -> Data in
+            try withTaskCancellationHandler {
+                try read()
+            } onCancel: {
+                closeOnce()
+            }
+        }
+        return try await withTaskCancellationHandler {
+            try await inner.value
         } onCancel: {
-            // R43 - unblocks a provider read stuck below the chunk loop.
-            closeOnce()
+            inner.cancel()
         }
     }
 

@@ -5578,7 +5578,7 @@ final class RoomViewModel: ObservableObject {
                 try Task.checkCancellation()
                 let secured = url.startAccessingSecurityScopedResource()
                 defer { if secured { url.stopAccessingSecurityScopedResource() } }
-                let data = try PulseMediaSupport.readDocument(url: url)
+                let data = try await PulseMediaSupport.readDocument(url: url)
                 try Task.checkCancellation()
                 return (PulseMediaSupport.dataUrl(mime: mime, data: data), data.count)
             }

@@ -2383,16 +2383,20 @@ struct MirrorRoomView: View {
             session.toasts.show("Finish the current recording or attachment first.")
             return
         }
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        do {
-            guard let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) else {
-                throw PulseAPIClient.Failure(kind: .validation, message: "Choose a PDF, ZIP, TXT or CSV document.")
-            }
-            let data = try PulseMediaSupport.readDocument(url: url)
-            prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data),
-                envelope: PulseOutboxForward(kind: "file", fileName: url.lastPathComponent, fileSize: data.count, anon: row.isGroup && anonNext))
-        } catch { session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Couldn't read that document.") }
+        // R43 - the read rides the cancellable async reader (deadline +
+        // close-on-cancel) off the main actor; the envelope still lands on main.
+        Task { @MainActor in
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do {
+                guard let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) else {
+                    throw PulseAPIClient.Failure(kind: .validation, message: "Choose a PDF, ZIP, TXT or CSV document.")
+                }
+                let data = try await PulseMediaSupport.readDocument(url: url)
+                prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data),
+                    envelope: PulseOutboxForward(kind: "file", fileName: url.lastPathComponent, fileSize: data.count, anon: row.isGroup && anonNext))
+            } catch { session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Couldn't read that document.") }
+        }
     }
 
     private func handlePhotoPick(_ item: PhotosPickerItem?) {

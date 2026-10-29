@@ -78,22 +78,26 @@ final class ImagePreparationTests: XCTestCase {
         XCTAssertEqual(response, false)
     }
 
-    func testDocumentReaderRefusesEmptyOversizedAndNonFileInputs() throws {
+    func testDocumentReaderRefusesEmptyOversizedAndNonFileInputs() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
         try Data().write(to: file); defer { try? FileManager.default.removeItem(at: file) }
-        XCTAssertThrowsError(try PulseMediaSupport.readDocument(url: file))
+        do { _ = try await PulseMediaSupport.readDocument(url: file); XCTFail("empty must throw") }
+        catch { }
         let content = Data("a real document".utf8); try content.write(to: file)
-        XCTAssertEqual(try PulseMediaSupport.readDocument(url: file), content)
+        let read = try await PulseMediaSupport.readDocument(url: file)
+        XCTAssertEqual(read, content)
         let handle = try FileHandle(forWritingTo: file)
         try handle.truncate(atOffset: UInt64(PulseMediaSupport.maxDocumentBytes + 1)); try handle.close()
-        XCTAssertThrowsError(try PulseMediaSupport.readDocument(url: file))
-        XCTAssertThrowsError(try PulseMediaSupport.readDocument(url: URL(string: "https://document.test/private.txt")!))
+        do { _ = try await PulseMediaSupport.readDocument(url: file); XCTFail("oversized must throw") }
+        catch { }
+        do { _ = try await PulseMediaSupport.readDocument(url: URL(string: "https://document.test/private.txt")!); XCTFail("non-file must throw") }
+        catch { }
     }
 
     func testCancelledDocumentReadDoesNotReturnBytes() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
         try Data("document".utf8).write(to: file); defer { try? FileManager.default.removeItem(at: file) }
-        let read = Task { try PulseMediaSupport.readDocument(url: file) }
+        let read = Task { try await PulseMediaSupport.readDocument(url: file) }
         read.cancel()
         do { _ = try await read.value; XCTFail("Cancelled read should not return bytes") }
         catch is CancellationError { }
@@ -143,7 +147,7 @@ final class ImagePreparationTests: XCTestCase {
     func testCancelledDocumentReadClosesTheStreamAndUnblocksAProviderBlockedBelowTheReader() async throws {
         let provider = BlockedProviderStream()
         let read = Task.detached(priority: .userInitiated) {
-            try PulseMediaSupport.readDocument(stream: provider, deadline: 60)
+            try await PulseMediaSupport.readDocument(stream: provider, deadline: 60)
         }
         XCTAssertTrue(provider.waitEntered(5), "the provider read never started")
         read.cancel() // the read is blocked inside the provider right now
@@ -159,7 +163,7 @@ final class ImagePreparationTests: XCTestCase {
     func testDocumentReadDeadlineClosesAHungProviderEvenWithoutCancellation() async throws {
         let provider = BlockedProviderStream()
         let read = Task.detached(priority: .userInitiated) {
-            try PulseMediaSupport.readDocument(stream: provider, deadline: 0.3)
+            try await PulseMediaSupport.readDocument(stream: provider, deadline: 0.3)
         }
         XCTAssertTrue(provider.waitEntered(5), "the provider read never started")
         // No cancellation: the 0.3s watchdog must close the stream so the

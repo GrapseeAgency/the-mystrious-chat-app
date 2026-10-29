@@ -3,10 +3,8 @@ package app.pulse.core.media
 import java.io.InputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -53,8 +51,10 @@ class StreamGuardTest {
         val started = launch(Dispatchers.Default) {
             try {
                 StreamGuard.read(deadlineMillis = 150, open = { provider }) { it.read() }
-            } catch (expected: java.io.IOException) {
-                // The watchdog closed the stream; the blocked read failed. Good.
+            } catch (expected: Exception) {
+                // The watchdog closed the stream; the blocked read failed -
+                // either the read's own IOException or the scope's
+                // cancellation unwinding. Both mean "unblocked, failed fast".
             }
         }
         assertTrue(provider.entered.await(5, TimeUnit.SECONDS), "the provider read never started")
@@ -82,7 +82,6 @@ class StreamGuardTest {
         var observed: Throwable? = null
         val job = launch(Dispatchers.Default) {
             try {
-                @Suppress("UNREACHABLE_CODE")
                 observed = runCatching { StreamGuard.read(deadlineMillis = 0, open = { provider }) { it.read() } }.exceptionOrNull()
             } catch (cancelled: CancellationException) {
                 observed = cancelled

@@ -2,10 +2,14 @@ package app.pulse.core.media
 
 import java.io.InputStream
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.coroutineContext
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * R43 - the blocked-read half of "Cancellation cannot be assumed to interrupt
@@ -18,25 +22,23 @@ import kotlinx.coroutines.Job
  * with "stream closed" on the spot and the regular cancellation path takes
  * over.
  *
- * [read] registers close-on-cancel on the calling job plus a deadline
- * watchdog: whichever fires first (user cancellation, completion, or the
- * deadline) closes the stream exactly once. The caller must NOT wrap the
- * stream in use{} - the guard owns closing.
+ * [read] bridges the blocking read into a cancellable suspension (public API
+ * only): the read runs on an IO child, and a cancellation of the calling
+ * scope fires close-on-cancel through [suspendCancellableCoroutine]'s
+ * [kotlinx.coroutines.CancellableContinuation.invokeOnCancellation]. A
+ * deadline watchdog closes hung providers even when nobody cancels.
  *
- * Honest limits (documented, not hidden): a provider read that ignores both
- * cancellation and close stays blocked until the OS gives up - the deadline
- * bounds the wait for the CALLER'S coroutine (the block throws once close
- * lands), but a pathological provider below the stream can outlive it. The
- * device-acceptance item stays: physical providers get the final word.
+ * Honest limits (documented, not hidden): a provider read that ignores close
+ * stays wedged until the OS gives up - the coroutineScope then waits with it
+ * (the same platform limit the reader had before, minus the silent-hang
+ * case close actually fixes). Device acceptance keeps the final word.
  */
 object StreamGuard {
 
     /** Providers are rare events; one shared daemon thread serves every guard. */
-    private val watchdog: java.util.concurrent.ScheduledExecutorService by lazy {
-        Executors.newSingleThreadScheduledExecutor { thread ->
-            thread.isDaemon = true
-            thread.name = "pulse-stream-guard"
-            thread
+    private val watchdog: ScheduledExecutorService by lazy {
+        Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "pulse-stream-guard").apply { isDaemon = true }
         }
     }
 
@@ -50,9 +52,8 @@ object StreamGuard {
         open: () -> InputStream,
         block: (InputStream) -> R,
     ): R {
-        val job = coroutineContext[Job]
         val stream = open()
-        val lock = Object()
+        val lock = Any()
         var closed = false
         fun closeOnce() {
             synchronized(lock) {
@@ -61,16 +62,21 @@ object StreamGuard {
             }
             runCatching { stream.close() }
         }
-        val completion = job?.invokeOnCompletion(onCancelling = true) { closeOnce() }
         var deadline: ScheduledFuture<*>? = null
+        if (deadlineMillis > 0) {
+            deadline = watchdog.schedule({ closeOnce() }, deadlineMillis, TimeUnit.MILLISECONDS)
+        }
         try {
-            if (deadlineMillis > 0) {
-                deadline = watchdog.schedule({ closeOnce() }, deadlineMillis, TimeUnit.MILLISECONDS)
+            return coroutineScope {
+                val reader = async(Dispatchers.IO, start = CoroutineStart.ATOMIC) { block(stream) }
+                suspendCancellableCoroutine { cont ->
+                    cont.invokeOnCancellation { closeOnce() }
+                    reader.invokeOnCompletion { if (cont.isActive) cont.resume(Unit) { _, _ -> } }
+                }
+                reader.await()
             }
-            return block(stream)
         } finally {
             deadline?.cancel(false)
-            completion?.dispose()
             closeOnce()
         }
     }
