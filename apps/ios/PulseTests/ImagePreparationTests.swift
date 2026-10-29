@@ -138,4 +138,84 @@ final class ImagePreparationTests: XCTestCase {
         XCTAssertNil(PulseCoverImage.jpegData(from: Data("bad image".utf8)))
     }
 
+    // MARK: - R43 close-on-cancel + deadline (Blocked OS reads)
+
+    func testCancelledDocumentReadClosesTheStreamAndUnblocksAProviderBlockedBelowTheReader() async throws {
+        let provider = BlockedProviderStream()
+        let read = Task.detached(priority: .userInitiated) {
+            try PulseMediaSupport.readDocument(stream: provider, deadline: 60)
+        }
+        XCTAssertTrue(provider.waitEntered(5), "the provider read never started")
+        read.cancel() // the read is blocked inside the provider right now
+        // Without close-on-cancel this await hangs past the 60s deadline.
+        do {
+            _ = try await withTimeout(5) { try await read.value }
+            XCTFail("a cancelled blocked read must never return bytes")
+        } catch { /* unblocked by close, surfaced as an error: the point */ }
+        XCTAssertEqual(provider.unblocked.wait(timeout: .now() + 1), .success,
+                     "cancellation must have closed the blocked stream")
+    }
+
+    func testDocumentReadDeadlineClosesAHungProviderEvenWithoutCancellation() async throws {
+        let provider = BlockedProviderStream()
+        let read = Task.detached(priority: .userInitiated) {
+            try PulseMediaSupport.readDocument(stream: provider, deadline: 0.3)
+        }
+        XCTAssertTrue(provider.waitEntered(5), "the provider read never started")
+        // No cancellation: the 0.3s watchdog must close the stream so the
+        // caller fails fast instead of hanging on the wedged provider.
+        do {
+            _ = try await withTimeout(5) { try await read.value }
+            XCTFail("a hung provider must fail at the deadline, never return bytes")
+        } catch { /* watchdog closed the stream: the point */ }
+    }
+
+    func testDecodeGateSerializesBackgroundPreparations() async throws {
+        let lock = NSLock()
+        var active = 0
+        var peak = 0
+        let body: () throws -> Int = {
+            lock.lock(); active += 1; peak = max(peak, active); lock.unlock()
+            Thread.sleep(forTimeInterval: 0.15)
+            lock.lock(); active -= 1; lock.unlock()
+            return 1
+        }
+        let first = Task.detached { try PulseMediaSupport.withDecodeGate(body) }
+        let second = Task.detached { try PulseMediaSupport.withDecodeGate(body) }
+        let sum = try await withTimeout(10) { try await first.value + try await second.value }
+        XCTAssertEqual(sum, 2)
+        lock.lock(); let observed = peak; lock.unlock()
+        XCTAssertEqual(observed, 1, "two background decodes must never overlap")
+    }
+
+    private func withTimeout<T>(_ seconds: Double, _ operation: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw CocoaError(.codeLine) // arbitrary distinct timeout error
+            }
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
+    }
+
+}
+
+/// A hung provider for the R43 tests: read blocks INSIDE the stream, below
+/// the bounded reader's chunk loop, until close() lands - exactly the
+/// cloud-provider case the "Blocked OS reads" checklist item calls out.
+/// File scope (not nested in the @MainActor test class) so the detached
+/// read task can call it without actor hops.
+private final class BlockedProviderStream: InputStream {
+    let entered = DispatchSemaphore(value: 0)
+    let unblocked = DispatchSemaphore(value: 0)
+    override func read(_ buffer: UnsafeMutablePointer<UInt8>, maxLength: Int) -> Int {
+        entered.signal()
+        unblocked.wait()
+        return -1 // close() unblocked us: fail the read honestly.
+    }
+    override func close() { unblocked.signal() }
+    func waitEntered(_ seconds: Double) -> Bool { entered.wait(timeout: .now() + seconds) == .success }
 }

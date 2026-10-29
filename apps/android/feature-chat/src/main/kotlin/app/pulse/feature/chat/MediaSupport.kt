@@ -118,9 +118,16 @@ object MediaSupport {
         withContext(Dispatchers.IO) {
             try {
                 val job = currentCoroutineContext()
-                val bytes = file.takeIf { it.exists() && it.length() > 0 }?.inputStream()?.use {
-                    readBounded(it, 3_374_900) { job.ensureActive() }
-                } ?: throw IllegalStateException("Recording file is gone")
+                // R43 - StreamGuard owns the stream: cancellation or the
+                // deadline closes it, unblocking a disk read wedged below the
+                // bounded reader (the same close-on-cancel contract as the
+                // provider paths).
+                val bytes = app.pulse.core.media.StreamGuard.read(
+                    open = {
+                        file.takeIf { it.exists() && it.length() > 0 }?.inputStream()
+                            ?: throw IllegalStateException("Recording file is gone")
+                    },
+                ) { input -> readBounded(input, 3_374_900) { job.ensureActive() } }
                 job.ensureActive()
                 require(bytes.isNotEmpty()) { "The recording file is empty" }
                 Result.success("data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP))
@@ -158,8 +165,16 @@ object MediaSupport {
             val name = queryDisplayName(context, uri).trim()
             require(name.isNotEmpty() && name.length <= 120) { "Rename the document to 1–120 characters, then choose it again" }
             val mime = documentMime(resolver.getType(uri), name)
-            val bytes = resolver.openInputStream(uri)?.use { readBounded(it, 10 * 1024 * 1024) { job.ensureActive() } }
-                ?: throw IllegalStateException("Could not read the selected document")
+            // R43 - StreamGuard owns the stream: cancellation or the 120s
+            // deadline closes it, unblocking a cloud/hung provider read
+            // wedged below the bounded reader - the exact "Blocked OS reads"
+            // checklist gap.
+            val bytes = app.pulse.core.media.StreamGuard.read(
+                open = {
+                    resolver.openInputStream(uri)
+                        ?: throw IllegalStateException("Could not read the selected document")
+                },
+            ) { input -> readBounded(input, 10 * 1024 * 1024) { job.ensureActive() } }
             require(bytes.isNotEmpty()) { "The selected document is empty" }
             if (!PulseMedia.documentFits(bytes.size.toLong())) {
                 throw IllegalStateException("Documents are limited to 10 MB")

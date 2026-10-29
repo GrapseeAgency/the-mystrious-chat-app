@@ -27,6 +27,22 @@ enum PulseMediaSupport {
 
     static let maxImageSourceBytes = 64 * 1024 * 1024
 
+    /// R43 - peak-memory bound for the UNBOUNDED path: ONE source decode +
+    /// JPEG re-encode at a time for background callers (the Photos transfer,
+    /// fileImporter, the share-in sheet). Main-thread callers skip the lock:
+    /// the main actor already serializes them, blocking main on a background
+    /// decode would jank the UI, and the camera path's extra allocation is
+    /// the bounded ≤1280px render, never a source decode. Android holds the
+    /// same single-flight permit (ImagePreparation.withPreparationPermit).
+    private static let decodeLock = NSLock()
+
+    static func withDecodeGate<T>(_ body: () throws -> T) rethrows -> T {
+        if Thread.isMainThread { return try body() }
+        decodeLock.lock()
+        defer { decodeLock.unlock() }
+        return try body()
+    }
+
     /// Camera already supplies a UIImage. Render only the bounded output instead
     /// of allocating another full-resolution JPEG and decoding it again.
     @MainActor
@@ -47,7 +63,7 @@ enum PulseMediaSupport {
     static func downscaledJPEGData(from data: Data) -> Data? {
         guard data.count <= maxImageSourceBytes,
               let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
-        return downscaledJPEGData(source: source)
+        return withDecodeGate { downscaledJPEGData(source: source) }
     }
 
     /// PhotosPicker supplies a temporary file. Decode it inside the transfer closure,
@@ -57,7 +73,7 @@ enum PulseMediaSupport {
               let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size <= maxImageSourceBytes,
               let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
-        return downscaledJPEGData(source: source)
+        return withDecodeGate { downscaledJPEGData(source: source) }
     }
 
     private static func downscaledJPEGData(source: CGImageSource) -> Data? {
@@ -95,25 +111,53 @@ enum PulseMediaSupport {
         [.pdf, .zip, .plainText, .commaSeparatedText, UTType(filenameExtension: "csv")].compactMap { $0 }
     }
 
+    /// R43 - a hung document provider (an iCloud placeholder, a stalled file
+    /// provider) blocks INSIDE stream.read, past every checkCancellation in
+    /// the chunk loop - the exact "Blocked OS reads" checklist gap. Closing
+    /// the stream unblocks pipe-backed provider reads on the spot, so this
+    /// read races cancellation AND the deadline, and whichever fires first
+    /// closes the stream. (A provider that ignores close stays wedged until
+    /// the OS gives up - a documented platform limit, not a silent hang.)
+    static let documentReadDeadline: TimeInterval = 120
+
     static func readDocument(url: URL) throws -> Data {
         guard url.isFileURL else { throw CocoaError(.fileReadUnsupportedScheme) }
         guard let stream = InputStream(url: url) else { throw CocoaError(.fileReadUnknown) }
-        stream.open(); defer { stream.close() }
-        var result = Data()
-        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-        while true {
-            try Task.checkCancellation()
-            let count = stream.read(&buffer, maxLength: buffer.count)
-            if count < 0 { throw stream.streamError ?? CocoaError(.fileReadUnknown) }
-            if count == 0 { break }
-            guard result.count + count <= maxDocumentBytes else {
-                throw PulseAPIClient.Failure(kind: .validation, message: "Documents are limited to 10 MB.")
-            }
-            result.append(contentsOf: buffer.prefix(count))
+        return try readDocument(stream: stream)
+    }
+
+    static func readDocument(stream: InputStream, deadline: TimeInterval = documentReadDeadline) throws -> Data {
+        let lock = NSLock()
+        var closed = false
+        func closeOnce() {
+            lock.lock(); defer { lock.unlock() }
+            if !closed { closed = true; stream.close() }
         }
-        try Task.checkCancellation()
-        guard !result.isEmpty else { throw PulseAPIClient.Failure(kind: .validation, message: "The selected document is empty.") }
-        return result
+        let watchdog = DispatchWorkItem { closeOnce() }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + deadline, execute: watchdog)
+        defer { watchdog.cancel(); closeOnce() }
+        return try withTaskCancellationHandler {
+            stream.open()
+            defer { closeOnce() }
+            var result = Data()
+            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+            while true {
+                try Task.checkCancellation()
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count < 0 { throw stream.streamError ?? CocoaError(.fileReadUnknown) }
+                if count == 0 { break }
+                guard result.count + count <= maxDocumentBytes else {
+                    throw PulseAPIClient.Failure(kind: .validation, message: "Documents are limited to 10 MB.")
+                }
+                result.append(contentsOf: buffer.prefix(count))
+            }
+            try Task.checkCancellation()
+            guard !result.isEmpty else { throw PulseAPIClient.Failure(kind: .validation, message: "The selected document is empty.") }
+            return result
+        } onCancel: {
+            // R43 - unblocks a provider read stuck below the chunk loop.
+            closeOnce()
+        }
     }
 
     /// Extension → mime, the exact map the gateway's /api/uploads accepts
