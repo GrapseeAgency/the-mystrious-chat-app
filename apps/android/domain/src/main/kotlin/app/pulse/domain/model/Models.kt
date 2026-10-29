@@ -515,13 +515,21 @@ class PulseApiException(
     val code: String? = null,
 ) : IllegalStateException(message ?: "Request failed")
 
-/** Stored separately from caller-writable rich payloads. */
+/** Stored separately from caller-writable rich payloads. v2 adds
+ * sourceEditedAtEpochMs (the source edit stamp the cached quote body was
+ * last refreshed from, so later source edits propagate - section-5
+ * "Cached quote edits") and sourceRootId (the thread root the quoted child
+ * belonged to when last seen, so a root-only revocation still reaches the
+ * quote after the child row itself is uncached - section-5
+ * "Uncached child-root provenance"). Absent fields = v1 rows. */
 @Serializable
 data class QuoteBounds(
     val version: Int = 0,
     val expiresAtEpochMs: Long? = null,
     val deleted: Boolean = false,
     val viewOnce: Boolean = false,
+    val sourceEditedAtEpochMs: Long? = null,
+    val sourceRootId: String? = null,
 )
 
 /** A message - mirrors web `MessageDTO`. */

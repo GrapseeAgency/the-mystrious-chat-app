@@ -4,6 +4,7 @@ import path from 'node:path'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { UPLOADS_DIR, UPLOAD_MIME } from '@/lib/serializers'
+import { mediaAccessDecision } from '@/lib/media-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,12 +19,22 @@ interface RouteCtx {
  * their Content-Type comes from UPLOAD_MIME (e.g. application/pdf) so an
  * <a download> anchor resolves the file natively.
  */
-export async function GET(_req: Request, { params }: RouteCtx) {
+export async function GET(req: Request, { params }: RouteCtx) {
   const { file } = await params
 
   if (!/^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp|webm|mp3|ogg|wav|m4a|aac|pdf|txt|csv|zip)$/.test(file)) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404, headers: { 'Cache-Control': 'private, no-store' } })
   }
+
+  // R44 section-5: an authenticated fetch re-proves live access on every
+  // request. A previously reachable URL stops serving once the referencing
+  // message is tombstoned/expired, the actor left the room, or the session
+  // died. Headerless requests keep the documented migration window.
+  const access = await mediaAccessDecision(req, file)
+  if (access.kind === 'denied') {
+    return NextResponse.json({ error: access.reason }, { status: access.status, headers: { 'Cache-Control': 'private, no-store' } })
+  }
+
   const ext = file.split('.').pop() as string
   const mime = UPLOAD_MIME[ext] ?? 'image/jpeg'
 

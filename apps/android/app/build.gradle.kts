@@ -140,6 +140,8 @@ dependencies {
 
     // R63 mirror room - photo bubbles load from {gateway}/api/uploads via Coil
     implementation(libs.coil.compose)
+    // R44 - authenticated media fetches ride the same OkHttp the loader uses
+    implementation(libs.okhttp)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

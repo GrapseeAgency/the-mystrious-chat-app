@@ -2610,7 +2610,8 @@ struct MirrorBubble: View {
                         } else if let label = PulseAttachmentDelivery.pendingLabel(message) {
                             Label(label, systemImage: "arrow.up.doc")
                         } else if message.kind == "image", let imagePath = message.imagePath {
-                            AsyncImage(url: attachmentURL(imagePath)) { image in
+                            // R44 - authenticated media fetch (revocable URLs).
+                            PulseMediaImage(url: attachmentURL(imagePath)) { image in
                                 image.resizable().aspectRatio(contentMode: .fill)
                             } placeholder: {
                                 Rectangle().fill(MirrorArt.chip)

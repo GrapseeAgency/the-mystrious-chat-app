@@ -39,12 +39,20 @@ public struct WireReplySnippet: Codable, Hashable, Sendable {
     public let quoteVersion: Int?
     public let expiresAt: String?
     public let viewOnce: Bool?
+    /// R44 section-5 v2 provenance: the source edit stamp this cached body
+    /// was last refreshed from (later source edits propagate), and the thread
+    /// root the quoted child belonged to (root-only revocation still reaches
+    /// the quote after the child row is uncached). Not on the wire from the
+    /// server - purely cache-side, tolerant when absent (v1 rows).
+    public let sourceEditedAt: String?
+    public let sourceRootId: String?
 
     public var content: String { presentation().content }
     public var senderName: String { presentation().senderName }
 
     public init(id: String, content: String, senderName: String, deleted: Bool?,
-                quoteVersion: Int? = nil, expiresAt: String? = nil, viewOnce: Bool? = nil) {
+                quoteVersion: Int? = nil, expiresAt: String? = nil, viewOnce: Bool? = nil,
+                sourceEditedAt: String? = nil, sourceRootId: String? = nil) {
         self.id = id
         let valid = quoteVersion == 1 && deleted != nil && viewOnce != nil &&
             (expiresAt == nil || expiresAt.flatMap(PulseFormat.date) != nil)
@@ -52,6 +60,8 @@ public struct WireReplySnippet: Codable, Hashable, Sendable {
         self.expiresAt = expiresAt
         self.viewOnce = viewOnce
         self.deleted = deleted
+        self.sourceEditedAt = sourceEditedAt
+        self.sourceRootId = sourceRootId
         self.rawContent = !valid || deleted == true ? "" : viewOnce == true ? "View-once message" : content
         self.rawSenderName = !valid ? "Reply" : deleted == true ? "Unavailable message" : senderName
     }
@@ -71,11 +81,18 @@ public struct WireReplySnippet: Codable, Hashable, Sendable {
         }
         return WireReplySnippet(id: id, content: rawContent, senderName: rawSenderName,
             deleted: deleted == true || prior.deleted == true, quoteVersion: 1, expiresAt: expiry,
-            viewOnce: viewOnce == true || prior.viewOnce == true)
+            viewOnce: viewOnce == true || prior.viewOnce == true,
+            sourceEditedAt: sourceEditedAt ?? prior.sourceEditedAt,
+            sourceRootId: sourceRootId ?? prior.sourceRootId)
     }
 
     /// Known cached privacy can only tighten a versioned server quote. Do not
     /// replace its body with an older cached edit or certify a legacy snippet.
+    /// R44 section-5: a source edit NEWER than the stamp this body was last
+    /// refreshed from propagates into the cached snippet ("Cached quote edits"),
+    /// and the child's thread root is learned into sourceRootId so a root-only
+    /// revocation still reaches the quote once the child row is uncached
+    /// ("Uncached child-root provenance").
     func restricting(source: WireChatMessage, root: WireChatMessage?, roomId: String, ownerId: String, now: Date = Date()) -> WireReplySnippet {
         guard quoteVersion == 1, source.id == id else { return self }
         let root = root.flatMap { source.parentId == $0.id ? $0 : nil }
@@ -85,13 +102,23 @@ public struct WireReplySnippet: Codable, Hashable, Sendable {
         let malformed = deadlines.contains { PulseFormat.date($0) == nil }
         let expiry = deadlines.min { (PulseFormat.date($0) ?? .distantPast) < (PulseFormat.date($1) ?? .distantPast) }
         let expired = expiry.flatMap(PulseFormat.date).map { $0 <= now } ?? false
-        return WireReplySnippet(id: id, content: rawContent,
+        let singleUse = viewOnce == true || source.viewOnce == true || source.viewedAt != nil
+        // Edit propagation: only a strictly newer source edit refreshes the
+        // body, never on view-once/invalid quotes (fixed captions).
+        let newerEdit = source.editedAt.flatMap(PulseFormat.date).map { stamp in
+            (sourceEditedAt.flatMap(PulseFormat.date) ?? .distantPast) < stamp
+        } ?? false
+        let refreshedBody = newerEdit && !invalid && !singleUse && !source.content.isEmpty ? source.content : rawContent
+        let learnedRoot = root?.id ?? source.parentId ?? sourceRootId
+        return WireReplySnippet(id: id, content: refreshedBody,
             senderName: source.anon == true ? source.displayAuthorName : rawSenderName,
             deleted: deleted == true || invalid || malformed || expired, quoteVersion: 1,
-            expiresAt: malformed ? nil : expiry, viewOnce: viewOnce == true || source.viewOnce == true || source.viewedAt != nil)
+            expiresAt: malformed ? nil : expiry, viewOnce: singleUse,
+            sourceEditedAt: newerEdit ? source.editedAt : sourceEditedAt,
+            sourceRootId: learnedRoot)
     }
 
-    private enum CodingKeys: String, CodingKey { case id, content, senderName, deleted, quoteVersion, expiresAt, viewOnce }
+    private enum CodingKeys: String, CodingKey { case id, content, senderName, deleted, quoteVersion, expiresAt, viewOnce, sourceEditedAt, sourceRootId }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(id: try c.decode(String.self, forKey: .id),
@@ -100,7 +127,9 @@ public struct WireReplySnippet: Codable, Hashable, Sendable {
                   deleted: try c.decodeIfPresent(Bool.self, forKey: .deleted),
                   quoteVersion: c.contains(.expiresAt) ? try c.decodeIfPresent(Int.self, forKey: .quoteVersion) : nil,
                   expiresAt: try c.decodeIfPresent(String.self, forKey: .expiresAt),
-                  viewOnce: try c.decodeIfPresent(Bool.self, forKey: .viewOnce))
+                  viewOnce: try c.decodeIfPresent(Bool.self, forKey: .viewOnce),
+                  sourceEditedAt: try c.decodeIfPresent(String.self, forKey: .sourceEditedAt),
+                  sourceRootId: try c.decodeIfPresent(String.self, forKey: .sourceRootId))
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -112,6 +141,8 @@ public struct WireReplySnippet: Codable, Hashable, Sendable {
         // Explicit null is the permanent-quote witness; preserve across cache restarts.
         try c.encode(expiresAt, forKey: .expiresAt)
         try c.encodeIfPresent(viewOnce, forKey: .viewOnce)
+        try c.encodeIfPresent(sourceEditedAt, forKey: .sourceEditedAt)
+        try c.encodeIfPresent(sourceRootId, forKey: .sourceRootId)
     }
 }
 

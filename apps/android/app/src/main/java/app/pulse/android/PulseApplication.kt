@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
-class PulseApplication : Application() {
+class PulseApplication : Application(), coil.ImageLoaderFactory {
 
     @Inject lateinit var manifestEndpoints: ManifestEndpoints
 
@@ -23,6 +23,31 @@ class PulseApplication : Application() {
 
     @Inject
     lateinit var repository: app.pulse.domain.repository.PulseRepository
+
+    // R44 section-5 - the app-wide Coil loader attaches the session bearer to
+    // every /api/uploads/ fetch so the server's membership/lifetime checks can
+    // revoke previously reachable media URLs. Header-less Coil requests (no
+    // token yet) keep the documented migration window.
+    @Inject
+    lateinit var sessionTokenStore: app.pulse.data.local.SessionTokenStore
+
+    override fun newImageLoader(): coil.ImageLoader =
+        coil.ImageLoader.Builder(this)
+            .okHttpClient(
+                okhttp3.OkHttpClient.Builder()
+                    .addInterceptor { chain ->
+                        val request = chain.request()
+                        val token = sessionTokenStore.cached
+                        val toGateway = request.url.encodedPath.startsWith("/api/uploads/")
+                        chain.proceed(
+                            if (token.isNullOrBlank() || !toGateway) request
+                            else request.newBuilder().header("Authorization", "Bearer $token").build(),
+                        )
+                    }
+                    .build(),
+            )
+            .crossfade(true)
+            .build()
 
     // R8 Task 3-c - OS call integration + group calls start with the process.
     @Inject

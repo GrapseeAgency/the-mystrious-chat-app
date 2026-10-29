@@ -95,4 +95,50 @@ final class QuoteSourcePrivacyTests: XCTestCase {
         XCTAssertEqual(try upgraded.message(id:"owner")?.replyTo?.deleted,true)
         XCTAssertEqual(upgraded.draft(conversationId:"room"),"unfinished")
     }
+    func testLaterSourceEditsPropagateToCachedNonExpiringQuotesAndStampTheRefresh() throws {
+        let owner = try quote("reply")
+        let edited = try message("source",extra:["content":"edited body","editedAt":"2026-10-25T00:00:00Z"])
+        let now = try XCTUnwrap(PulseFormat.date("2026-10-24T00:00:00Z"))
+        let once = PulseQuotePrivacy.project([owner],known:[edited],now:now)[0]
+        XCTAssertEqual(once.replyTo?.content,"edited body")
+        XCTAssertEqual(once.replyTo?.sourceEditedAt,"2026-10-25T00:00:00Z")
+        // Idempotent: the same stamp does not re-refresh; an older stamp never rewinds.
+        let again = PulseQuotePrivacy.project([once],known:[edited],now:now)[0]
+        XCTAssertEqual(again.replyTo?.content,"edited body")
+        let rewind = PulseQuotePrivacy.project([once],known:[try message("source",extra:["content":"rewind","editedAt":"2026-10-23T00:00:00Z"])],now:now)[0]
+        XCTAssertEqual(rewind.replyTo?.content,"edited body")
+        // A newer edit still lands.
+        let newest = PulseQuotePrivacy.project([once],known:[try message("source",extra:["content":"newest","editedAt":"2026-10-26T00:00:00Z"])],now:now)[0]
+        XCTAssertEqual(newest.replyTo?.content,"newest")
+    }
+    func testEditPropagationNeverBypassesViewOnceOrDeletedCaptions() throws {
+        let owner = try quote("reply")
+        let now = try XCTUnwrap(PulseFormat.date("2026-10-24T00:00:00Z"))
+        let single = PulseQuotePrivacy.project([owner],known:[try message("source",extra:["viewOnce":true,"editedAt":"2026-10-25T00:00:00Z"])],now:now)[0]
+        XCTAssertEqual(single.replyTo?.content,"View-once message")
+        let dead = PulseQuotePrivacy.project([owner],known:[try message("source",extra:["deletedAt":"2026-10-24T00:00:00Z","editedAt":"2026-10-25T00:00:00Z"])],now:now)[0]
+        XCTAssertEqual(dead.replyTo?.content,"Quoted message unavailable")
+        XCTAssertEqual(dead.replyTo?.deleted,true)
+    }
+    func testLearnedSourceRootIdSurvivesChildEvictionForRootOnlyRevocation() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let path = directory.appendingPathComponent("quote-provenance.sqlite").path
+        let root = try message("root")
+        let child = try message("child",extra:["parentId":"root"])
+        let owner = try quote("owner",source:"child")
+        let store = try PulseStore(path:path)
+        try store.mergeMessages([root,child,owner])
+        XCTAssertEqual(try store.message(id:"owner")?.replyTo?.sourceRootId,"root")
+        // Delete the child row cache entirely (eviction); the learned
+        // provenance survives in the quote's stored envelope...
+        try DatabaseQueue(path:path).write { db in
+            try db.execute(sql:"DELETE FROM message WHERE id = 'child'")
+        }
+        XCTAssertEqual(try store.message(id:"owner")?.replyTo?.sourceRootId,"root")
+        // ...so a root-only tombstone still revokes the quote.
+        try store.mergeMessages([root.deletedCopy()])
+        XCTAssertEqual(try store.message(id:"owner")?.replyTo?.deleted,true)
+    }
 }

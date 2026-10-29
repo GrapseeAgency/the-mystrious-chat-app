@@ -333,6 +333,9 @@ class PulseRepositoryImpl constructor(
             launch {
                 if (reminderOwner != null) runCatching { sweepRecordingJournal() }
                     .onFailure { Log.w(TAG, "Recording recovery deferred", it) }
+                // R44 - retained download copies obey the 24h/tombstone policy.
+                runCatching { sweepDownloadCopies() }
+                    .onFailure { Log.w(TAG, "Download copy sweep deferred", it) }
             }
             socket.connect(userId)
             launch { runCatching { ensureDemoSeeded(userId) } }
@@ -349,6 +352,31 @@ class PulseRepositoryImpl constructor(
                 while (viewerId == userId && attachmentSession == savedEpoch) {
                     flushComposerIntents()
                     kotlinx.coroutines.delay(15_000)
+                }
+            }
+            // R44 section-5 "Unknown offline revocation" + "Privacy propagation
+            // delay": a missed socket event (offline gap, relay restart) leaves
+            // deletions/tombstones undiscovered until a room is re-opened. This
+            // bounded round-robin revalidates ONE cached room per 60s beat, so
+            // every cached room converges within N minutes without a per-room
+            // poller storm. The existing syncFrom window re-checks edits AND
+            // tombstones across the whole cached range (not just new rows).
+            launch {
+                kotlinx.coroutines.delay(60_000)
+                var cursor = 0
+                while (viewerId == userId && attachmentSession == savedEpoch) {
+                    val rooms = messageDao.conversationsWithServerRows()
+                    if (rooms.isNotEmpty()) {
+                        val room = rooms[cursor % rooms.size]
+                        cursor = (cursor + 1) % rooms.size
+                        runCatching { refreshMessages(room, limit = 50) }
+                            .onFailure { Log.w(TAG, "privacy revalidation failed for $room", it) }
+                        // Tombstones that arrived during the beat retire their
+                        // retained download copies immediately.
+                        runCatching { sweepDownloadCopies() }
+                            .onFailure { Log.w(TAG, "Download copy sweep deferred", it) }
+                    }
+                    kotlinx.coroutines.delay(60_000)
                 }
             }
             launch { runCatching { flushOutbox() } }
@@ -1916,6 +1944,31 @@ class PulseRepositoryImpl constructor(
                 // A failed recovery keeps the row + file for the next start
                 // (transient IO) unless the file itself is unusable.
                 Log.w(TAG, "Recording recovery deferred (${row.id})", error)
+            }
+        }
+    }
+
+    /**
+     * R44 section-5 "Copies outside message storage": downloads under
+     * cacheDir/downloads are RETAINED COPIES. Policy: a copy outlives its
+     * usefulness after 24h OR the moment its referencing message is
+     * tombstoned/deleted. The message table is the only authority for the
+     * stored filename, so the sweep maps each cached row's media path back
+     * to liveness and deletes the local copy otherwise.
+     */
+    private suspend fun sweepDownloadCopies() {
+        val dir = java.io.File(context.cacheDir, "downloads")
+        val files = withContext(Dispatchers.IO) { dir.listFiles() ?: return }
+        if (files.isEmpty()) return
+        val names = files.filter { it.isFile }.map { it.name }.toSet()
+        // Live references: any non-deleted cached row still carrying the path.
+        val referenced = messageDao.liveMediaPaths(names.toList())
+        val now = System.currentTimeMillis()
+        withContext(Dispatchers.IO) {
+            for (file in files) {
+                if (!file.isFile) continue
+                val stale = now - file.lastModified() > 24 * 60 * 60 * 1000L
+                if (stale || file.name !in referenced) runCatching { file.delete() }
             }
         }
     }

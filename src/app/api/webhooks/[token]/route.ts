@@ -90,7 +90,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     })
     if (!participants.length) return { status: 404, error: 'Webhook author is no longer available.' }
     const botUser = await tx.user.findUnique({ where: { username: 'pulseai' }, select: { id: true } })
-    const senderId = botUser && participants.some(row => row.userId === botUser.id) ? botUser.id : participants[0].userId
+    // R44 section-5 machine-sender semantics: the fallback used to be the
+    // oldest HUMAN participant, silently attributing automation output to a
+    // real account (unread attribution, notifications, receipts, forwards).
+    // If the room has no pulseai member there is no honest machine author -
+    // refuse rather than misattribute.
+    if (!botUser || !participants.some(row => row.userId === botUser.id)) {
+      return { status: 409, error: 'This conversation has no automation author. Add the automation account to the room first.' }
+    }
+    const senderId = botUser.id
     const now = new Date()
     const decision = await messageDeliveryDecision(tx, webhook.conversationId, senderId, now, true)
     if (decision.state === 'cancel') return { status: 403, error: 'Webhook posting is not permitted by the current room policy.' }

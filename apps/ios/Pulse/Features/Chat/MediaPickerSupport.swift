@@ -243,6 +243,13 @@ enum PulseMediaOpener {
     static func downloadForPreview(url: URL, fileName: String?) async throws -> URL {
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
+        // R44 section-5 media URL authorization: previews ride the
+        // authenticated fetch path so the server can revoke access per
+        // membership/lifetime (header-less requests keep the migration
+        // window, but an authenticated client must identify itself).
+        if let token = PulseKeychain.shared.loadSessionToken(), !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         let (download, response) = try await URLSession.shared.download(for: request)
         defer { try? FileManager.default.removeItem(at: download) }
         try Task.checkCancellation()

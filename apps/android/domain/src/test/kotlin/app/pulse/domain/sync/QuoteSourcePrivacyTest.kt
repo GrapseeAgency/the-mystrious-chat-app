@@ -35,4 +35,32 @@ class QuoteSourcePrivacyTest {
         assertEquals("", quote.restrictQuote(source.copy(conversationId = "foreign"), nowMillis = 0).replyToBody)
         assertEquals(quote, quote.restrictQuote(null, nowMillis = 0))
     }
+    @Test fun `later source edits propagate to cached non-expiring quotes and stamp the refresh`() {
+        val edited = source.copy(body = "edited body", editedAt = "2026-10-25T00:00:00Z")
+        val once = quote.restrictQuote(edited, nowMillis = 0)
+        assertEquals("edited body", once.replyToBody)
+        assertEquals(edited.editedAt, once.quoteBounds?.sourceEditedAtEpochMs?.let { java.time.Instant.ofEpochMilli(it).toString() })
+        // The same stamp does not re-refresh (idempotent), and an older stamp never rewinds.
+        val again = once.restrictQuote(edited, nowMillis = 0)
+        assertEquals("edited body", again.replyToBody)
+        val older = once.restrictQuote(source.copy(body = "rewind attempt", editedAt = "2026-10-24T12:00:00Z"), nowMillis = 0)
+        assertEquals("edited body", older.replyToBody)
+        // A newer edit still lands.
+        val newest = once.restrictQuote(source.copy(body = "newest", editedAt = "2026-10-26T00:00:00Z"), nowMillis = 0)
+        assertEquals("newest", newest.replyToBody)
+    }
+    @Test fun `edit propagation never bypasses view-once or deleted captions`() {
+        val single = quote.copy(quoteBounds = QuoteBounds(1, viewOnce = true))
+        assertEquals("View-once message", single.restrictQuote(source.copy(editedAt = "2026-10-25T00:00:00Z"), nowMillis = 0).replyToBody)
+        val dead = quote.restrictQuote(source.copy(deletedAt = "now", editedAt = "2026-10-25T00:00:00Z"), nowMillis = 0)
+        assertEquals("", dead.replyToBody)
+    }
+    @Test fun `learned sourceRootId survives child eviction for root-only revocation`() {
+        val child = source.copy(threadRootId = "root")
+        val learned = quote.restrictQuote(child, null, 0)
+        assertEquals("root", learned.quoteBounds?.sourceRootId)
+        // After the child row is uncached, the learned provenance stays put.
+        val kept = learned.restrictQuote(null, nowMillis = 0)
+        assertEquals("root", kept.quoteBounds?.sourceRootId)
+    }
 }

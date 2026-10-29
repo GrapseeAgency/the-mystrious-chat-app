@@ -3230,7 +3230,7 @@ struct BubbleView: View {
         }
     }
 
-    /// Stored image render - AsyncImage against the gateway upload URL,
+    /// Stored image render - authenticated media fetch against the gateway URL,
     /// clamped bubble size, tap → lightbox, caption rides `content`.
     /// Wave 2 view-once (spec §1 rows 5/6/7): gated = blurred + overlay
     /// + instant-reveal tap; burned = dashed tombstone, NO image render.
@@ -3248,25 +3248,14 @@ struct BubbleView: View {
     private var normalImage: some View {
         VStack(alignment: .leading, spacing: 5) {
             if let url = PulseEndpoints.mediaURL(message.imagePath) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(maxWidth: 240, maxHeight: 240)
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    case .empty:
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color.white.opacity(0.08))
-                            .frame(width: 200, height: 140)
-                            .overlay(ProgressView())
-                    case .failure:
-                        Label("Image unavailable", systemImage: "photo.badge.exclamationmark")
-                            .font(.footnote)
-                    @unknown default:
-                        ProgressView()
-                    }
+                // R44 - authenticated media fetch (revocable URLs).
+                PulseMediaImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 200, height: 140)
+                        .overlay(ProgressView())
                 }
                 .heartDoubleTapGesture(heartDoubleTapAction)
                 .onTapGesture { onOpenImage?(message) }
@@ -3286,11 +3275,13 @@ struct BubbleView: View {
         VStack(alignment: .leading, spacing: 5) {
             ZStack {
                 if let url = PulseEndpoints.mediaURL(message.imagePath) {
-                    AsyncImage(url: url) { image in
+                    // R44 - authenticated media fetch (revocable URLs).
+                    PulseMediaImage(url: url) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white.opacity(0.08))
                     }
+                    .frame(maxWidth: 240, maxHeight: 240)
                     .frame(width: 200, height: 200)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     // Blur the IMAGE only (spec) - the overlay stays crisp.

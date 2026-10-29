@@ -824,6 +824,17 @@ interface MessageDao {
         "AND substr(id, 1, 6) != 'local_' ORDER BY createdAt ASC, id ASC LIMIT 1")
     suspend fun earliestServerCreatedAt(conversationId: String): String?
 
+    /** R44 privacy revalidation round-robin: rooms that actually carry cached
+     * server rows (bounded, deterministic order). */
+    @Query("SELECT DISTINCT conversationId FROM messages WHERE substr(id, 1, 6) != 'local_' ORDER BY conversationId")
+    suspend fun conversationsWithServerRows(): List<String>
+
+    /** Live media filenames still referenced by a non-deleted cached row. */
+    @Query("SELECT DISTINCT imagePath FROM messages WHERE deletedAt IS NULL AND imagePath IN (:names) " +
+        "UNION SELECT DISTINCT audioPath FROM messages WHERE deletedAt IS NULL AND audioPath IN (:names) " +
+        "UNION SELECT DISTINCT filePath FROM messages WHERE deletedAt IS NULL AND filePath IN (:names)")
+    suspend fun liveMediaPaths(names: List<String>): List<String>
+
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND createdAt = :at " +
         "AND substr(id, 1, 6) != 'local_' ORDER BY id ASC LIMIT 1")
     suspend fun firstAtTimestamp(conversationId: String, at: String): MessageEntity?
@@ -876,10 +887,38 @@ interface MessageDao {
                 after = owners.last().id
             }
         }
+        // Section-5 root-only revocation for quotes whose learned sourceRootId
+        // (v2) points at a just-deleted root while the child row is uncached:
+        // the walk above cannot see them (no cached child to join through).
+        for (rootId in merged.filter { it.threadRootId == null && it.deletedAt != null }.map { it.id }) {
+            var after = ""
+            while (true) {
+                val owners = quoteDependentsOfRoot("%\"sourceRootId\":\"$rootId\"%", after)
+                if (owners.isEmpty()) break
+                for (owner in owners) {
+                    val domain = owner.toDomain()
+                    val bounds = domain.quoteBounds ?: continue
+                    if (bounds.version != 1 || bounds.deleted) continue
+                    // Only the root's tombstone is known here; tighten to
+                    // "unavailable" without claiming more than we can prove.
+                    val revoked = bounds.copy(deleted = true)
+                    updateQuote(owner.id, "", "Unavailable message",
+                        app.pulse.protocol.PulseJson.encodeToString(app.pulse.domain.model.QuoteBounds.serializer(), revoked))
+                }
+                after = owners.last().id
+            }
+        }
     }
 
     @Query("SELECT * FROM messages WHERE replyToId IS NOT NULL AND id > :after AND (id IN (:changed) OR replyToId IN (:changed) OR replyToId IN (SELECT id FROM messages WHERE threadRootId IN (:changed))) ORDER BY id LIMIT 200")
     suspend fun quoteDependents(changed: List<String>, after: String): List<MessageEntity>
+
+    /** Quotes whose learned sourceRootId (QuoteBounds v2) points at a changed
+     * root, even when the quoted child row itself is no longer cached.
+     * Serializer key order is stable, so a LIKE on the encoded bounds is a
+     * sound bounded scan for the small v2 population. */
+    @Query("SELECT * FROM messages WHERE replyToId IS NOT NULL AND id > :after AND quoteBoundsJson LIKE :pattern ORDER BY id LIMIT 200")
+    suspend fun quoteDependentsOfRoot(pattern: String, after: String): List<MessageEntity>
 
     @Query("UPDATE messages SET replyToBody = :body, replyToAuthor = :author, quoteBoundsJson = :bounds WHERE id = :id")
     suspend fun updateQuote(id: String, body: String?, author: String?, bounds: String?)

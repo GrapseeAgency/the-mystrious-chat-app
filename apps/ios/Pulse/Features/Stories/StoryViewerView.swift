@@ -149,18 +149,13 @@ struct StoryViewerView: View {
     private func stage(for current: StoryViewerMachine.FlatStory) -> some View {
         if current.isImage, let path = current.story.imagePath {
             ZStack(alignment: .bottom) {
-                AsyncImage(url: PulseEndpoints.mediaURL(path)) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFit()
-                    } else {
-                        ZStack {
-                            Color.black
-                            if phase.error != nil {
-                                Text("Couldn't load this photo")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
-                        }
+                // R44 - authenticated media fetch (revocable URLs). The
+                // story's 24h lifetime is its own revocation on the server.
+                PulseMediaImage(url: PulseEndpoints.mediaURL(path)) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    ZStack {
+                        Color.black
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -31,6 +31,10 @@ async function fixture(run) {
   for(const id of ['me','member','outsider']) await db.user.create({data:{id,name:id,sessionTokenHash:hashSessionToken(`synthetic-${id}`),legacyTokenHashes:'[]'}})
   await db.conversation.create({data:{id:'room',isGroup:true}})
   for(const [userId,role]of [['me','admin'],['member','member']]) await db.conversationParticipant.create({data:{userId,role,conversationId:'room',lastReadAt:new Date('2026-01-01')}})
+  // R44: webhook posts need the machine author (pulseai) in the room - the
+  // human-fallback attribution is gone by design.
+  await db.user.create({data:{id:'pulseai',name:'Pulse',username:'pulseai',sessionTokenHash:hashSessionToken('synthetic-pulseai'),legacyTokenHashes:'[]'}})
+  await db.conversationParticipant.create({data:{userId:'pulseai',role:'member',conversationId:'room',lastReadAt:new Date('2026-01-01')}})
   await db.automation.create({data:{id:'rule',conversationId:'room',trigger:'Hello',reply:'Welcome',createdById:'me'}})
   await db.webhook.create({data:{id:'hook',conversationId:'room',name:'Build bot',token:'synthetic-hook',createdBy:'me'}})
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
@@ -167,7 +171,9 @@ test('Unicode keyword boundaries do not fire inside Bengali or combining-mark wo
 }))
 test('webhook capability cannot bypass block, announcement or machine slow-mode policies',()=>fixture(async(db,h)=>{
  await db.conversation.update({where:{id:'room'},data:{isGroup:false}})
- await db.userBlock.create({data:{blockerId:'member',blockedId:'me'}})
+ // R44: the machine author (pulseai) carries the post; a block against it
+ // must stop the webhook, the same way a block against a human sender does.
+ await db.userBlock.create({data:{blockerId:'member',blockedId:'pulseai'}})
  assert.equal((await h.token.POST(req('POST','',null),ctx())).status,403)
  await db.userBlock.deleteMany()
  await db.conversationParticipant.updateMany({where:{userId:'me'},data:{role:'member'}})

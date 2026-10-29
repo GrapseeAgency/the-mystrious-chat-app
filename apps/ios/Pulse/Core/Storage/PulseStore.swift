@@ -703,6 +703,33 @@ public final class PulseStore: Sendable {
             }
             after = lastID
         }
+        // R44 section-5 "Uncached child-root provenance": quotes that learned
+        // a sourceRootId (v2) pointing at a deleted root, when the quoted
+        // child row itself is no longer cached. The join above cannot see
+        // them, so revoke them directly from the learned provenance.
+        if let changedId {
+            var rootAfter = ""
+            let pattern = "%\"sourceRootId\":\"" + changedId + "\"%"
+            while true {
+                let rows = try Row.fetchAll(db, sql: "SELECT id, wireJson FROM message WHERE replyToId IS NOT NULL AND id > :after AND wireJson LIKE :pattern ORDER BY id LIMIT 200",
+                                            arguments: ["after": rootAfter, "pattern": pattern])
+                guard let last = rows.last, let lastID: String = last["id"] else { break }
+                for row in rows {
+                    guard let id: String = row["id"], let wire: String = row["wireJson"],
+                          var message = try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8)),
+                          var quote = message.replyTo else { continue }
+                    guard quote.quoteVersion == 1, quote.deleted != true else { continue }
+                    quote = WireReplySnippet(id: quote.id, content: "", senderName: "Unavailable message",
+                                             deleted: true, quoteVersion: 1, expiresAt: quote.expiresAt,
+                                             viewOnce: quote.viewOnce, sourceEditedAt: quote.sourceEditedAt,
+                                             sourceRootId: quote.sourceRootId)
+                    message.replyTo = quote
+                    try db.execute(sql: "UPDATE message SET wireJson = ? WHERE id = ?",
+                        arguments: [String(decoding: try JSONEncoder().encode(message), as: UTF8.self), id])
+                }
+                rootAfter = lastID
+            }
+        }
     }
 
     /// One message row → message table (INSERT … ON CONFLICT full overwrite:

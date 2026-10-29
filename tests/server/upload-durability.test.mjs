@@ -25,7 +25,10 @@ async function fixture(run, overrides = {}) {
     const bindings = { db, mkdir:fs.mkdir, writeFile:fs.writeFile, readFile:fs.readFile, rename:fs.rename, unlink:fs.unlink, path, randomUUID, NextResponse:Response, DOC_MAX_BYTES,
       UPLOADS_DIR:path.join(dir,'uploads'), UPLOAD_MIME:{txt:'text/plain',png:'image/png'},
       strField:v=>typeof v==='string'?v.trim():'', ...input, ...receipts,
-      console:{error:()=>{}}, ...overrides }
+      console:{error:()=>{}}, ...overrides,
+      // R44: the route's per-request access gate - these contract tests run
+      // headerless, so the migration-window 'open' decision is the honest stub.
+      mediaAccessDecision: async () => ({ kind: 'open' }) }
     const post = await load('src/app/api/uploads/route.ts',bindings,'POST')
     const get = await load('src/app/api/uploads/[file]/route.ts',bindings,'GET')
     await run({db,post,get,dir})
