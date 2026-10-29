@@ -39,11 +39,16 @@ public struct PulseMediaImage<Placeholder: View, Content: View>: View {
         }
         .task(id: url) {
             guard let url, image == nil else { return }
-            let fetched = await Self.fetch(url)
+            let fetched = await PulseMediaFetch.fetch(url)
             if !Task.isCancelled { image = fetched }
         }
     }
+}
 
+/// R45 re-audit: the fetch helpers live on a NON-generic namespace enum -
+/// referencing a static member directly on the generic `PulseMediaImage`
+/// struct leaves Placeholder/Content uninferred (CI round 1 of this round).
+public enum PulseMediaFetch {
     /// One shared session; the token is read per request so rotations apply
     /// immediately. Never throws for missing tokens (header-less window).
     public static func fetch(_ url: URL) async -> UIImage? {

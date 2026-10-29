@@ -439,7 +439,7 @@ private struct SingleUsePhoto: View {
                 // bearer) so revocation binds here too, while keeping the
                 // ephemeral no-cache client so the one-time bytes never land
                 // in the shared URL cache.
-                var request = PulseMediaImage.authorizedRequest(for: url)
+                var request = PulseMediaFetch.authorizedRequest(for: url)
                 request.cachePolicy = .reloadIgnoringLocalCacheData
                 let (data, response) = try await client.data(for: request)
                 try Task.checkCancellation()
