@@ -2654,7 +2654,7 @@ struct MirrorBubble: View {
                         } else if message.kind == "image", let imagePath = message.imagePath {
                             // R44 - authenticated media fetch (revocable URLs).
                             PulseMediaImage(url: attachmentURL(imagePath)) { image in
-                                image.resizable().aspectRatio(contentMode: .fill)
+                                Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
                             } placeholder: {
                                 Rectangle().fill(MirrorArt.chip)
                             }

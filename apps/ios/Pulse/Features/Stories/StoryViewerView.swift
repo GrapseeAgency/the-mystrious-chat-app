@@ -152,7 +152,7 @@ struct StoryViewerView: View {
                 // R44 - authenticated media fetch (revocable URLs). The
                 // story's 24h lifetime is its own revocation on the server.
                 PulseMediaImage(url: PulseEndpoints.mediaURL(path)) { image in
-                    image.resizable().scaledToFit()
+                    Image(uiImage: image).resizable().scaledToFit()
                 } placeholder: {
                     ZStack {
                         Color.black

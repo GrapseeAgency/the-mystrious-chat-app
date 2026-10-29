@@ -3267,7 +3267,7 @@ struct BubbleView: View {
             if let url = PulseEndpoints.mediaURL(message.imagePath) {
                 // R44 - authenticated media fetch (revocable URLs).
                 PulseMediaImage(url: url) { image in
-                    image.resizable().scaledToFill()
+                    Image(uiImage: image).resizable().scaledToFill()
                 } placeholder: {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(Color.white.opacity(0.08))
@@ -3294,7 +3294,7 @@ struct BubbleView: View {
                 if let url = PulseEndpoints.mediaURL(message.imagePath) {
                     // R44 - authenticated media fetch (revocable URLs).
                     PulseMediaImage(url: url) { image in
-                        image.resizable().scaledToFill()
+                        Image(uiImage: image).resizable().scaledToFill()
                     } placeholder: {
                         RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white.opacity(0.08))
                     }
