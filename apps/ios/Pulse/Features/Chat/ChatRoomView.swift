@@ -1337,12 +1337,6 @@ private struct RoomContent: View {
             // Wave 2 - honest teardown: a recording or playback must never
             // outlive the room (roomVisible off / conversation change).
             viewOnceTask?.cancel()
-            // Section-5 "Copies outside message storage": playback tmp copies
-            // share the same honest teardown.
-            for (_, stale) in voiceLocalFiles {
-                try? FileManager.default.removeItem(at: stale)
-            }
-            voiceLocalFiles.removeAll()
             viewModel.handleRoomDisappeared()
         }
     }
