@@ -2594,16 +2594,24 @@ private struct RoomContent: View {
             }
             // Wave 2 view-once - image sends only (server: viewOnce requires
             // imagePath, spec §0).
+            // Section-5 REVIEW "View-once guarantees": the copy stays honest -
+            // consumption acknowledgement HIDES the media after opening; it
+            // cannot stop screenshots, copies, or bytes already disclosed.
             if staged.kind == .image {
-                Toggle(
-                    "View once - disappears after opening",
-                    isOn: Binding(
-                        get: { viewModel.staged?.viewOnce ?? false },
-                        set: { viewModel.setStagedViewOnce($0) },
-                    ),
-                )
-                .font(.caption)
-                .tint(PulseTheme.emberGlowTop)
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(
+                        "View once - hides after opening",
+                        isOn: Binding(
+                            get: { viewModel.staged?.viewOnce ?? false },
+                            set: { viewModel.setStagedViewOnce($0) },
+                        ),
+                    )
+                    .font(.caption)
+                    .tint(PulseTheme.emberGlowTop)
+                    Text("Can't stop screenshots or copies made before opening")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.horizontal, 14)

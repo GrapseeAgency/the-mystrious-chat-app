@@ -3021,6 +3021,9 @@ private fun StagedMediaCard(
             // Wave 2 view-once send toggle - IMAGE kind only (the wire
             // requires imagePath when viewOnce===true). Spec §1 row 5: this
             // tray tile is a native ADD, deliberately absent on web.
+            // Section-5 REVIEW "View-once guarantees": the copy stays honest -
+            // consumption acknowledgement HIDES the media after opening; it
+            // cannot stop screenshots, copies, or bytes already disclosed.
             if (staged.kind == StagedMedia.Kind.IMAGE) {
                 Row(
                     Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -3033,7 +3036,7 @@ private fun StagedMediaCard(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            "Disappears after opening",
+                            "Hides after opening - can't stop screenshots",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -321,10 +321,14 @@ struct MediaLightboxView: View {
                             if singleUse {
                                 if scenePhase == .active && !captureActive { SingleUsePhoto(url: url) }
                             } else {
-                                AsyncImage(url: url) { phase in
-                                    if let image = phase.image { image.resizable().scaledToFit() }
-                                    else if phase.error != nil { Text("Photo unavailable").foregroundStyle(.white) }
-                                    else { ProgressView().tint(.white).frame(width: 240, height: 240) }
+                                // R45 re-audit: the lightbox is a
+                                // message-referenced media fetch - ride the
+                                // authenticated path so a tombstone/expiry
+                                // revokes the previously reachable URL.
+                                PulseMediaImage(url: url) { image in
+                                    Image(uiImage: image).resizable().scaledToFit()
+                                } placeholder: {
+                                    ProgressView().tint(.white).frame(width: 240, height: 240)
                                 }
                             }
                         }
@@ -430,7 +434,14 @@ private struct SingleUsePhoto: View {
             let client = URLSession(configuration: configuration)
             defer { client.invalidateAndCancel() }
             do {
-                let (data, response) = try await client.data(for: URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+                // R45 re-audit: the view-once photo is message media - fetch
+                // through the SAME authorized request builder (gateway-only
+                // bearer) so revocation binds here too, while keeping the
+                // ephemeral no-cache client so the one-time bytes never land
+                // in the shared URL cache.
+                var request = PulseMediaImage.authorizedRequest(for: url)
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                let (data, response) = try await client.data(for: request)
                 try Task.checkCancellation()
                 guard (response as? HTTPURLResponse)?.statusCode == 200, let decoded = UIImage(data: data) else {
                     failed = true; return

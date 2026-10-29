@@ -21,12 +21,14 @@ public struct PulseAvatar: View {
     public var body: some View {
         ZStack {
             if let photoURL {
-                AsyncImage(url: photoURL) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        initialsLayer
-                    }
+                // R45 re-audit: avatars ride the authenticated media fetch
+                // (co-member grant server-side), so a peer's avatar revokes
+                // when the last shared room is gone; initials stay the
+                // fallback on any denial.
+                PulseMediaImage(url: photoURL) { image in
+                    Image(uiImage: image).resizable().scaledToFill()
+                } placeholder: {
+                    initialsLayer
                 }
             } else {
                 initialsLayer
@@ -359,12 +361,12 @@ struct RowAvatar: View {
     var body: some View {
         ZStack {
             if let photo {
-                AsyncImage(url: photo) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        initialsLayer
-                    }
+                // R45 re-audit: avatars ride the authenticated media fetch
+                // (co-member grant server-side); initials stay the fallback.
+                PulseMediaImage(url: photo) { image in
+                    Image(uiImage: image).resizable().scaledToFill()
+                } placeholder: {
+                    initialsLayer
                 }
             } else {
                 initialsLayer
@@ -494,12 +496,14 @@ struct StoryRingCell: View {
     private var thumbnail: some View {
         ZStack {
             if let url = PulseTheme.photoURL(thumbnailPath ?? photoPath) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        initialsLayer
-                    }
+                // R45 re-audit: the tray thumbnail rides the authenticated
+                // media fetch - an expired story image (its 24h lifetime IS
+                // its revocation) falls back to the avatar/initials instead
+                // of serving forever through the headerless window.
+                PulseMediaImage(url: url) { image in
+                    Image(uiImage: image).resizable().scaledToFill()
+                } placeholder: {
+                    initialsLayer
                 }
             } else {
                 initialsLayer

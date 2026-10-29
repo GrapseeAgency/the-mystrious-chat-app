@@ -61,3 +61,23 @@ test('own avatar, own live story, and room photos stay reachable for the owner',
   await db.statusStory.update({ where: { id: 's1' }, data: { expiresAt: new Date(Date.now() - 1) } })
   assert.equal((await mediaAccessDecision(request('synthetic-member'), 'story.jpg')).kind, 'denied')
 }))
+test('R45 re-audit: a co-member avatar/cover stays reachable, a stranger avatar does not', () => fixture(async ({ db, mediaAccessDecision, request }) => {
+  // The stranger shares no room with the member: their avatar stays 403 even
+  // though the requester is authenticated (the Android Coil loader attaches
+  // the token to avatar fetches too - the co-member grant must be the ONLY
+  // new audience).
+  await db.user.update({ where: { id: 'stranger' }, data: { avatar: 'stranger-avatar.png', coverImage: 'stranger-cover.jpg' } })
+  assert.equal((await mediaAccessDecision(request('synthetic-member'), 'stranger-avatar.png')).kind, 'denied')
+  assert.equal((await mediaAccessDecision(request('synthetic-member'), 'stranger-cover.jpg')).kind, 'denied')
+  // A co-member (shares the room) keeps avatar + cover reachable while the
+  // shared room exists...
+  await db.user.create({ data: { id: 'peer', name: 'peer', sessionTokenHash: hashSessionToken('synthetic-peer'), legacyTokenHashes: '[]', avatar: 'peer-avatar.png', coverImage: 'peer-cover.jpg' } })
+  await db.conversationParticipant.create({ data: { id: 'cp2', userId: 'peer', conversationId: 'room' } })
+  assert.equal((await mediaAccessDecision(request('synthetic-member'), 'peer-avatar.png')).kind, 'granted')
+  assert.equal((await mediaAccessDecision(request('synthetic-member'), 'peer-cover.jpg')).kind, 'granted')
+  // ...and loses both the moment the last shared room is gone (leaving a
+  // room revokes the previously reachable avatar/cover URL).
+  await db.conversationParticipant.delete({ where: { id: 'cp2' } })
+  assert.equal((await mediaAccessDecision(request('synthetic-member'), 'peer-avatar.png')).kind, 'denied')
+  assert.equal((await mediaAccessDecision(request('synthetic-member'), 'peer-cover.jpg')).kind, 'denied')
+}))

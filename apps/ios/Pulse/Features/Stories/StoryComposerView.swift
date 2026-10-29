@@ -164,6 +164,13 @@ struct StoryComposerView: View {
                         .scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: 22))
                 } else if let path = cs.imagePath, let url = PulseEndpoints.mediaURL(path) {
+                    // R45 re-audit: this preview stays HEADERLESS on purpose.
+                    // The draft's image is uploaded but not yet posted - the
+                    // server has no story row to grant against (upload files
+                    // carry no owner record), so an authenticated fetch would
+                    // 403 the preview after a composer-state restore. The
+                    // moment the story is posted, its 24h lifetime binds and
+                    // every other surface fetches authenticated.
                     AsyncImage(url: url) { phase in
                         if let image = phase.image {
                             image.resizable().scaledToFit()

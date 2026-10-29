@@ -68,6 +68,20 @@ export async function mediaAccessDecision(req: Request, file: string, clock: () 
   }, select: { id: true } })
   if (ownAsset) return { kind: 'granted' }
 
+  // R45 section-5 re-audit: avatars/covers of CO-MEMBERS. The Android app
+  // attaches its session token to every /api/uploads/ fetch through the
+  // app-wide Coil loader, so other members' avatars/covers arrive
+  // authenticated — without this grant they all 403'd the moment a token
+  // existed, breaking every contact avatar and user-page cover on Android.
+  // Audience rule: same social graph as the stories feed — a member's
+  // avatar/cover is reachable while the actor shares any conversation with
+  // them, and revoked when the last shared room is gone.
+  const peerAsset = await db.user.findFirst({ where: {
+    OR: [{ avatar: file }, { coverImage: file }],
+    participations: { some: { conversation: { participants: { some: { userId: actor.id } } } } },
+  }, select: { id: true } })
+  if (peerAsset) return { kind: 'granted' }
+
   // Live stories by anyone the actor shares a conversation with (the same
   // social-graph audience rule the /api/stories feed applies). A story's
   // 24h expiry is its own revocation: past it, the image stops serving.

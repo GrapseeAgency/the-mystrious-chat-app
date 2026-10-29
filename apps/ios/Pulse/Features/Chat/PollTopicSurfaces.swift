@@ -437,6 +437,11 @@ struct LinkPreviewCard: View {
     }
 
     private var imageURL: URL? {
+        // R45 re-audit: link-preview images are EXTERNAL og:image URLs from
+        // the linked site - they must stay on plain AsyncImage. Routing them
+        // through the authenticated media fetch would leak the session token
+        // to a third-party host (PulseMediaImage pins the token to the
+        // gateway origin for exactly this reason).
         PulseEndpoints.mediaURL(preview.imageUrl)
     }
 

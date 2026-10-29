@@ -5013,9 +5013,15 @@ private fun MirrorCaptionSheet(selection: MirrorMediaSelection, destination: Str
                     .clip(RoundedCornerShape(14.dp)),
             )
             if (draft.kind == "image") {
+                // Section-5 REVIEW "View-once guarantees": honest copy - the
+                // consumption receipt hides the photo after opening; it cannot
+                // stop screenshots or already-disclosed bytes.
                 Row(Modifier.fillMaxWidth().clickable(enabled = !busy && !locked) { onViewOnce(!draft.viewOnce) }.padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("View once", color = MirrorArt.Text, fontSize = 13.sp)
+                    Column(Modifier.weight(1f)) {
+                        Text("View once", color = MirrorArt.Text, fontSize = 13.sp)
+                        Text("Hides after opening - can't stop screenshots", color = MirrorArt.Dim, fontSize = 11.sp)
+                    }
                     Text(if (draft.viewOnce) "On" else "Off", color = MirrorArt.Accent, fontSize = 13.sp)
                 }
             }

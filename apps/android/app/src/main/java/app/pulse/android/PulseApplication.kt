@@ -28,6 +28,13 @@ class PulseApplication : Application(), coil.ImageLoaderFactory {
     // every /api/uploads/ fetch so the server's membership/lifetime checks can
     // revoke previously reachable media URLs. Header-less Coil requests (no
     // token yet) keep the documented migration window.
+    // R45 re-audit: the token pins to the CONFIGURED GATEWAY ORIGIN, not just
+    // the /api/uploads/ path - an external image URL (link previews, legacy
+    // absolute paths) whose path happens to start with /api/uploads/ must
+    // never receive the session credential. Companion notes: server-side, the
+    // co-member avatar/cover grant (media-access.ts) keeps other members'
+    // avatars reachable for this loader; leaving the last shared room
+    // revokes them.
     @Inject
     lateinit var sessionTokenStore: app.pulse.data.local.SessionTokenStore
 
@@ -38,7 +45,10 @@ class PulseApplication : Application(), coil.ImageLoaderFactory {
                     .addInterceptor { chain ->
                         val request = chain.request()
                         val token = sessionTokenStore.cached
-                        val toGateway = request.url.encodedPath.startsWith("/api/uploads/")
+                        // Full-origin pin: scheme + host + port must match the
+                        // configured gateway before the bearer rides along.
+                        val toGateway = app.pulse.core.PulseEndpoints.isConfigured &&
+                            request.url.toString().startsWith(app.pulse.core.PulseEndpoints.http("/api/uploads/"))
                         chain.proceed(
                             if (token.isNullOrBlank() || !toGateway) request
                             else request.newBuilder().header("Authorization", "Bearer $token").build(),

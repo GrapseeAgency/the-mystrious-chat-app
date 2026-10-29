@@ -75,12 +75,13 @@ struct UserPageView: View {
         VStack(spacing: 10) {
             // R39 - cover picture banner (web parity) when the member set one.
             if let cover = user.coverImage, !cover.isEmpty {
-                AsyncImage(url: PulseTheme.photoURL(cover)) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Rectangle().fill(PulseTheme.glassFill)
-                    }
+                // R45 re-audit: the member's cover rides the authenticated
+                // media fetch (co-member grant server-side); the glass band
+                // stays the fallback on any denial.
+                PulseMediaImage(url: PulseTheme.photoURL(cover)) { image in
+                    Image(uiImage: image).resizable().scaledToFill()
+                } placeholder: {
+                    Rectangle().fill(PulseTheme.glassFill)
                 }
                 .frame(height: 120)
                 .frame(maxWidth: .infinity)

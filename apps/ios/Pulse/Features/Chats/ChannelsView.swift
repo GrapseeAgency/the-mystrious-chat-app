@@ -196,6 +196,12 @@ struct ChannelsView: View {
             ZStack(alignment: .bottomTrailing) {
                 if let photo = channel.photo, !photo.isEmpty,
                    let url = PulseTheme.photoURL(photo) {
+                    // R45 re-audit: directory photos stay HEADERLESS on
+                    // purpose. The Discover section renders channels the
+                    // viewer has NOT joined (the web directory serves the
+                    // same photos to anonymous sessions), so an
+                    // authenticated fetch would 403 non-member tiles. Joined
+                    // channels re-prove on every other authenticated surface.
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {

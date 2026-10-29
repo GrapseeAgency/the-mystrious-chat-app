@@ -188,12 +188,12 @@ struct ProfileView: View {
     private var coverBanner: some View {
         if let cover = prefs.viewer?.coverImage, !cover.isEmpty {
             ZStack(alignment: .bottomTrailing) {
-                AsyncImage(url: PulseTheme.photoURL(cover)) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        Rectangle().fill(PulseTheme.glassFill)
-                    }
+                // R45 re-audit: the cover rides the authenticated media fetch
+                // (own-asset grant server-side).
+                PulseMediaImage(url: PulseTheme.photoURL(cover)) { image in
+                    Image(uiImage: image).resizable().scaledToFill()
+                } placeholder: {
+                    Rectangle().fill(PulseTheme.glassFill)
                 }
                 .frame(height: 116)
                 .frame(maxWidth: .infinity)
@@ -354,14 +354,13 @@ struct ProfileView: View {
     private var coverBand: some View {
         if let cover = prefs.viewer?.coverImage, !cover.isEmpty,
            let url = PulseTheme.photoURL(cover) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                default:
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
-                }
+            // R45 re-audit: the cover rides the authenticated media fetch
+            // (own-asset grant server-side).
+            PulseMediaImage(url: url) { image in
+                Image(uiImage: image).resizable().scaledToFill()
+            } placeholder: {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
             }
             .frame(maxWidth: .infinity)
             .frame(height: 132)
