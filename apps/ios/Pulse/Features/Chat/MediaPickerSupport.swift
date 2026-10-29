@@ -158,15 +158,20 @@ enum PulseMediaSupport {
             guard !result.isEmpty else { throw PulseAPIClient.Failure(kind: .validation, message: "The selected document is empty.") }
             return result
         }
-        // The blocking loop runs detached (never on the caller's actor - a
-        // main-actor caller must not block on a provider read), and the
-        // caller's cancellation is propagated by hand: outer cancel -> inner
-        // cancel -> closeOnce() unblocks the wedged provider read. The inner
+        // The blocking loop runs on a GLOBAL GCD thread, never on the
+        // cooperative pool (a hung provider would otherwise pin a pool
+        // thread for the whole 120s deadline window), and the caller's
+        // cancellation is propagated by hand: outer cancel -> inner cancel
+        // -> closeOnce() unblocks the wedged provider read. The inner
         // closure is explicitly async so the cancellation-handler overload
         // resolves cleanly (a sync closure inside picked the async overload).
         let inner = Task.detached(priority: .userInitiated) { () async throws -> Data in
             try await withTaskCancellationHandler {
-                try read()
+                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        cont.resume(with: Result { try read() })
+                    }
+                }
             } onCancel: {
                 closeOnce()
             }

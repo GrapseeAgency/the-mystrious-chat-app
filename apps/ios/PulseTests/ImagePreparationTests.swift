@@ -146,32 +146,43 @@ final class ImagePreparationTests: XCTestCase {
 
     func testCancelledDocumentReadClosesTheStreamAndUnblocksAProviderBlockedBelowTheReader() async throws {
         let provider = BlockedProviderStream()
+        let started = Date()
         let read = Task.detached(priority: .userInitiated) {
             try await PulseMediaSupport.readDocument(stream: provider, deadline: 60)
         }
-        XCTAssertTrue(provider.waitEntered(5), "the provider read never started")
+        let entered = await waitUntil(5) { provider.entered }
+        XCTAssertTrue(entered, "the provider read never started")
         read.cancel() // the read is blocked inside the provider right now
-        // Without close-on-cancel this await hangs past the 60s deadline.
         do {
-            _ = try await withTimeout(5) { try await read.value }
+            _ = try await withTimeout(4) { try await read.value }
             XCTFail("a cancelled blocked read must never return bytes")
         } catch { /* unblocked by close, surfaced as an error: the point */ }
-        XCTAssertEqual(provider.unblocked.wait(timeout: .now() + 1), .success,
-                     "cancellation must have closed the blocked stream")
+        // Close must land promptly - well before the fake's safety valve
+        // (3s) and nowhere near the 60s deadline.
+        let closed = await waitUntil(2) { provider.closed }
+        XCTAssertTrue(closed, "cancellation must have closed the blocked stream")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2.5,
+                         "the blocked read must unblock fast, not via a timeout")
     }
 
     func testDocumentReadDeadlineClosesAHungProviderEvenWithoutCancellation() async throws {
         let provider = BlockedProviderStream()
+        let started = Date()
         let read = Task.detached(priority: .userInitiated) {
             try await PulseMediaSupport.readDocument(stream: provider, deadline: 0.3)
         }
-        XCTAssertTrue(provider.waitEntered(5), "the provider read never started")
+        let entered = await waitUntil(5) { provider.entered }
+        XCTAssertTrue(entered, "the provider read never started")
         // No cancellation: the 0.3s watchdog must close the stream so the
         // caller fails fast instead of hanging on the wedged provider.
         do {
-            _ = try await withTimeout(5) { try await read.value }
+            _ = try await withTimeout(4) { try await read.value }
             XCTFail("a hung provider must fail at the deadline, never return bytes")
         } catch { /* watchdog closed the stream: the point */ }
+        let closed = await waitUntil(2) { provider.closed }
+        XCTAssertTrue(closed, "the deadline watchdog must have closed the hung stream")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2.5,
+                         "the deadline must fail the read fast, not via the safety valve")
     }
 
     func testDecodeGateSerializesBackgroundPreparations() async throws {
@@ -190,6 +201,18 @@ final class ImagePreparationTests: XCTestCase {
         XCTAssertEqual(sum, 2)
         lock.lock(); let observed = peak; lock.unlock()
         XCTAssertEqual(observed, 1, "two background decodes must never overlap")
+    }
+
+    /// Async polling wait (never blocks a cooperative-pool thread - the
+    /// earlier semaphore-blocking waits starved the pool under XCTest's
+    /// parallel shards and hung the whole runner).
+    private func waitUntil(_ seconds: Double, _ condition: @escaping () -> Bool) async -> Bool {
+        let limit = Date().addingTimeInterval(seconds)
+        while Date() < limit {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return condition()
     }
 
     private func withTimeout<T>(_ seconds: Double, _ operation: @escaping () async throws -> T) async throws -> T {
@@ -214,15 +237,25 @@ private struct TestTimeoutError: Error {}
 /// the bounded reader's chunk loop, until close() lands - exactly the
 /// cloud-provider case the "Blocked OS reads" checklist item calls out.
 /// File scope (not nested in the @MainActor test class) so the detached
-/// read task can call it without actor hops.
+/// read task can call it without actor hops. The read blocks on a GLOBAL
+/// GCD thread (the production reader moved its blocking loop off the
+/// cooperative pool) and carries a 3s safety valve so a regression can
+/// never wedge a runner forever - the tests assert the elapsed time stays
+/// well under the valve, which proves close (not the valve) won the race.
 private final class BlockedProviderStream: InputStream {
-    let entered = DispatchSemaphore(value: 0)
-    let unblocked = DispatchSemaphore(value: 0)
+    private let state = NSLock()
+    private var _entered = false
+    private var _closed = false
+    var entered: Bool { state.lock(); defer { state.unlock() }; return _entered }
+    var closed: Bool { state.lock(); defer { state.unlock() }; return _closed }
     override func read(_ buffer: UnsafeMutablePointer<UInt8>, maxLength: Int) -> Int {
-        entered.signal()
-        unblocked.wait()
+        state.lock(); _entered = true; state.unlock()
+        let valve = Date().addingTimeInterval(3)
+        while !closed {
+            if Date() > valve { return -1 } // regression safety valve
+            Thread.sleep(forTimeInterval: 0.01)
+        }
         return -1 // close() unblocked us: fail the read honestly.
     }
-    override func close() { unblocked.signal() }
-    func waitEntered(_ seconds: Double) -> Bool { entered.wait(timeout: .now() + seconds) == .success }
+    override func close() { state.lock(); _closed = true; state.unlock() }
 }
