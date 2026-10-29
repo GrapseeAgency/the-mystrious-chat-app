@@ -248,10 +248,14 @@ private final class BlockedProviderStream: InputStream {
     private var _closed = false
     var entered: Bool { state.lock(); defer { state.unlock() }; return _entered }
     var closed: Bool { state.lock(); defer { state.unlock() }; return _closed }
-    // NSInputStream is an abstract class cluster: open() MUST be overridden
-    // (the inherited -open throws NSInvalidArgumentException, which is what
-    // failed the previous rounds), close() too.
+    // NSInputStream is an abstract class cluster: open(), close(),
+    // streamError and friends MUST be overridden (the inherited ones throw
+    // NSInvalidArgumentException on a custom subclass - what failed rounds
+    // 4 through 6). readDocument touches open/read/close/streamError.
     override func open() { }
+    override var streamError: Error? { nil }
+    override var streamStatus: Stream.Status { closed ? .closed : .reading }
+    override var hasBytesAvailable: Bool { !closed }
     override func read(_ buffer: UnsafeMutablePointer<UInt8>, maxLength: Int) -> Int {
         state.lock(); _entered = true; state.unlock()
         let valve = Date().addingTimeInterval(3)
