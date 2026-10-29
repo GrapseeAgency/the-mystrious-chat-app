@@ -186,7 +186,7 @@ final class ImagePreparationTests: XCTestCase {
         }
         let first = Task.detached { try PulseMediaSupport.withDecodeGate(body) }
         let second = Task.detached { try PulseMediaSupport.withDecodeGate(body) }
-        let sum = try await withTimeout(10) { try await first.value + try await second.value }
+        let sum = try await withTimeout(10) { try await first.value + second.value }
         XCTAssertEqual(sum, 2)
         lock.lock(); let observed = peak; lock.unlock()
         XCTAssertEqual(observed, 1, "two background decodes must never overlap")
@@ -197,7 +197,7 @@ final class ImagePreparationTests: XCTestCase {
             group.addTask { try await operation() }
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                throw CocoaError(.codeLine) // arbitrary distinct timeout error
+                throw TestTimeoutError()
             }
             let result = try await group.next()!
             group.cancelAll()
@@ -206,6 +206,9 @@ final class ImagePreparationTests: XCTestCase {
     }
 
 }
+
+/// Distinct marker for the withTimeout race in these tests.
+private struct TestTimeoutError: Error {}
 
 /// A hung provider for the R43 tests: read blocks INSIDE the stream, below
 /// the bounded reader's chunk loop, until close() lands - exactly the
