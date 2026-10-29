@@ -637,7 +637,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19, PulseDatabase.MIGRATION_19_20,
             )
             .allowMainThreadQueries()
             .build()
@@ -653,7 +653,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19, PulseDatabase.MIGRATION_19_20,
             )
             .allowMainThreadQueries()
             .build()
@@ -716,7 +716,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19, PulseDatabase.MIGRATION_19_20,
             )
             .allowMainThreadQueries()
             .build()
@@ -752,7 +752,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13, PulseDatabase.MIGRATION_13_14, PulseDatabase.MIGRATION_14_15, PulseDatabase.MIGRATION_15_16, PulseDatabase.MIGRATION_16_17, PulseDatabase.MIGRATION_17_18, PulseDatabase.MIGRATION_18_19, PulseDatabase.MIGRATION_19_20,
             )
             .allowMainThreadQueries()
             .build()
