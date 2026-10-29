@@ -1283,14 +1283,18 @@ internal fun MirrorRoom(
                 // R42 - journal the take BEFORE it can be interrupted, so an
                 // abrupt process death reconstructs it (or reports it) instead
                 // of orphaning an anonymous cache file.
-                if (epoch != null) runCatching { repository.recordingJournalStart(voiceOperationId, groupId, file, epoch) }
+                if (epoch != null) voiceScope.launch {
+                    runCatching { repository.recordingJournalStart(voiceOperationId, groupId, file, epoch) }
+                }
             }.onFailure {
                 runCatching { recorderRef.value?.release() }
                 recorderRef.value = null
                 app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
                 recordFileRef.value?.delete()
                 recordFileRef.value = null
-                if (epoch != null) runCatching { repository.recordingJournalCancelled(voiceOperationId, epoch) }
+                if (epoch != null) voiceScope.launch {
+                    runCatching { repository.recordingJournalCancelled(voiceOperationId, epoch) }
+                }
                 sendError = "Microphone unavailable"
             }
         } else {
@@ -1312,7 +1316,9 @@ internal fun MirrorRoom(
         recordFileRef.value = null
         // R42 - the user's discard is a durable receipt: a later sweep must
         // never resurrect this take after process death.
-        mediaSession?.let { key -> runCatching { repository.recordingJournalCancelled(voiceOperationId, key) } }
+        mediaSession?.let { key ->
+            voiceScope.launch { runCatching { repository.recordingJournalCancelled(voiceOperationId, key) } }
+        }
         recording = false
         recordSeconds = 0
         recordedDurationMs = 0L
@@ -1335,7 +1341,9 @@ internal fun MirrorRoom(
         recordedDurationMs = duration
         // R42 - the container is finalized: this take is recoverable in full
         // after an abrupt process death until it is durably queued.
-        mediaSession?.let { key -> runCatching { repository.recordingJournalStopped(voiceOperationId, key) } }
+        mediaSession?.let { key ->
+            voiceScope.launch { runCatching { repository.recordingJournalStopped(voiceOperationId, key) } }
+        }
         return file
     }
     fun sendRecording() {

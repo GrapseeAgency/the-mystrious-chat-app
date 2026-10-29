@@ -5753,7 +5753,7 @@ final class RoomViewModel: ObservableObject {
             voiceJournalId = UUID().uuidString
             if let store = session.store {
                 try? store.recordingJournalStart(id: voiceJournalId!, conversationId: conversationId,
-                    filePath: recorder.fileURL.path)
+                    filePath: recorder.fileURL?.path ?? "")
             }
             recordingStartedAt = Date(); recordingElapsedMs = 0; recordingAmplitudes = []
             isRecording = true

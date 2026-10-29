@@ -1519,7 +1519,13 @@ class ChatRoomViewModel @Inject constructor(
         val durationMs = app.pulse.core.media.PulseMedia.voiceDurationMs(elapsedMs)
         // R42 - the container is finalized: this take is recoverable in full
         // after an abrupt process death until it is durably staged below.
-        recordingJournalId?.let { id -> runCatching { repo.recordingJournalStopped(id, attachmentKey) } }
+        val journalId = recordingJournalId
+        if (journalId != null) {
+            val sessionKey = attachmentKey ?: repo.attachmentSessionKey()
+            if (sessionKey != null) {
+                viewModelScope.launch { runCatching { repo.recordingJournalStopped(journalId, sessionKey) } }
+            }
+        }
         // Keep the source while an upload is uncertain; expose the same staged
         // retry/discard controls as a file. Delete only after durable enqueue.
         val selected = StagedMedia(kind = StagedMedia.Kind.AUDIO, localUri = file.absolutePath,

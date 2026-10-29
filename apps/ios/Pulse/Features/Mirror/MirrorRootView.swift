@@ -2440,7 +2440,7 @@ struct MirrorRoomView: View {
             voiceJournalId = UUID().uuidString
             if let store = session.store {
                 try? store.recordingJournalStart(id: voiceJournalId!, conversationId: row.id,
-                    filePath: recorder.fileURL.path)
+                    filePath: recorder.fileURL?.path ?? "")
             }
             recordingStartedAt = Date(); recordSeconds = 0; recording = true
             recordTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
