@@ -111,7 +111,6 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            set -o pipefail
             cd apps/android
             ./gradlew :app:assembleDebug :app:assembleRelease \
               -PpulseAppId=app.pulse.chat.native \
