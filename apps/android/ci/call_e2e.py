@@ -425,10 +425,10 @@ def open_contacts():
     return True
 
 def call_peer(name):
-    """Contacts: find the peer row, tap its Chat pill (opens the DM room),
-    then the room header's voice-call icon (middle of the EXACTLY-three
-    header icons: video / audio / kebab). The mirror rows carry no descs,
-    so the row is found by its name TEXT and the pills by row position."""
+    """Contacts: tap the peer row (opens the USER PAGE) -> "Message <first>"
+    opens the DM room -> the room header's voice-call icon (the MIDDLE of the
+    EXACTLY-three header icons: video / audio / kebab). The mirror surfaces
+    carry no descs, so navigation is text nodes + measured positions."""
     pos = None
     for attempt in range(8):
         pos = node_bounds(uiax_xml(), name, exact=True)
@@ -440,7 +440,14 @@ def call_peer(name):
         screen("peer-row-fail-" + safe_name(name) + ".png")
         note("MISS peer row: " + name)
         return False
-    tap((int(W * 0.87), pos[1]))  # the row's Chat pill (right-aligned)
+    tap(pos)  # the row opens the peer's user page
+    time.sleep(3)
+    msg = wait_node("Message ", timeout_s=12)  # "Message Alice" CTA
+    if msg is None:
+        screen("message-cta-fail-" + safe_name(name) + ".png")
+        note("MISS Message CTA on the user page")
+        return False
+    tap(msg)
     time.sleep(3.5)
     screen("alpha-room.png")
     # voice call = the MIDDLE of the three bare header icons
