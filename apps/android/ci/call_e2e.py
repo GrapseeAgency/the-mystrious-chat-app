@@ -172,11 +172,17 @@ def close_ime():
 def safe_name(text):
     return re.sub(r'[^A-Za-z0-9._-]+', '_', text)[:40]
 
+def _field_texts(xml):
+    return [t for t in re.findall(r'text="([^"]*)"', xml) if t]
+
 def type_into(field_needle, text, fallback_y_frac=None, verify=None):
-    """Tap the field, type CHUNKED, and VERIFY the committed text. The IME
-    open race can mangle `input text` (dropped/duplicated/truncated chars
-    were observed on the server URL), so each attempt is verified against
-    the accessibility tree and retried from a cleared field."""
+    """Tap the field, clear it, type CHUNKED, and verify EXACTLY.
+
+    Observed on CI: a deterministic stray 't' prefix lands before the typed
+    URL (IME race at 440dpi), so verification is EXACT and self-healing:
+    leading garbage before an exact-suffix match is deleted with
+    MOVE_HOME + FORWARD_DEL, and every failure clears + retries."""
+    needle = verify or text
     for attempt in range(4):
         pos = node_bounds(uiax_xml(), field_needle)
         if pos is None and fallback_y_frac is not None:
@@ -185,32 +191,40 @@ def type_into(field_needle, text, fallback_y_frac=None, verify=None):
             note("MISS field: " + field_needle)
             return False
         tap(pos)
-        time.sleep(2.0)  # let the IME fully open before the first keystroke
-        # Chunked typing: long single `input text` calls drop chars mid-IME-open.
+        time.sleep(2.0)  # let the IME fully open before any keystroke
+        adb_ok("shell", "input", "keyevent", "123")  # MOVE_END
+        for _ in range(24):
+            adb_ok("shell", "input", "keyevent", "67")  # DEL clears left of cursor
+        time.sleep(0.5)
         for i in range(0, len(text), 6):
             adb_ok("shell", "input", "text", text[i:i + 6])
             time.sleep(0.45)
         time.sleep(1.0)
         close_ime()
         xml = uiax_xml()
-        tree_texts = [t for t in re.findall(r'text="([^"]*)"', xml) if t]
-        needle = verify or text
-        ok = any(needle in t for t in tree_texts)
-        if ok:
+        if any(t == needle for t in _field_texts(xml)):
             return True
-        note("typing verify failed (attempt " + str(attempt + 1) + "); tree texts: " + str(tree_texts[:10]))
+        # Self-heal: leading garbage in front of an exact suffix (the stray
+        # 't' prefix) - cursor HOME + FORWARD_DEL eats exactly the extras.
+        for t in _field_texts(xml):
+            if t != needle and t.endswith(needle):
+                extra = len(t) - len(needle)
+                note("self-healing " + str(extra) + " leading char(s) before the exact text")
+                adb_ok("shell", "input", "keyevent", "122")  # MOVE_HOME
+                time.sleep(0.3)
+                for _ in range(extra):
+                    adb_ok("shell", "input", "keyevent", "112")  # FORWARD_DEL
+                time.sleep(0.6)
+                close_ime()
+                if any(t2 == needle for t2 in _field_texts(uiax_xml())):
+                    return True
+                break
+        note("typing verify failed (attempt " + str(attempt + 1) + "); tree texts: " + str(_field_texts(xml)[:10]))
         clear_pos = node_bounds(xml, "Clear", exact=True)
         if clear_pos is not None:
             tap(clear_pos)
             time.sleep(1.2)
-        else:
-            # No Clear affordance: tap the field and hammer DEL, then retype.
-            tap(pos)
-            time.sleep(1)
-            for _ in range(30):
-                adb_ok("shell", "input", "keyevent", "67")
-            time.sleep(0.6)
-    screen("typing-fail-" + safe_name(text) + ".png")
+    screen("typing-fail-" + safe_name(needle) + ".png")
     return False
 
 def alive(pkg):
