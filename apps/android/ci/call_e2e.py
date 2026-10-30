@@ -21,7 +21,9 @@ import sys
 import time
 
 PKG_A = os.environ.get("E2E_PKG_A", "app.pulse.chat.native")
-PKG_B = os.environ.get("E2E_PKG_B", "app.pulse.chat.debug")
+# The -PpulseAppId build override applies to BOTH variants: the debug APK's
+# applicationId is app.pulse.chat.native + the ".debug" suffix.
+PKG_B = os.environ.get("E2E_PKG_B", "app.pulse.chat.native.debug")
 ACT = "/app.pulse.android.MainActivity"
 GW = os.environ.get("E2E_GATEWAY", "http://10.0.2.2:3000")
 NAME_A = "Alpha"
