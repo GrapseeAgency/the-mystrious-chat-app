@@ -281,7 +281,9 @@ def crash_scan(stage):
     return False
 
 def onboard(pkg, name):
-    """Server URL -> Connect -> display name -> skip @handle -> dock shell."""
+    """Server URL -> Connect -> the app auto-signs into the seeded demo
+    account on a successful probe (R52-c: the probe success IS the login).
+    Falls back to the offline name step when a server has no demo seed."""
     launch(pkg)
     dismiss_system_dialogs()
     if not type_into("your-pulse-gateway", "http://10.0.2.2:3000", fallback_y_frac=0.418):
@@ -293,14 +295,27 @@ def onboard(pkg, name):
     # an arrow glyph; an exact match misses it).
     adb_ok("shell", "input", "keyevent", "66")  # ENTER = IME action (GO)
     time.sleep(4)
-    if not wait_text("What should people call you", timeout_s=8):
+    if not wait_text("What should people call you", timeout_s=6):
         close_ime()
         tap_text("Connect", wait=4.0)
-    # step 1: display name (the field auto-focuses; type either way)
-    if not wait_text("What should people call you", timeout_s=25):
-        screen("onboard-fail-" + name + "-name-step.png")
-        dump_logcat("onboard-fail-" + name + "-logcat.txt")
-        return False
+
+    # Path A (seeded server): the probe success auto-signs the demo account
+    # and lands in the shell directly ("Connected - opening your account...").
+    if wait_text("Chats", timeout_s=20, exact=True):
+        screen("onboard-" + name + "-shell.png")
+        note(name + " onboarded via the demo auto-login (shell visible)")
+        return True
+
+    # Path B (empty server): honest error -> Explore offline -> name step.
+    if not wait_text("What should people call you", timeout_s=12):
+        pos = node_bounds(uiax_xml(), "Explore offline")
+        if pos is not None:
+            tap(pos)
+            time.sleep(3)
+        if not wait_text("What should people call you", timeout_s=10):
+            screen("onboard-fail-" + name + "-name-step.png")
+            dump_logcat("onboard-fail-" + name + "-logcat.txt")
+            return False
     if not type_into("What should people call you", name, verify=name):
         screen("onboard-fail-" + name + "-name-typed.png")
         return False
@@ -324,7 +339,54 @@ def onboard(pkg, name):
         screen("onboard-fail-" + name + "-shell.png")
         return False
     screen("onboard-" + name + "-shell.png")
-    note(name + " onboarded (shell visible)")
+    note(name + " onboarded via the offline path (shell visible)")
+    return True
+
+def switch_identity(name):
+    """Profile tab -> Switch identity -> create a fresh server identity.
+
+    Both apps auto-login as the SAME seeded demo account, so the callee
+    switches to its own identity here - the relay needs two distinct users
+    for a 1:1 ring."""
+    foreground(PKG_B)
+    xml = uiax_xml()
+    target = None
+    for (x, y) in node_bounds_all(xml, "Profile", exact=True):
+        if y > H * 0.72:
+            target = (x, y)
+            break
+    if target is None:
+        note("MISS Profile dock tab")
+        screen("identity-fail-dock.png")
+        return False
+    tap(target)
+    time.sleep(3)
+    # scroll the Switch identity section into view if needed
+    pos = node_bounds(uiax_xml(), "Or create a new identity")
+    tries = 0
+    while pos is None and tries < 5:
+        adb_ok("shell", "input", "swipe", str(W // 2), str(int(H * 0.72)), str(W // 2), str(int(H * 0.3)), "300")
+        time.sleep(1.5)
+        pos = node_bounds(uiax_xml(), "Or create a new identity")
+        tries += 1
+    if pos is None:
+        screen("identity-fail-section.png")
+        note("MISS 'Or create a new identity' section")
+        return False
+    if not type_into("Display name", name, verify=name):
+        screen("identity-fail-typed.png")
+        return False
+    screen("identity-" + name + "-typed.png")
+    if not tap_text("Create", wait=4.0, exact=True):
+        note("MISS Create identity button")
+        return False
+    # the new viewer owns the profile header (@name handle / You badge)
+    if not wait_text(name, timeout_s=18):
+        screen("identity-fail-switched.png")
+        dump_logcat("identity-fail-logcat.txt")
+        return False
+    screen("identity-" + name + "-switched.png")
+    note("identity switched to " + name)
     return True
 
 def assert_socket_override(pkg, label):
@@ -445,6 +507,13 @@ def main():
         bail(2, "Beta onboarding failed")
     if crash_scan("beta-onboard"):
         bail(2, "crash after Beta onboarding")
+
+    # Both apps auto-login as the SAME seeded demo account - the callee
+    # switches to its own identity so the relay sees two distinct users.
+    if not switch_identity(NAME_B):
+        bail(2, "Beta identity switch failed")
+    if crash_scan("beta-identity"):
+        bail(2, "crash after the Beta identity switch")
 
     # Cold restart BOTH: the persisted socket override (manifest) lands here,
     # and the relay logs two joins (realtime is provably up for both users).
