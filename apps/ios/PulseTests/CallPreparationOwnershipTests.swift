@@ -215,4 +215,32 @@ final class CallPreparationOwnershipTests: XCTestCase {
         XCTAssertTrue(signals.events.isEmpty)
         observer.cancel()
     }
+
+    func testReplayedOfferForTheRingAlreadyActiveIsANoOpNotABusyReject() throws {
+        let signals = Signals(), media = Media(), store = try PulseStore()
+        let engine = PulseCallEngine(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            signaling: signals, media: media, apiProvider: { nil }, toasts: ToastCenter())
+        let raw: [String: Any] = [
+            "callId": "call-r56", "conversationId": "room", "from": "peer", "to": "me",
+            "kind": "voice", "sdp": "v=0 offer", "callerName": "Peer",
+        ]
+        engine.handleCallSignal(event: "call:offer", raw: raw)
+        guard case .incomingRinging = engine.state else {
+            return XCTFail("expected incomingRinging, got \(engine.state)")
+        }
+        // R56 (item 1): the relay replays un-acked offers and re-delivers the
+        // journaled offer to late-joining devices. The SAME callId while
+        // ringing must be a no-op - a busy reject here would decline the ring.
+        engine.handleCallSignal(event: "call:offer", raw: raw)
+        XCTAssertFalse(signals.events.contains("call:reject"))
+        guard case .incomingRinging = engine.state else {
+            return XCTFail("ring disturbed by a replayed offer")
+        }
+        // A DIFFERENT callId while ringing is still a busy reject.
+        var other = raw
+        other["callId"] = "call-other"
+        other["from"] = "stranger"
+        engine.handleCallSignal(event: "call:offer", raw: other)
+        XCTAssertTrue(signals.events.contains("call:reject"))
+    }
 }

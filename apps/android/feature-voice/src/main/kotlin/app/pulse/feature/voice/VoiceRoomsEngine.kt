@@ -433,14 +433,24 @@ class VoiceRoomsEngine @Inject constructor(
     fun claimHost() {
         val s = stageMachine.state.value
         if (!s.canClaimHost) return
-        scope.launch { runCatching { repo.emitStageJoin(s.conversationId, identity, asHost = true) } }
+        val cid = s.conversationId
+        scope.launch {
+            // R56 (item 7): seat-ownership recheck inside the coroutine - a
+            // stale claim fired after leaving the room must never hit the wire
+            // (the relay stays authoritative either way).
+            if (!seats.stageJoined || seats.roomId != cid) return@launch
+            runCatching { repo.emitStageJoin(cid, identity, asHost = true) }
+        }
     }
 
     fun raiseHand() {
         for (effect in stageMachine.toggleHand()) {
             if (effect is StageRoomStateMachine.Effect.EmitHand) {
                 val cid = stageMachine.state.value.conversationId
-                scope.launch { runCatching { repo.emitStageHand(cid, identity.id, effect.raised) } }
+                scope.launch {
+                    if (!seats.stageJoined || seats.roomId != cid) return@launch
+                    runCatching { repo.emitStageHand(cid, identity.id, effect.raised) }
+                }
             }
         }
     }
@@ -449,14 +459,23 @@ class VoiceRoomsEngine @Inject constructor(
     fun approveHand(targetUserId: String) {
         if (!stageMachine.state.value.isHost) return
         val cid = stageMachine.state.value.conversationId
-        scope.launch { runCatching { repo.emitStageApprove(cid, identity.id, targetUserId) } }
+        scope.launch {
+            // R56 (item 7): an in-flight stage:approve can no longer fire
+            // after leaving the room (relay authority unchanged; this fences
+            // THIS device's stale emits, parity with the call engines).
+            if (!seats.stageJoined || seats.roomId != cid) return@launch
+            runCatching { repo.emitStageApprove(cid, identity.id, targetUserId) }
+        }
     }
 
     /** Host-only demote (speaker → listener) or hand dismissal (ST-3/ST-4). */
     fun demote(targetUserId: String) {
         if (!stageMachine.state.value.isHost) return
         val cid = stageMachine.state.value.conversationId
-        scope.launch { runCatching { repo.emitStageMute(cid, identity.id, targetUserId) } }
+        scope.launch {
+            if (!seats.stageJoined || seats.roomId != cid) return@launch
+            runCatching { repo.emitStageMute(cid, identity.id, targetUserId) }
+        }
     }
 
     /**
@@ -467,7 +486,12 @@ class VoiceRoomsEngine @Inject constructor(
         val s = stageMachine.state.value
         if (!s.isHost) return false
         if (stageMachine.armEndConfirm()) {
-            scope.launch { runCatching { repo.emitStageEnd(s.conversationId, identity.id) } }
+            val cid = s.conversationId
+            val byId = identity.id
+            scope.launch {
+                if (!seats.stageJoined || seats.roomId != cid) return@launch
+                runCatching { repo.emitStageEnd(cid, byId) }
+            }
             return true
         }
         return false

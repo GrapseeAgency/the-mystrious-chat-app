@@ -454,3 +454,102 @@ test('real call relay binds membership, signaling and disconnect to the admitted
     await new Promise(resolve => authority.close(resolve))
   }
 })
+
+test('R56 acknowledged call signaling: un-acked transactions replay, acks stop them, late callee devices get offer+ICE', { timeout: 25000 }, async t => {
+  const server = spawn(process.execPath, ['--experimental-transform-types', 'index.ts'], {
+    cwd: fileURLToPath(new URL('../../mini-services/pulse-socket/', import.meta.url)),
+    env: { ...process.env, PULSE_SOCKET_PORT: '0', CRON_SECRET: 'synthetic-call-key', PULSE_CALL_REPLAY_MS: '250' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const exited = once(server, 'exit')
+  let logs = ''
+  const waiting = new Set()
+  function consume(data) { logs += data.toString(); for (const notify of waiting) notify() }
+  server.stdout.on('data', consume); server.stderr.on('data', consume)
+  function logged(pattern) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { waiting.delete(check); reject(new Error(`Missing ${pattern}\n${logs}`)) }, 6000)
+      function check() {
+        const match = logs.match(pattern)
+        if (match) { clearTimeout(timer); waiting.delete(check); resolve(match) }
+      }
+      waiting.add(check); check()
+    })
+  }
+  const sockets = []
+  try {
+    const [, port, node] = await logged(/listening on port (\d+) node=([\w-]+)/)
+    assert.ok(node && node.startsWith('node-'), 'ring receipts and logs carry a node identity (item 5)')
+    const base = `http://127.0.0.1:${port}`
+    async function connect(id) {
+      const socket = io(base, { path: '/', transports: ['websocket'], forceNew: true, reconnection: false })
+      sockets.push(socket)
+      await event(socket, 'connect')
+      const ack = event(socket, 'joined')
+      socket.emit('join', { userId: id })
+      await ack
+      return socket
+    }
+    const caller = await connect('r56-caller')
+    // The FIRST callee device never acks anything (old-build behavior): the
+    // relay must keep replaying the offer until SOME device acknowledges.
+    const silentCallee = await connect('r56-callee')
+    const request = { callId: 'r56-live', conversationId: 'r56-dm', from: 'r56-caller', to: 'r56-callee', kind: 'voice', sdp: 'offer-sdp' }
+
+    await t.test('an un-acked offer is replayed on the bounded interval', async () => {
+      const first = event(silentCallee, 'call:offer', row => row.callId === 'r56-live')
+      caller.emit('call:offer', request)
+      const seen = await first
+      assert.equal(seen.sdp, 'offer-sdp')
+      await logged(/\[call\] offer replay call=r56-live attempt=2/)
+    })
+
+    await t.test('an ack from any callee device stops the replay and late joins get offer + journaled ICE', async () => {
+      // Caller ICE before the late device exists — must be journaled for replay.
+      const silentIce = event(silentCallee, 'call:ice', row => row.candidate === 'early-caller-ice')
+      caller.emit('call:ice', { callId: 'r56-live', from: 'r56-caller', candidate: 'early-caller-ice' })
+      await silentIce
+      // A NEW device joins mid-ring: it now receives the journaled offer AND
+      // the caller's early ICE (the old relay silently missed this).
+      const lateDevice = io(base, { path: '/', transports: ['websocket'], forceNew: true, reconnection: false })
+      sockets.push(lateDevice)
+      await event(lateDevice, 'connect')
+      const joinedAck = event(lateDevice, 'joined')
+      lateDevice.emit('join', { userId: 'r56-callee' })
+      await joinedAck
+      const lateOffer = event(lateDevice, 'call:offer', row => row.callId === 'r56-live')
+      const lateIce = event(lateDevice, 'call:ice', row => row.candidate === 'early-caller-ice')
+      assert.equal((await lateOffer).sdp, 'offer-sdp')
+      await lateIce
+      await logged(/\[call\] offer re-delivered on join call=r56-live/)
+      // Ack via the socket.io ack channel: the replay budget stops.
+      lateDevice.off('call:offer')
+      let lateAcks = 0
+      lateDevice.on('call:offer', (_payload, ack) => { lateAcks++; if (ack) ack() })
+      await logged(/\[call\] offer ACK call=r56-live/)
+      const countAtStop = lateAcks
+      await new Promise(resolve => setTimeout(resolve, 700))
+      assert.ok(lateAcks - countAtStop <= 1, `replay stops after ack (saw ${lateAcks - countAtStop} extra)`)
+    })
+
+    await t.test('the answer is also a journaled acknowledged transaction', async () => {
+      const received = event(caller, 'call:answer', row => row.callId === 'r56-live')
+      silentCallee.emit('call:answer', { callId: 'r56-live', from: 'r56-callee', sdp: 'answer-sdp' })
+      assert.equal((await received).sdp, 'answer-sdp')
+      // Caller never acks → bounded answer replay runs until budget end.
+      await logged(/\[call\] answer replay call=r56-live attempt=2/)
+      // Now ack from the caller side; replay must stop.
+      caller.off('call:answer')
+      let callerAcks = 0
+      caller.on('call:answer', (_payload, ack) => { callerAcks++; if (ack) ack() })
+      await logged(/\[call\] answer ACK call=r56-live/)
+      const countAtStop = callerAcks
+      await new Promise(resolve => setTimeout(resolve, 700))
+      assert.ok(callerAcks - countAtStop <= 1, `answer replay stops after ack (saw ${callerAcks - countAtStop} extra)`)
+    })
+  } finally {
+    for (const socket of sockets) socket.disconnect()
+    server.kill('SIGTERM')
+    await exited
+  }
+})

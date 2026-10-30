@@ -14,6 +14,8 @@ final class VoiceRoomOwnershipTests: XCTestCase {
         var onChunk: ((VoicePcmChunkOut) -> Void)?
         var onSamples: (([Int16]) -> Void)?
         var onError: ((String) -> Void)?
+        var onInterruption: (() -> Void)?
+        var isSessionActive: Bool = false
         var permissionRequested: (() -> Void)?
         var requests: [CheckedContinuation<Bool, Never>] = []
         var starts = 0

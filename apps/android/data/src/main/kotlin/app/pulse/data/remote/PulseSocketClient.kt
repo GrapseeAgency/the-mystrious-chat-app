@@ -338,11 +338,21 @@ class PulseSocketClient(
         // Typed call:* handlers - decode into the EXACT per-event DTO, wrap
         // into the outer-level union, emit. Inline (the decoder needs the
         // instance `decode` helper - a nested object cannot reach it).
+        // R56: offer/answer are ACKNOWLEDGED TRANSACTIONS on the relay (the
+        // journaled replay contract, call-journal.ts) - the transport ack is
+        // sent only after a successful decode, and a repeated offer for the
+        // call already ringing is deduped in CallStateMachine (no-op).
         sock.on(SocketEvents.CALL_OFFER) { args ->
-            decode<CallOfferDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Offer(it))) }
+            val ack = args.lastOrNull() as? io.socket.client.Ack
+            val decoded = decode<CallOfferDto>(args)
+            decoded?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Offer(it))) }
+            if (decoded != null) ack?.call(0)
         }
         sock.on(SocketEvents.CALL_ANSWER) { args ->
-            decode<CallAnswerDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Answer(it))) }
+            val ack = args.lastOrNull() as? io.socket.client.Ack
+            val decoded = decode<CallAnswerDto>(args)
+            decoded?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Answer(it))) }
+            if (decoded != null) ack?.call(0)
         }
         sock.on(SocketEvents.CALL_ICE) { args ->
             decode<CallIceDto>(args)?.let { _signals.tryEmit(Signal.CallSignal(CallSignal.Ice(it))) }

@@ -151,7 +151,11 @@ public final class CallStateMachine: ObservableObject {
 
     /// Duplicate-event idempotency per callId: a callId that already reached a
     /// terminal state can never ring/connect again (cancel/offer races).
+    /// R56: bounded - insertion-ordered ring buffer, the oldest ids retire
+    /// first (a live call's id can never be evicted: only terminal inserts
+    /// land here, and the just-inserted id stays until 256 more calls end).
     private var terminatedCallIds: Set<String> = []
+    private var terminatedCallIdOrder: [String] = []
 
     public init(timers: CallTimers = .standard) {
         self.timers = timers
@@ -398,6 +402,13 @@ public final class CallStateMachine: ObservableObject {
         let end = CallEndContext(outcome: outcome, durationSec: duration, cancelReason: cancelReason)
         if let callId = call?.callId {
             terminatedCallIds.insert(callId)
+            terminatedCallIdOrder.append(callId)
+            // Bounded (R56): retire the oldest terminal ids past 256.
+            if terminatedCallIdOrder.count > 256 {
+                let retire = terminatedCallIdOrder.count - 256
+                for evicted in terminatedCallIdOrder.prefix(retire) { terminatedCallIds.remove(evicted) }
+                terminatedCallIdOrder.removeFirst(retire)
+            }
         }
         state = .ended(end)
         clearTimers()

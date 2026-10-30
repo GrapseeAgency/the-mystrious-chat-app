@@ -373,6 +373,12 @@ public final class PulseGroupCallEngine: ObservableObject {
             return
         }
         ownsAudioSession = true
+        // R56 (section 7, item 11): while THIS engine owns the shared audio
+        // session, an OS interruption (phone call, Siri, alarm) leaves the
+        // call honestly - the mic never resumes silently (Android parity).
+        PulseCallAudioSession.shared.onInterruption = { [weak self] in
+            self?.handleAudioInterruption()
+        }
         guard let audio = media.makeSharedAudioTrack() else {
             ownsAudioSession = false
             restoreAudioSession()
@@ -829,8 +835,17 @@ public final class PulseGroupCallEngine: ObservableObject {
         cameraEnabled = true
         if ownsAudioSession {
             ownsAudioSession = false
+            PulseCallAudioSession.shared.onInterruption = nil
             restoreAudioSession()
         }
+    }
+
+    /// R56 (section 7, item 11): OS interruption while the group call owns the
+    /// shared session - leave honestly with the same notice Android shows.
+    private func handleAudioInterruption() {
+        guard ownsAudioSession, joinedConv != nil else { return }
+        toasts.show("Audio interrupted by another app. Rejoin when ready.")
+        leaveCall()
     }
 
     // peer bridge callbacks (main actor via MeshPeerBridge)

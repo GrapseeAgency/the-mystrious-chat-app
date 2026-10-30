@@ -256,10 +256,14 @@ public final class PulseSocketClient {
         }
 
         // call signaling (offer/answer/ice/reject/cancel/hangup)
+        // R56: offer/answer are ACKNOWLEDGED TRANSACTIONS on the relay (the
+        // journaled replay contract, call-journal.ts) - the ack completes the
+        // delivery receipt; no-op when no ack was requested.
         for event in ["call:offer", "call:answer", "call:ice", "call:reject", "call:cancel", "call:hangup"] {
-            socket.on(event) { [weak self] data, _ in
+            socket.on(event) { [weak self] data, ack in
                 guard let obj = data.first as? [String: Any] else { return }
                 self?.signals?(.callSignal(event: event, raw: obj))
+                if event == "call:offer" || event == "call:answer" { ack.call() }
             }
         }
 

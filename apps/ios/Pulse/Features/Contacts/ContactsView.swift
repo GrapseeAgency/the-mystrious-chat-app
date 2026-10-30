@@ -307,6 +307,15 @@ struct ContactsView: View {
                 path.append(UserRoute(userId: user.id, name: user.name))
             },
             onMessage: {
+                // R56 (item 12): a second tap on the row that is currently
+                // opening CANCELS the pending DM resolution / call
+                // preparation honestly, instead of the button being dead
+                // while the spinner runs (cancelOpening retires the task;
+                // the revision fences make a late completion harmless).
+                if viewModel.openingPeerId == user.id {
+                    viewModel.cancelOpening()
+                    return
+                }
                 viewModel.openDM(user, session: session, onOpenRoom: onOpenRoom)
             },
         )

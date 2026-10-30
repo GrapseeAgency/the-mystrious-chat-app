@@ -79,6 +79,7 @@ test('actual relay refuses the absolute deadline and never trusts a supplied exp
     Date: class extends Date { static now() { return clock } },
     sendJson: (res, status, body) => { res.status = status; res.body = body },
     io: { to: recipient => ({ emit: (event, payload) => events.push({ recipient, event, payload }) }) },
+    NODE_ID: 'node-test',
   }
   const handle = new Function(...Object.keys(deps), source + ';return handleNotify')(...Object.values(deps))
   const body = { event: 'gcall:ring', recipients: ['peer'], payload: { conversationId: 'room', callId: 'call',
@@ -91,6 +92,7 @@ test('actual relay refuses the absolute deadline and never trusts a supplied exp
   clock--
   assert.equal((await invoke()).body.accepted, true)
   assert.equal(events[0].payload.expiresAt, new Date(46_000).toISOString())
+  assert.equal((await invoke()).body.nodeId, 'node-test', 'ring receipts carry the node identity (R56 item 5)')
   assert.equal((await invoke()).body.accepted, false)
   assert.equal(events.length, 1)
 })
@@ -171,4 +173,84 @@ test('shared web join retains the expected call and releases permission results 
       assert.equal(refs.localStreamRef.current, null)
     }
   }
+})
+
+test('R56: a lost relay transport is retried without guessing, a 409 refusal is not', async t => {
+  const previous = process.env.CRON_SECRET
+  process.env.CRON_SECRET = 'ring-retry-key'
+  t.after(() => { if (previous === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = previous })
+  const payload = { conversationId: 'room', callId: 'call', kind: 'voice', caller: { id: 'caller' }, title: 'Caller' }
+  const receipt = { ok: true, ringReceiptVersion: 1, accepted: true, delivered: 1, conversationId: 'room', callId: 'call', callerId: 'caller', expiresAt: new Date(Date.now() + 30_000).toISOString() }
+  const json = () => Promise.resolve(receipt)
+  await t.test('transport error then success recovers on attempt 2 and still pushes', async () => {
+    const attempts = []
+    const flaky = async (_url, init) => {
+      attempts.push(JSON.parse(init.body).recipients)
+      if (attempts.length === 1) throw new Error('ECONNREFUSED')
+      return { status: 200, ok: true, json }
+    }
+    const result = await relayGroupCallRing(['peer'], payload, flaky)
+    assert.equal(result.accepted, true)
+    assert.equal(attempts.length, 2, 'exactly one retry after the transport loss')
+    assert.deepEqual(attempts[0], ['peer'])
+  })
+  await t.test('a sustained outage exhausts the bounded budget and fails honestly (no push guess)', async () => {
+    let attempts = 0
+    const dead = async () => { attempts++; throw new Error('ECONNREFUSED') }
+    await assert.rejects(relayGroupCallRing(['peer'], payload, dead), error => error instanceof GroupCallRingError && error.status === 503)
+    assert.equal(attempts, 3, 'bounded budget: three attempts, then stop')
+  })
+  await t.test('a 409 authoritative refusal stops immediately on attempt 1', async () => {
+    let attempts = 0
+    const gone = async () => { attempts++; return { status: 409, ok: false, json: async () => ({ ok: false }) } }
+    await assert.rejects(relayGroupCallRing(['peer'], payload, gone), error => error instanceof GroupCallRingError && error.status === 409)
+    assert.equal(attempts, 1)
+  })
+  await t.test('an invalid receipt is retried (misbehaving relay, not a refusal)', async () => {
+    let attempts = 0
+    const lying = async () => {
+      attempts++
+      if (attempts === 1) return { status: 200, ok: true, json: () => Promise.resolve({ ok: true, ringReceiptVersion: 9 }) }
+      return { status: 200, ok: true, json }
+    }
+    assert.equal((await relayGroupCallRing(['peer'], payload, lying)).accepted, true)
+    assert.equal(attempts, 2)
+  })
+})
+
+test('R56: the web offer guard treats a replayed offer for the ringing call as a no-op', async () => {
+  const file = await readFile(new URL('../../src/components/chat/call-overlay.tsx', import.meta.url), 'utf8')
+  const depsIdx = file.indexOf('[emitCallEvent, showEnded, teardownMedia, writeLog],')
+  const closeIdx = file.indexOf(')', depsIdx)
+  const source = stripTypeScriptTypes(file.slice(file.indexOf('const handleCallEvent = useCallback('), closeIdx + 1))
+  const emitted = []
+  const deps = {
+    useCallback: (fn) => fn,
+    optionsRef: { current: { meId: 'me', conversationId: 'room' } },
+    stateRef: { current: 'incoming' },
+    callIdRef: { current: 'live-call' },
+    directionRef: { current: 'incoming' },
+    kindRef: { current: 'voice' },
+    offerRef: { current: null },
+    pendingIceRef: { current: [] },
+    answeredRef: { current: false },
+    connectedAtRef: { current: 0 },
+    pcRef: { current: null },
+    emitCallEvent: (event, payload) => emitted.push({ event, payload }),
+    setActivePeer: () => {}, setKind: () => {}, setDirection: () => {},
+    setSummary: () => {}, setError: () => {}, setState: () => {}, setDurationSec: () => {},
+    haptic: () => {}, showEnded: () => {}, teardownMedia: () => {}, writeLog: async () => {},
+    formatCallDuration: (s) => `${s}s`,
+    isFinite, Number, Date, console, Math, JSON, String,
+  }
+  const handler = new Function(...Object.keys(deps), source + ';return handleCallEvent')(...Object.values(deps))
+  const offer = { callId: 'live-call', from: 'peer', to: 'me', kind: 'voice', sdp: 'v=0',
+    conversationId: 'room', callerName: 'Peer' }
+  // Replayed offer for the call already ringing: MUST NOT reject the ring.
+  handler('call:offer', offer)
+  assert.deepEqual(emitted, [])
+  // A DIFFERENT call while ringing is still a busy reject (web parity).
+  handler('call:offer', { ...offer, callId: 'other-call', from: 'stranger' })
+  assert.equal(emitted[0].event, 'call:reject')
+  assert.equal(emitted[0].payload.callId, 'other-call')
 })

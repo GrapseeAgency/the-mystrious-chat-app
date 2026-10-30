@@ -90,6 +90,17 @@ public final class VoiceRoomSessionModel: ObservableObject {
 
     private func installAudioCallbacks() {
         let generation = audioGeneration
+        // R56 (section 7, item 11): the OS took the audio session (phone
+        // call, Siri, alarm) - the room leaves honestly and never silently
+        // resumes (Android focus-loss parity). The wrapper only owns the
+        // session while a room is joined, and that flag gates the handler.
+        engine.onInterruption = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.engine.isSessionActive else { return }
+                self.leaveVoice()
+                self.audioIssue = "Audio was interrupted by another app. Rejoin when ready."
+            }
+        }
         // Engine callbacks fire on the audio tap thread - hop to the main
         // queue (strict FIFO keeps chunk ORDER intact; Task would not).
         engine.onChunk = { [weak self] chunk in

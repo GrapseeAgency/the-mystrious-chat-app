@@ -97,6 +97,14 @@ public final class PulseCallEngine: ObservableObject {
         self.apiProvider = apiProvider
         self.toasts = toasts
 
+        // R56 (section 7, item 11): OS interruption (phone call, Siri, alarm)
+        // tears the call down honestly - the mic never resumes silently
+        // (Android focus-loss parity). The callback is guarded by the shared
+        // session's active flag, so voice-room interruptions never route here.
+        PulseCallAudioSession.shared.onInterruption = { [weak self] in
+            self?.handleAudioInterruption()
+        }
+
         // 1s heartbeat: defensive timers + duration ticker + ended auto-reset.
         Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
@@ -373,6 +381,22 @@ public final class PulseCallEngine: ObservableObject {
         } else { apply(.peerConnectionFailed, now: Date()) }
     }
 
+    /// R56 (section 7, item 11): the OS took the audio session (phone call,
+    /// Siri, alarm). Android parity - total teardown, never a silently
+    /// resumed mic. Ringing surfaces drop with an honest message; live media
+    /// surfaces end as a failed connection.
+    public func handleAudioInterruption() {
+        guard PulseCallAudioSession.shared.isActiveCallSession else { return }
+        guard machine.state != .idle, !machine.isTerminal else { return }
+        outgoingIntent = UUID()
+        outgoingPreparationTask?.cancel()
+        outgoingPreparationTask = nil
+        errorText = "Call audio was interrupted by another app."
+        if machine.state == .outgoingRinging || machine.state == .incomingRinging {
+            apply(.cancelReceived(reason: .offline), now: Date())
+        } else { apply(.peerConnectionFailed, now: Date()) }
+    }
+
     /// A local failure before dispatch did not ring the peer: closing it writes no call log.
     public func dismissError() {
         outgoingIntent = UUID()
@@ -425,6 +449,13 @@ public final class PulseCallEngine: ObservableObject {
         case "call:offer":
             guard let offer = CallOfferEnvelope.decode(raw) else { return }
             guard offer.base.from != viewer.id, offer.base.to == viewer.id else { return }
+            // R56 (section 7, item 1): a redelivered/replayed offer for the call
+            // we are ALREADY ringing is a no-op - the relay replays un-acked
+            // offers and re-delivers the journaled offer to late-joining
+            // devices. It must never hit the busy-reject branch (that would
+            // decline the live ring).
+            if case .incomingRinging = machine.state,
+               offer.base.callId == machine.call?.callId { return }
             guard case .idle = machine.state else {
                 // Already ringing/talking → immediate busy-reject; the caller
                 // logs 'declined' (web parity). The machine state is untouched.
@@ -470,8 +501,11 @@ public final class PulseCallEngine: ObservableObject {
                 ) }
             } else {
                 // Early candidate (relay relays ICE while ringing) - queue
-                // until the remote description lands, then drain.
-                pendingRemoteIce.append(ice)
+                // until the remote description lands, then drain. R56 (item 2):
+                // bounded, same 256-entry cap the group engine enforces per peer.
+                if pendingRemoteIce.count < 256 {
+                    pendingRemoteIce.append(ice)
+                }
             }
 
         case "call:reject":

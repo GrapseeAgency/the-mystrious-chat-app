@@ -43,6 +43,33 @@ final class VoiceRoomAudioSession {
     private var recordingMode = false
     private(set) var isActive = false
 
+    /// R56 (section 7, item 11): OS-interruption parity with Android's
+    /// focus-loss policy - the OS taking the session (phone call, Siri,
+    /// alarm) is surfaced to the owner, which leaves the room honestly.
+    /// Fired on the MAIN thread for interruption type .began only.
+    var onInterruption: (() -> Void)?
+    private var interruptionObserver: NSObjectProtocol?
+
+    init() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let info = notification.userInfo,
+                  let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw),
+                  type == .began else { return }
+            self?.onInterruption?()
+        }
+    }
+
+    deinit {
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+        }
+    }
+
     /// Snapshot + apply the rooms configuration. Returns false when the
     /// hardware refuses (honest degradation - the room still joins).
     func activate(recording: Bool = true) -> Bool {
@@ -111,6 +138,10 @@ protocol VoiceRoomAudioDriving: AnyObject {
     var onChunk: ((VoicePcmChunkOut) -> Void)? { get set }
     var onSamples: (([Int16]) -> Void)? { get set }
     var onError: ((String) -> Void)? { get set }
+    /// R56 (item 11): the OS took the audio session mid-room. Main thread.
+    var onInterruption: (() -> Void)? { get set }
+    /// Whether the rooms wrapper currently owns the AVAudioSession.
+    var isSessionActive: Bool { get }
     func requestMicPermission() async -> Bool
     func startCapture(micGranted: Bool) -> String?
     func startPlayback() -> String?
@@ -131,6 +162,10 @@ final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
     var onSamples: (([Int16]) -> Void)?
     /// Honest hardware failure copy (mic absent/busy/refused).
     var onError: ((String) -> Void)?
+    /// R56 (item 11): the OS took the audio session mid-room (main thread).
+    var onInterruption: (() -> Void)?
+    /// Whether the rooms wrapper currently owns the AVAudioSession.
+    var isSessionActive: Bool { audioSession.isActive }
 
     /// Mic permission - the SAME AVAudioSession.requestRecordPermission
     /// pattern PulseCallAudioSession.requestMicPermission() uses

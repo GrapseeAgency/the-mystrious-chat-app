@@ -28,6 +28,15 @@ public final class PulseCallAudioSession: ObservableObject {
     private var saved: SavedSession?
     private let ownershipToken = UUID()
     private var routeObserver: NSObjectProtocol?
+    private var interruptionObserver: NSObjectProtocol?
+
+    /// R56 (section 7, item 11): OS-interruption parity with Android's
+    /// focus-loss policy. When the OS takes the session (phone call, Siri,
+    /// alarm), the mic must NEVER resume silently - the owner tears the
+    /// audio surface down. Fired on the MAIN actor for AVAudioSession
+    /// interruption type .began; .ended is deliberately ignored (the owner
+    /// already tore down; there is nothing to resume).
+    public var onInterruption: (() -> Void)?
 
     /// Whether a call currently owns the session (engine drives this).
     public private(set) var isActiveCallSession: Bool = false
@@ -39,6 +48,7 @@ public final class PulseCallAudioSession: ObservableObject {
 
     private init() {
         observeRouteChanges()
+        observeInterruptions()
     }
 
     // call lifecycle
@@ -139,6 +149,22 @@ public final class PulseCallAudioSession: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshRouteDescription()
+            }
+        }
+    }
+
+    private func observeInterruptions() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let info = notification.userInfo,
+                  let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw),
+                  type == .began else { return }
+            Task { @MainActor in
+                self?.onInterruption?()
             }
         }
     }

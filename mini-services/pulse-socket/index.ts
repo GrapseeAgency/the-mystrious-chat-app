@@ -37,10 +37,37 @@
  */
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { Server } from 'socket.io'
 import type { Socket } from 'socket.io'
+import {
+  createCallSignalJournal,
+  journalIce,
+  journalSettled,
+  noteAck,
+  noteAttempt,
+  replayPermitted,
+  type CallJournalDirection,
+  type CallSignalJournal,
+} from './call-journal.ts'
 
 const PORT = Number(process.env.PULSE_SOCKET_PORT ?? 3003)
+
+/**
+ * R56 (section 7, item 5) — deployment node identity.
+ *
+ * INVARIANT, pinned honestly: EVERY call/gcall/voice/stage/space registry in
+ * this file (callSessions, callByUser, groupCalls, groupCallByUser, voiceRooms,
+ * stageRooms, spaceRooms) is PROCESS-LOCAL. There is no cross-node registry
+ * and no shared store behind it. Running MORE THAN ONE instance of this
+ * service behind the same gateway is split-brain by construction: each node
+ * would validate rings/admissions against only ITS OWN state. The supported
+ * deployment is exactly one instance. The node id is stamped into ring
+ * receipts and logs so a caller (and its user-facing diagnostics) can tell
+ * WHICH node answered; a full multi-node registry needs a real shared store
+ * (Redis adapter or equivalent) and is out of scope for this in-memory relay.
+ */
+const NODE_ID = process.env.PULSE_NODE_ID?.trim() || `node-${randomUUID().slice(0, 8)}`
 
 // ---------------------------------------------------------------------------
 // Bootstrap http server + socket.io (options copied from examples/websocket)
@@ -589,6 +616,11 @@ interface CallSession {
   answered: boolean
   createdAt: number
   timer: ReturnType<typeof setTimeout>
+  /** R56 — journaled offer/answer payloads for the acknowledged-replay contract. */
+  offerPayload: Record<string, unknown> | null
+  answerPayload: Record<string, unknown> | null
+  journal: CallSignalJournal
+  replayTimer: ReturnType<typeof setInterval> | null
 }
 
 const CALL_RING_TIMEOUT_MS = 30_000
@@ -599,6 +631,118 @@ const CALL_ICE_MAX_CHARS = 4 * 1024
 const callSessions = new Map<string, CallSession>()
 /** userId -> callId the user is currently ringing in / talking on (one per user) */
 const callByUser = new Map<string, string>()
+
+const CALL_REPLAY_INTERVAL_MS = Math.max(200, Number(process.env.PULSE_CALL_REPLAY_MS ?? 5_000) || 5_000)
+
+/**
+ * R56 (items 1+2) — the acknowledged-replay contract for 1:1 signaling.
+ *
+ * OFFER and ANSWER are journaled transactions: every emission carries a
+ * socket.io ack, the first ack from ANY target-party device marks the
+ * transaction delivered, and an un-acked transaction is re-emitted on a 5s
+ * interval within a bounded budget (see call-journal.ts). A callee device
+ * that connects mid-ring is replayed the live offer plus the caller's
+ * journaled ICE immediately on `join`. Clients deduplicate by callId (both
+ * natives no-op a repeated offer for the call they are already ringing), so
+ * replay is safe against every device in the room, old or new.
+ */
+function armCallReplay(session: CallSession): void {
+  if (session.replayTimer) return
+  session.replayTimer = setInterval(() => {
+    const live = callSessions.get(session.callId)
+    if (!live || live !== session) {
+      const t = session.replayTimer
+      session.replayTimer = null
+      if (t) clearInterval(t)
+      return
+    }
+    if (session.journal.offerAcked && session.journal.answerAcked) {
+      const t = session.replayTimer
+      session.replayTimer = null
+      if (t) clearInterval(t)
+      return
+    }
+    if (!session.journal.offerAcked && !session.answered &&
+        replayPermitted(session.journal, 'offer') && session.offerPayload) {
+      void emitCallOffer(session, roomOf(session.calleeId))
+      console.log(`[call] offer replay call=${session.callId} attempt=${session.journal.offerAttempts}`)
+    }
+    if (session.answered && session.answerPayload && !session.journal.answerAcked &&
+        replayPermitted(session.journal, 'answer')) {
+      emitCallAnswer(session)
+      console.log(`[call] answer replay call=${session.callId} attempt=${session.journal.answerAttempts}`)
+    }
+    if (journalSettled(session.journal) && session.replayTimer) {
+      const t = session.replayTimer
+      session.replayTimer = null
+      if (t) clearInterval(t)
+    }
+  }, CALL_REPLAY_INTERVAL_MS)
+  session.replayTimer.unref?.()
+}
+
+function disarmCallReplay(session: CallSession): void {
+  if (session.replayTimer) {
+    clearInterval(session.replayTimer)
+    session.replayTimer = null
+  }
+}
+
+/**
+ * Emit the journaled OFFER to every device of the callee room with the ack
+ * contract attached. Per-SOCKET emits carry the classic socket.io ack (fired
+ * only when that device replies); the broadcast-operator ack machinery is
+ * deliberately avoided — without .timeout() it resolves on the next tick and
+ * with .timeout() it is all-or-nothing, neither matches "first ack wins".
+ */
+async function emitCallOffer(session: CallSession, roomName: string): Promise<void> {
+  const payload = session.offerPayload
+  if (!payload || !noteAttempt(session.journal, 'offer')) return
+  const targets = await io.in(roomName).fetchSockets()
+  for (const target of targets) {
+    target.emit('call:offer', payload, () => {
+      if (noteAck(session.journal, 'offer')) {
+        console.log(`[call] offer ACK call=${session.callId} sock=${target.id} (delivered to a callee device)`)
+      }
+    })
+  }
+}
+
+/** Emit the journaled ANSWER to the caller's socket with the ack contract. */
+function emitCallAnswer(session: CallSession): void {
+  const payload = session.answerPayload
+  if (!payload || !noteAttempt(session.journal, 'answer')) return
+  io.sockets.sockets.get(session.callerSocketId)?.emit('call:answer', payload, () => {
+    if (noteAck(session.journal, 'answer')) {
+      console.log(`[call] answer ACK call=${session.callId}`)
+    }
+  })
+}
+
+/** Journal + emit one ICE candidate in its travel direction. */
+function relayCallIce(session: CallSession, direction: CallJournalDirection, payload: Record<string, unknown>, target: string): void {
+  journalIce(session.journal, direction, payload)
+  io.to(target).emit('call:ice', payload)
+}
+
+/**
+ * R56 (item 1) — mid-ring delivery replay: a device that joins while a live
+ * call is ringing for its user receives the journaled offer + the caller's
+ * ICE journal. Replaces the old silent miss for late/rejoining devices.
+ */
+function replayRingingCallForUser(userId: string): void {
+  const callId = callByUser.get(userId)
+  const session = callId ? callSessions.get(callId) : undefined
+  if (!session || session.answered || session.calleeId !== userId || !session.offerPayload) return
+  // The caller's journaled ICE rides AFTER the offer (fresh devices queue
+  // early candidates anyway, but the right order costs nothing here).
+  void emitCallOffer(session, roomOf(userId)).then(() => {
+    for (const ice of session.journal.callerToCalleeIce) {
+      io.to(roomOf(userId)).emit('call:ice', ice)
+    }
+  })
+  console.log(`[call] offer re-delivered on join call=${session.callId} user=${userId} ice=${session.journal.callerToCalleeIce.length}`)
+}
 
 function callKindOf(value: unknown): 'voice' | 'video' | null {
   return value === 'voice' || value === 'video' ? value : null
@@ -613,7 +757,17 @@ function dropCallSession(
   const session = callSessions.get(callId)
   if (!session) return
   clearTimeout(session.timer)
+  disarmCallReplay(session)
   callSessions.delete(callId)
+  // REVIEW PIN (R56, item 6 — P2P revocation limits): everything the RELAY can
+  // do ends here — the session row dies and every terminal signal is fanned out
+  // below. What the relay can NEVER do: recall media bytes already exchanged
+  // over the peer-to-peer WebRTC leg, or force a NON-COOPERATING peer to close
+  // its connection (a hostile client can ignore call:hangup/call:cancel; its
+  // user-visible call just loses signaling and the peer endpoint keeps the
+  // dead media path until its own teardown timers fire). Cooperative clients
+  // (both natives) tear down on the terminal signal; that is the honest
+  // boundary of signaling-layer revocation.
   if (callByUser.get(session.callerId) === callId) callByUser.delete(session.callerId)
   if (callByUser.get(session.calleeId) === callId) callByUser.delete(session.calleeId)
 
@@ -783,6 +937,13 @@ async function refreshGroupCallMemberAccess(call: GroupCallSession, member: Grou
   if (member.accessValidUntil <= Date.now()) {
     leaveGroupCall(member.userId, 'access-unavailable', member.socketId)
   } else if (verdict === 'denied') {
+    // REVIEW PIN (R56, item 6 — P2P revocation limits): this is the strongest
+    // revocation the relay can deliver — roster removal, an honest
+    // 'membership-revoked' termination to the revoked device, and access
+    // re-checks every 5s so a revoked member cannot re-admit. Media bytes
+    // already exchanged peer-to-peer are NOT recallable, and a non-cooperating
+    // revoked client can keep its dead P2P leg until its own teardown; that
+    // limit is inherent to signal-only relaying (see dropCallSession pin).
     leaveGroupCall(member.userId, 'membership-revoked', member.socketId)
   } else if (verdict === 'allowed') {
     // Request start, not response arrival: backend latency must not extend permission.
@@ -940,7 +1101,7 @@ async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<
       }
     }
     sendJson(res, 200, { ok: true, ringReceiptVersion: 1, accepted, delivered,
-      conversationId, callId, callerId, expiresAt })
+      conversationId, callId, callerId, expiresAt, nodeId: NODE_ID })
     return
   }
   let delivered = 0
@@ -1176,7 +1337,13 @@ io.on('connection', (socket: Socket) => {
 
     socketUser.set(socket.id, userId)
     addPresence(userId, socket.id)
-    void socket.join(roomOf(userId))
+    // Awaited so the mid-ring offer/ICE replay below cannot race the room add.
+    await socket.join(roomOf(userId))
+
+    // R56 (item 1) — a device joining mid-ring now RECEIVES the live offer
+    // (journaled replay) instead of silently missing a ring that started
+    // before this socket existed.
+    replayRingingCallForUser(userId)
 
     // R47 — presence-hiding: the snapshot excludes users whose "Last seen &
     // online" toggle is off (their own client sees a filtered list too).
@@ -1701,12 +1868,17 @@ io.on('connection', (socket: Socket) => {
       answered: false,
       createdAt: Date.now(),
       timer: setTimeout(() => dropCallSession(callId, 'timeout', null), CALL_RING_TIMEOUT_MS),
+      offerPayload: null,
+      answerPayload: null,
+      journal: createCallSignalJournal(),
+      replayTimer: null,
     }
     callSessions.set(callId, session)
     callByUser.set(from, callId)
     callByUser.set(to, callId)
 
-    io.to(roomOf(to)).emit('call:offer', {
+    // R56 (items 1+2) — the offer is a journaled, acknowledged transaction.
+    session.offerPayload = {
       callId,
       conversationId,
       from,
@@ -1719,7 +1891,9 @@ io.on('connection', (socket: Socket) => {
         typeof data.callerAvatar === 'string' && data.callerAvatar.length > 0 && data.callerAvatar.length <= 256
           ? data.callerAvatar
           : null,
-    })
+    }
+    void emitCallOffer(session, roomOf(to))
+    armCallReplay(session)
     console.log(`[call] offer call=${callId} from=${from} to=${to} kind=${kind}`)
   })
 
@@ -1742,14 +1916,19 @@ io.on('connection', (socket: Socket) => {
     session.answeredAt = Date.now()
     session.answered = true
     clearTimeout(session.timer)
-    io.to(session.callerSocketId).emit('call:answer', {
+    // R56 (item 2) — the answer is a journaled, acknowledged transaction too.
+    session.answerPayload = {
       callId,
       conversationId: session.conversationId,
       from,
       to: session.callerId,
       kind: session.kind,
       sdp,
-    })
+    }
+    emitCallAnswer(session)
+    if (session.journal.offerAcked && session.journal.answerAcked && session.replayTimer) {
+      disarmCallReplay(session)
+    }
     // The first accepting device wins; stop ringing on the other devices only.
     for (const other of onlineUsers.get(session.calleeId) ?? []) {
       if (other !== socket.id) io.to(other).emit('call:cancel', {
@@ -1781,19 +1960,26 @@ io.on('connection', (socket: Socket) => {
     if (from === session.calleeId && session.answered && session.calleeSocketId !== socket.id) return
     const to = from === session.callerId ? session.calleeId : session.callerId
     const destination = to === session.callerId ? session.callerSocketId : (session.calleeSocketId ?? roomOf(to))
-    io.to(destination).emit('call:ice', {
-      callId,
-      conversationId: session.conversationId,
-      from,
-      to,
-      kind: session.kind,
-      candidate,
-      sdpMid: typeof data.sdpMid === 'string' ? data.sdpMid : null,
-      sdpMLineIndex:
-        typeof data.sdpMLineIndex === 'number' && Number.isFinite(data.sdpMLineIndex)
-          ? Math.floor(data.sdpMLineIndex)
-          : null,
-    })
+    // R56 (item 2) — journal the outbound candidate so a mid-ring callee device
+    // swap replays everything already sent (bounded by CALL_JOURNAL_ICE_CAP).
+    relayCallIce(
+      session,
+      from === session.callerId ? 'callerToCallee' : 'calleeToCaller',
+      {
+        callId,
+        conversationId: session.conversationId,
+        from,
+        to,
+        kind: session.kind,
+        candidate,
+        sdpMid: typeof data.sdpMid === 'string' ? data.sdpMid : null,
+        sdpMLineIndex:
+          typeof data.sdpMLineIndex === 'number' && Number.isFinite(data.sdpMLineIndex)
+            ? Math.floor(data.sdpMLineIndex)
+            : null,
+      },
+      destination,
+    )
   })
 
   /**
@@ -2169,7 +2355,11 @@ process.on('unhandledRejection', (err) => {
 httpServer.listen(PORT, () => {
   const address = httpServer.address()
   const actualPort = address && typeof address === 'object' ? address.port : PORT
-  console.log(`Pulse socket service listening on port ${actualPort} (path "/", presence+relay+voice+stage+space ready)`)
+  console.log(`Pulse socket service listening on port ${actualPort} node=${NODE_ID} (path "/", presence+relay+voice+stage+space ready)`)
+  // R56 (item 5) — the single-node invariant is a DEPLOYMENT CONTRACT, said
+  // out loud at every boot: two instances of this service behind one gateway
+  // split the call/voice/stage/space state with no coordination.
+  console.log(`[deploy] single-node invariant: all call/voice/stage/space registries are process-local; run exactly ONE instance (node=${NODE_ID})`)
 })
 
 let shuttingDown = false

@@ -206,7 +206,18 @@ fun CallsView(
                         onClick = { onOpenRoom(row.conversationId) },
                         onRedial = if (row.peer != null) {
                             {
-                                if (redialBusyId == null && redialPermission.begin(vm.callPermissionOwnerKey(), row)) {
+                                if (redialBusyId == row.id) {
+                                    // R56 (item 12): the pending start (DM
+                                    // resolution / permission preparation) is
+                                    // cancellable - a second tap on the busy
+                                    // row aborts it honestly instead of waiting
+                                    // out the 6 s timeout. cancel() tears down
+                                    // the preparation ticket; the machine's
+                                    // Cancel event is a no-op while idle.
+                                    callVm.cancel()
+                                    redialBusyId = null
+                                    vm.notify("Call start cancelled")
+                                } else if (redialBusyId == null && redialPermission.begin(vm.callPermissionOwnerKey(), row)) {
                                     redialBusyId = row.id
                                     micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                                 }

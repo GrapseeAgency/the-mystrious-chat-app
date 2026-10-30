@@ -491,6 +491,11 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
       if (event === 'call:offer') {
         const from = typeof payload.from === 'string' ? payload.from : ''
         if (!callId || from === me) return
+        // R56 (section 7, item 1): a replayed offer for the call we are
+        // ALREADY ringing is a no-op - the relay replays un-acked offers and
+        // re-delivers the journaled offer to late-joining devices. Answering
+        // a replay with a busy reject would decline the live ring.
+        if (callId === callIdRef.current && stateRef.current === 'incoming') return
         // Already busy → reject immediately (the caller logs 'declined').
         if (stateRef.current !== 'idle') {
           emitCallEvent('call:reject', {

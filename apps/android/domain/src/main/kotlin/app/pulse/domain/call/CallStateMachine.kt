@@ -401,6 +401,12 @@ class CallStateMachine(
                 if (event.from.isBlank() || event.from == me) return emptyList()
                 if (event.callId.isBlank() || event.sdp.isBlank()) return emptyList()
                 if (state != CallState.IDLE) {
+                    // R56 (section 7, item 1): a redelivered/replayed offer for
+                    // the call we are ALREADY ringing is a no-op - the relay
+                    // replays un-acked offers and a mid-ring join re-delivers
+                    // the journaled offer. It must never be mistaken for a
+                    // busy conflict and "decline" the live ring.
+                    if (state == CallState.INCOMING_RINGING && event.callId == callId) return emptyList()
                     // Busy - reject immediately (the caller logs 'declined').
                     return listOf(
                         CallEffect.SendReject(

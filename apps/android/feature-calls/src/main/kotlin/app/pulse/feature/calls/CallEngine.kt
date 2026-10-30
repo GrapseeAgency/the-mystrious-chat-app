@@ -750,7 +750,11 @@ class CallEngine @Inject constructor(
         val candidate = IceCandidate(effect.sdpMid, effect.sdpMLineIndex ?: 0, effect.candidate)
         val connection = pc
         if (connection == null || !remoteDescSet) {
-            pendingIce.add(IceCandidateWire(effect.candidate, effect.sdpMid, effect.sdpMLineIndex ?: 0))
+            // R56 (item 2): bounded early-ICE buffer - same 256-entry cap the
+            // group engine and the local-send queue already enforce.
+            if (pendingIce.size < 256) {
+                pendingIce.add(IceCandidateWire(effect.candidate, effect.sdpMid, effect.sdpMLineIndex ?: 0))
+            }
             return
         }
         connection.addIceCandidate(candidate)

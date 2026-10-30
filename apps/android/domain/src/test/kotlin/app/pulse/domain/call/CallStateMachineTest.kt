@@ -325,6 +325,33 @@ class CallStateMachineTest {
     }
 
     @Test
+    fun `R56 a replayed offer for the call already ringing is a no-op, not a busy reject`() {
+        val clock = FakeClock()
+        val sm = machine(clock)
+        sm.dispatch(
+            CallEvent.IncomingOffer("call-1", "c1", "u-peer", CallKind.VOICE, "v=0 offer", "Peer", "emerald", null),
+        )
+        assertEquals(CallState.INCOMING_RINGING, sm.snapshot.value.state)
+
+        // The relay replays un-acked offers and re-delivers the journaled
+        // offer to late-joining devices: the SAME callId while ringing must
+        // never be answered with a busy reject (that would decline the ring).
+        val effects = sm.dispatch(
+            CallEvent.IncomingOffer("call-1", "c1", "u-peer", CallKind.VOICE, "v=0 offer", "Peer", "emerald", null),
+        )
+        assertTrue(effects.isEmpty())
+        assertEquals(CallState.INCOMING_RINGING, sm.snapshot.value.state)
+        assertEquals("u-peer", sm.snapshot.value.peer?.id)
+
+        // A DIFFERENT call while ringing is still a busy reject.
+        val busy = sm.dispatch(
+            CallEvent.IncomingOffer("call-2", "c1", "u-other", CallKind.VOICE, "v=0 offer", "Other", "cyan", null),
+        )
+        assertEquals("call-2", busy.filterIsInstance<CallEffect.SendReject>().single().callId)
+        assertEquals(CallState.INCOMING_RINGING, sm.snapshot.value.state)
+    }
+
+    @Test
     fun `echo of my own offer is ignored`() {
         val clock = FakeClock()
         val sm = machine(clock)
