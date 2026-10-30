@@ -244,12 +244,21 @@ def onboard(pkg, name):
         screen("onboard-fail-" + name + "-server-field.png")
         return False
     screen("onboard-" + name + "-server.png")
-    if not tap_text("Connect", wait=3.0, exact=True):
-        screen("onboard-fail-" + name + "-connect.png")
-        return False
+    # IME action first (the field's GO advances straight to Connect), then a
+    # contains-match Connect tap as the fallback (the button label may carry
+    # an arrow glyph; an exact match misses it).
+    adb_ok("shell", "input", "keyevent", "66")  # ENTER = IME action (GO)
+    time.sleep(4)
+    if not wait_text("What should people call you", timeout_s=8):
+        ime = adb("shell", "dumpsys", "input_method").stdout or ""
+        if "mInputShown=true" in ime:
+            adb_ok("shell", "input", "keyevent", "4")
+            time.sleep(1.5)
+        tap_text("Connect", wait=4.0)
     # step 1: display name (the field auto-focuses; type either way)
-    if not wait_text("What should people call you", timeout_s=20):
+    if not wait_text("What should people call you", timeout_s=25):
         screen("onboard-fail-" + name + "-name-step.png")
+        dump_logcat("onboard-fail-" + name + "-logcat.txt")
         return False
     pos = node_bounds(uiax_xml(), "What should people call you")
     if pos is not None:
