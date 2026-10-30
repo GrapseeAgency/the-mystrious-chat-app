@@ -169,12 +169,15 @@ def close_ime():
         adb_ok("shell", "input", "keyevent", "4")  # BACK closes the IME only
         time.sleep(1.2)
 
+def safe_name(text):
+    return re.sub(r'[^A-Za-z0-9._-]+', '_', text)[:40]
+
 def type_into(field_needle, text, fallback_y_frac=None, verify=None):
-    """Tap the field, type, and VERIFY the committed text. The IME opening
-    race can mangle `input text` (dropped/duplicated/truncated chars were
-    observed on the server URL), so each attempt is verified against the
-    accessibility tree and retried from a cleared field."""
-    for attempt in range(3):
+    """Tap the field, type CHUNKED, and VERIFY the committed text. The IME
+    open race can mangle `input text` (dropped/duplicated/truncated chars
+    were observed on the server URL), so each attempt is verified against
+    the accessibility tree and retried from a cleared field."""
+    for attempt in range(4):
         pos = node_bounds(uiax_xml(), field_needle)
         if pos is None and fallback_y_frac is not None:
             pos = (W // 2, int(H * fallback_y_frac))
@@ -183,17 +186,19 @@ def type_into(field_needle, text, fallback_y_frac=None, verify=None):
             return False
         tap(pos)
         time.sleep(2.0)  # let the IME fully open before the first keystroke
-        adb_ok("shell", "input", "text", text)
-        time.sleep(1.2)
+        # Chunked typing: long single `input text` calls drop chars mid-IME-open.
+        for i in range(0, len(text), 6):
+            adb_ok("shell", "input", "text", text[i:i + 6])
+            time.sleep(0.45)
+        time.sleep(1.0)
         close_ime()
         xml = uiax_xml()
-        if verify:
-            ok = any(verify in t for t in re.findall(r'text="([^"]*)"', xml))
-        else:
-            ok = any(text in t for t in re.findall(r'text="([^"]*)"', xml))
+        tree_texts = [t for t in re.findall(r'text="([^"]*)"', xml) if t]
+        needle = verify or text
+        ok = any(needle in t for t in tree_texts)
         if ok:
             return True
-        note("typing verify failed (attempt " + str(attempt + 1) + "), clearing and retrying")
+        note("typing verify failed (attempt " + str(attempt + 1) + "); tree texts: " + str(tree_texts[:10]))
         clear_pos = node_bounds(xml, "Clear", exact=True)
         if clear_pos is not None:
             tap(clear_pos)
@@ -205,7 +210,7 @@ def type_into(field_needle, text, fallback_y_frac=None, verify=None):
             for _ in range(30):
                 adb_ok("shell", "input", "keyevent", "67")
             time.sleep(0.6)
-    screen("typing-fail-" + text.replace("/", "_")[:24] + ".png")
+    screen("typing-fail-" + safe_name(text) + ".png")
     return False
 
 def alive(pkg):
