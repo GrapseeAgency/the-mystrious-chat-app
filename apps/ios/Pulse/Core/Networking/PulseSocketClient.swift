@@ -263,7 +263,7 @@ public final class PulseSocketClient {
             socket.on(event) { [weak self] data, ack in
                 guard let obj = data.first as? [String: Any] else { return }
                 self?.signals?(.callSignal(event: event, raw: obj))
-                if event == "call:offer" || event == "call:answer" { ack.call() }
+                if event == "call:offer" || event == "call:answer" { ack.with([]) }
             }
         }
 

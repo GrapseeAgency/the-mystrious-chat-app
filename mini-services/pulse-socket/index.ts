@@ -695,9 +695,9 @@ function disarmCallReplay(session: CallSession): void {
  * deliberately avoided — without .timeout() it resolves on the next tick and
  * with .timeout() it is all-or-nothing, neither matches "first ack wins".
  */
-async function emitCallOffer(session: CallSession, roomName: string): Promise<void> {
+async function emitCallOffer(session: CallSession, roomName: string): Promise<boolean> {
   const payload = session.offerPayload
-  if (!payload || !noteAttempt(session.journal, 'offer')) return
+  if (!payload || !noteAttempt(session.journal, 'offer')) return false
   const targets = await io.in(roomName).fetchSockets()
   for (const target of targets) {
     target.emit('call:offer', payload, () => {
@@ -706,6 +706,7 @@ async function emitCallOffer(session: CallSession, roomName: string): Promise<vo
       }
     })
   }
+  return true
 }
 
 /** Emit the journaled ANSWER to the caller's socket with the ack contract. */
@@ -734,9 +735,11 @@ function replayRingingCallForUser(userId: string): void {
   const callId = callByUser.get(userId)
   const session = callId ? callSessions.get(callId) : undefined
   if (!session || session.answered || session.calleeId !== userId || !session.offerPayload) return
-  // The caller's journaled ICE rides AFTER the offer (fresh devices queue
-  // early candidates anyway, but the right order costs nothing here).
-  void emitCallOffer(session, roomOf(userId)).then(() => {
+  // The caller's journaled ICE rides only after the offer is actually
+  // DELIVERED (a budget-exhausted replay emits nothing, and a fresh device
+  // must never receive ICE before its offer).
+  void emitCallOffer(session, roomOf(userId)).then((delivered) => {
+    if (!delivered) return
     for (const ice of session.journal.callerToCalleeIce) {
       io.to(roomOf(userId)).emit('call:ice', ice)
     }
@@ -1340,16 +1343,17 @@ io.on('connection', (socket: Socket) => {
     // Awaited so the mid-ring offer/ICE replay below cannot race the room add.
     await socket.join(roomOf(userId))
 
-    // R56 (item 1) — a device joining mid-ring now RECEIVES the live offer
-    // (journaled replay) instead of silently missing a ring that started
-    // before this socket existed.
-    replayRingingCallForUser(userId)
-
     // R47 — presence-hiding: the snapshot excludes users whose "Last seen &
     // online" toggle is off (their own client sees a filtered list too).
     const snapshot = await visibleOnlineIds()
     socket.emit('joined', { onlineUserIds: snapshot })
     io.emit('presence:snapshot', { onlineUserIds: snapshot })
+    // R56 (item 1) — a device joining mid-ring now RECEIVES the live offer
+    // (journaled replay) instead of silently missing a ring that started
+    // before this socket existed. Fired AFTER `joined` so the device's own
+    // ack of the joined event strictly precedes the replayed signaling on
+    // the wire (clients register their signaling handlers on join).
+    replayRingingCallForUser(userId)
     console.log(`[ws] join user=${userId} sock=${socket.id} online=${onlineUsers.size} visible=${snapshot.length}`)
   })
 

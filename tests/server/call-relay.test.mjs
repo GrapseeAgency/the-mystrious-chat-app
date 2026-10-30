@@ -458,7 +458,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
 test('R56 acknowledged call signaling: un-acked transactions replay, acks stop them, late callee devices get offer+ICE', { timeout: 25000 }, async t => {
   const server = spawn(process.execPath, ['--experimental-transform-types', 'index.ts'], {
     cwd: fileURLToPath(new URL('../../mini-services/pulse-socket/', import.meta.url)),
-    env: { ...process.env, PULSE_SOCKET_PORT: '0', CRON_SECRET: 'synthetic-call-key', PULSE_CALL_REPLAY_MS: '250' },
+    env: { ...process.env, PULSE_SOCKET_PORT: '0', CRON_SECRET: 'synthetic-call-key', PULSE_CALL_REPLAY_MS: '250', PULSE_CALL_REPLAY_ATTEMPTS: '40' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   const exited = once(server, 'exit')

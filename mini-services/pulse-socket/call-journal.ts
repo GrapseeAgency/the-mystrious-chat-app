@@ -35,7 +35,7 @@ export interface CallSignalJournal {
 /** Matches the group engine's early-ICE cap (GroupCallEngine / index.ts gcall:ice). */
 export const CALL_JOURNAL_ICE_CAP = 256
 /** Bounded replay budget per transaction; 6 attempts x 5s spans the 30s ring. */
-export const CALL_JOURNAL_MAX_ATTEMPTS = 6
+export const CALL_JOURNAL_MAX_ATTEMPTS = Math.max(1, Number(process.env.PULSE_CALL_REPLAY_ATTEMPTS ?? 6) || 6)
 
 export function createCallSignalJournal(): CallSignalJournal {
   return {
