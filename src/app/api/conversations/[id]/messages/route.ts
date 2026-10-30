@@ -30,8 +30,7 @@ import { XP_DAILY_CAP, XP_PER_MESSAGE } from '@/lib/xp'
 import { nativeBlockFromPayload } from '@/lib/native-bridge'
 import { maybeAiReply } from '@/lib/ai-bot'
 import { botWillRespond, maybeBotReply } from '@/lib/bot-engine'
-import { deliverMessageNotification } from '@/lib/message-notification'
-import { fanoutPush } from '@/lib/push/transport'
+import { deliverLivePush } from '@/lib/live-push-outbox'
 
 export const dynamic = 'force-dynamic'
 
@@ -708,8 +707,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
   })
 
   // Current message privacy, membership, block and mute policy are re-read
-  // together. Push remains best-effort and never changes committed acceptance.
-  void deliverMessageNotification(db, fanoutPush, message.id).catch(() => {})
+  // together. Push remains best-effort and never changes committed acceptance;
+  // a FAILED inline report is retried durably by the live-push outbox drain
+  // (which re-plans with current policy before every retry).
+  void deliverLivePush(db, message.id)
 
   // A poll question is not a bot command or an automation trigger.
   if (kind !== 'poll') {
@@ -810,6 +811,9 @@ async function maybeAutomationReply(conversationId: string, sourceId: string, co
       type: 'message:new', message: mapMessage(created), recipientIds: recipients,
       conversationId, native: nativeBlockFromPayload(created.payload),
     })
+    // Machine producers get the SAME remote push path as human sends (the
+    // planner re-reads current mute/block/membership/preview privacy).
+    void deliverLivePush(db, created.id)
   } catch (error) {
     console.error('[automations] auto-reply failed:', error)
   }

@@ -36,6 +36,7 @@ async function fixture(run) {
       MESSAGE_FULL_INCLUDE: { poll: { include: { options: { orderBy: { position: 'asc' } } } } },
       mapMessage: r => r, memberIdsOf: async () => ['me', 'peer'], notifySocket: async (...args) => events.push(args),
       nativeBlockFromPayload: () => null, deliverMessageNotification: async () => false, fanoutPush: async () => {},
+      deliverLivePush: async () => {},
       dayKey: date => date.toISOString().slice(0, 10), XP_DAILY_CAP: 0, console: { error: () => {} } }
     const POST = await load('src/app/api/conversations/[id]/messages/route.ts', bindings, 'POST')
     const legacy = await load('src/app/api/conversations/[id]/poll/route.ts', { ...bindings, createMessage: POST }, 'POST')

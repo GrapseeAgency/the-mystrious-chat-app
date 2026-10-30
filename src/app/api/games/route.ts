@@ -18,6 +18,7 @@ import { requireActionOwner } from '@/lib/wallet-authorization'
 // No mocks - every row lands in Prisma/SQLite.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { deliverLivePush } from '@/lib/live-push-outbox'
 import { createRoomObject, MessageOperationError } from '@/lib/message-operation'
 import {
   mapMessage,
@@ -135,6 +136,8 @@ export async function POST(req: Request) {
         const recipients = (await memberIdsOf(conversationId)).filter(memberId => memberId !== userId)
         await notifySocket('message:new', recipients, { type: 'message:new', message: mapped, recipientIds: recipients, conversationId })
       } catch (error) { console.error('[games/create] relay failed after commit', error) }
+      // Machine producers ride the same remote push path as human sends.
+      void deliverLivePush(db, message.id)
     }
     return NextResponse.json({ match: serializeMatch(row), message: mapped,
       clientId: receipt.clientId, replayed: receipt.replayed }, { status: receipt.replayed ? 200 : 201 })

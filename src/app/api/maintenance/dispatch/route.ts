@@ -10,6 +10,7 @@ import { db } from '@/lib/db'
 import { scheduledDeliveryDecision } from '@/lib/scheduled-delivery'
 import { scheduledDispatchPage, scheduledErrorResponse } from '@/lib/scheduled-operation'
 import { enqueueScheduledNotice, drainScheduledNotices, scheduledPushDelivered, recordScheduledPush } from '@/lib/scheduled-notice'
+import { drainLivePushOutbox } from '@/lib/live-push-outbox'
 import { mapMessage, memberIdsOf, notifySocket, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -97,6 +98,12 @@ export async function POST(req: Request) {
     },id)
     return next
   })
+
+  // Durable retry for LIVE push fanouts that failed their inline attempt
+  // (transient provider errors). Each retry re-plans with current policy.
+  try { await drainLivePushOutbox(db) } catch (error) {
+    console.error('[dispatch] live push outbox drain failed:', error instanceof Error ? error.message : error)
+  }
 
   return NextResponse.json({ dispatched, nextCursor: page.nextCursor })
 }

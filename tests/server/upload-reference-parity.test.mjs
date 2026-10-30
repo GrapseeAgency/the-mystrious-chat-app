@@ -52,6 +52,7 @@ test('image, audio and file attachments accept bytes on disk OR in the durable s
       MESSAGE_FULL_INCLUDE: { poll: { include: { options: { orderBy: { position: 'asc' } } } } },
       mapMessage: r => r, memberIdsOf: async () => ['me'], notifySocket: async (...args) => events.push(args),
       nativeBlockFromPayload: () => null, deliverMessageNotification: async () => false, fanoutPush: async () => {},
+      deliverLivePush: async () => {},
       dayKey: date => date.toISOString().slice(0, 10), XP_DAILY_CAP: 0, stat, path: { join },
       UPLOADS_DIR: uploadsDir, AUDIO_EXT_REGEX: /\.(webm|mp3|ogg|wav|m4a|aac)$/, DOC_EXT_REGEX: /\.(pdf|txt|csv|zip)$/, DOC_MAX_BYTES: 10 * 1024 * 1024,
       createAutomationReply: async () => {}, threadRootAvailable: async () => true,

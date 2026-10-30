@@ -1,4 +1,5 @@
 import { requireActionOwner } from '@/lib/wallet-authorization'
+import { fanoutPush } from '@/lib/push/transport'
 // /api/messages/[id] - edit (sender only) + soft-delete (sender only)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -31,6 +32,15 @@ async function perform(id: string, owner: string, action: { kind: 'edit'; conten
       // The actor's other devices also need the committed mutation.
       await notifySocket(event, recipients, { type: event, message: mapMessage(result.message),
         recipientIds: recipients, conversationId: result.conversationId })
+      // Retract an already-delivered banner for a just-deleted message. A
+      // data-only 'retract' push lets clients cancel the tray entry by its
+      // per-message identity (Android tag / APNs collapse id). Only useful
+      // while the entry can still be showing: skip deletes of messages older
+      // than the message push TTL window.
+      if (action.kind === 'delete' && Date.now() - result.message.createdAt.getTime() <= 3_600_000) {
+        void fanoutPush(recipients, { kind: 'retract', title: '', body: '',
+          conversationId: result.conversationId, messageId: result.message.id })
+      }
     }
     return NextResponse.json({ message: mapped })
   } catch (error) {

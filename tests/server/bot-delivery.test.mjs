@@ -32,7 +32,7 @@ async function fixture(run) {
   const events=[],typing=[]
   const bindings={db,clipUtf16,MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},createHash,messageDeliveryDecision,threadRootAvailable,mapMessage:r=>r,
    memberIdsOf:async room=>(await db.conversationParticipant.findMany({where:{conversationId:room},orderBy:{userId:'asc'},select:{userId:true}})).map(r=>r.userId),
-   notifySocket:async(...args)=>events.push(args),fetch:async(_,options)=>{typing.push(JSON.parse(options.body));return new Response('{}')},console:{error:()=>{}}}
+   notifySocket:async(...args)=>events.push(args),fetch:async(_,options)=>{typing.push(JSON.parse(options.body));return new Response('{}')},deliverLivePush:async()=>{},console:{error:()=>{}}}
   const delivery=await load('src/lib/bot-delivery.ts',bindings,'({botReplyContext,createBotReply,prepareAiContext})')
   const deps={...bindings,...delivery}
   const tx=fn=>db.$transaction(fn,{isolationLevel:'Serializable'})

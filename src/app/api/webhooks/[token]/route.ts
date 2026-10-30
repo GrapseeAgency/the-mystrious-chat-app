@@ -6,6 +6,7 @@ import { clipUtf16 } from '@/lib/text-limits'
 // DELETE ?requesterId= (or JSON body) - participant-admin only.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { deliverLivePush } from '@/lib/live-push-outbox'
 import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { roomControl } from '@/lib/room-control'
@@ -126,6 +127,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       conversationId: result.conversationId,
     })
   } catch { console.error('[webhooks] committed post notification unavailable') }
+  // Machine producers ride the same remote push path as human sends (the
+  // planner re-reads current mute/block/membership/preview privacy).
+  void deliverLivePush(db, result.message.id)
   return NextResponse.json({ success: true, messageId: result.message.id }, { headers: CORS_HEADERS })
 }
 

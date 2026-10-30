@@ -367,6 +367,16 @@ export type ScheduledDeliveryNotice = $Result.DefaultSelection<Prisma.$Scheduled
  * 
  */
 export type ScheduledPushReceipt = $Result.DefaultSelection<Prisma.$ScheduledPushReceiptPayload>
+/**
+ * Model LivePushOutbox
+ * 
+ */
+export type LivePushOutbox = $Result.DefaultSelection<Prisma.$LivePushOutboxPayload>
+/**
+ * Model LivePushReceipt
+ * 
+ */
+export type LivePushReceipt = $Result.DefaultSelection<Prisma.$LivePushReceiptPayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -1075,6 +1085,26 @@ export class PrismaClient<
     * ```
     */
   get scheduledPushReceipt(): Prisma.ScheduledPushReceiptDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.livePushOutbox`: Exposes CRUD operations for the **LivePushOutbox** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more LivePushOutboxes
+    * const livePushOutboxes = await prisma.livePushOutbox.findMany()
+    * ```
+    */
+  get livePushOutbox(): Prisma.LivePushOutboxDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.livePushReceipt`: Exposes CRUD operations for the **LivePushReceipt** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more LivePushReceipts
+    * const livePushReceipts = await prisma.livePushReceipt.findMany()
+    * ```
+    */
+  get livePushReceipt(): Prisma.LivePushReceiptDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1574,7 +1604,9 @@ export namespace Prisma {
     ComposerOperation: 'ComposerOperation',
     ThreadDraftState: 'ThreadDraftState',
     ScheduledDeliveryNotice: 'ScheduledDeliveryNotice',
-    ScheduledPushReceipt: 'ScheduledPushReceipt'
+    ScheduledPushReceipt: 'ScheduledPushReceipt',
+    LivePushOutbox: 'LivePushOutbox',
+    LivePushReceipt: 'LivePushReceipt'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1593,7 +1625,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "uploadOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "uploadOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt" | "livePushOutbox" | "livePushReceipt"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -5963,6 +5995,154 @@ export namespace Prisma {
           }
         }
       }
+      LivePushOutbox: {
+        payload: Prisma.$LivePushOutboxPayload<ExtArgs>
+        fields: Prisma.LivePushOutboxFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.LivePushOutboxFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.LivePushOutboxFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>
+          }
+          findFirst: {
+            args: Prisma.LivePushOutboxFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.LivePushOutboxFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>
+          }
+          findMany: {
+            args: Prisma.LivePushOutboxFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>[]
+          }
+          create: {
+            args: Prisma.LivePushOutboxCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>
+          }
+          createMany: {
+            args: Prisma.LivePushOutboxCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.LivePushOutboxCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>[]
+          }
+          delete: {
+            args: Prisma.LivePushOutboxDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>
+          }
+          update: {
+            args: Prisma.LivePushOutboxUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>
+          }
+          deleteMany: {
+            args: Prisma.LivePushOutboxDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.LivePushOutboxUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.LivePushOutboxUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>[]
+          }
+          upsert: {
+            args: Prisma.LivePushOutboxUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushOutboxPayload>
+          }
+          aggregate: {
+            args: Prisma.LivePushOutboxAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateLivePushOutbox>
+          }
+          groupBy: {
+            args: Prisma.LivePushOutboxGroupByArgs<ExtArgs>
+            result: $Utils.Optional<LivePushOutboxGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.LivePushOutboxCountArgs<ExtArgs>
+            result: $Utils.Optional<LivePushOutboxCountAggregateOutputType> | number
+          }
+        }
+      }
+      LivePushReceipt: {
+        payload: Prisma.$LivePushReceiptPayload<ExtArgs>
+        fields: Prisma.LivePushReceiptFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.LivePushReceiptFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.LivePushReceiptFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>
+          }
+          findFirst: {
+            args: Prisma.LivePushReceiptFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.LivePushReceiptFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>
+          }
+          findMany: {
+            args: Prisma.LivePushReceiptFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>[]
+          }
+          create: {
+            args: Prisma.LivePushReceiptCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>
+          }
+          createMany: {
+            args: Prisma.LivePushReceiptCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.LivePushReceiptCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>[]
+          }
+          delete: {
+            args: Prisma.LivePushReceiptDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>
+          }
+          update: {
+            args: Prisma.LivePushReceiptUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>
+          }
+          deleteMany: {
+            args: Prisma.LivePushReceiptDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.LivePushReceiptUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.LivePushReceiptUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>[]
+          }
+          upsert: {
+            args: Prisma.LivePushReceiptUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$LivePushReceiptPayload>
+          }
+          aggregate: {
+            args: Prisma.LivePushReceiptAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateLivePushReceipt>
+          }
+          groupBy: {
+            args: Prisma.LivePushReceiptGroupByArgs<ExtArgs>
+            result: $Utils.Optional<LivePushReceiptGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.LivePushReceiptCountArgs<ExtArgs>
+            result: $Utils.Optional<LivePushReceiptCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -6118,6 +6298,8 @@ export namespace Prisma {
     threadDraftState?: ThreadDraftStateOmit
     scheduledDeliveryNotice?: ScheduledDeliveryNoticeOmit
     scheduledPushReceipt?: ScheduledPushReceiptOmit
+    livePushOutbox?: LivePushOutboxOmit
+    livePushReceipt?: LivePushReceiptOmit
   }
 
   /* Types for Logging */
@@ -54903,8 +55085,18 @@ export namespace Prisma {
 
   export type AggregatePushToken = {
     _count: PushTokenCountAggregateOutputType | null
+    _avg: PushTokenAvgAggregateOutputType | null
+    _sum: PushTokenSumAggregateOutputType | null
     _min: PushTokenMinAggregateOutputType | null
     _max: PushTokenMaxAggregateOutputType | null
+  }
+
+  export type PushTokenAvgAggregateOutputType = {
+    revision: number | null
+  }
+
+  export type PushTokenSumAggregateOutputType = {
+    revision: number | null
   }
 
   export type PushTokenMinAggregateOutputType = {
@@ -54913,6 +55105,9 @@ export namespace Prisma {
     platform: string | null
     token: string | null
     endpoint: string | null
+    revision: number | null
+    origin: string | null
+    apnsEnvironment: string | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -54923,6 +55118,9 @@ export namespace Prisma {
     platform: string | null
     token: string | null
     endpoint: string | null
+    revision: number | null
+    origin: string | null
+    apnsEnvironment: string | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -54933,11 +55131,22 @@ export namespace Prisma {
     platform: number
     token: number
     endpoint: number
+    revision: number
+    origin: number
+    apnsEnvironment: number
     createdAt: number
     updatedAt: number
     _all: number
   }
 
+
+  export type PushTokenAvgAggregateInputType = {
+    revision?: true
+  }
+
+  export type PushTokenSumAggregateInputType = {
+    revision?: true
+  }
 
   export type PushTokenMinAggregateInputType = {
     id?: true
@@ -54945,6 +55154,9 @@ export namespace Prisma {
     platform?: true
     token?: true
     endpoint?: true
+    revision?: true
+    origin?: true
+    apnsEnvironment?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -54955,6 +55167,9 @@ export namespace Prisma {
     platform?: true
     token?: true
     endpoint?: true
+    revision?: true
+    origin?: true
+    apnsEnvironment?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -54965,6 +55180,9 @@ export namespace Prisma {
     platform?: true
     token?: true
     endpoint?: true
+    revision?: true
+    origin?: true
+    apnsEnvironment?: true
     createdAt?: true
     updatedAt?: true
     _all?: true
@@ -55008,6 +55226,18 @@ export namespace Prisma {
     /**
      * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
      * 
+     * Select which fields to average
+    **/
+    _avg?: PushTokenAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: PushTokenSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
      * Select which fields to find the minimum value
     **/
     _min?: PushTokenMinAggregateInputType
@@ -55038,6 +55268,8 @@ export namespace Prisma {
     take?: number
     skip?: number
     _count?: PushTokenCountAggregateInputType | true
+    _avg?: PushTokenAvgAggregateInputType
+    _sum?: PushTokenSumAggregateInputType
     _min?: PushTokenMinAggregateInputType
     _max?: PushTokenMaxAggregateInputType
   }
@@ -55048,9 +55280,14 @@ export namespace Prisma {
     platform: string
     token: string
     endpoint: string | null
+    revision: number
+    origin: string | null
+    apnsEnvironment: string | null
     createdAt: Date
     updatedAt: Date
     _count: PushTokenCountAggregateOutputType | null
+    _avg: PushTokenAvgAggregateOutputType | null
+    _sum: PushTokenSumAggregateOutputType | null
     _min: PushTokenMinAggregateOutputType | null
     _max: PushTokenMaxAggregateOutputType | null
   }
@@ -55075,6 +55312,9 @@ export namespace Prisma {
     platform?: boolean
     token?: boolean
     endpoint?: boolean
+    revision?: boolean
+    origin?: boolean
+    apnsEnvironment?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     readStateCapability?: boolean | PushToken$readStateCapabilityArgs<ExtArgs>
@@ -55086,6 +55326,9 @@ export namespace Prisma {
     platform?: boolean
     token?: boolean
     endpoint?: boolean
+    revision?: boolean
+    origin?: boolean
+    apnsEnvironment?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }, ExtArgs["result"]["pushToken"]>
@@ -55096,6 +55339,9 @@ export namespace Prisma {
     platform?: boolean
     token?: boolean
     endpoint?: boolean
+    revision?: boolean
+    origin?: boolean
+    apnsEnvironment?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }, ExtArgs["result"]["pushToken"]>
@@ -55106,11 +55352,14 @@ export namespace Prisma {
     platform?: boolean
     token?: boolean
     endpoint?: boolean
+    revision?: boolean
+    origin?: boolean
+    apnsEnvironment?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }
 
-  export type PushTokenOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "platform" | "token" | "endpoint" | "createdAt" | "updatedAt", ExtArgs["result"]["pushToken"]>
+  export type PushTokenOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "platform" | "token" | "endpoint" | "revision" | "origin" | "apnsEnvironment" | "createdAt" | "updatedAt", ExtArgs["result"]["pushToken"]>
   export type PushTokenInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     readStateCapability?: boolean | PushToken$readStateCapabilityArgs<ExtArgs>
   }
@@ -55128,6 +55377,9 @@ export namespace Prisma {
       platform: string
       token: string
       endpoint: string | null
+      revision: number
+      origin: string | null
+      apnsEnvironment: string | null
       createdAt: Date
       updatedAt: Date
     }, ExtArgs["result"]["pushToken"]>
@@ -55559,6 +55811,9 @@ export namespace Prisma {
     readonly platform: FieldRef<"PushToken", 'String'>
     readonly token: FieldRef<"PushToken", 'String'>
     readonly endpoint: FieldRef<"PushToken", 'String'>
+    readonly revision: FieldRef<"PushToken", 'Int'>
+    readonly origin: FieldRef<"PushToken", 'String'>
+    readonly apnsEnvironment: FieldRef<"PushToken", 'String'>
     readonly createdAt: FieldRef<"PushToken", 'DateTime'>
     readonly updatedAt: FieldRef<"PushToken", 'DateTime'>
   }
@@ -72011,6 +72266,2089 @@ export namespace Prisma {
 
 
   /**
+   * Model LivePushOutbox
+   */
+
+  export type AggregateLivePushOutbox = {
+    _count: LivePushOutboxCountAggregateOutputType | null
+    _avg: LivePushOutboxAvgAggregateOutputType | null
+    _sum: LivePushOutboxSumAggregateOutputType | null
+    _min: LivePushOutboxMinAggregateOutputType | null
+    _max: LivePushOutboxMaxAggregateOutputType | null
+  }
+
+  export type LivePushOutboxAvgAggregateOutputType = {
+    createdAtMs: number | null
+    nextAttemptMs: number | null
+    attempts: number | null
+    leaseUntilMs: number | null
+    completedAtMs: number | null
+  }
+
+  export type LivePushOutboxSumAggregateOutputType = {
+    createdAtMs: bigint | null
+    nextAttemptMs: bigint | null
+    attempts: number | null
+    leaseUntilMs: bigint | null
+    completedAtMs: bigint | null
+  }
+
+  export type LivePushOutboxMinAggregateOutputType = {
+    id: string | null
+    messageId: string | null
+    createdAtMs: bigint | null
+    nextAttemptMs: bigint | null
+    attempts: number | null
+    leaseToken: string | null
+    leaseUntilMs: bigint | null
+    completedAtMs: bigint | null
+  }
+
+  export type LivePushOutboxMaxAggregateOutputType = {
+    id: string | null
+    messageId: string | null
+    createdAtMs: bigint | null
+    nextAttemptMs: bigint | null
+    attempts: number | null
+    leaseToken: string | null
+    leaseUntilMs: bigint | null
+    completedAtMs: bigint | null
+  }
+
+  export type LivePushOutboxCountAggregateOutputType = {
+    id: number
+    messageId: number
+    createdAtMs: number
+    nextAttemptMs: number
+    attempts: number
+    leaseToken: number
+    leaseUntilMs: number
+    completedAtMs: number
+    _all: number
+  }
+
+
+  export type LivePushOutboxAvgAggregateInputType = {
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseUntilMs?: true
+    completedAtMs?: true
+  }
+
+  export type LivePushOutboxSumAggregateInputType = {
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseUntilMs?: true
+    completedAtMs?: true
+  }
+
+  export type LivePushOutboxMinAggregateInputType = {
+    id?: true
+    messageId?: true
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseToken?: true
+    leaseUntilMs?: true
+    completedAtMs?: true
+  }
+
+  export type LivePushOutboxMaxAggregateInputType = {
+    id?: true
+    messageId?: true
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseToken?: true
+    leaseUntilMs?: true
+    completedAtMs?: true
+  }
+
+  export type LivePushOutboxCountAggregateInputType = {
+    id?: true
+    messageId?: true
+    createdAtMs?: true
+    nextAttemptMs?: true
+    attempts?: true
+    leaseToken?: true
+    leaseUntilMs?: true
+    completedAtMs?: true
+    _all?: true
+  }
+
+  export type LivePushOutboxAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which LivePushOutbox to aggregate.
+     */
+    where?: LivePushOutboxWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LivePushOutboxes to fetch.
+     */
+    orderBy?: LivePushOutboxOrderByWithRelationInput | LivePushOutboxOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: LivePushOutboxWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LivePushOutboxes from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LivePushOutboxes.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned LivePushOutboxes
+    **/
+    _count?: true | LivePushOutboxCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: LivePushOutboxAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: LivePushOutboxSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: LivePushOutboxMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: LivePushOutboxMaxAggregateInputType
+  }
+
+  export type GetLivePushOutboxAggregateType<T extends LivePushOutboxAggregateArgs> = {
+        [P in keyof T & keyof AggregateLivePushOutbox]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateLivePushOutbox[P]>
+      : GetScalarType<T[P], AggregateLivePushOutbox[P]>
+  }
+
+
+
+
+  export type LivePushOutboxGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: LivePushOutboxWhereInput
+    orderBy?: LivePushOutboxOrderByWithAggregationInput | LivePushOutboxOrderByWithAggregationInput[]
+    by: LivePushOutboxScalarFieldEnum[] | LivePushOutboxScalarFieldEnum
+    having?: LivePushOutboxScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: LivePushOutboxCountAggregateInputType | true
+    _avg?: LivePushOutboxAvgAggregateInputType
+    _sum?: LivePushOutboxSumAggregateInputType
+    _min?: LivePushOutboxMinAggregateInputType
+    _max?: LivePushOutboxMaxAggregateInputType
+  }
+
+  export type LivePushOutboxGroupByOutputType = {
+    id: string
+    messageId: string
+    createdAtMs: bigint
+    nextAttemptMs: bigint
+    attempts: number
+    leaseToken: string | null
+    leaseUntilMs: bigint | null
+    completedAtMs: bigint | null
+    _count: LivePushOutboxCountAggregateOutputType | null
+    _avg: LivePushOutboxAvgAggregateOutputType | null
+    _sum: LivePushOutboxSumAggregateOutputType | null
+    _min: LivePushOutboxMinAggregateOutputType | null
+    _max: LivePushOutboxMaxAggregateOutputType | null
+  }
+
+  type GetLivePushOutboxGroupByPayload<T extends LivePushOutboxGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<LivePushOutboxGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof LivePushOutboxGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], LivePushOutboxGroupByOutputType[P]>
+            : GetScalarType<T[P], LivePushOutboxGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type LivePushOutboxSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    messageId?: boolean
+    createdAtMs?: boolean
+    nextAttemptMs?: boolean
+    attempts?: boolean
+    leaseToken?: boolean
+    leaseUntilMs?: boolean
+    completedAtMs?: boolean
+  }, ExtArgs["result"]["livePushOutbox"]>
+
+  export type LivePushOutboxSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    messageId?: boolean
+    createdAtMs?: boolean
+    nextAttemptMs?: boolean
+    attempts?: boolean
+    leaseToken?: boolean
+    leaseUntilMs?: boolean
+    completedAtMs?: boolean
+  }, ExtArgs["result"]["livePushOutbox"]>
+
+  export type LivePushOutboxSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    messageId?: boolean
+    createdAtMs?: boolean
+    nextAttemptMs?: boolean
+    attempts?: boolean
+    leaseToken?: boolean
+    leaseUntilMs?: boolean
+    completedAtMs?: boolean
+  }, ExtArgs["result"]["livePushOutbox"]>
+
+  export type LivePushOutboxSelectScalar = {
+    id?: boolean
+    messageId?: boolean
+    createdAtMs?: boolean
+    nextAttemptMs?: boolean
+    attempts?: boolean
+    leaseToken?: boolean
+    leaseUntilMs?: boolean
+    completedAtMs?: boolean
+  }
+
+  export type LivePushOutboxOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "messageId" | "createdAtMs" | "nextAttemptMs" | "attempts" | "leaseToken" | "leaseUntilMs" | "completedAtMs", ExtArgs["result"]["livePushOutbox"]>
+
+  export type $LivePushOutboxPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "LivePushOutbox"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      messageId: string
+      createdAtMs: bigint
+      nextAttemptMs: bigint
+      attempts: number
+      leaseToken: string | null
+      leaseUntilMs: bigint | null
+      completedAtMs: bigint | null
+    }, ExtArgs["result"]["livePushOutbox"]>
+    composites: {}
+  }
+
+  type LivePushOutboxGetPayload<S extends boolean | null | undefined | LivePushOutboxDefaultArgs> = $Result.GetResult<Prisma.$LivePushOutboxPayload, S>
+
+  type LivePushOutboxCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<LivePushOutboxFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: LivePushOutboxCountAggregateInputType | true
+    }
+
+  export interface LivePushOutboxDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['LivePushOutbox'], meta: { name: 'LivePushOutbox' } }
+    /**
+     * Find zero or one LivePushOutbox that matches the filter.
+     * @param {LivePushOutboxFindUniqueArgs} args - Arguments to find a LivePushOutbox
+     * @example
+     * // Get one LivePushOutbox
+     * const livePushOutbox = await prisma.livePushOutbox.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends LivePushOutboxFindUniqueArgs>(args: SelectSubset<T, LivePushOutboxFindUniqueArgs<ExtArgs>>): Prisma__LivePushOutboxClient<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one LivePushOutbox that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {LivePushOutboxFindUniqueOrThrowArgs} args - Arguments to find a LivePushOutbox
+     * @example
+     * // Get one LivePushOutbox
+     * const livePushOutbox = await prisma.livePushOutbox.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends LivePushOutboxFindUniqueOrThrowArgs>(args: SelectSubset<T, LivePushOutboxFindUniqueOrThrowArgs<ExtArgs>>): Prisma__LivePushOutboxClient<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first LivePushOutbox that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushOutboxFindFirstArgs} args - Arguments to find a LivePushOutbox
+     * @example
+     * // Get one LivePushOutbox
+     * const livePushOutbox = await prisma.livePushOutbox.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends LivePushOutboxFindFirstArgs>(args?: SelectSubset<T, LivePushOutboxFindFirstArgs<ExtArgs>>): Prisma__LivePushOutboxClient<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first LivePushOutbox that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushOutboxFindFirstOrThrowArgs} args - Arguments to find a LivePushOutbox
+     * @example
+     * // Get one LivePushOutbox
+     * const livePushOutbox = await prisma.livePushOutbox.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends LivePushOutboxFindFirstOrThrowArgs>(args?: SelectSubset<T, LivePushOutboxFindFirstOrThrowArgs<ExtArgs>>): Prisma__LivePushOutboxClient<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more LivePushOutboxes that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushOutboxFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all LivePushOutboxes
+     * const livePushOutboxes = await prisma.livePushOutbox.findMany()
+     * 
+     * // Get first 10 LivePushOutboxes
+     * const livePushOutboxes = await prisma.livePushOutbox.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const livePushOutboxWithIdOnly = await prisma.livePushOutbox.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends LivePushOutboxFindManyArgs>(args?: SelectSubset<T, LivePushOutboxFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a LivePushOutbox.
+     * @param {LivePushOutboxCreateArgs} args - Arguments to create a LivePushOutbox.
+     * @example
+     * // Create one LivePushOutbox
+     * const LivePushOutbox = await prisma.livePushOutbox.create({
+     *   data: {
+     *     // ... data to create a LivePushOutbox
+     *   }
+     * })
+     * 
+     */
+    create<T extends LivePushOutboxCreateArgs>(args: SelectSubset<T, LivePushOutboxCreateArgs<ExtArgs>>): Prisma__LivePushOutboxClient<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many LivePushOutboxes.
+     * @param {LivePushOutboxCreateManyArgs} args - Arguments to create many LivePushOutboxes.
+     * @example
+     * // Create many LivePushOutboxes
+     * const livePushOutbox = await prisma.livePushOutbox.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends LivePushOutboxCreateManyArgs>(args?: SelectSubset<T, LivePushOutboxCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many LivePushOutboxes and returns the data saved in the database.
+     * @param {LivePushOutboxCreateManyAndReturnArgs} args - Arguments to create many LivePushOutboxes.
+     * @example
+     * // Create many LivePushOutboxes
+     * const livePushOutbox = await prisma.livePushOutbox.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many LivePushOutboxes and only return the `id`
+     * const livePushOutboxWithIdOnly = await prisma.livePushOutbox.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends LivePushOutboxCreateManyAndReturnArgs>(args?: SelectSubset<T, LivePushOutboxCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a LivePushOutbox.
+     * @param {LivePushOutboxDeleteArgs} args - Arguments to delete one LivePushOutbox.
+     * @example
+     * // Delete one LivePushOutbox
+     * const LivePushOutbox = await prisma.livePushOutbox.delete({
+     *   where: {
+     *     // ... filter to delete one LivePushOutbox
+     *   }
+     * })
+     * 
+     */
+    delete<T extends LivePushOutboxDeleteArgs>(args: SelectSubset<T, LivePushOutboxDeleteArgs<ExtArgs>>): Prisma__LivePushOutboxClient<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one LivePushOutbox.
+     * @param {LivePushOutboxUpdateArgs} args - Arguments to update one LivePushOutbox.
+     * @example
+     * // Update one LivePushOutbox
+     * const livePushOutbox = await prisma.livePushOutbox.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends LivePushOutboxUpdateArgs>(args: SelectSubset<T, LivePushOutboxUpdateArgs<ExtArgs>>): Prisma__LivePushOutboxClient<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more LivePushOutboxes.
+     * @param {LivePushOutboxDeleteManyArgs} args - Arguments to filter LivePushOutboxes to delete.
+     * @example
+     * // Delete a few LivePushOutboxes
+     * const { count } = await prisma.livePushOutbox.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends LivePushOutboxDeleteManyArgs>(args?: SelectSubset<T, LivePushOutboxDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more LivePushOutboxes.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushOutboxUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many LivePushOutboxes
+     * const livePushOutbox = await prisma.livePushOutbox.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends LivePushOutboxUpdateManyArgs>(args: SelectSubset<T, LivePushOutboxUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more LivePushOutboxes and returns the data updated in the database.
+     * @param {LivePushOutboxUpdateManyAndReturnArgs} args - Arguments to update many LivePushOutboxes.
+     * @example
+     * // Update many LivePushOutboxes
+     * const livePushOutbox = await prisma.livePushOutbox.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more LivePushOutboxes and only return the `id`
+     * const livePushOutboxWithIdOnly = await prisma.livePushOutbox.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends LivePushOutboxUpdateManyAndReturnArgs>(args: SelectSubset<T, LivePushOutboxUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one LivePushOutbox.
+     * @param {LivePushOutboxUpsertArgs} args - Arguments to update or create a LivePushOutbox.
+     * @example
+     * // Update or create a LivePushOutbox
+     * const livePushOutbox = await prisma.livePushOutbox.upsert({
+     *   create: {
+     *     // ... data to create a LivePushOutbox
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the LivePushOutbox we want to update
+     *   }
+     * })
+     */
+    upsert<T extends LivePushOutboxUpsertArgs>(args: SelectSubset<T, LivePushOutboxUpsertArgs<ExtArgs>>): Prisma__LivePushOutboxClient<$Result.GetResult<Prisma.$LivePushOutboxPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of LivePushOutboxes.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushOutboxCountArgs} args - Arguments to filter LivePushOutboxes to count.
+     * @example
+     * // Count the number of LivePushOutboxes
+     * const count = await prisma.livePushOutbox.count({
+     *   where: {
+     *     // ... the filter for the LivePushOutboxes we want to count
+     *   }
+     * })
+    **/
+    count<T extends LivePushOutboxCountArgs>(
+      args?: Subset<T, LivePushOutboxCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], LivePushOutboxCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a LivePushOutbox.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushOutboxAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends LivePushOutboxAggregateArgs>(args: Subset<T, LivePushOutboxAggregateArgs>): Prisma.PrismaPromise<GetLivePushOutboxAggregateType<T>>
+
+    /**
+     * Group by LivePushOutbox.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushOutboxGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends LivePushOutboxGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: LivePushOutboxGroupByArgs['orderBy'] }
+        : { orderBy?: LivePushOutboxGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, LivePushOutboxGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetLivePushOutboxGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the LivePushOutbox model
+   */
+  readonly fields: LivePushOutboxFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for LivePushOutbox.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__LivePushOutboxClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the LivePushOutbox model
+   */
+  interface LivePushOutboxFieldRefs {
+    readonly id: FieldRef<"LivePushOutbox", 'String'>
+    readonly messageId: FieldRef<"LivePushOutbox", 'String'>
+    readonly createdAtMs: FieldRef<"LivePushOutbox", 'BigInt'>
+    readonly nextAttemptMs: FieldRef<"LivePushOutbox", 'BigInt'>
+    readonly attempts: FieldRef<"LivePushOutbox", 'Int'>
+    readonly leaseToken: FieldRef<"LivePushOutbox", 'String'>
+    readonly leaseUntilMs: FieldRef<"LivePushOutbox", 'BigInt'>
+    readonly completedAtMs: FieldRef<"LivePushOutbox", 'BigInt'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * LivePushOutbox findUnique
+   */
+  export type LivePushOutboxFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushOutbox to fetch.
+     */
+    where: LivePushOutboxWhereUniqueInput
+  }
+
+  /**
+   * LivePushOutbox findUniqueOrThrow
+   */
+  export type LivePushOutboxFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushOutbox to fetch.
+     */
+    where: LivePushOutboxWhereUniqueInput
+  }
+
+  /**
+   * LivePushOutbox findFirst
+   */
+  export type LivePushOutboxFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushOutbox to fetch.
+     */
+    where?: LivePushOutboxWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LivePushOutboxes to fetch.
+     */
+    orderBy?: LivePushOutboxOrderByWithRelationInput | LivePushOutboxOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for LivePushOutboxes.
+     */
+    cursor?: LivePushOutboxWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LivePushOutboxes from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LivePushOutboxes.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of LivePushOutboxes.
+     */
+    distinct?: LivePushOutboxScalarFieldEnum | LivePushOutboxScalarFieldEnum[]
+  }
+
+  /**
+   * LivePushOutbox findFirstOrThrow
+   */
+  export type LivePushOutboxFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushOutbox to fetch.
+     */
+    where?: LivePushOutboxWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LivePushOutboxes to fetch.
+     */
+    orderBy?: LivePushOutboxOrderByWithRelationInput | LivePushOutboxOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for LivePushOutboxes.
+     */
+    cursor?: LivePushOutboxWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LivePushOutboxes from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LivePushOutboxes.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of LivePushOutboxes.
+     */
+    distinct?: LivePushOutboxScalarFieldEnum | LivePushOutboxScalarFieldEnum[]
+  }
+
+  /**
+   * LivePushOutbox findMany
+   */
+  export type LivePushOutboxFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushOutboxes to fetch.
+     */
+    where?: LivePushOutboxWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LivePushOutboxes to fetch.
+     */
+    orderBy?: LivePushOutboxOrderByWithRelationInput | LivePushOutboxOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing LivePushOutboxes.
+     */
+    cursor?: LivePushOutboxWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LivePushOutboxes from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LivePushOutboxes.
+     */
+    skip?: number
+    distinct?: LivePushOutboxScalarFieldEnum | LivePushOutboxScalarFieldEnum[]
+  }
+
+  /**
+   * LivePushOutbox create
+   */
+  export type LivePushOutboxCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * The data needed to create a LivePushOutbox.
+     */
+    data: XOR<LivePushOutboxCreateInput, LivePushOutboxUncheckedCreateInput>
+  }
+
+  /**
+   * LivePushOutbox createMany
+   */
+  export type LivePushOutboxCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many LivePushOutboxes.
+     */
+    data: LivePushOutboxCreateManyInput | LivePushOutboxCreateManyInput[]
+  }
+
+  /**
+   * LivePushOutbox createManyAndReturn
+   */
+  export type LivePushOutboxCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * The data used to create many LivePushOutboxes.
+     */
+    data: LivePushOutboxCreateManyInput | LivePushOutboxCreateManyInput[]
+  }
+
+  /**
+   * LivePushOutbox update
+   */
+  export type LivePushOutboxUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * The data needed to update a LivePushOutbox.
+     */
+    data: XOR<LivePushOutboxUpdateInput, LivePushOutboxUncheckedUpdateInput>
+    /**
+     * Choose, which LivePushOutbox to update.
+     */
+    where: LivePushOutboxWhereUniqueInput
+  }
+
+  /**
+   * LivePushOutbox updateMany
+   */
+  export type LivePushOutboxUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update LivePushOutboxes.
+     */
+    data: XOR<LivePushOutboxUpdateManyMutationInput, LivePushOutboxUncheckedUpdateManyInput>
+    /**
+     * Filter which LivePushOutboxes to update
+     */
+    where?: LivePushOutboxWhereInput
+    /**
+     * Limit how many LivePushOutboxes to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * LivePushOutbox updateManyAndReturn
+   */
+  export type LivePushOutboxUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * The data used to update LivePushOutboxes.
+     */
+    data: XOR<LivePushOutboxUpdateManyMutationInput, LivePushOutboxUncheckedUpdateManyInput>
+    /**
+     * Filter which LivePushOutboxes to update
+     */
+    where?: LivePushOutboxWhereInput
+    /**
+     * Limit how many LivePushOutboxes to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * LivePushOutbox upsert
+   */
+  export type LivePushOutboxUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * The filter to search for the LivePushOutbox to update in case it exists.
+     */
+    where: LivePushOutboxWhereUniqueInput
+    /**
+     * In case the LivePushOutbox found by the `where` argument doesn't exist, create a new LivePushOutbox with this data.
+     */
+    create: XOR<LivePushOutboxCreateInput, LivePushOutboxUncheckedCreateInput>
+    /**
+     * In case the LivePushOutbox was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<LivePushOutboxUpdateInput, LivePushOutboxUncheckedUpdateInput>
+  }
+
+  /**
+   * LivePushOutbox delete
+   */
+  export type LivePushOutboxDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+    /**
+     * Filter which LivePushOutbox to delete.
+     */
+    where: LivePushOutboxWhereUniqueInput
+  }
+
+  /**
+   * LivePushOutbox deleteMany
+   */
+  export type LivePushOutboxDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which LivePushOutboxes to delete
+     */
+    where?: LivePushOutboxWhereInput
+    /**
+     * Limit how many LivePushOutboxes to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * LivePushOutbox without action
+   */
+  export type LivePushOutboxDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushOutbox
+     */
+    select?: LivePushOutboxSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushOutbox
+     */
+    omit?: LivePushOutboxOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model LivePushReceipt
+   */
+
+  export type AggregateLivePushReceipt = {
+    _count: LivePushReceiptCountAggregateOutputType | null
+    _avg: LivePushReceiptAvgAggregateOutputType | null
+    _sum: LivePushReceiptSumAggregateOutputType | null
+    _min: LivePushReceiptMinAggregateOutputType | null
+    _max: LivePushReceiptMaxAggregateOutputType | null
+  }
+
+  export type LivePushReceiptAvgAggregateOutputType = {
+    createdAtMs: number | null
+  }
+
+  export type LivePushReceiptSumAggregateOutputType = {
+    createdAtMs: bigint | null
+  }
+
+  export type LivePushReceiptMinAggregateOutputType = {
+    messageId: string | null
+    bindingHash: string | null
+    createdAtMs: bigint | null
+  }
+
+  export type LivePushReceiptMaxAggregateOutputType = {
+    messageId: string | null
+    bindingHash: string | null
+    createdAtMs: bigint | null
+  }
+
+  export type LivePushReceiptCountAggregateOutputType = {
+    messageId: number
+    bindingHash: number
+    createdAtMs: number
+    _all: number
+  }
+
+
+  export type LivePushReceiptAvgAggregateInputType = {
+    createdAtMs?: true
+  }
+
+  export type LivePushReceiptSumAggregateInputType = {
+    createdAtMs?: true
+  }
+
+  export type LivePushReceiptMinAggregateInputType = {
+    messageId?: true
+    bindingHash?: true
+    createdAtMs?: true
+  }
+
+  export type LivePushReceiptMaxAggregateInputType = {
+    messageId?: true
+    bindingHash?: true
+    createdAtMs?: true
+  }
+
+  export type LivePushReceiptCountAggregateInputType = {
+    messageId?: true
+    bindingHash?: true
+    createdAtMs?: true
+    _all?: true
+  }
+
+  export type LivePushReceiptAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which LivePushReceipt to aggregate.
+     */
+    where?: LivePushReceiptWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LivePushReceipts to fetch.
+     */
+    orderBy?: LivePushReceiptOrderByWithRelationInput | LivePushReceiptOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: LivePushReceiptWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LivePushReceipts from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LivePushReceipts.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned LivePushReceipts
+    **/
+    _count?: true | LivePushReceiptCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: LivePushReceiptAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: LivePushReceiptSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: LivePushReceiptMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: LivePushReceiptMaxAggregateInputType
+  }
+
+  export type GetLivePushReceiptAggregateType<T extends LivePushReceiptAggregateArgs> = {
+        [P in keyof T & keyof AggregateLivePushReceipt]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateLivePushReceipt[P]>
+      : GetScalarType<T[P], AggregateLivePushReceipt[P]>
+  }
+
+
+
+
+  export type LivePushReceiptGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: LivePushReceiptWhereInput
+    orderBy?: LivePushReceiptOrderByWithAggregationInput | LivePushReceiptOrderByWithAggregationInput[]
+    by: LivePushReceiptScalarFieldEnum[] | LivePushReceiptScalarFieldEnum
+    having?: LivePushReceiptScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: LivePushReceiptCountAggregateInputType | true
+    _avg?: LivePushReceiptAvgAggregateInputType
+    _sum?: LivePushReceiptSumAggregateInputType
+    _min?: LivePushReceiptMinAggregateInputType
+    _max?: LivePushReceiptMaxAggregateInputType
+  }
+
+  export type LivePushReceiptGroupByOutputType = {
+    messageId: string
+    bindingHash: string
+    createdAtMs: bigint
+    _count: LivePushReceiptCountAggregateOutputType | null
+    _avg: LivePushReceiptAvgAggregateOutputType | null
+    _sum: LivePushReceiptSumAggregateOutputType | null
+    _min: LivePushReceiptMinAggregateOutputType | null
+    _max: LivePushReceiptMaxAggregateOutputType | null
+  }
+
+  type GetLivePushReceiptGroupByPayload<T extends LivePushReceiptGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<LivePushReceiptGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof LivePushReceiptGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], LivePushReceiptGroupByOutputType[P]>
+            : GetScalarType<T[P], LivePushReceiptGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type LivePushReceiptSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    bindingHash?: boolean
+    createdAtMs?: boolean
+  }, ExtArgs["result"]["livePushReceipt"]>
+
+  export type LivePushReceiptSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    bindingHash?: boolean
+    createdAtMs?: boolean
+  }, ExtArgs["result"]["livePushReceipt"]>
+
+  export type LivePushReceiptSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    messageId?: boolean
+    bindingHash?: boolean
+    createdAtMs?: boolean
+  }, ExtArgs["result"]["livePushReceipt"]>
+
+  export type LivePushReceiptSelectScalar = {
+    messageId?: boolean
+    bindingHash?: boolean
+    createdAtMs?: boolean
+  }
+
+  export type LivePushReceiptOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"messageId" | "bindingHash" | "createdAtMs", ExtArgs["result"]["livePushReceipt"]>
+
+  export type $LivePushReceiptPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "LivePushReceipt"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      messageId: string
+      bindingHash: string
+      createdAtMs: bigint
+    }, ExtArgs["result"]["livePushReceipt"]>
+    composites: {}
+  }
+
+  type LivePushReceiptGetPayload<S extends boolean | null | undefined | LivePushReceiptDefaultArgs> = $Result.GetResult<Prisma.$LivePushReceiptPayload, S>
+
+  type LivePushReceiptCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<LivePushReceiptFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: LivePushReceiptCountAggregateInputType | true
+    }
+
+  export interface LivePushReceiptDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['LivePushReceipt'], meta: { name: 'LivePushReceipt' } }
+    /**
+     * Find zero or one LivePushReceipt that matches the filter.
+     * @param {LivePushReceiptFindUniqueArgs} args - Arguments to find a LivePushReceipt
+     * @example
+     * // Get one LivePushReceipt
+     * const livePushReceipt = await prisma.livePushReceipt.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends LivePushReceiptFindUniqueArgs>(args: SelectSubset<T, LivePushReceiptFindUniqueArgs<ExtArgs>>): Prisma__LivePushReceiptClient<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one LivePushReceipt that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {LivePushReceiptFindUniqueOrThrowArgs} args - Arguments to find a LivePushReceipt
+     * @example
+     * // Get one LivePushReceipt
+     * const livePushReceipt = await prisma.livePushReceipt.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends LivePushReceiptFindUniqueOrThrowArgs>(args: SelectSubset<T, LivePushReceiptFindUniqueOrThrowArgs<ExtArgs>>): Prisma__LivePushReceiptClient<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first LivePushReceipt that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushReceiptFindFirstArgs} args - Arguments to find a LivePushReceipt
+     * @example
+     * // Get one LivePushReceipt
+     * const livePushReceipt = await prisma.livePushReceipt.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends LivePushReceiptFindFirstArgs>(args?: SelectSubset<T, LivePushReceiptFindFirstArgs<ExtArgs>>): Prisma__LivePushReceiptClient<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first LivePushReceipt that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushReceiptFindFirstOrThrowArgs} args - Arguments to find a LivePushReceipt
+     * @example
+     * // Get one LivePushReceipt
+     * const livePushReceipt = await prisma.livePushReceipt.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends LivePushReceiptFindFirstOrThrowArgs>(args?: SelectSubset<T, LivePushReceiptFindFirstOrThrowArgs<ExtArgs>>): Prisma__LivePushReceiptClient<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more LivePushReceipts that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushReceiptFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all LivePushReceipts
+     * const livePushReceipts = await prisma.livePushReceipt.findMany()
+     * 
+     * // Get first 10 LivePushReceipts
+     * const livePushReceipts = await prisma.livePushReceipt.findMany({ take: 10 })
+     * 
+     * // Only select the `messageId`
+     * const livePushReceiptWithMessageIdOnly = await prisma.livePushReceipt.findMany({ select: { messageId: true } })
+     * 
+     */
+    findMany<T extends LivePushReceiptFindManyArgs>(args?: SelectSubset<T, LivePushReceiptFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a LivePushReceipt.
+     * @param {LivePushReceiptCreateArgs} args - Arguments to create a LivePushReceipt.
+     * @example
+     * // Create one LivePushReceipt
+     * const LivePushReceipt = await prisma.livePushReceipt.create({
+     *   data: {
+     *     // ... data to create a LivePushReceipt
+     *   }
+     * })
+     * 
+     */
+    create<T extends LivePushReceiptCreateArgs>(args: SelectSubset<T, LivePushReceiptCreateArgs<ExtArgs>>): Prisma__LivePushReceiptClient<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many LivePushReceipts.
+     * @param {LivePushReceiptCreateManyArgs} args - Arguments to create many LivePushReceipts.
+     * @example
+     * // Create many LivePushReceipts
+     * const livePushReceipt = await prisma.livePushReceipt.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends LivePushReceiptCreateManyArgs>(args?: SelectSubset<T, LivePushReceiptCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many LivePushReceipts and returns the data saved in the database.
+     * @param {LivePushReceiptCreateManyAndReturnArgs} args - Arguments to create many LivePushReceipts.
+     * @example
+     * // Create many LivePushReceipts
+     * const livePushReceipt = await prisma.livePushReceipt.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many LivePushReceipts and only return the `messageId`
+     * const livePushReceiptWithMessageIdOnly = await prisma.livePushReceipt.createManyAndReturn({
+     *   select: { messageId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends LivePushReceiptCreateManyAndReturnArgs>(args?: SelectSubset<T, LivePushReceiptCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a LivePushReceipt.
+     * @param {LivePushReceiptDeleteArgs} args - Arguments to delete one LivePushReceipt.
+     * @example
+     * // Delete one LivePushReceipt
+     * const LivePushReceipt = await prisma.livePushReceipt.delete({
+     *   where: {
+     *     // ... filter to delete one LivePushReceipt
+     *   }
+     * })
+     * 
+     */
+    delete<T extends LivePushReceiptDeleteArgs>(args: SelectSubset<T, LivePushReceiptDeleteArgs<ExtArgs>>): Prisma__LivePushReceiptClient<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one LivePushReceipt.
+     * @param {LivePushReceiptUpdateArgs} args - Arguments to update one LivePushReceipt.
+     * @example
+     * // Update one LivePushReceipt
+     * const livePushReceipt = await prisma.livePushReceipt.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends LivePushReceiptUpdateArgs>(args: SelectSubset<T, LivePushReceiptUpdateArgs<ExtArgs>>): Prisma__LivePushReceiptClient<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more LivePushReceipts.
+     * @param {LivePushReceiptDeleteManyArgs} args - Arguments to filter LivePushReceipts to delete.
+     * @example
+     * // Delete a few LivePushReceipts
+     * const { count } = await prisma.livePushReceipt.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends LivePushReceiptDeleteManyArgs>(args?: SelectSubset<T, LivePushReceiptDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more LivePushReceipts.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushReceiptUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many LivePushReceipts
+     * const livePushReceipt = await prisma.livePushReceipt.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends LivePushReceiptUpdateManyArgs>(args: SelectSubset<T, LivePushReceiptUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more LivePushReceipts and returns the data updated in the database.
+     * @param {LivePushReceiptUpdateManyAndReturnArgs} args - Arguments to update many LivePushReceipts.
+     * @example
+     * // Update many LivePushReceipts
+     * const livePushReceipt = await prisma.livePushReceipt.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more LivePushReceipts and only return the `messageId`
+     * const livePushReceiptWithMessageIdOnly = await prisma.livePushReceipt.updateManyAndReturn({
+     *   select: { messageId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends LivePushReceiptUpdateManyAndReturnArgs>(args: SelectSubset<T, LivePushReceiptUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one LivePushReceipt.
+     * @param {LivePushReceiptUpsertArgs} args - Arguments to update or create a LivePushReceipt.
+     * @example
+     * // Update or create a LivePushReceipt
+     * const livePushReceipt = await prisma.livePushReceipt.upsert({
+     *   create: {
+     *     // ... data to create a LivePushReceipt
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the LivePushReceipt we want to update
+     *   }
+     * })
+     */
+    upsert<T extends LivePushReceiptUpsertArgs>(args: SelectSubset<T, LivePushReceiptUpsertArgs<ExtArgs>>): Prisma__LivePushReceiptClient<$Result.GetResult<Prisma.$LivePushReceiptPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of LivePushReceipts.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushReceiptCountArgs} args - Arguments to filter LivePushReceipts to count.
+     * @example
+     * // Count the number of LivePushReceipts
+     * const count = await prisma.livePushReceipt.count({
+     *   where: {
+     *     // ... the filter for the LivePushReceipts we want to count
+     *   }
+     * })
+    **/
+    count<T extends LivePushReceiptCountArgs>(
+      args?: Subset<T, LivePushReceiptCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], LivePushReceiptCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a LivePushReceipt.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushReceiptAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends LivePushReceiptAggregateArgs>(args: Subset<T, LivePushReceiptAggregateArgs>): Prisma.PrismaPromise<GetLivePushReceiptAggregateType<T>>
+
+    /**
+     * Group by LivePushReceipt.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {LivePushReceiptGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends LivePushReceiptGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: LivePushReceiptGroupByArgs['orderBy'] }
+        : { orderBy?: LivePushReceiptGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, LivePushReceiptGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetLivePushReceiptGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the LivePushReceipt model
+   */
+  readonly fields: LivePushReceiptFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for LivePushReceipt.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__LivePushReceiptClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the LivePushReceipt model
+   */
+  interface LivePushReceiptFieldRefs {
+    readonly messageId: FieldRef<"LivePushReceipt", 'String'>
+    readonly bindingHash: FieldRef<"LivePushReceipt", 'String'>
+    readonly createdAtMs: FieldRef<"LivePushReceipt", 'BigInt'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * LivePushReceipt findUnique
+   */
+  export type LivePushReceiptFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushReceipt to fetch.
+     */
+    where: LivePushReceiptWhereUniqueInput
+  }
+
+  /**
+   * LivePushReceipt findUniqueOrThrow
+   */
+  export type LivePushReceiptFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushReceipt to fetch.
+     */
+    where: LivePushReceiptWhereUniqueInput
+  }
+
+  /**
+   * LivePushReceipt findFirst
+   */
+  export type LivePushReceiptFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushReceipt to fetch.
+     */
+    where?: LivePushReceiptWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LivePushReceipts to fetch.
+     */
+    orderBy?: LivePushReceiptOrderByWithRelationInput | LivePushReceiptOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for LivePushReceipts.
+     */
+    cursor?: LivePushReceiptWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LivePushReceipts from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LivePushReceipts.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of LivePushReceipts.
+     */
+    distinct?: LivePushReceiptScalarFieldEnum | LivePushReceiptScalarFieldEnum[]
+  }
+
+  /**
+   * LivePushReceipt findFirstOrThrow
+   */
+  export type LivePushReceiptFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushReceipt to fetch.
+     */
+    where?: LivePushReceiptWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LivePushReceipts to fetch.
+     */
+    orderBy?: LivePushReceiptOrderByWithRelationInput | LivePushReceiptOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for LivePushReceipts.
+     */
+    cursor?: LivePushReceiptWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LivePushReceipts from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LivePushReceipts.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of LivePushReceipts.
+     */
+    distinct?: LivePushReceiptScalarFieldEnum | LivePushReceiptScalarFieldEnum[]
+  }
+
+  /**
+   * LivePushReceipt findMany
+   */
+  export type LivePushReceiptFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter, which LivePushReceipts to fetch.
+     */
+    where?: LivePushReceiptWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of LivePushReceipts to fetch.
+     */
+    orderBy?: LivePushReceiptOrderByWithRelationInput | LivePushReceiptOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing LivePushReceipts.
+     */
+    cursor?: LivePushReceiptWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` LivePushReceipts from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` LivePushReceipts.
+     */
+    skip?: number
+    distinct?: LivePushReceiptScalarFieldEnum | LivePushReceiptScalarFieldEnum[]
+  }
+
+  /**
+   * LivePushReceipt create
+   */
+  export type LivePushReceiptCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * The data needed to create a LivePushReceipt.
+     */
+    data: XOR<LivePushReceiptCreateInput, LivePushReceiptUncheckedCreateInput>
+  }
+
+  /**
+   * LivePushReceipt createMany
+   */
+  export type LivePushReceiptCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many LivePushReceipts.
+     */
+    data: LivePushReceiptCreateManyInput | LivePushReceiptCreateManyInput[]
+  }
+
+  /**
+   * LivePushReceipt createManyAndReturn
+   */
+  export type LivePushReceiptCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * The data used to create many LivePushReceipts.
+     */
+    data: LivePushReceiptCreateManyInput | LivePushReceiptCreateManyInput[]
+  }
+
+  /**
+   * LivePushReceipt update
+   */
+  export type LivePushReceiptUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * The data needed to update a LivePushReceipt.
+     */
+    data: XOR<LivePushReceiptUpdateInput, LivePushReceiptUncheckedUpdateInput>
+    /**
+     * Choose, which LivePushReceipt to update.
+     */
+    where: LivePushReceiptWhereUniqueInput
+  }
+
+  /**
+   * LivePushReceipt updateMany
+   */
+  export type LivePushReceiptUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update LivePushReceipts.
+     */
+    data: XOR<LivePushReceiptUpdateManyMutationInput, LivePushReceiptUncheckedUpdateManyInput>
+    /**
+     * Filter which LivePushReceipts to update
+     */
+    where?: LivePushReceiptWhereInput
+    /**
+     * Limit how many LivePushReceipts to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * LivePushReceipt updateManyAndReturn
+   */
+  export type LivePushReceiptUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * The data used to update LivePushReceipts.
+     */
+    data: XOR<LivePushReceiptUpdateManyMutationInput, LivePushReceiptUncheckedUpdateManyInput>
+    /**
+     * Filter which LivePushReceipts to update
+     */
+    where?: LivePushReceiptWhereInput
+    /**
+     * Limit how many LivePushReceipts to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * LivePushReceipt upsert
+   */
+  export type LivePushReceiptUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * The filter to search for the LivePushReceipt to update in case it exists.
+     */
+    where: LivePushReceiptWhereUniqueInput
+    /**
+     * In case the LivePushReceipt found by the `where` argument doesn't exist, create a new LivePushReceipt with this data.
+     */
+    create: XOR<LivePushReceiptCreateInput, LivePushReceiptUncheckedCreateInput>
+    /**
+     * In case the LivePushReceipt was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<LivePushReceiptUpdateInput, LivePushReceiptUncheckedUpdateInput>
+  }
+
+  /**
+   * LivePushReceipt delete
+   */
+  export type LivePushReceiptDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+    /**
+     * Filter which LivePushReceipt to delete.
+     */
+    where: LivePushReceiptWhereUniqueInput
+  }
+
+  /**
+   * LivePushReceipt deleteMany
+   */
+  export type LivePushReceiptDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which LivePushReceipts to delete
+     */
+    where?: LivePushReceiptWhereInput
+    /**
+     * Limit how many LivePushReceipts to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * LivePushReceipt without action
+   */
+  export type LivePushReceiptDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the LivePushReceipt
+     */
+    select?: LivePushReceiptSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the LivePushReceipt
+     */
+    omit?: LivePushReceiptOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -72602,6 +74940,9 @@ export namespace Prisma {
     platform: 'platform',
     token: 'token',
     endpoint: 'endpoint',
+    revision: 'revision',
+    origin: 'origin',
+    apnsEnvironment: 'apnsEnvironment',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
   };
@@ -72772,6 +75113,29 @@ export namespace Prisma {
   };
 
   export type ScheduledPushReceiptScalarFieldEnum = (typeof ScheduledPushReceiptScalarFieldEnum)[keyof typeof ScheduledPushReceiptScalarFieldEnum]
+
+
+  export const LivePushOutboxScalarFieldEnum: {
+    id: 'id',
+    messageId: 'messageId',
+    createdAtMs: 'createdAtMs',
+    nextAttemptMs: 'nextAttemptMs',
+    attempts: 'attempts',
+    leaseToken: 'leaseToken',
+    leaseUntilMs: 'leaseUntilMs',
+    completedAtMs: 'completedAtMs'
+  };
+
+  export type LivePushOutboxScalarFieldEnum = (typeof LivePushOutboxScalarFieldEnum)[keyof typeof LivePushOutboxScalarFieldEnum]
+
+
+  export const LivePushReceiptScalarFieldEnum: {
+    messageId: 'messageId',
+    bindingHash: 'bindingHash',
+    createdAtMs: 'createdAtMs'
+  };
+
+  export type LivePushReceiptScalarFieldEnum = (typeof LivePushReceiptScalarFieldEnum)[keyof typeof LivePushReceiptScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -75964,6 +78328,9 @@ export namespace Prisma {
     platform?: StringFilter<"PushToken"> | string
     token?: StringFilter<"PushToken"> | string
     endpoint?: StringNullableFilter<"PushToken"> | string | null
+    revision?: IntFilter<"PushToken"> | number
+    origin?: StringNullableFilter<"PushToken"> | string | null
+    apnsEnvironment?: StringNullableFilter<"PushToken"> | string | null
     createdAt?: DateTimeFilter<"PushToken"> | Date | string
     updatedAt?: DateTimeFilter<"PushToken"> | Date | string
     readStateCapability?: XOR<PushReadStateCapabilityNullableScalarRelationFilter, PushReadStateCapabilityWhereInput> | null
@@ -75975,6 +78342,9 @@ export namespace Prisma {
     platform?: SortOrder
     token?: SortOrder
     endpoint?: SortOrderInput | SortOrder
+    revision?: SortOrder
+    origin?: SortOrderInput | SortOrder
+    apnsEnvironment?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     readStateCapability?: PushReadStateCapabilityOrderByWithRelationInput
@@ -75989,6 +78359,9 @@ export namespace Prisma {
     userId?: StringFilter<"PushToken"> | string
     platform?: StringFilter<"PushToken"> | string
     endpoint?: StringNullableFilter<"PushToken"> | string | null
+    revision?: IntFilter<"PushToken"> | number
+    origin?: StringNullableFilter<"PushToken"> | string | null
+    apnsEnvironment?: StringNullableFilter<"PushToken"> | string | null
     createdAt?: DateTimeFilter<"PushToken"> | Date | string
     updatedAt?: DateTimeFilter<"PushToken"> | Date | string
     readStateCapability?: XOR<PushReadStateCapabilityNullableScalarRelationFilter, PushReadStateCapabilityWhereInput> | null
@@ -76000,11 +78373,16 @@ export namespace Prisma {
     platform?: SortOrder
     token?: SortOrder
     endpoint?: SortOrderInput | SortOrder
+    revision?: SortOrder
+    origin?: SortOrderInput | SortOrder
+    apnsEnvironment?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     _count?: PushTokenCountOrderByAggregateInput
+    _avg?: PushTokenAvgOrderByAggregateInput
     _max?: PushTokenMaxOrderByAggregateInput
     _min?: PushTokenMinOrderByAggregateInput
+    _sum?: PushTokenSumOrderByAggregateInput
   }
 
   export type PushTokenScalarWhereWithAggregatesInput = {
@@ -76016,6 +78394,9 @@ export namespace Prisma {
     platform?: StringWithAggregatesFilter<"PushToken"> | string
     token?: StringWithAggregatesFilter<"PushToken"> | string
     endpoint?: StringNullableWithAggregatesFilter<"PushToken"> | string | null
+    revision?: IntWithAggregatesFilter<"PushToken"> | number
+    origin?: StringNullableWithAggregatesFilter<"PushToken"> | string | null
+    apnsEnvironment?: StringNullableWithAggregatesFilter<"PushToken"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"PushToken"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"PushToken"> | Date | string
   }
@@ -76822,6 +79203,120 @@ export namespace Prisma {
     NOT?: ScheduledPushReceiptScalarWhereWithAggregatesInput | ScheduledPushReceiptScalarWhereWithAggregatesInput[]
     messageId?: StringWithAggregatesFilter<"ScheduledPushReceipt"> | string
     bindingHash?: StringWithAggregatesFilter<"ScheduledPushReceipt"> | string
+  }
+
+  export type LivePushOutboxWhereInput = {
+    AND?: LivePushOutboxWhereInput | LivePushOutboxWhereInput[]
+    OR?: LivePushOutboxWhereInput[]
+    NOT?: LivePushOutboxWhereInput | LivePushOutboxWhereInput[]
+    id?: StringFilter<"LivePushOutbox"> | string
+    messageId?: StringFilter<"LivePushOutbox"> | string
+    createdAtMs?: BigIntFilter<"LivePushOutbox"> | bigint | number
+    nextAttemptMs?: BigIntFilter<"LivePushOutbox"> | bigint | number
+    attempts?: IntFilter<"LivePushOutbox"> | number
+    leaseToken?: StringNullableFilter<"LivePushOutbox"> | string | null
+    leaseUntilMs?: BigIntNullableFilter<"LivePushOutbox"> | bigint | number | null
+    completedAtMs?: BigIntNullableFilter<"LivePushOutbox"> | bigint | number | null
+  }
+
+  export type LivePushOutboxOrderByWithRelationInput = {
+    id?: SortOrder
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrderInput | SortOrder
+    leaseUntilMs?: SortOrderInput | SortOrder
+    completedAtMs?: SortOrderInput | SortOrder
+  }
+
+  export type LivePushOutboxWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    AND?: LivePushOutboxWhereInput | LivePushOutboxWhereInput[]
+    OR?: LivePushOutboxWhereInput[]
+    NOT?: LivePushOutboxWhereInput | LivePushOutboxWhereInput[]
+    messageId?: StringFilter<"LivePushOutbox"> | string
+    createdAtMs?: BigIntFilter<"LivePushOutbox"> | bigint | number
+    nextAttemptMs?: BigIntFilter<"LivePushOutbox"> | bigint | number
+    attempts?: IntFilter<"LivePushOutbox"> | number
+    leaseToken?: StringNullableFilter<"LivePushOutbox"> | string | null
+    leaseUntilMs?: BigIntNullableFilter<"LivePushOutbox"> | bigint | number | null
+    completedAtMs?: BigIntNullableFilter<"LivePushOutbox"> | bigint | number | null
+  }, "id">
+
+  export type LivePushOutboxOrderByWithAggregationInput = {
+    id?: SortOrder
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrderInput | SortOrder
+    leaseUntilMs?: SortOrderInput | SortOrder
+    completedAtMs?: SortOrderInput | SortOrder
+    _count?: LivePushOutboxCountOrderByAggregateInput
+    _avg?: LivePushOutboxAvgOrderByAggregateInput
+    _max?: LivePushOutboxMaxOrderByAggregateInput
+    _min?: LivePushOutboxMinOrderByAggregateInput
+    _sum?: LivePushOutboxSumOrderByAggregateInput
+  }
+
+  export type LivePushOutboxScalarWhereWithAggregatesInput = {
+    AND?: LivePushOutboxScalarWhereWithAggregatesInput | LivePushOutboxScalarWhereWithAggregatesInput[]
+    OR?: LivePushOutboxScalarWhereWithAggregatesInput[]
+    NOT?: LivePushOutboxScalarWhereWithAggregatesInput | LivePushOutboxScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"LivePushOutbox"> | string
+    messageId?: StringWithAggregatesFilter<"LivePushOutbox"> | string
+    createdAtMs?: BigIntWithAggregatesFilter<"LivePushOutbox"> | bigint | number
+    nextAttemptMs?: BigIntWithAggregatesFilter<"LivePushOutbox"> | bigint | number
+    attempts?: IntWithAggregatesFilter<"LivePushOutbox"> | number
+    leaseToken?: StringNullableWithAggregatesFilter<"LivePushOutbox"> | string | null
+    leaseUntilMs?: BigIntNullableWithAggregatesFilter<"LivePushOutbox"> | bigint | number | null
+    completedAtMs?: BigIntNullableWithAggregatesFilter<"LivePushOutbox"> | bigint | number | null
+  }
+
+  export type LivePushReceiptWhereInput = {
+    AND?: LivePushReceiptWhereInput | LivePushReceiptWhereInput[]
+    OR?: LivePushReceiptWhereInput[]
+    NOT?: LivePushReceiptWhereInput | LivePushReceiptWhereInput[]
+    messageId?: StringFilter<"LivePushReceipt"> | string
+    bindingHash?: StringFilter<"LivePushReceipt"> | string
+    createdAtMs?: BigIntFilter<"LivePushReceipt"> | bigint | number
+  }
+
+  export type LivePushReceiptOrderByWithRelationInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+    createdAtMs?: SortOrder
+  }
+
+  export type LivePushReceiptWhereUniqueInput = Prisma.AtLeast<{
+    messageId_bindingHash?: LivePushReceiptMessageIdBindingHashCompoundUniqueInput
+    AND?: LivePushReceiptWhereInput | LivePushReceiptWhereInput[]
+    OR?: LivePushReceiptWhereInput[]
+    NOT?: LivePushReceiptWhereInput | LivePushReceiptWhereInput[]
+    messageId?: StringFilter<"LivePushReceipt"> | string
+    bindingHash?: StringFilter<"LivePushReceipt"> | string
+    createdAtMs?: BigIntFilter<"LivePushReceipt"> | bigint | number
+  }, "messageId_bindingHash">
+
+  export type LivePushReceiptOrderByWithAggregationInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+    createdAtMs?: SortOrder
+    _count?: LivePushReceiptCountOrderByAggregateInput
+    _avg?: LivePushReceiptAvgOrderByAggregateInput
+    _max?: LivePushReceiptMaxOrderByAggregateInput
+    _min?: LivePushReceiptMinOrderByAggregateInput
+    _sum?: LivePushReceiptSumOrderByAggregateInput
+  }
+
+  export type LivePushReceiptScalarWhereWithAggregatesInput = {
+    AND?: LivePushReceiptScalarWhereWithAggregatesInput | LivePushReceiptScalarWhereWithAggregatesInput[]
+    OR?: LivePushReceiptScalarWhereWithAggregatesInput[]
+    NOT?: LivePushReceiptScalarWhereWithAggregatesInput | LivePushReceiptScalarWhereWithAggregatesInput[]
+    messageId?: StringWithAggregatesFilter<"LivePushReceipt"> | string
+    bindingHash?: StringWithAggregatesFilter<"LivePushReceipt"> | string
+    createdAtMs?: BigIntWithAggregatesFilter<"LivePushReceipt"> | bigint | number
   }
 
   export type UserCreateInput = {
@@ -80132,6 +82627,9 @@ export namespace Prisma {
     platform: string
     token: string
     endpoint?: string | null
+    revision?: number
+    origin?: string | null
+    apnsEnvironment?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     readStateCapability?: PushReadStateCapabilityCreateNestedOneWithoutTokenInput
@@ -80143,6 +82641,9 @@ export namespace Prisma {
     platform: string
     token: string
     endpoint?: string | null
+    revision?: number
+    origin?: string | null
+    apnsEnvironment?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     readStateCapability?: PushReadStateCapabilityUncheckedCreateNestedOneWithoutTokenInput
@@ -80154,6 +82655,9 @@ export namespace Prisma {
     platform?: StringFieldUpdateOperationsInput | string
     token?: StringFieldUpdateOperationsInput | string
     endpoint?: NullableStringFieldUpdateOperationsInput | string | null
+    revision?: IntFieldUpdateOperationsInput | number
+    origin?: NullableStringFieldUpdateOperationsInput | string | null
+    apnsEnvironment?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     readStateCapability?: PushReadStateCapabilityUpdateOneWithoutTokenNestedInput
@@ -80165,6 +82669,9 @@ export namespace Prisma {
     platform?: StringFieldUpdateOperationsInput | string
     token?: StringFieldUpdateOperationsInput | string
     endpoint?: NullableStringFieldUpdateOperationsInput | string | null
+    revision?: IntFieldUpdateOperationsInput | number
+    origin?: NullableStringFieldUpdateOperationsInput | string | null
+    apnsEnvironment?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     readStateCapability?: PushReadStateCapabilityUncheckedUpdateOneWithoutTokenNestedInput
@@ -80176,6 +82683,9 @@ export namespace Prisma {
     platform: string
     token: string
     endpoint?: string | null
+    revision?: number
+    origin?: string | null
+    apnsEnvironment?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -80186,6 +82696,9 @@ export namespace Prisma {
     platform?: StringFieldUpdateOperationsInput | string
     token?: StringFieldUpdateOperationsInput | string
     endpoint?: NullableStringFieldUpdateOperationsInput | string | null
+    revision?: IntFieldUpdateOperationsInput | number
+    origin?: NullableStringFieldUpdateOperationsInput | string | null
+    apnsEnvironment?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -80196,6 +82709,9 @@ export namespace Prisma {
     platform?: StringFieldUpdateOperationsInput | string
     token?: StringFieldUpdateOperationsInput | string
     endpoint?: NullableStringFieldUpdateOperationsInput | string | null
+    revision?: IntFieldUpdateOperationsInput | number
+    origin?: NullableStringFieldUpdateOperationsInput | string | null
+    apnsEnvironment?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -81013,6 +83529,125 @@ export namespace Prisma {
   export type ScheduledPushReceiptUncheckedUpdateManyInput = {
     messageId?: StringFieldUpdateOperationsInput | string
     bindingHash?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type LivePushOutboxCreateInput = {
+    id?: string
+    messageId: string
+    createdAtMs: bigint | number
+    nextAttemptMs: bigint | number
+    attempts?: number
+    leaseToken?: string | null
+    leaseUntilMs?: bigint | number | null
+    completedAtMs?: bigint | number | null
+  }
+
+  export type LivePushOutboxUncheckedCreateInput = {
+    id?: string
+    messageId: string
+    createdAtMs: bigint | number
+    nextAttemptMs: bigint | number
+    attempts?: number
+    leaseToken?: string | null
+    leaseUntilMs?: bigint | number | null
+    completedAtMs?: bigint | number | null
+  }
+
+  export type LivePushOutboxUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    nextAttemptMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    attempts?: IntFieldUpdateOperationsInput | number
+    leaseToken?: NullableStringFieldUpdateOperationsInput | string | null
+    leaseUntilMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+    completedAtMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  }
+
+  export type LivePushOutboxUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    nextAttemptMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    attempts?: IntFieldUpdateOperationsInput | number
+    leaseToken?: NullableStringFieldUpdateOperationsInput | string | null
+    leaseUntilMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+    completedAtMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  }
+
+  export type LivePushOutboxCreateManyInput = {
+    id?: string
+    messageId: string
+    createdAtMs: bigint | number
+    nextAttemptMs: bigint | number
+    attempts?: number
+    leaseToken?: string | null
+    leaseUntilMs?: bigint | number | null
+    completedAtMs?: bigint | number | null
+  }
+
+  export type LivePushOutboxUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    nextAttemptMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    attempts?: IntFieldUpdateOperationsInput | number
+    leaseToken?: NullableStringFieldUpdateOperationsInput | string | null
+    leaseUntilMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+    completedAtMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  }
+
+  export type LivePushOutboxUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    messageId?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    nextAttemptMs?: BigIntFieldUpdateOperationsInput | bigint | number
+    attempts?: IntFieldUpdateOperationsInput | number
+    leaseToken?: NullableStringFieldUpdateOperationsInput | string | null
+    leaseUntilMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+    completedAtMs?: NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  }
+
+  export type LivePushReceiptCreateInput = {
+    messageId: string
+    bindingHash: string
+    createdAtMs: bigint | number
+  }
+
+  export type LivePushReceiptUncheckedCreateInput = {
+    messageId: string
+    bindingHash: string
+    createdAtMs: bigint | number
+  }
+
+  export type LivePushReceiptUpdateInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    bindingHash?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+  }
+
+  export type LivePushReceiptUncheckedUpdateInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    bindingHash?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+  }
+
+  export type LivePushReceiptCreateManyInput = {
+    messageId: string
+    bindingHash: string
+    createdAtMs: bigint | number
+  }
+
+  export type LivePushReceiptUpdateManyMutationInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    bindingHash?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
+  }
+
+  export type LivePushReceiptUncheckedUpdateManyInput = {
+    messageId?: StringFieldUpdateOperationsInput | string
+    bindingHash?: StringFieldUpdateOperationsInput | string
+    createdAtMs?: BigIntFieldUpdateOperationsInput | bigint | number
   }
 
   export type StringFilter<$PrismaModel = never> = {
@@ -83295,8 +85930,15 @@ export namespace Prisma {
     platform?: SortOrder
     token?: SortOrder
     endpoint?: SortOrder
+    revision?: SortOrder
+    origin?: SortOrder
+    apnsEnvironment?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+  }
+
+  export type PushTokenAvgOrderByAggregateInput = {
+    revision?: SortOrder
   }
 
   export type PushTokenMaxOrderByAggregateInput = {
@@ -83305,6 +85947,9 @@ export namespace Prisma {
     platform?: SortOrder
     token?: SortOrder
     endpoint?: SortOrder
+    revision?: SortOrder
+    origin?: SortOrder
+    apnsEnvironment?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -83315,8 +85960,15 @@ export namespace Prisma {
     platform?: SortOrder
     token?: SortOrder
     endpoint?: SortOrder
+    revision?: SortOrder
+    origin?: SortOrder
+    apnsEnvironment?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+  }
+
+  export type PushTokenSumOrderByAggregateInput = {
+    revision?: SortOrder
   }
 
   export type MessageSendOperationSenderIdClientIdCompoundUniqueInput = {
@@ -83812,6 +86464,86 @@ export namespace Prisma {
   export type ScheduledPushReceiptMinOrderByAggregateInput = {
     messageId?: SortOrder
     bindingHash?: SortOrder
+  }
+
+  export type LivePushOutboxCountOrderByAggregateInput = {
+    id?: SortOrder
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrder
+    leaseUntilMs?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type LivePushOutboxAvgOrderByAggregateInput = {
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseUntilMs?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type LivePushOutboxMaxOrderByAggregateInput = {
+    id?: SortOrder
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrder
+    leaseUntilMs?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type LivePushOutboxMinOrderByAggregateInput = {
+    id?: SortOrder
+    messageId?: SortOrder
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseToken?: SortOrder
+    leaseUntilMs?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type LivePushOutboxSumOrderByAggregateInput = {
+    createdAtMs?: SortOrder
+    nextAttemptMs?: SortOrder
+    attempts?: SortOrder
+    leaseUntilMs?: SortOrder
+    completedAtMs?: SortOrder
+  }
+
+  export type LivePushReceiptMessageIdBindingHashCompoundUniqueInput = {
+    messageId: string
+    bindingHash: string
+  }
+
+  export type LivePushReceiptCountOrderByAggregateInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+    createdAtMs?: SortOrder
+  }
+
+  export type LivePushReceiptAvgOrderByAggregateInput = {
+    createdAtMs?: SortOrder
+  }
+
+  export type LivePushReceiptMaxOrderByAggregateInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+    createdAtMs?: SortOrder
+  }
+
+  export type LivePushReceiptMinOrderByAggregateInput = {
+    messageId?: SortOrder
+    bindingHash?: SortOrder
+    createdAtMs?: SortOrder
+  }
+
+  export type LivePushReceiptSumOrderByAggregateInput = {
+    createdAtMs?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {
@@ -97658,6 +100390,9 @@ export namespace Prisma {
     platform: string
     token: string
     endpoint?: string | null
+    revision?: number
+    origin?: string | null
+    apnsEnvironment?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -97668,6 +100403,9 @@ export namespace Prisma {
     platform: string
     token: string
     endpoint?: string | null
+    revision?: number
+    origin?: string | null
+    apnsEnvironment?: string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -97694,6 +100432,9 @@ export namespace Prisma {
     platform?: StringFieldUpdateOperationsInput | string
     token?: StringFieldUpdateOperationsInput | string
     endpoint?: NullableStringFieldUpdateOperationsInput | string | null
+    revision?: IntFieldUpdateOperationsInput | number
+    origin?: NullableStringFieldUpdateOperationsInput | string | null
+    apnsEnvironment?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -97704,6 +100445,9 @@ export namespace Prisma {
     platform?: StringFieldUpdateOperationsInput | string
     token?: StringFieldUpdateOperationsInput | string
     endpoint?: NullableStringFieldUpdateOperationsInput | string | null
+    revision?: IntFieldUpdateOperationsInput | number
+    origin?: NullableStringFieldUpdateOperationsInput | string | null
+    apnsEnvironment?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }

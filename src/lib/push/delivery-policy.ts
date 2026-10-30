@@ -1,8 +1,10 @@
 /** Provider queues are bounded even for permanent messages. An explicit invalid
- * or expired deadline never becomes the provider's default multi-week lifetime. */
+ * or expired deadline never becomes the provider's default multi-week lifetime.
+ * Retractions (banner cancels) get a short window: they are only useful while
+ * the tray entry they cancel can still be showing. */
 export function pushDeliveryWindow(payload: { kind: string; expiresAt?: string }, now = Date.now()):
   { ttlSeconds: number; expiresAtSeconds: number } | null {
-  const cap = payload.kind === 'message' || payload.kind === 'read-state' ? 3600 : 60
+  const cap = payload.kind === 'message' || payload.kind === 'read-state' ? 3600 : payload.kind === 'retract' ? 300 : 60
   let ttlSeconds = cap
   if (payload.expiresAt !== undefined) {
     const deadline = typeof payload.expiresAt === 'string' ? Date.parse(payload.expiresAt) : NaN

@@ -12,6 +12,7 @@
 // so the client can append it with zero reshaping.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { deliverLivePush } from '@/lib/live-push-outbox'
 import {
   mapMessage,
   memberIdsOf,
@@ -218,6 +219,9 @@ export async function POST(req: Request) {
     recipientIds: recipients,
     conversationId,
   })
+
+  // Machine producers ride the same remote push path as human sends.
+  void deliverLivePush(db, created.message.id)
 
   return NextResponse.json(
     {

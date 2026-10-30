@@ -39,6 +39,7 @@ async function fixture(run) {
   await db.webhook.create({data:{id:'hook',conversationId:'room',name:'Build bot',token:'synthetic-hook',createdBy:'me'}})
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
   const events=[],bindings={db,clipUtf16,messageDeliveryDecision,roomControl,requireActionOwner,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',mapAutomation:r=>r,
+  deliverLivePush:async()=>{},
    AVATAR_COLORS:['#F2A65A'],MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},mapMessage:r=>r,memberIdsOf:async()=>['me','member'],notifySocket:async(...args)=>events.push(args)}
   const {createAutomationReply,triggerMatches}=await load('src/lib/automation-delivery.ts',{...bindings,messageDeliveryDecision,threadRootAvailable},'({createAutomationReply,triggerMatches})')
   const a=await load('src/app/api/conversations/[id]/automations/route.ts',bindings,'({GET,POST})')

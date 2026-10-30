@@ -802,6 +802,19 @@ model PushToken {
   platform  String // web|android|ios
   token     String   @unique
   endpoint  String? // Web Push endpoint URL (web platform only)
+  // Monotonic rebind counter. `updatedAt` alone cannot order same-millisecond
+  // registration revisions, so an in-flight provider prune must ALSO match the
+  // revision it snapshotted - a same-ms rebind increments this and survives.
+  revision  Int      @default(1)
+  // Gateway origin this registration was created against (scheme+host[+port]).
+  // Push payloads carry it so native clients can drop banners from a foreign
+  // deployment that happens to reuse conversation/user ids. Null = legacy row
+  // (pre-origin registrations; clients accept and the next rebind stamps it).
+  origin    String?
+  // APNs environment this iOS token belongs to ('sandbox'|'production').
+  // Client-declared from build configuration (advisory); null = inherit the
+  // deployment's PULSE_APNS_ENVIRONMENT.
+  apnsEnvironment String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -961,5 +974,31 @@ model ScheduledDeliveryNotice {
 model ScheduledPushReceipt {
   messageId   String
   bindingHash String
+  @@id([messageId, bindingHash])
+}
+
+// Durable retry for LIVE message-push fanouts whose provider delivery failed
+// (transient FCM/APNs/network errors). The first attempt stays inline; only a
+// failed report enqueues here. The drain RE-PLANS with current policy, so a
+// mute/block/leave that landed after the live attempt is honored at retry.
+model LivePushOutbox {
+  id            String  @id @default(cuid())
+  messageId     String
+  createdAtMs   BigInt
+  nextAttemptMs BigInt
+  attempts      Int     @default(0)
+  leaseToken    String?
+  leaseUntilMs  BigInt?
+  completedAtMs BigInt?
+  @@index([completedAtMs, nextAttemptMs, id], map: "LivePushOutbox_ready")
+}
+
+// Idempotence receipts for live push retries (same binding-hash contract as
+// ScheduledPushReceipt; separate table so the scheduled 7-day cleanup joins
+// only its own notices).
+model LivePushReceipt {
+  messageId   String
+  bindingHash String
+  createdAtMs BigInt
   @@id([messageId, bindingHash])
 }

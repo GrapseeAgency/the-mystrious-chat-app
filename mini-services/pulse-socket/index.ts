@@ -1075,8 +1075,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   // 3b. online probe — Next.js push fanout subtracts these ids before
   // sending remote pushes (an online socket already hears realtime events).
+  // `?all=1` (same shared-secret gate) returns the UNFILTERED presence set:
+  // suppression is an internal dedup decision, and a presence-hiding online
+  // user must still suppress their own legacy/web pushes or they receive
+  // duplicate attention (socket alert + OS banner) for every message.
   if (req.method === 'GET' && pathname === '/online') {
-    const snapshot = await visibleOnlineIds()
+    const snapshot = searchParams.get('all') === '1'
+      ? Array.from(onlineUsers.keys()).sort()
+      : await visibleOnlineIds()
     sendJson(res, 200, { ok: true, onlineUserIds: snapshot })
     return
   }

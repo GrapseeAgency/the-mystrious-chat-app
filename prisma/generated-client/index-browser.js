@@ -573,6 +573,9 @@ exports.Prisma.PushTokenScalarFieldEnum = {
   platform: 'platform',
   token: 'token',
   endpoint: 'endpoint',
+  revision: 'revision',
+  origin: 'origin',
+  apnsEnvironment: 'apnsEnvironment',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -694,6 +697,23 @@ exports.Prisma.ScheduledPushReceiptScalarFieldEnum = {
   bindingHash: 'bindingHash'
 };
 
+exports.Prisma.LivePushOutboxScalarFieldEnum = {
+  id: 'id',
+  messageId: 'messageId',
+  createdAtMs: 'createdAtMs',
+  nextAttemptMs: 'nextAttemptMs',
+  attempts: 'attempts',
+  leaseToken: 'leaseToken',
+  leaseUntilMs: 'leaseUntilMs',
+  completedAtMs: 'completedAtMs'
+};
+
+exports.Prisma.LivePushReceiptScalarFieldEnum = {
+  messageId: 'messageId',
+  bindingHash: 'bindingHash',
+  createdAtMs: 'createdAtMs'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -764,7 +784,9 @@ exports.Prisma.ModelName = {
   ComposerOperation: 'ComposerOperation',
   ThreadDraftState: 'ThreadDraftState',
   ScheduledDeliveryNotice: 'ScheduledDeliveryNotice',
-  ScheduledPushReceipt: 'ScheduledPushReceipt'
+  ScheduledPushReceipt: 'ScheduledPushReceipt',
+  LivePushOutbox: 'LivePushOutbox',
+  LivePushReceipt: 'LivePushReceipt'
 };
 
 /**

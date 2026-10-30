@@ -6,6 +6,7 @@ import { clipUtf16 } from '@/lib/text-limits'
 // every answer comes from the z-ai-web-dev-sdk chat completion.
 import ZAI from 'z-ai-web-dev-sdk'
 import { db } from '@/lib/db'
+import { deliverLivePush } from './live-push-outbox.ts'
 import { createBotReply, prepareAiContext } from '@/lib/bot-delivery'
 import {
   mapMessage,
@@ -135,5 +136,7 @@ async function runReply(conversationId: string, trigger: ChatMessage): Promise<v
     await notifySocket('message:new', recipients, {
       type: 'message:new', message: mapMessage(created), recipientIds: recipients, conversationId,
     })
+    // Machine producers ride the same remote push path as human sends.
+    void deliverLivePush(db, created.id)
   } finally { inFlight.delete(conversationId) }
 }

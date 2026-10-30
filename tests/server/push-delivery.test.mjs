@@ -74,12 +74,14 @@ async function fixture(run) {
  try {
   await db.$executeRawUnsafe('CREATE TABLE PushToken(id TEXT PRIMARY KEY,userId TEXT,platform TEXT,token TEXT UNIQUE,endpoint TEXT,createdAt DATETIME,updatedAt DATETIME)')
   await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261026_native_read_push.sql',import.meta.url),'utf8'))
+  for(const statement of (await readFile(new URL('../../prisma/patches/20261031_push_registry_revision.sql',import.meta.url),'utf8'))
+    .replace(/^--.*$/gm,'').split(';').map(s=>s.trim()).filter(Boolean)) await db.$executeRawUnsafe(statement)
   const seed=async(id,platform='android')=>db.pushToken.create({data:{id,userId:'owner',platform,token:`token-${id}`,createdAt:new Date(now-10000),updatedAt:new Date(now-1000)}})
   const source=(await readFile(new URL('../../src/lib/push/transport.ts',import.meta.url),'utf8'))
    .replace(/^import .*$/gm,'').replace(/^export /gm,'')
   const requests=[];let androidResponse={status:200,body:{}};let iosResponse={status:200,body:null};let duringSend=async()=>{};let online=[]
   const fetch=async(url,options)=>{
-   if(url.endsWith('/online'))return new Response(JSON.stringify({onlineUserIds:online}))
+   if(url.includes('/online'))return new Response(JSON.stringify({onlineUserIds:online}))
    requests.push({platform:'android',payload:JSON.parse(options.body)})
    await duringSend();return new Response(JSON.stringify(androidResponse.body),{status:androidResponse.status})
   }
@@ -207,7 +209,7 @@ async function registrationFixture(run) {
   const bindings={db:h.db,NextResponse:{json:Response.json},safeJson:req=>req.json(),strField:v=>typeof v==='string'?v.trim():'',
    requireActionOwner:async(req,owner)=>{await duringAuth();return req.headers.get('authorization')===`Bearer ${owner}`?null:Response.json({error:'denied'},{status:403})}}
   const methods=new Function(...Object.keys(bindings),source+';return {POST,DELETE}')(...Object.values(bindings))
-  const request=(method,body,owner='owner')=>methods[method](new Request('https://pulse.test/api/push/register',{method,headers:{authorization:`Bearer ${owner}`},body:JSON.stringify(body)}))
+  const request=(method,body,owner='owner')=>methods[method](new Request('https://pulse.test/api/push/register',{method,headers:{authorization:`Bearer ${owner}`,'x-forwarded-proto':'https','x-forwarded-host':'pulse.test'},body:JSON.stringify(body)}))
   await run({...h,request,onAuth:f=>duringAuth=f})
  })
 }
@@ -253,4 +255,86 @@ test('an online desktop cannot suppress messages to opted-in native phones',()=>
  const report=await h.fanoutPush(['owner'],payload)
  assert.equal(report.sent,2);assert.equal(report.skipped,2)
  assert.deepEqual(h.requests.map(r=>r.platform).sort(),['android','ios'])
+}))
+
+test('a same-millisecond rebind survives a stale unregistered prune via the revision counter',()=>fixture(async h=>{
+  await h.seed('a');h.setAndroid({status:404,body:unregistered})
+  h.onSend(async()=>{await h.db.pushToken.update({where:{id:'a'},data:{userId:'another-owner',revision:2}})})
+  const report=await h.fanoutPush(['owner'],payload)
+  assert.equal(report.pruned,0)
+  assert.equal((await h.db.pushToken.findUnique({where:{id:'a'}})).userId,'another-owner')
+}))
+test('call pushes reach opted-in native devices of an online user (a backgrounded phone is not starved)',()=>fixture(async h=>{
+  for(const [id,platform] of [['phone','android'],['ios','ios'],['web','web'],['legacy','android']]) await h.seed(id,platform)
+  for(const tokenId of ['phone','ios']) await h.db.pushReadStateCapability.create({data:{tokenId,version:1}})
+  h.setOnline(['owner'])
+  const ring={kind:'gcall',title:'Room',body:'Caller started a call',conversationId:'room',callId:'c1',callKind:'voice',callerName:'Caller'}
+  const report=await h.fanoutPush(['owner'],ring)
+  assert.equal(report.sent,2);assert.equal(report.skipped,2)
+  assert.deepEqual(h.requests.map(r=>r.platform).sort(),['android','ios'])
+}))
+test('a mute or departure landing after planning is honored at delivery time',()=>fixture(async h=>{
+  await h.db.$executeRawUnsafe('CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY,userId TEXT,conversationId TEXT,mutedUntil DATETIME)')
+  await h.db.$executeRawUnsafe("INSERT INTO ConversationParticipant VALUES ('p1','owner','room',NULL)")
+  await h.seed('a')
+  await h.db.conversationParticipant.updateMany({ where: { userId: 'owner' }, data: { mutedUntil: new Date(Date.now() + 3_600_000) } })
+  let report=await h.fanoutPush(['owner'],payload)
+  assert.equal(report.sent,0);assert.equal(h.requests.length,0)
+  await h.db.$executeRawUnsafe('DELETE FROM ConversationParticipant')
+  report=await h.fanoutPush(['owner'],payload)
+  assert.equal(report.sent,0);assert.equal(h.requests.length,0)
+  await h.db.$executeRawUnsafe("INSERT INTO ConversationParticipant VALUES ('p2','owner','room',NULL)")
+  report=await h.fanoutPush(['owner'],payload)
+  assert.equal(report.sent,1);assert.equal(h.requests.length,1)
+}))
+test('retract pushes are data-only on Android, background-silent on iOS and bypass online suppression',()=>fixture(async h=>{
+  await h.seed('a');await h.seed('i','ios')
+  const retract={kind:'retract',title:'',body:'',conversationId:'room',messageId:'message'}
+  await h.sendAndroid('token-a',{...retract,recipientUserId:'owner'})
+  const android=h.requests[0].payload.message
+  assert.equal(android.notification,undefined)
+  assert.equal(android.data.kind,'retract')
+  assert.equal(android.data.messageId,'message')
+  assert.equal(android.android.priority,'normal')
+  await h.sendIos('token-i',{...retract,recipientUserId:'owner'})
+  const ios=h.requests[1]
+  assert.deepEqual(ios.payload.aps,{'content-available':1})
+  assert.equal(ios.headers['apns-push-type'],'background')
+  assert.equal(ios.headers['apns-priority'],'5')
+  assert.equal(ios.payload.kind,'retract')
+  assert.equal(pushDeliveryWindow(retract,now).ttlSeconds,300)
+  h.setOnline(['owner'])
+  h.requests.length=0
+  const report=await h.fanoutPush(['owner'],retract)
+  assert.equal(report.sent,2)
+  assert.deepEqual(h.requests.map(r=>r.platform).sort(),['android','ios'])
+}))
+test('per-message APNs collapse id and registry origin/environment ride every message payload',()=>fixture(async h=>{
+  await h.seed('i','ios');await h.seed('a2')
+  await h.db.pushToken.update({where:{id:'i'},data:{origin:'https://gateway-a.test',apnsEnvironment:'sandbox'}})
+  await h.fanoutPush(['owner'],{...payload,recipientUserId:'owner',messageId:'message'})
+  const ios=h.requests.find(r=>r.platform==='ios')
+  assert.equal(ios.headers['apns-collapse-id'],'pulse-msg-v1/owner/room/message')
+  assert.equal(ios.payload.origin,'https://gateway-a.test')
+  assert.equal(ios.origin,'https://api.sandbox.push.apple.com')
+  await h.db.pushToken.update({where:{id:'a2'},data:{origin:'https://gateway-a.test'}})
+  await h.fanoutPush(['owner'],{...payload,recipientUserId:'owner',messageId:'message'})
+  const android=h.requests.filter(r=>r.platform==='android' && r.payload.message.token==='token-a2').at(-1).payload.message
+  assert.equal(android.data.origin,'https://gateway-a.test')
+  assert.equal(h.requests.find(r=>r.platform==='ios').payload.aps.alert.body,payload.body)
+}))
+
+test('registration rebinds increment revision, stamp the gateway origin and route per-token APNs environment',()=>registrationFixture(async h=>{
+  const body={userId:'owner',platform:'ios',token:'tok-1',readStateHints:1}
+  assert.equal((await h.request('POST',body)).status,200)
+  const first=await h.db.pushToken.findUnique({where:{token:'tok-1'}})
+  assert.equal(first.revision,1);assert.equal(first.apnsEnvironment,null);assert.equal(first.origin,'https://pulse.test')
+  assert.equal((await h.request('POST',{...body,apnsEnvironment:'sandbox'})).status,200)
+  const second=await h.db.pushToken.findUnique({where:{token:'tok-1'}})
+  assert.equal(second.revision,2);assert.equal(second.apnsEnvironment,'sandbox')
+  assert.equal((await h.request('POST',{...body,platform:'android',apnsEnvironment:'sandbox'})).status,400)
+  assert.equal((await h.request('POST',{...body,apnsEnvironment:'development'})).status,400)
+  assert.equal((await h.request('POST',{...body,platform:'android'})).status,200)
+  const third=await h.db.pushToken.findUnique({where:{token:'tok-1'}})
+  assert.equal(third.revision,3);assert.equal(third.apnsEnvironment,null);assert.equal(third.platform,'android')
 }))

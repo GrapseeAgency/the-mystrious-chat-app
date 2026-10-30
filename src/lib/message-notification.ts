@@ -6,10 +6,14 @@ import { clipUtf16 } from './text-limits.ts'
 /** Only the delivery capability is required; no provider SDK is loaded here. */
 type NotificationFanout = (recipients: string[], payload: {
   kind: 'message'; title: string; body: string; conversationId: string; messageId: string; expiresAt?: string;
-}, options: { bodyFor: (userId: string) => string }) => Promise<unknown>
+}, options: { bodyFor: (userId: string) => string; alreadyDelivered?: (bindingHash: string) => Promise<boolean>;
+  recordDelivered?: (bindingHash: string) => Promise<void>; limit?: number; afterTokenId?: string | null }) => Promise<{
+  failed?: number; sent?: number; skipped?: number; devices?: number } | unknown>
 
 /** Re-read the committed message and CURRENT room recipients before a push.
- * Snapshot planning is atomic; provider delivery is not a durable retry outbox. */
+ * Snapshot planning is atomic; provider delivery failures are retried durably
+ * by the live-push outbox drain (live-push-outbox.ts), which re-runs THIS
+ * planner (current mute/block/membership) before every retry. */
 export async function deliverMessageNotification(
   db: Pick<PrismaClient, '$transaction'>, fanout: NotificationFanout, messageId: string,
   clock: () => Date = () => new Date(),

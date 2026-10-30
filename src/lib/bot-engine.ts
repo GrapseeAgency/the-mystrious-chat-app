@@ -8,6 +8,7 @@ import { clipUtf16 } from '@/lib/text-limits'
 // server-side or read from Prisma - zero external APIs, zero mocks.
 // Never throws: callers can safely await it inside the send pipeline.
 import { db } from '@/lib/db'
+import { deliverLivePush } from './live-push-outbox.ts'
 import { botReplyContext, createBotReply, type BotTrigger, type BotReply } from '@/lib/bot-delivery'
 import {
   mapMessage,
@@ -308,6 +309,9 @@ async function insertBotMessage(conversationId: string, botId: string, trigger: 
   await notifySocket('message:new', recipients, {
     type: 'message:new', message: mapMessage(created), recipientIds: recipients, conversationId,
   })
+  // Machine producers ride the same remote push path as human sends (the
+  // planner re-reads current mute/block/membership/preview privacy).
+  void deliverLivePush(db, created.id)
 }
 
 // Command handlers (pure text builders) 

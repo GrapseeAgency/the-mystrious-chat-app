@@ -32,26 +32,56 @@ function payloadOf(event) {
 
 self.addEventListener('push', (event) => {
   const payload = payloadOf(event) || {}
+  // Retraction: close any shown notification for the retracted message
+  // instead of displaying anything new. Provider TTL cannot erase a shown
+  // notification; this is the recall path for deleted messages.
+  if (payload.kind === 'retract') {
+    const messageId = typeof payload.messageId === 'string' ? payload.messageId : ''
+    const conversationId = typeof payload.conversationId === 'string' ? payload.conversationId : ''
+    event.waitUntil((async () => {
+      const shown = await self.registration.getNotifications()
+      for (const notification of shown) {
+        const data = notification.data || {}
+        if ((messageId && data.messageId === messageId) ||
+            (!messageId && conversationId && data.conversationId === conversationId)) {
+          notification.close()
+        }
+      }
+    })())
+    return
+  }
   const title = typeof payload.title === 'string' && payload.title ? payload.title : 'Pulse'
   const body = typeof payload.body === 'string' && payload.body ? payload.body : 'New activity'
   const conversationId = typeof payload.conversationId === 'string' ? payload.conversationId : ''
-  event.waitUntil(
-    self.registration.showNotification(title, {
+  const messageId = typeof payload.messageId === 'string' ? payload.messageId : ''
+  event.waitUntil((async () => {
+    // Socket/push dedup: a FOCUSED window already receives the realtime
+    // event (in-app ping/haptic); a banner on top of it is duplicate
+    // attention. No focused window (tabs closed/backgrounded) → show.
+    try {
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      if (clientList.some((client) => client.focused)) return
+    } catch {
+      // matchAll failure must not suppress a legitimate banner
+    }
+    await self.registration.showNotification(title, {
       body,
       tag: conversationId ? `pulse-${conversationId}` : 'pulse',
       renotify: Boolean(conversationId),
       icon: '/icon-192.png',
       badge: '/icon-192.png',
-      data: { conversationId },
-    }),
-  )
+      data: { conversationId, ...(messageId ? { messageId } : {}) },
+    })
+  })())
 })
 
 self.addEventListener('pushsubscriptionchange', (event) => {
   event.waitUntil(
     (async () => {
       // Best-effort resubscribe; the client will also re-run registerPush on
-      // its next focus, so this is a belt-and-braces refresh.
+      // its next focus, so this is a belt-and-braces refresh. The rebind POST
+      // carries no credentials (the SW holds none): the server refuses it
+      // until the next focused re-registration stamps the binding.
       try {
         const existing = await self.registration.pushManager.getSubscription()
         if (existing) await fetch('/api/push/register', {

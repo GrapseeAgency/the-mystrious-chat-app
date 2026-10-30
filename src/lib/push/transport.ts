@@ -12,12 +12,14 @@
 //   • ios     → APNs token-based (JWT/ES256). Same fail-closed contract;
 //               arms when the Apple p8 key + ids are configured.
 //
-// Fanout policy: opted-in native message/read-state delivery is per device;
-// an online desktop cannot suppress a phone. Legacy/web alerts and calls
-// retain online-user suppression. Dead web endpoints (404/410) and
-// unregistered mobile tokens prune their registry row so the registry
-// self-heals. Push must NEVER fail a user-facing request - every call site
-// is fire-and-forget.
+// Fanout policy: opted-in native message/call delivery is per device; an
+// online desktop cannot suppress a phone. Legacy/web alerts retain
+// online-user suppression (legacy builds have no in-client dedup). Dead web
+// endpoints (404/410) and unregistered mobile tokens prune their registry row
+// so the registry self-heals. Push must NEVER fail a user-facing request -
+// every call site is fire-and-forget. A failed LIVE report is retried durably
+// via the LivePushOutbox drain (src/lib/live-push-outbox.ts), which re-plans
+// with CURRENT mute/block/membership policy before every retry.
 // 
 import 'server-only'
 import crypto from 'node:crypto'
@@ -28,9 +30,13 @@ import { db } from '@/lib/db'
 export type PushPlatform = 'web' | 'android' | 'ios'
 
 export interface PushPayload {
-  kind: 'message' | 'gcall' | 'call' | 'read-state'
+  kind: 'message' | 'gcall' | 'call' | 'read-state' | 'retract'
   /** Internal registry capability, overwritten by fanout (never caller authority). */
   nativeReadStateHints?: boolean
+  /** Gateway origin stamped from the registration row (never caller authority). */
+  origin?: string
+  /** Per-token APNs environment stamped from the registration row. */
+  apnsEnvironment?: string
   /** Notification title - sender display name (or "Group call"). */
   title: string
   /** Notification body - preview text, or a generic line when previews are off. */
@@ -211,7 +217,12 @@ async function onlineUserIds(): Promise<Set<string>> {
   const secret = process.env.CRON_SECRET
   if (!secret) return new Set()
   try {
-    const res = await fetch(`${SOCKET_URL}/online`, { headers: { 'x-pulse-key': secret }, signal: AbortSignal.timeout(1500) })
+    // `?all=1` asks the relay for the UNFILTERED presence set. The public
+    // snapshot hides presence-private users, but suppression here is an
+    // internal dedup decision - a presence-hiding online user must still
+    // suppress their own legacy/web pushes, or they receive duplicate
+    // attention (socket alert + OS banner) for every message.
+    const res = await fetch(`${SOCKET_URL}/online?all=1`, { headers: { 'x-pulse-key': secret }, signal: AbortSignal.timeout(1500) })
     if (!res.ok) return new Set()
     const body = (await res.json()) as { onlineUserIds?: unknown }
     if (!Array.isArray(body.onlineUserIds)) return new Set()
@@ -252,6 +263,7 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
         conversationId: payload.conversationId,
         messageId: payload.messageId ?? null,
         ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+        ...(payload.origin ? { origin: payload.origin } : {}),
         ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
         ...(payload.callId ? { callId: payload.callId } : {}),
         callKind: payload.callKind ?? null,
@@ -295,6 +307,8 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
           token,
           // Call data must reach the native deadline/owner guard even when
           // backgrounded; an OS-rendered mixed notification bypasses it.
+          // Retractions are ALWAYS data-only: they carry no banner text and
+          // must run the client cancel path, never an OS auto-display.
           ...(payload.kind === 'message' && !payload.nativeReadStateHints ? { notification: { title: payload.title, body: payload.body } } : {}),
           data: {
             kind: payload.kind,
@@ -302,6 +316,7 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
             conversationId: payload.conversationId,
             ...(payload.messageId ? { messageId: payload.messageId } : {}),
             ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+            ...(payload.origin ? { origin: payload.origin } : {}),
             ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
             ...(payload.callId ? { callId: payload.callId } : {}),
             ...(payload.callKind ? { callKind: payload.callKind } : {}),
@@ -313,7 +328,7 @@ async function sendAndroid(token: string, payload: PushPayload): Promise<SendRes
               notification: { tag: 'pulse-msg-v1/' + [payload.recipientUserId, payload.conversationId, payload.messageId]
                 .map(encodeURIComponent).join('/') },
             } : {}),
-            priority: payload.kind === 'read-state' || (payload.kind === 'message' && !payload.nativeReadStateHints) ? 'normal' : 'high',
+            priority: payload.kind === 'read-state' || payload.kind === 'retract' || (payload.kind === 'message' && !payload.nativeReadStateHints) ? 'normal' : 'high',
             ...(payload.kind === 'read-state' ? { collapse_key: 'pulse-read-state' } : {}),
           },
         },
@@ -333,18 +348,28 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
   const window = pushDeliveryWindow(payload)
   if (!window) return { ok: false, pruneToken: false, skipped: true }
   try {
-    const origin = apnsOrigin(process.env.PULSE_APNS_ENVIRONMENT)
+    // Per-token APNs environment routing: a registration that declared its
+    // environment (client build config) overrides the deployment default,
+    // so one deployment can serve mixed sandbox/production fleets.
+    const origin = apnsOrigin(payload.apnsEnvironment ?? process.env.PULSE_APNS_ENVIRONMENT)
     if (!origin) return { ok: false, pruneToken: false, skipped: true }
     const res = await postApns(origin, token, {
       authorization: `bearer ${bearer}`,
       'apns-topic': process.env.PULSE_APNS_BUNDLE_ID || 'app.pulse.chat',
-      'apns-push-type': payload.kind === 'read-state' ? 'background' : 'alert',
-      'apns-priority': payload.kind === 'read-state' ? '5' : '10',
+      'apns-push-type': payload.kind === 'read-state' || payload.kind === 'retract' ? 'background' : 'alert',
+      'apns-priority': payload.kind === 'read-state' || payload.kind === 'retract' ? '5' : '10',
       ...(payload.kind === 'read-state' ? { 'apns-collapse-id': 'pulse-read-state' } : {}),
+      // Per-message collapse id (parity with the Android notification tag)
+      // lets a re-delivered push REPLACE its tray entry and lets the client
+      // remove the delivered alert by identifier on retraction.
+      ...(payload.kind === 'message' && payload.recipientUserId && payload.messageId ? {
+        'apns-collapse-id': 'pulse-msg-v1/' + [payload.recipientUserId, payload.conversationId, payload.messageId]
+          .map(encodeURIComponent).join('/'),
+      } : {}),
       'apns-expiration': String(window.expiresAtSeconds),
       'content-type': 'application/json',
     }, {
-        aps: payload.kind === 'read-state' ? { 'content-available': 1 } : {
+        aps: payload.kind === 'read-state' || payload.kind === 'retract' ? { 'content-available': 1 } : {
           ...(payload.kind === 'message' ? { 'content-available': 1 } : {}),
           alert: { title: payload.title, body: payload.body },
           sound: 'default',
@@ -361,6 +386,7 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
         conversationId: payload.conversationId,
         ...(payload.messageId ? { messageId: payload.messageId } : {}),
             ...(payload.recipientUserId ? { recipientUserId: payload.recipientUserId } : {}),
+        ...(payload.origin ? { origin: payload.origin } : {}),
         ...(payload.expiresAt ? { expiresAt: payload.expiresAt } : {}),
         ...(payload.callId ? { callId: payload.callId } : {}),
         ...(payload.callKind ? { callKind: payload.callKind } : {}),
@@ -397,9 +423,12 @@ export interface FanoutOptions {
 }
 
 /**
- * Deliver per-device native message/read-state invalidations, retaining
- * online-user suppression for legacy/web alerts and call fanout. Fire-and-forget safe: never
- * throws, always returns an honest report. Call sites `void` it.
+ * Deliver per-device native message/call/read-state invalidations, retaining
+ * online-user suppression only for legacy/web alerts (legacy builds have no
+ * in-client foreground dedup; their devices stay suppressed when any socket
+ * for the user is online - a known starvation boundary for old installs).
+ * Fire-and-forget safe: never throws, always returns an honest report.
+ * Call sites `void` it; the live-push outbox drain retries failed reports.
  */
 export async function fanoutPush(
   userIds: string[],
@@ -412,8 +441,16 @@ export async function fanoutPush(
   try {
     // Read invalidations must reach another device even while this user is
     // reading on an online device. They carry no count or read authority.
-    const online = payload.kind === 'read-state' ? new Set<string>() : await onlineUserIds()
-    const targets = payload.kind === 'message' ? ids : ids.filter((id) => !online.has(id))
+    // Retractions equally bypass suppression: they cancel an already-shown
+    // banner, so they must reach every device that may still hold one.
+    const online = payload.kind === 'read-state' || payload.kind === 'retract' ? new Set<string>() : await onlineUserIds()
+    // Message AND call pushes keep online users as candidates: the per-device
+    // loop below lets opted-in native devices through (a backgrounded phone of
+    // a desktop-online user must still ring/hear), while legacy/web devices of
+    // online users stay suppressed.
+    const targets = payload.kind === 'message' || payload.kind === 'gcall' || payload.kind === 'call'
+      ? ids
+      : ids.filter((id) => !online.has(id))
     report.users = targets.length
     if (targets.length === 0) return report
     const capability = payload.kind === 'read-state' ? { readStateCapability: { is: { version: 1 } } } : {}
@@ -424,26 +461,54 @@ export async function fanoutPush(
     const tokens = limit === undefined ? candidates : candidates.slice(0,limit)
     if (limit !== undefined) report.nextCursor = candidates.length > limit ? tokens.at(-1)!.id : null
     report.devices = tokens.length
+    // Delivery-time policy recheck (message pushes only): a mute/membership
+    // change that landed between snapshot planning and this device's provider
+    // call must be honored, not outrun. Cached per user; a read failure keeps
+    // the plan (planning already gated on the transactional snapshot).
+    const policyHolds = new Map<string, boolean>()
+    const deliveryPolicyHolds = async (userId: string): Promise<boolean> => {
+      if (payload.kind !== 'message') return true
+      const cached = policyHolds.get(userId)
+      if (cached !== undefined) return cached
+      try {
+        const member = await db.conversationParticipant.findFirst({
+          where: { conversationId: payload.conversationId, userId },
+          select: { mutedUntil: true },
+        })
+        const holds = !!member && (!member.mutedUntil || member.mutedUntil.getTime() <= Date.now())
+        policyHolds.set(userId, holds)
+        return holds
+      } catch {
+        return true
+      }
+    }
     for (const row of tokens) {
       // Web Push requires a visible notification; never turn a read hint into a banner.
       if (payload.kind === 'read-state' && row.platform === 'web') { report.skipped += 1; continue }
       if (!pushDeliveryWindow(payload)) { report.skipped += 1; continue }
+      // A mute or departure that landed after planning suppresses this device.
+      if (!await deliveryPolicyHolds(row.userId)) { report.skipped += 1; continue }
       // A queued provider call must not use a registration rebound while earlier
       // devices were being processed. This is a preflight, not provider recall.
       const nativeReadStateHints = (row.platform === 'android' || row.platform === 'ios') &&
         !!await db.pushReadStateCapability.findFirst({ where: { tokenId: row.id, version: 1 }, select: { tokenId: true } })
       // User presence is not device presence. A desktop socket cannot suppress
       // an opted-in phone; the native foreground receiver avoids duplicate alerts.
-      if (online.has(row.userId) && !nativeReadStateHints) { report.skipped += 1; continue }
+      if (online.has(row.userId) && !nativeReadStateHints && payload.kind !== 'retract') { report.skipped += 1; continue }
       const expectedCapability = nativeReadStateHints ? { readStateCapability: { is: { version: 1 } } } : capability
-      const binding = { id: row.id, userId: row.userId, platform: row.platform, token: row.token, updatedAt: row.updatedAt }
+      // The binding carries the monotonic revision: a same-millisecond rebind
+      // increments it, so an in-flight provider prune (stale revision) can
+      // never erase the rebound row.
+      const binding = { id: row.id, userId: row.userId, platform: row.platform, token: row.token, revision: row.revision, updatedAt: row.updatedAt }
       if (!await db.pushToken.findFirst({ where: { ...binding, ...expectedCapability }, select: { id: true } })) { report.skipped += 1; continue }
-      const bindingHash = crypto.createHash('sha256').update(JSON.stringify([row.id,row.userId,row.platform,row.token,row.updatedAt.toISOString()])).digest('hex')
+      const bindingHash = crypto.createHash('sha256').update(JSON.stringify([row.id,row.userId,row.platform,row.token,row.revision,row.updatedAt.toISOString()])).digest('hex')
       if (await options?.alreadyDelivered?.(bindingHash)) { report.skipped += 1; continue }
       const perUser: PushPayload = {
         ...payload,
         recipientUserId: row.userId,
         nativeReadStateHints,
+        ...(row.origin ? { origin: row.origin } : {}),
+        ...(row.platform === 'ios' && row.apnsEnvironment ? { apnsEnvironment: row.apnsEnvironment } : {}),
         ...(options?.bodyFor ? { body: options.bodyFor(row.userId) } : {}),
       }
       const result: SendResult =
