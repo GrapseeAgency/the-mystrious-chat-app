@@ -532,17 +532,18 @@ def main():
     if crash_scan("alpha-onboard"):
         bail(2, "crash after Alpha onboarding")
 
-    if not onboard(PKG_B, NAME_B):
-        bail(2, "Beta onboarding failed")
-    if crash_scan("beta-onboard"):
-        bail(2, "crash after Beta onboarding")
-
     # Both apps demo-login by the SAME hardcoded name - rebind the seed so
     # the two devices own two DISTINCT users (the relay rejects from==to).
     try:
         rebind_demo_identity()
     except Exception as e:
         bail(2, "identity rebind failed: " + repr(e))
+
+    if not onboard(PKG_B, NAME_B):
+        bail(2, "Beta onboarding failed")
+    if crash_scan("beta-onboard"):
+        bail(2, "crash after Beta onboarding")
+
 
     # Cold restart BOTH: the socket rides the gateway origin through the CI
     # edge (caddy) to the relay - the relay's own join log is the proof.
