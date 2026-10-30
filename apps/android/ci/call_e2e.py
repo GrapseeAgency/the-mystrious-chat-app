@@ -361,9 +361,12 @@ def rebind_demo_identity():
          reclaims THAT one. Two users, one relay, a real 1:1 ring."""
     import json as _json
     import urllib.request
+    # The driver runs ON the runner: the backend is host loopback (10.0.2.2
+    # is the EMULATOR's alias for it and does not exist from the host side).
+    base = "http://127.0.0.1:3000"
     def req(method, path, body=None, token=None):
         r = urllib.request.Request(
-            GW + path, method=method,
+            base + path, method=method,
             data=_json.dumps(body).encode() if body is not None else None,
             headers={"Content-Type": "application/json",
                      **({"Authorization": "Bearer " + token} if token else {})})
