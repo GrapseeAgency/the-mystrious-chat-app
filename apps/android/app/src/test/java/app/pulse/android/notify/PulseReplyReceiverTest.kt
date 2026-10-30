@@ -38,6 +38,17 @@ class PulseReplyReceiverTest {
     }
 
     @Test
+    fun `oversized verdict matches the cap and never fires for valid replies`() {
+        // The receiver's draft-recovery branch keys on this verdict: at or
+        // under the cap the normal send path runs; one char over it the exact
+        // text is saved as the room draft instead of being rejected and lost.
+        assertFalse(PulseReplyPayload.isOversized("x".repeat(PulseReplyPayload.MAX_CHARS)))
+        assertFalse(PulseReplyPayload.isOversized("hello"))
+        assertTrue(PulseReplyPayload.isOversized("x".repeat(PulseReplyPayload.MAX_CHARS + 1)))
+        assertTrue(PulseReplyPayload.isOversized("x".repeat(1999) + "😀"))
+    }
+
+    @Test
     fun `isQueued is true only for the temp local_ prefix`() {
         assertTrue(PulseReplyPayload.isQueued("local_abc123"))
         assertFalse(PulseReplyPayload.isQueued("m9"))

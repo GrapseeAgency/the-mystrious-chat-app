@@ -17,11 +17,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import android.os.Build
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
 
 /**
  * R10-a - notification quick-reply. The system RemoteInput hand-off for the
@@ -50,6 +47,8 @@ class PulseReplyReceiver : BroadcastReceiver() {
 
     @Inject lateinit var repository: PulseRepository
 
+    @Inject lateinit var prefs: app.pulse.domain.repository.PulsePrefsStore
+
     override fun onReceive(context: Context, intent: Intent) {
         val parsed = PulseReplyPayload.parse(
             conversationId = intent.getStringExtra(PulseReplyPayload.EXTRA_CONVERSATION_ID),
@@ -66,29 +65,54 @@ class PulseReplyReceiver : BroadcastReceiver() {
         }
         // goAsync: the send round-trip may outlive onReceive by seconds; the
         // async grant keeps the process alive until finish() (BootReceiver idiom).
-        val owner = NotificationReplyOwner.capture(
+        var owner = NotificationReplyOwner.capture(
             intent.getStringExtra(PulseReplyPayload.EXTRA_RECIPIENT_USER_ID),
             repository.viewerId, repository.attachmentSessionKey(),
         )
         if (owner == null) {
+            // Cold no-store recovery (Section 6): a process relaunched solely
+            // for this broadcast has no UI-started repository. The same durable
+            // identity the OutboxWorker boots from arms a background repository
+            // so the reply is durably accepted (outbox) instead of honest-lost.
+            val coldOwner = runCatching { kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeoutOrNull(2_000) { prefs.viewerId.first() }
+            } }.getOrNull()
+            if (coldOwner != null) {
+                runCatching {
+                    val base = kotlinx.coroutines.runBlocking {
+                        kotlinx.coroutines.withTimeoutOrNull(500) { prefs.serverBase.first() }
+                    }
+                    if (!base.isNullOrBlank()) app.pulse.core.PulseEndpoints.applyBase(base)
+                    if (repository.startBackgroundIfIdle(coldOwner)) {
+                        owner = NotificationReplyOwner.capture(
+                            intent.getStringExtra(PulseReplyPayload.EXTRA_RECIPIENT_USER_ID),
+                            repository.viewerId, repository.attachmentSessionKey(),
+                        )
+                    }
+                }
+            }
+        }
+        // Immutable hand-off for the async send (and Kotlin smart-casts).
+        val capturedOwner = owner
+        if (capturedOwner == null) {
             PulseReplyPayload.toast(context, "Reply not sent. Open the original account to reply.")
             PulseReplyPayload.postOpenPulseNotification(context, parsed.conversationId)
             return
         }
         val notificationTag = intent.getStringExtra(PulseReplyPayload.EXTRA_NOTIFICATION_TAG)?.takeIf { tag ->
             app.pulse.domain.sync.MessageNotificationIdentity.parse(tag)?.let {
-                it.ownerId == owner.userId && it.conversationId == parsed.conversationId
+                it.ownerId == capturedOwner.userId && it.conversationId == parsed.conversationId
             } == true
         }
         val pending = goAsync()
         val appContext = context.applicationContext
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                deliver(appContext, parsed, owner, notificationTag)
+                deliver(appContext, parsed, capturedOwner, notificationTag)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                if (owner.matches(repository.viewerId, repository.attachmentSessionKey())) {
+                if (capturedOwner.matches(repository.viewerId, repository.attachmentSessionKey())) {
                     PulseReplyPayload.toast(appContext, "Couldn't send")
                 }
             } finally {
@@ -103,6 +127,17 @@ class PulseReplyReceiver : BroadcastReceiver() {
         // app: the content intent opens the room.
         if (!owner.matches(repository.viewerId, repository.attachmentSessionKey())) {
             PulseReplyPayload.postOpenPulseNotification(context, parsed.conversationId)
+            return
+        }
+        // Oversized input is rejected by the send path BEFORE any durable
+        // persistence, so the receiver owns recovery: the exact text is saved
+        // as the room's composer draft (opening the room recovers it) and the
+        // notification is re-posted with the text as remote-input history.
+        if (PulseReplyPayload.isOversized(parsed.text)) {
+            runCatching { repository.saveDraft(parsed.conversationId, parsed.text) }
+                .onFailure { PulseReplyPayload.toast(context, "Couldn't save the reply draft") }
+            PulseReplyPayload.repostReplyTooLong(context, parsed.conversationId, notificationTag, parsed.text)
+            PulseReplyPayload.toast(context, "Reply is over ${PulseReplyPayload.MAX_CHARS} characters - saved as a draft")
             return
         }
         try {
@@ -174,6 +209,10 @@ object PulseReplyPayload {
     /** `local_<clientId>` temp rows are queued in the outbox, not delivered. */
     fun isQueued(messageId: String): Boolean = messageId.startsWith(TEMP_MESSAGE_PREFIX)
 
+    /** Oversized input never enters the send path: the receiver saves the
+     * exact text as the room draft and re-posts with remote-input history. */
+    fun isOversized(text: String): Boolean = text.length > MAX_CHARS
+
     /** Shared notification id scheme with PulseMessagingService. */
     fun notificationId(conversationId: String): Int =
         conversationId.hashCode().and(0x3FFFFFFF)
@@ -217,7 +256,41 @@ object PulseReplyPayload {
     }
 
     private fun canNotify(context: Context): Boolean =
-        Build.VERSION.SDK_INT < 33 ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
+        app.pulse.android.push.PulsePush.canPostMessageNotification(context)
+
+    /**
+     * Oversized-reply recovery (R10-a follow-up): the typed text is NEVER
+     * lost. The notification is re-posted with the text shown as remote-input
+     * history and an honest pointer - the same text is saved as the room's
+     * composer draft by the receiver, so opening the room recovers it.
+     */
+    fun repostReplyTooLong(context: Context, conversationId: String, notificationTag: String?, text: String) {
+        if (!canNotify(context)) return
+        app.pulse.android.push.PulsePush.ensureChannels(context)
+        val launch = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(PulseDeepLink.roomUri(conversationId))).apply {
+            setPackage(context.packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val contentPi = PendingIntent.getActivity(
+            context,
+            notificationId(conversationId),
+            launch,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = NotificationCompat.Builder(context, app.pulse.android.push.PulsePush.MESSAGES_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setContentTitle("Pulse")
+            .setContentText("Reply is over $MAX_CHARS characters - saved as a draft. Tap to open the room.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("Reply is over $MAX_CHARS characters - saved as a draft. Tap to open the room."))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(contentPi)
+            .setAutoCancel(true)
+            .setRemoteInputHistory(arrayOf(text))
+        val built = builder.build()
+        runCatching {
+            val nm = NotificationManagerCompat.from(context)
+            if (notificationTag != null) nm.notify(notificationTag, 0, built)
+            else nm.notify(notificationId(conversationId), built)
+        }
+    }
 }

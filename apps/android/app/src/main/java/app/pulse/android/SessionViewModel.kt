@@ -180,6 +180,10 @@ class SessionViewModel @Inject constructor(
             prefs.setViewer(id, name, color)
             saveVaultIdentity(id, name, null, color)
             repo.start(id)
+            // Account switch rebinds the device push registration to the new
+            // identity (the registry row upserts by token: same device, new
+            // user - the old account stops receiving on this device).
+            PulsePush.syncRegistration(repo)
         }
     }
 
@@ -200,7 +204,13 @@ class SessionViewModel @Inject constructor(
     }
 
     fun bootstrap(viewerId: String?) {
-        if (viewerId == null) repo.stop() else repo.start(viewerId)
+        if (viewerId == null) repo.stop() else {
+            repo.start(viewerId)
+            // Every UI boot binds the stored FCM token to the signed-in
+            // identity: a token stored "pending identity" (process death, cold
+            // FCM delivery before login) registers as soon as the viewer exists.
+            PulsePush.syncRegistration(repo)
+        }
     }
 
     /** Point REST + realtime at a user-provided origin (null = go offline). */

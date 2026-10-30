@@ -155,6 +155,16 @@ public enum PulsePushNotifications {
     public static func deactivate() {
         PulsePushRegistrationCenter.shared.deactivate()
     }
+
+    /// Permission re-grant probe (Section 6): re-reads the OS notification
+    /// settings and, when the user re-enabled notifications in system
+    /// Settings (a denial recorded earlier), re-arms authorization→
+    /// registration. Idempotent; never prompts again - a determined verdict
+    /// returns immediately.
+    @MainActor
+    public static func reprobeAuthorization() {
+        PulsePushRegistrationCenter.shared.reprobeIfGranted()
+    }
 }
 
 /// The SwiftUI-lifecycle AppDelegate - captures the APNs token lifecycle
@@ -165,7 +175,27 @@ public final class PulseAppDelegate: NSObject, UIApplicationDelegate {
     @MainActor
     public func application(_ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
-        guard let kind = userInfo["kind"] as? String, kind == "read-state" || kind == "message",
+        guard let kind = userInfo["kind"] as? String else { return .noData }
+        // Cross-gateway provenance: never act on a foreign deployment's push,
+        // even when ids collide across gateways.
+        if PulsePushProvenance.isForeign(stamped: userInfo["origin"] as? String, configured: PulseEndpoints.gatewayBase) {
+            return .noData
+        }
+        // Retraction: provider TTL cannot erase a tray entry that already
+        // rendered; this background wake is the recall path. Remove the
+        // delivered alert by its per-message collapse id.
+        if kind == "retract" {
+            guard let recipient = userInfo["recipientUserId"] as? String,
+                  let conversationId = userInfo["conversationId"] as? String,
+                  let messageId = userInfo["messageId"] as? String,
+                  PulseKeychain.shared.loadViewer()?.id == recipient,
+                  let identifier = PulsePushProvenance.messageAlertIdentifier(
+                      recipient: recipient, conversationId: conversationId, messageId: messageId)
+            else { return .noData }
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+            return .newData
+        }
+        guard kind == "read-state" || kind == "message",
               let recipient = userInfo["recipientUserId"] as? String,
               PulseKeychain.shared.loadViewer()?.id == recipient else { return .noData }
         // A wake-up is only an invalidation. Never apply a delayed payload's count
@@ -342,6 +372,47 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         }
     }
 
+    /// Section 6 - permission re-grant probe: the user may have denied
+    /// notifications earlier (status .permissionDenied / .failed) and later
+    /// re-enabled them in system Settings. A foreground scene is the honest
+    /// moment to re-read the OS verdict and re-arm registration. Never
+    /// prompts - requestAuthorization returns the determined verdict.
+    func reprobeIfGranted() {
+        switch status {
+        case .registered, .registering, .authorizing, .tokenCaptured:
+            return
+        case .permissionDenied, .idle, .gatewayUnconfigured, .failed:
+            break
+        }
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { [weak self] settings in
+            Task { @MainActor in
+                guard let self else { return }
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    NSLog("Pulse push: notification permission granted outside the app - re-arming registration")
+                    self.beginAuthorization()
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    /// Section 6 / item 14 - the APNs environment this build belongs to,
+    /// declared from build configuration (advisory: the server routes the
+    /// token to the matching APNs origin and falls back to its deployment
+    /// default only when a registration carries no declaration). Debug
+    /// builds run against the sandbox origin; release archives are
+    /// production-provisioned.
+    nonisolated static let declaredApnsEnvironment: String = {
+        #if DEBUG
+        return "sandbox"
+        #else
+        return "production"
+        #endif
+    }()
+
     /// APNs answered with a token - hex-encode, persist, forward.
     public func noteDeviceToken(_ token: Data) {
         let hex = token.map { String(format: "%02x", $0) }.joined()
@@ -441,7 +512,8 @@ public final class PulsePushRegistrationCenter: ObservableObject {
         }
         status = .registering
         do {
-            try await api.registerPushToken(userId: userId, platform: "ios", token: hex)
+            try await api.registerPushToken(userId: userId, platform: "ios", token: hex,
+                apnsEnvironment: Self.declaredApnsEnvironment)
             if Task.isCancelled {
                 // Task 5-d - deactivate() (sign-out) or a re-schedule
                 // superseded this run AFTER the request may have landed: the

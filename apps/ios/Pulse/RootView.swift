@@ -204,6 +204,10 @@ struct RootView: View {
             case .active:
                 // Outbox flush trigger: app foreground (web visibilitychange).
                 session.flushOutbox()
+                // Section 6 - the user may have (re)granted notification
+                // permission in system Settings while the app slept; re-probe
+                // the OS verdict and re-arm registration when it changed.
+                PulsePushNotifications.reprobeAuthorization()
                 // R42 - rescan the share extension's inbox on every foreground
                 // (the extension may have received shares while we slept).
                 rescanShareInInbox()

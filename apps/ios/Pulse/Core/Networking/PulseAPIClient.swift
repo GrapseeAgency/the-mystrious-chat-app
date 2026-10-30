@@ -1419,13 +1419,18 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/push/register { userId, platform: 'ios', token } → { ok, id }.
     /// Upsert keyed by the unique token - re-registrations rebind the user.
-    public func registerPushToken(userId: String, platform: String, token: String) async throws {
-        _ = try await postRaw("/api/push/register", body: [
+    public func registerPushToken(userId: String, platform: String, token: String,
+                                   apnsEnvironment: String? = nil) async throws {
+        var body: [String: Any] = [
             "userId": userId,
             "platform": platform,
             "readStateHints": 1,
             "token": token,
-        ])
+        ]
+        if let apnsEnvironment, !apnsEnvironment.isEmpty {
+            body["apnsEnvironment"] = apnsEnvironment
+        }
+        _ = try await postRaw("/api/push/register", body: body)
     }
 
     /// DELETE /api/push/register { token } → { ok } (idempotent server-side).

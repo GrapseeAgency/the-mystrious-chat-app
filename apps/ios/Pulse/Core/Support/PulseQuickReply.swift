@@ -107,6 +107,12 @@ public final class PulseQuickReplyCoordinator {
     /// Entry - PulseReminderNotificationDelegate.didReceive funnels every
     /// PULSE_REPLY_ACTION text-input response here.
     public func handle(text: String, conversationId: String, userInfo: [AnyHashable: Any]) {
+        // Cross-gateway provenance (Section 6): a quick reply typed on a
+        // banner stamped with a foreign deployment's origin must never be
+        // sent from this device - the room belongs to another gateway.
+        if PulsePushProvenance.isForeign(stamped: userInfo["origin"] as? String, configured: PulseEndpoints.gatewayBase) {
+            return
+        }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
         guard let session = sessionProvider?(), session.viewer != nil, let store = session.store else {

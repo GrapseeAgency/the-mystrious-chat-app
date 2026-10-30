@@ -158,6 +158,12 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void,
     ) {
         let info = notification.request.content.userInfo
+        // Cross-gateway provenance: a banner stamped with a foreign gateway's
+        // origin never renders here, even when ids collide across deployments.
+        if PulsePushProvenance.isForeign(stamped: info["origin"] as? String, configured: PulseEndpoints.gatewayBase) {
+            completionHandler([])
+            return
+        }
         if let expiry = info["expiresAt"] {
             guard let raw = expiry as? String, PulseRemediationLogic.isAlive(raw) else {
                 completionHandler([])
@@ -165,10 +171,34 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
             }
         }
         if info["kind"] as? String == "read-state" { completionHandler([]); return }
-        if info["kind"] as? String == "message", let recipient = info["recipientUserId"] as? String {
+        // Provider TTL cannot erase a tray entry that already rendered; the
+        // server's retract push is the recall path. Remove the delivered alert
+        // by its per-message collapse id instead of displaying anything.
+        if info["kind"] as? String == "retract" {
+            if let recipient = info["recipientUserId"] as? String,
+               let conversationId = info["conversationId"] as? String,
+               let messageId = info["messageId"] as? String,
+               let identifier = PulsePushProvenance.messageAlertIdentifier(
+                   recipient: recipient, conversationId: conversationId, messageId: messageId) {
+                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
+            }
+            completionHandler([])
+            return
+        }
+        let kind = info["kind"] as? String
+        if kind == "message" || kind == "gcall" || kind == "call" {
             Task { @MainActor in
-                guard PulseKeychain.shared.loadViewer()?.id == recipient else { completionHandler([]); return }
-                // Socket attention already honors the receiver's quiet/mute policy.
+                // Legacy payloads carry no recipient stamp: fall back to the
+                // local viewer so an own-device banner still dedups against
+                // the live socket (a foreign stamp stays unrecognized -> show).
+                let recipient = (info["recipientUserId"] as? String) ?? PulseKeychain.shared.loadViewer()?.id ?? ""
+                guard !recipient.isEmpty, PulseKeychain.shared.loadViewer()?.id == recipient else {
+                    completionHandler([])
+                    return
+                }
+                // Socket attention already honors the receiver's quiet/mute
+                // policy - for calls the in-app ring UI owns the foreground,
+                // so the OS banner would be duplicate attention on one device.
                 completionHandler(self.handlesForegroundMessage?(recipient) == true ? [] : [.banner, .list, .sound])
             }
             return

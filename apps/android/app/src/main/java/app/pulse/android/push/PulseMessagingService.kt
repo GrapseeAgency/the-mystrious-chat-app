@@ -1,14 +1,10 @@
 package app.pulse.android.push
 
-import android.Manifest
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import app.pulse.core.link.PulseDeepLink
 import app.pulse.android.notify.PulseReplyPayload
 import app.pulse.feature.calls.CallRingNotifier
@@ -53,8 +49,32 @@ class PulseMessagingService : FirebaseMessagingService() {
         PulsePush.onNewToken(repository, token)
     }
 
+    /**
+     * FCM collapsed >100 pending messages into this event - the collapsed
+     * payloads never reached onMessageReceived. The honest recovery is the
+     * same reconciliation the worker performs: resync the inbox from the
+     * server instead of trusting a possibly-stale tray.
+     */
+    override fun onDeletedMessages() {
+        Log.i(TAG, "FCM collapsed pending messages - resync")
+        val owner = repository.viewerId ?: runCatching { kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.withTimeoutOrNull(2_000) { prefs.viewerId.first() }
+        } }.getOrNull()
+        if (owner != null) app.pulse.android.OutboxWorker.enqueue(this, owner)
+    }
+
+    /** Cross-gateway provenance: a push stamped with a foreign gateway's
+     * origin must not render or act here, even if ids collide across
+     * deployments. Absent origin = legacy registration (accepted). */
+    private fun foreignGateway(origin: String?): Boolean =
+        PushOriginGate.isForeign(
+            origin,
+            app.pulse.core.PulseEndpoints.gatewayHttpUrl.takeIf { app.pulse.core.PulseEndpoints.isConfigured },
+        )
+
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
+        if (foreignGateway(data["origin"])) return
         data["expiresAt"]?.let { expiry ->
             if ((app.pulse.domain.sync.messageExpiryEpochMs(expiry) ?: Long.MIN_VALUE) <= System.currentTimeMillis()) return
         }
@@ -79,6 +99,20 @@ class PulseMessagingService : FirebaseMessagingService() {
         } }.getOrNull()
         if (recipient != null && recipient != owner) return
         val conversationId = data["conversationId"]
+        // Provider TTL cannot erase a tray entry that already rendered; the
+        // server's retract push is the recall path. Cancel by the per-message
+        // tag identity (same math the message notification posted under).
+        if (kind == "retract") {
+            val messageId = data["messageId"]
+            if (!conversationId.isNullOrBlank() && !messageId.isNullOrBlank() && !recipient.isNullOrBlank()) {
+                val identity = app.pulse.domain.sync.MessageNotificationIdentity(recipient, conversationId, messageId)
+                runCatching {
+                    val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+                    nm.cancel(identity.tag, 0)
+                }
+            }
+            return
+        }
         val notification = message.notification
         val title = notification?.title ?: data["title"] ?: "Pulse"
         val body = notification?.body ?: data["body"] ?: ""
@@ -88,6 +122,15 @@ class PulseMessagingService : FirebaseMessagingService() {
             "gcall", "call" -> {
                 val deadline = data["expiresAt"]?.let { app.pulse.domain.sync.messageExpiryEpochMs(it) }
                 if (kind == "gcall" && (data["callId"].isNullOrBlank() || deadline == null)) return
+                // Socket/push dedup: a foregrounded app with a live socket already
+                // rings in-app from the realtime event; a second OS banner would be
+                // duplicate attention on the same device.
+                val handledInApp = app.pulse.android.notify.IncomingAttention.foreground && runCatching {
+                    kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeoutOrNull(500) {
+                        repository.observeConnected().first()
+                    } == true }
+                }.getOrDefault(false)
+                if (handledInApp) return
                 val callerName = data["callerName"].orEmpty()
                 val callKind = data["callKind"] ?: "voice"
                 CallRingNotifier.showIncoming(
@@ -120,12 +163,10 @@ class PulseMessagingService : FirebaseMessagingService() {
 
     /** The default-importance message push with the room deep-link tap. */
     private fun showMessageNotification(title: String, body: String, conversationId: String?, messageId: String?, recipientUserId: String?) {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+        if (!canPostMessageNotification(this)) return
+        // Device-local quiet hours gate the OS banner exactly like the reminder
+        // notifier and the foreground socket ding (evaluated now, never cached).
+        if (app.pulse.android.notify.ReminderAlertPolicy.quietNow()) return
         PulsePush.ensureChannels(this)
         val deepLink = conversationId?.takeIf { it.isNotBlank() }?.let { conv ->
             PulseDeepLink.roomUri(conv, messageId)

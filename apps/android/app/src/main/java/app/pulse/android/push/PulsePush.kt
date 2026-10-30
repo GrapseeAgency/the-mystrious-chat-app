@@ -130,6 +130,29 @@ object PulsePush {
     }
 
     /**
+     * Full display gate for message pushes: the runtime permission AND the
+     * master notifications toggle AND (O+) the Messages channel not being
+     * disabled/none-importance. A silently-disabled channel must not count
+     * as a delivered alert - the caller drops the banner instead.
+     */
+    fun canPostMessageNotification(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (!nm.areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = nm.getNotificationChannel(MESSAGES_CHANNEL_ID) ?: return true
+            if (channel.importance == android.app.NotificationManager.IMPORTANCE_NONE) return false
+        }
+        return true
+    }
+
+    /**
      * Fetch (or reuse) the FCM token and upsert it for the viewer. Safe to
      * call repeatedly; no-ops while the feature is unarmed or no viewer
      * identity exists.

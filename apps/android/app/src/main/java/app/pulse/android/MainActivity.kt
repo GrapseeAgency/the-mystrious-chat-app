@@ -355,7 +355,12 @@ class MainActivity : FragmentActivity() {
         // carbon) that hands off to Theme.Pulse via postSplashScreenTheme.
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        handleIntent(intent)
+        // Activity recreation (low-memory reclaim, "Don't keep activities")
+        // replays the LAST delivered intent on onCreate - an unconditional
+        // handle would hijack the user back to a stale notification room.
+        // Cold starts (null state) and onNewIntent remain the two real entry
+        // points for fresh intents.
+        if (savedInstanceState == null) handleIntent(intent)
         // R42 - a pending external share from a previous process death
         // re-opens its picker sheet (its bytes/text live in the inbox).
         if (shareIn.value == null) {
