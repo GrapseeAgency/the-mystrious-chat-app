@@ -291,7 +291,7 @@ def onboard(pkg, name):
     Falls back to the offline name step when a server has no demo seed."""
     launch(pkg)
     dismiss_system_dialogs()
-    if not type_into("your-pulse-gateway", "http://10.0.2.2:3000", fallback_y_frac=0.418):
+    if not type_into("your-pulse-gateway", "http://10.0.2.2:3080", fallback_y_frac=0.418):
         screen("onboard-fail-" + name + "-server-field.png")
         return False
     screen("onboard-" + name + "-server.png")
@@ -381,17 +381,27 @@ def rebind_demo_identity():
          + "; callee identity " + fresh["user"]["id"][:8] + " created as " + CALL_PEER_NAME)
     return True
 
-def assert_socket_override(pkg, label):
-    """The relay override is adopted from {gateway}/update-manifest.json."""
-    launch(pkg)
-    dismiss_system_dialogs()
-    time.sleep(3)
-    log = adb("logcat", "-d", "-s", "ManifestEndpoints", timeout=60).stdout or ""
-    with open(OUT + "/override-" + label + ".log", "w") as f:
-        f.write(log)
-    ok = "socket=http://10.0.2.2:3003" in log.replace(" ", "")
-    note(label + " socket override " + ("ADOPTED" if ok else "NOT FOUND in ManifestEndpoints log"))
-    return ok
+RELAY_LOG = "/tmp/relay.log"
+
+def count_relay_joins():
+    try:
+        with open(RELAY_LOG, "r", encoding="utf-8", errors="replace") as f:
+            return len(re.findall(r"\[ws\] join user=", f.read()))
+    except OSError:
+        return 0
+
+def assert_relay_joins(label, expected_total):
+    """Realtime proof: the relay's own log counts device joins. The socket
+    rides the same origin as the gateway through the CI edge (caddy
+    XTransformPort rule -> :3003), exactly like production."""
+    deadline = time.time() + 40
+    while time.time() < deadline:
+        if count_relay_joins() >= expected_total:
+            note(label + ": relay joins = " + str(count_relay_joins()) + " (>= " + str(expected_total) + ")")
+            return True
+        time.sleep(2)
+    note("MISS relay joins: " + str(count_relay_joins()) + "/" + str(expected_total) + " for " + label)
+    return False
 
 def open_contacts():
     """Dock Chats (default) -> header kebab -> Contacts."""
@@ -507,12 +517,16 @@ def main():
     except Exception as e:
         bail(2, "identity rebind failed: " + repr(e))
 
-    # Cold restart BOTH: the persisted socket override (manifest) lands here,
-    # and the relay logs two joins (realtime is provably up for both users).
-    ok_a = assert_socket_override(PKG_A, "alpha")
-    ok_b = assert_socket_override(PKG_B, "beta")
-    if not (ok_a and ok_b):
-        bail(2, "socket override adoption failed")
+    # Cold restart BOTH: the socket rides the gateway origin through the CI
+    # edge (caddy) to the relay - the relay's own join log is the proof.
+    joins_before = count_relay_joins()
+    launch(PKG_A)
+    dismiss_system_dialogs()
+    launch(PKG_B)
+    dismiss_system_dialogs()
+    if not assert_relay_joins("both devices live on the relay", joins_before + 2):
+        dump_logcat("relay-join-fail-logcat.txt")
+        bail(2, "realtime down: the relay never saw both device joins")
     time.sleep(5)
     foreground(PKG_A)
 

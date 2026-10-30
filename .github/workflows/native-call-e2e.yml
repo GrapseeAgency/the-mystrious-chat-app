@@ -101,6 +101,42 @@ jobs:
           done
           echo "relay never listened"; tail -40 /tmp/relay.log; exit 1
 
+      # The CI edge reproduces the production topology (the repo Caddyfile):
+      # one origin for the apps - REST to next:3000, /socket.io and
+      # /socket.io?XTransformPort=3003 to the relay. The app's same-origin
+      # socket mode rides the XTransformPort rule, exactly like production.
+      - name: Start the CI edge (caddy on :3080)
+        run: |
+          curl -sL -o /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v2.10.0/caddy_2.10.0_linux_amd64.tar.gz"
+          tar -xzf /tmp/caddy.tar.gz -C /tmp caddy
+          cat > /tmp/Caddyfile.ci << 'EOF'
+          :3080 {
+            @transform_port_query {
+              query XTransformPort=*
+            }
+            handle @transform_port_query {
+              reverse_proxy localhost:{query.XTransformPort}
+            }
+            @socketio path /socket.io/*
+            handle @socketio {
+              reverse_proxy localhost:3003
+            }
+            handle {
+              reverse_proxy localhost:3000
+            }
+          }
+          EOF
+          nohup /tmp/caddy run --config /tmp/Caddyfile.ci > /tmp/caddy.log 2>&1 &
+          for i in $(seq 1 20); do
+            body=$(curl -s http://127.0.0.1:3080/api/users || true)
+            if echo "$body" | grep -q '"users"'; then
+              sock=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3080/socket.io/?EIO=4&transport=polling" || true)
+              echo "edge up (rest 200, socket.io probe $sock)"; exit 0
+            fi
+            sleep 1
+          done
+          echo "edge never became healthy"; tail -30 /tmp/caddy.log; exit 1
+
       - name: Run the two-app call E2E on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -130,4 +166,5 @@ jobs:
             apps/android/call-e2e/**
             /tmp/relay.log
             /tmp/next-dev.log
+            /tmp/caddy.log
           if-no-files-found: ignore
