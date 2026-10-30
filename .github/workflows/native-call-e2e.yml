@@ -75,9 +75,11 @@ jobs:
         run: |
           nohup bunx next dev -p 3000 > /tmp/next-dev.log 2>&1 &
           for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3000/api/users/login \
-              -H 'Content-Type: application/json' -d '{"name":"__probe__"}' || true)
-            if [ "$code" = "200" ]; then echo "web backend up (login 200)"; exit 0; fi
+            # GET /api/users is the app's own connect probe (probeBase) - a
+            # 200 with a users array is the honest backend-up signal.
+            # (POST /api/users/login is reclaim-only and 404s fresh names.)
+            body=$(curl -s http://127.0.0.1:3000/api/users || true)
+            if echo "$body" | grep -q '"users"'; then echo "web backend up (users probe)"; exit 0; fi
             sleep 2
           done
           echo "web backend never became healthy"; tail -60 /tmp/next-dev.log; exit 1
