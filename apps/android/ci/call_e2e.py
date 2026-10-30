@@ -28,6 +28,9 @@ ACT = "/app.pulse.android.MainActivity"
 GW = os.environ.get("E2E_GATEWAY", "http://10.0.2.2:3000")
 NAME_A = "Alpha"
 NAME_B = "Beta"
+# The callee device reclaims the freshly seeded "Alice Chen" identity (the
+# rebind below renames the ORIGINAL demo user for the caller device).
+CALL_PEER_NAME = "Alice Chen"
 OUT = "call-e2e"
 os.makedirs(OUT, exist_ok=True)
 REPORT = []
@@ -344,51 +347,35 @@ def onboard(pkg, name):
     note(name + " onboarded via the offline path (shell visible)")
     return True
 
-def switch_identity(name):
-    """Profile tab -> Switch identity -> create a fresh server identity.
+def rebind_demo_identity():
+    """Give the two devices two DISTINCT server identities.
 
-    Both apps auto-login as the SAME seeded demo account, so the callee
-    switches to its own identity here - the relay needs two distinct users
-    for a 1:1 ring."""
-    foreground(PKG_B)
-    xml = uiax_xml()
-    target = None
-    for (x, y) in node_bounds_all(xml, "Profile", exact=True):
-        if y > H * 0.72:
-            target = (x, y)
-            break
-    if target is None:
-        note("MISS Profile dock tab")
-        screen("identity-fail-dock.png")
-        return False
-    tap(target)
-    time.sleep(3)
-    # scroll the Switch identity section into view if needed
-    pos = node_bounds(uiax_xml(), "Or create a new identity")
-    tries = 0
-    while pos is None and tries < 5:
-        adb_ok("shell", "input", "swipe", str(W // 2), str(int(H * 0.72)), str(W // 2), str(int(H * 0.3)), "300")
-        time.sleep(1.5)
-        pos = node_bounds(uiax_xml(), "Or create a new identity")
-        tries += 1
-    if pos is None:
-        screen("identity-fail-section.png")
-        note("MISS 'Or create a new identity' section")
-        return False
-    if not type_into("Display name", name, verify=name):
-        screen("identity-fail-typed.png")
-        return False
-    screen("identity-" + name + "-typed.png")
-    if not tap_text("Create", wait=4.0, exact=True):
-        note("MISS Create identity button")
-        return False
-    # the new viewer owns the profile header (@name handle / You badge)
-    if not wait_text(name, timeout_s=18):
-        screen("identity-fail-switched.png")
-        dump_logcat("identity-fail-logcat.txt")
-        return False
-    screen("identity-" + name + "-switched.png")
-    note("identity switched to " + name)
+    The app's onboarding hardcodes ONE demo login ("Alice Chen", R52-c), so
+    both apps would otherwise reclaim the SAME seeded user - and the relay
+    rejects from==to. This runs between the two onboardings, over the real
+    REST API from the runner:
+      1. reclaim the seeded "Alice Chen" (U1) and rename it to "Alpha"
+         (the caller device keeps U1's session - the rotated token lands in
+         the grace list, so the app stays signed in);
+      2. create a FRESH "Alice Chen" (U2) - the callee device's demo login
+         reclaims THAT one. Two users, one relay, a real 1:1 ring."""
+    import json as _json
+    import urllib.request
+    def req(method, path, body=None, token=None):
+        r = urllib.request.Request(
+            GW + path, method=method,
+            data=_json.dumps(body).encode() if body is not None else None,
+            headers={"Content-Type": "application/json",
+                     **({"Authorization": "Bearer " + token} if token else {})})
+        with urllib.request.urlopen(r, timeout=20) as resp:
+            return _json.loads(resp.read().decode())
+    auth = req("POST", "/api/users/login", {"name": "Alice Chen"})
+    uid = auth["user"]["id"]
+    token = auth["token"]
+    req("PATCH", "/api/users/" + uid, {"name": NAME_A}, token=token)
+    fresh = req("POST", "/api/users", {"name": CALL_PEER_NAME})
+    note("identity rebind: caller user " + uid[:8] + " renamed to " + NAME_A
+         + "; callee identity " + fresh["user"]["id"][:8] + " created as " + CALL_PEER_NAME)
     return True
 
 def assert_socket_override(pkg, label):
@@ -426,7 +413,7 @@ def call_peer(name):
     time.sleep(2.5)
     pos = node_bounds(uiax_xml(), "Call " + name, exact=True)
     if pos is None:
-        screen("call-button-fail-" + name + ".png")
+        screen("call-button-fail-" + safe_name(name) + ".png")
         note("MISS call button for " + name)
         return False
     tap(pos)
@@ -510,12 +497,12 @@ def main():
     if crash_scan("beta-onboard"):
         bail(2, "crash after Beta onboarding")
 
-    # Both apps auto-login as the SAME seeded demo account - the callee
-    # switches to its own identity so the relay sees two distinct users.
-    if not switch_identity(NAME_B):
-        bail(2, "Beta identity switch failed")
-    if crash_scan("beta-identity"):
-        bail(2, "crash after the Beta identity switch")
+    # Both apps demo-login by the SAME hardcoded name - rebind the seed so
+    # the two devices own two DISTINCT users (the relay rejects from==to).
+    try:
+        rebind_demo_identity()
+    except Exception as e:
+        bail(2, "identity rebind failed: " + repr(e))
 
     # Cold restart BOTH: the persisted socket override (manifest) lands here,
     # and the relay logs two joins (realtime is provably up for both users).
@@ -529,7 +516,7 @@ def main():
     # ── Call 1: ring, answer, connect ──────────────────────────────────────
     if not open_contacts():
         bail(2, "Contacts did not open")
-    if not call_peer(NAME_B):
+    if not call_peer(CALL_PEER_NAME):
         bail(2, "Alpha could not dial Beta")
     if crash_scan("alpha-dial"):
         bail(2, "crash after dialing")
@@ -580,7 +567,7 @@ def main():
     foreground(PKG_A)
     if not open_contacts():
         bail(2, "Contacts did not open (redial)")
-    if not call_peer(NAME_B):
+    if not call_peer(CALL_PEER_NAME):
         bail(2, "Alpha could not redial Beta")
     if not beta_answer():
         bail(2, "Beta could not answer the redial")
