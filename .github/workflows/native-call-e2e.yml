@@ -108,12 +108,18 @@ jobs:
           target: google_apis
           arch: x86_64
           force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # -dns-server 127.0.0.2 is a black hole: the repo-CDN manifest probe
+          # (raw.githubusercontent) can never resolve, so a fresh install
+          # cannot auto-adopt the PRODUCTION gateway or auto-open the demo
+          # account - onboarding stays under the driver's control. Every
+          # endpoint the E2E touches is a raw IP (10.0.2.2), so nothing else
+          # needs DNS.
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -dns-server 127.0.0.2
           disable-animations: true
           # The emulator-runner executes each script LINE in its own sh -c, so
           # everything chains on one line with && (same pattern as the
           # release-smoke step in android-ci.yml).
-          script: cd apps/android && ./gradlew :app:assembleDebug :app:assembleRelease -PpulseAppId=app.pulse.chat.native -PpulseAppLabel="Pulse Alpha" -PpulseQuietAnims=true -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC" -Dorg.gradle.workers.max=2 && adb install -r app/build/outputs/apk/debug/app-debug.apk && adb install -r app/build/outputs/apk/release/app-release.apk && adb shell wm size 1080x2340 && adb shell wm density 440 && adb root && sleep 2 && adb remount && adb shell "echo '127.0.0.1 raw.githubusercontent.com' >> /etc/hosts" && adb shell "echo '127.0.0.1 github.com' >> /etc/hosts" && adb shell cat /etc/hosts && python3 ci/call_e2e.py
+          script: cd apps/android && ./gradlew :app:assembleDebug :app:assembleRelease -PpulseAppId=app.pulse.chat.native -PpulseAppLabel="Pulse Alpha" -PpulseQuietAnims=true -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC" -Dorg.gradle.workers.max=2 && adb install -r app/build/outputs/apk/debug/app-debug.apk && adb install -r app/build/outputs/apk/release/app-release.apk && adb shell wm size 1080x2340 && adb shell wm density 440 && python3 ci/call_e2e.py
 
       - name: Upload call E2E evidence (screenshots, logs, report, relay + web logs)
         if: always()
