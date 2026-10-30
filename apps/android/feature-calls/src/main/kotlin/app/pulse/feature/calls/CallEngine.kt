@@ -180,7 +180,22 @@ class CallEngine @Inject constructor(
     val snapshot: StateFlow<CallSnapshot> = machine.snapshot
 
     init {
-        audio.onFocusLost = { scope.launch { perform(machine.dispatch(CallEvent.PreparationFailed("Call audio was interrupted."))) } }
+        audio.onFocusLost = { transient ->
+            scope.launch {
+                // R58 (E2E finding): a TRANSIENT loss while the call is still
+                // RINGING is the stack's own ringback churn - the telecom
+                // mirror registers the call and the system's phone ring steals
+                // focus for a moment, which was killing the call ~120ms after
+                // dialing. A PERMANENT loss, or ANY loss once the call is past
+                // the ring, still ends it (the R56 privacy policy: end, never
+                // silently resume a microphone).
+                val ringing = machine.snapshot.value.state.let {
+                    it == CallState.OUTGOING_RINGING || it == CallState.INCOMING_RINGING
+                }
+                if (transient && ringing) return@launch
+                perform(machine.dispatch(CallEvent.PreparationFailed("Call audio was interrupted.")))
+            }
+        }
         // Relay call:* signals → the state machine (offer/answer/ice/…).
         scope.launch {
             repo.events().collect { event ->

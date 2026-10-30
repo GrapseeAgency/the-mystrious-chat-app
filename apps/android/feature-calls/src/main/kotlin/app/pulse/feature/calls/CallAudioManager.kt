@@ -20,7 +20,7 @@ class CallAudioManager(context: Context) {
     private var active = false
     private var savedMode = AudioManager.MODE_NORMAL
     private var savedSpeaker = false
-    var onFocusLost: (() -> Unit)? = null
+    var onFocusLost: ((transient: Boolean) -> Unit)? = null
     private val main = Handler(Looper.getMainLooper())
     private var focusEpoch = UUID.randomUUID()
     private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
@@ -37,7 +37,13 @@ class CallAudioManager(context: Context) {
                 change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
                 change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
                 // Privacy-first policy: end, never silently resume a microphone.
-                main.post { if (active && focusEpoch == ticket) onFocusLost?.invoke() }
+                // The listener reports whether the loss was TRANSIENT so the
+                // engine can spare a still-RINGING call from its own stack's
+                // ringback churn (the telecom mirror registers the call and
+                // the system's phone ring steals focus for a moment - the
+                // call was killing ITSELF within ~120ms of dialing).
+                val transient = change != AudioManager.AUDIOFOCUS_LOSS
+                main.post { if (active && focusEpoch == ticket) onFocusLost?.invoke(transient) }
             }
         }
         focusListener = listener
