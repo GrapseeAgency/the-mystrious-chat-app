@@ -404,34 +404,54 @@ def assert_relay_joins(label, expected_total):
     return False
 
 def open_contacts():
-    """Dock Chats (default) -> header kebab -> Contacts."""
+    """Dock Chats -> header kebab -> Contacts.
+
+    The mirror header has NO accessibility descs at all (MirrorHeaderIconButton
+    drops its label param), so the kebab is a POSITION tap; the menu rows are
+    real Text nodes and drive the rest."""
     foreground(PKG_A)
-    if not tap_text("More options", wait=2.0, exact=True):
-        # kebab is top-row; blind tap fallback (right edge of the header)
-        tap((W - int(W * 0.07), int(H * 0.055)))
-        time.sleep(2.0)
-    if not tap_text("Contacts", wait=3.5, exact=True):
-        note("MISS Contacts menu item")
-        screen("contacts-open-fail.png")
+    tap((int(W * 0.913), int(H * 0.092)))  # the 3-dot kebab, top right
+    time.sleep(2.2)
+    pos = wait_node("Contacts", timeout_s=10, exact=True)  # the kebab menu row
+    if pos is None:
+        screen("kebab-menu-fail.png")
+        note("MISS kebab menu row Contacts")
         return False
-    if not wait_text("Find people", timeout_s=12):
+    tap(pos)
+    time.sleep(3)
+    if not wait_text("Contacts", timeout_s=12, exact=True):  # the page title
         screen("contacts-fail.png")
         return False
     return True
 
 def call_peer(name):
-    """In Contacts: filter to the peer, tap the row's call button."""
-    if not type_into("Find people", name):
-        return False
-    time.sleep(2.5)
-    pos = node_bounds(uiax_xml(), "Call " + name, exact=True)
+    """Contacts: find the peer row, tap its Chat pill (opens the DM room),
+    then the room header's voice-call icon (middle of the EXACTLY-three
+    header icons: video / audio / kebab). The mirror rows carry no descs,
+    so the row is found by its name TEXT and the pills by row position."""
+    pos = None
+    for attempt in range(8):
+        pos = node_bounds(uiax_xml(), name, exact=True)
+        if pos is not None:
+            break
+        adb_ok("shell", "input", "swipe", str(W // 2), str(int(H * 0.7)), str(W // 2), str(int(H * 0.4)), "300")
+        time.sleep(1.5)
     if pos is None:
-        screen("call-button-fail-" + safe_name(name) + ".png")
-        note("MISS call button for " + name)
+        screen("peer-row-fail-" + safe_name(name) + ".png")
+        note("MISS peer row: " + name)
         return False
-    tap(pos)
+    tap((int(W * 0.87), pos[1]))  # the row's Chat pill (right-aligned)
+    time.sleep(3.5)
+    screen("alpha-room.png")
+    # voice call = the MIDDLE of the three bare header icons
+    tap((int(W * 0.795), int(H * 0.088)))
     time.sleep(2.5)
     screen("alpha-ringing.png")
+    if not wait_node("End call", timeout_s=15, exact=True):
+        screen("dial-fail-" + safe_name(name) + ".png")
+        dump_logcat("dial-fail-logcat.txt")
+        note("MISS outgoing call overlay after the header phone tap")
+        return False
     note("Alpha dials " + name + " (outgoing overlay up)")
     return True
 
