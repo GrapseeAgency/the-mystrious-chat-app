@@ -110,17 +110,10 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            cd apps/android
-            ./gradlew :app:assembleDebug :app:assembleRelease \
-              -PpulseAppId=app.pulse.chat.native \
-              -PpulseAppLabel="Pulse Alpha" \
-              -PpulseQuietAnims=true \
-              -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC" \
-              -Dorg.gradle.workers.max=2
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb install -r app/build/outputs/apk/release/app-release.apk
-            python3 ci/call_e2e.py
+          # The emulator-runner executes each script LINE in its own sh -c, so
+          # everything chains on one line with && (same pattern as the
+          # release-smoke step in android-ci.yml).
+          script: cd apps/android && ./gradlew :app:assembleDebug :app:assembleRelease -PpulseAppId=app.pulse.chat.native -PpulseAppLabel="Pulse Alpha" -PpulseQuietAnims=true -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC" -Dorg.gradle.workers.max=2 && adb install -r app/build/outputs/apk/debug/app-debug.apk && adb install -r app/build/outputs/apk/release/app-release.apk && python3 ci/call_e2e.py
 
       - name: Upload call E2E evidence (screenshots, logs, report, relay + web logs)
         if: always()
