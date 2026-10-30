@@ -163,25 +163,50 @@ def wait_text(needle, timeout_s=15, exact=False):
         time.sleep(1.2)
     return False
 
-def type_into(field_needle, text, fallback_y_frac=None):
-    """Tap the field (by needle text/placeholder, else a blind fraction) and type."""
-    pos = node_bounds(uiax_xml(), field_needle)
-    if pos is None and fallback_y_frac is not None:
-        pos = (W // 2, int(H * fallback_y_frac))
-        note("field '" + field_needle + "' not in tree; blind tap at " + str(pos))
-    if pos is None:
-        note("MISS field: " + field_needle)
-        return False
-    tap(pos)
-    time.sleep(1.2)
-    adb_ok("shell", "input", "text", text)
-    time.sleep(0.8)
-    adb_ok("shell", "input", "keyevent", "111")  # ESC cancels any suggestion bar
+def close_ime():
     ime = adb("shell", "dumpsys", "input_method").stdout or ""
     if "mInputShown=true" in ime:
         adb_ok("shell", "input", "keyevent", "4")  # BACK closes the IME only
         time.sleep(1.2)
-    return True
+
+def type_into(field_needle, text, fallback_y_frac=None, verify=None):
+    """Tap the field, type, and VERIFY the committed text. The IME opening
+    race can mangle `input text` (dropped/duplicated/truncated chars were
+    observed on the server URL), so each attempt is verified against the
+    accessibility tree and retried from a cleared field."""
+    for attempt in range(3):
+        pos = node_bounds(uiax_xml(), field_needle)
+        if pos is None and fallback_y_frac is not None:
+            pos = (W // 2, int(H * fallback_y_frac))
+        if pos is None:
+            note("MISS field: " + field_needle)
+            return False
+        tap(pos)
+        time.sleep(2.0)  # let the IME fully open before the first keystroke
+        adb_ok("shell", "input", "text", text)
+        time.sleep(1.2)
+        close_ime()
+        xml = uiax_xml()
+        if verify:
+            ok = any(verify in t for t in re.findall(r'text="([^"]*)"', xml))
+        else:
+            ok = any(text in t for t in re.findall(r'text="([^"]*)"', xml))
+        if ok:
+            return True
+        note("typing verify failed (attempt " + str(attempt + 1) + "), clearing and retrying")
+        clear_pos = node_bounds(xml, "Clear", exact=True)
+        if clear_pos is not None:
+            tap(clear_pos)
+            time.sleep(1.2)
+        else:
+            # No Clear affordance: tap the field and hammer DEL, then retype.
+            tap(pos)
+            time.sleep(1)
+            for _ in range(30):
+                adb_ok("shell", "input", "keyevent", "67")
+            time.sleep(0.6)
+    screen("typing-fail-" + text.replace("/", "_")[:24] + ".png")
+    return False
 
 def alive(pkg):
     return bool(adb("shell", "pidof", pkg).stdout.strip())
@@ -250,27 +275,16 @@ def onboard(pkg, name):
     adb_ok("shell", "input", "keyevent", "66")  # ENTER = IME action (GO)
     time.sleep(4)
     if not wait_text("What should people call you", timeout_s=8):
-        ime = adb("shell", "dumpsys", "input_method").stdout or ""
-        if "mInputShown=true" in ime:
-            adb_ok("shell", "input", "keyevent", "4")
-            time.sleep(1.5)
+        close_ime()
         tap_text("Connect", wait=4.0)
     # step 1: display name (the field auto-focuses; type either way)
     if not wait_text("What should people call you", timeout_s=25):
         screen("onboard-fail-" + name + "-name-step.png")
         dump_logcat("onboard-fail-" + name + "-logcat.txt")
         return False
-    pos = node_bounds(uiax_xml(), "What should people call you")
-    if pos is not None:
-        tap(pos)
-        time.sleep(1)
-    adb_ok("shell", "input", "text", name)
-    time.sleep(0.6)
-    adb_ok("shell", "input", "keyevent", "111")
-    ime = adb("shell", "dumpsys", "input_method").stdout or ""
-    if "mInputShown=true" in ime:
-        adb_ok("shell", "input", "keyevent", "4")
-        time.sleep(1.2)
+    if not type_into("What should people call you", name, verify=name):
+        screen("onboard-fail-" + name + "-name-typed.png")
+        return False
     screen("onboard-" + name + "-name.png")
     # advance: Continue -> (@handle step) Skip for now / Start chatting
     for _ in range(4):
