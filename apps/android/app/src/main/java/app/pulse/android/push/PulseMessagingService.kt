@@ -163,7 +163,7 @@ class PulseMessagingService : FirebaseMessagingService() {
 
     /** The default-importance message push with the room deep-link tap. */
     private fun showMessageNotification(title: String, body: String, conversationId: String?, messageId: String?, recipientUserId: String?) {
-        if (!canPostMessageNotification(this)) return
+        if (!PulsePush.canPostMessageNotification(this)) return
         // Device-local quiet hours gate the OS banner exactly like the reminder
         // notifier and the foreground socket ding (evaluated now, never cached).
         if (app.pulse.android.notify.ReminderAlertPolicy.quietNow()) return
