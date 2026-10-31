@@ -2232,8 +2232,9 @@ class PulseApi(
                     "Phrase creation was not confirmed."
                 }
                 if (clientId != null) {
-                    require(receipt.replayed || it.contains("\"replayed\":false")) { "Phrase replay receipt was not confirmed." }
-                    require(receipt.listRev >= 0) { "Phrase revision was not confirmed." }
+                    val root = PulseJson.parseToJsonElement(it) as? JsonObject
+                    require(root?.get("replayed") in listOf(JsonPrimitive(true), JsonPrimitive(false))) { "Phrase replay receipt was not confirmed." }
+                    require(((root?.get("listRev") as? JsonPrimitive)?.content?.toIntOrNull() ?: -1) >= 0) { "Phrase revision was not confirmed." }
                 }
             }
         }
