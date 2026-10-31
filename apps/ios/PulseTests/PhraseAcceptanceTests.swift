@@ -7,7 +7,7 @@ private final class PhraseProtocol: URLProtocol {
     override func startLoading() {
         let mode = request.value(forHTTPHeaderField:"X-Mode") ?? "valid"
         let row: [String:Any] = ["id":"p1","text":mode == "wrong" ? "Wrong" : "Hello","position":0]
-        var body: [String:Any] = ["phrase":row,"phrases":[row],"ok":true,"deleted":true,"userId":"me","phraseId":mode == "wrong" ? "other" : "p1"]
+        var body: [String:Any] = ["phrase":row,"phrases":[row],"listRev":3,"ok":true,"deleted":true,"userId":"me","phraseId":mode == "wrong" ? "other" : "p1"]
         if mode == "empty" { body = [:] }
         if mode == "bare" { body = row }
         client?.urlProtocol(self,didReceive:HTTPURLResponse(url:request.url!,statusCode:200,httpVersion:nil,headerFields:["Content-Type":"application/json"])!,cacheStoragePolicy:.notAllowed)
