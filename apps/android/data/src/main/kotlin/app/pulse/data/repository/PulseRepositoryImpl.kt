@@ -341,6 +341,7 @@ class PulseRepositoryImpl constructor(
                     // A permanent refusal can never succeed; retire the row honestly.
                     section8Journal.confirm(owner, intent.clientId)
                 } else return // transport-class failure: keep the row for the next flush
+                null -> return // unknown intent kind: leave it for a newer binary
             }
         }
     }
