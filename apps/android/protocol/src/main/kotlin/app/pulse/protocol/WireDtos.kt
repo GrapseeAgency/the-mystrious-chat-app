@@ -405,6 +405,9 @@ data class UserDto(
 @Serializable
 data class UsersPageDto(
     val users: List<UserDto> = emptyList(),
+    /** Section 8 item 5: keyset continuation (null = end of directory). */
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
 )
 
 /** GET /api/users/check-username - live @handle availability (onboarding picker). */
@@ -462,12 +465,16 @@ data class FolderDto(
     val name: String = "",
     val emoji: String = "",
     val position: Int? = null,
+    /** Section 8 item 9: per-folder revision; every accepted edit increments it. */
+    val rev: Int = 0,
     val conversationIds: List<String> = emptyList(),
 )
 
 @Serializable
 data class FoldersPageDto(
     val folders: List<FolderDto> = emptyList(),
+    /** Section 8 items 8/9: the rail's monotonic list revision. */
+    val rev: Int = 0,
 )
 
 /** GET /api/mentions - one @mention row (tolerant subset; the list pill counts only). */

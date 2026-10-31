@@ -211,6 +211,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -293,6 +294,56 @@ class PulseRepositoryImpl constructor(
 
     private val dispatchGate = app.pulse.domain.sync.MessageDispatchGate()
     private val outboxRetryJournal = OutboxRetryJournal(database, dispatchGate)
+
+    /** Section 8 items 6/7/8/10: durable offline intents (block/report/folder/phrase). */
+    private val section8Journal = app.pulse.data.repository.Section8IntentJournal(database)
+
+    /** A permanent refusal can never succeed on retry; transport-class
+     * failures (network/auth/rate/server) keep the row for the next flush. */
+    private val PERMANENT_SECTION8_FAILURES = setOf(
+        PulseResult.Failure.Kind.VALIDATION, PulseResult.Failure.Kind.NOT_FOUND,
+        PulseResult.Failure.Kind.FORBIDDEN,
+    )
+
+    /** Restore-time flush: replay every pending section-8 intent with its
+     * ORIGINAL identity; only a confirmed receipt removes the journal row. */
+    private suspend fun flushSection8Intents() {
+        val owner = viewerId ?: return
+        for (intent in section8Journal.pending(owner)) {
+            val receipt = when (intent.kind) {
+                "block" -> api.blockUser(intent.targetId, owner, intent.clientId,
+                    java.time.Instant.ofEpochMilli(intent.intentAtMs).toString())
+                "unblock" -> api.unblockUser(intent.targetId, owner, intent.clientId,
+                    java.time.Instant.ofEpochMilli(intent.intentAtMs).toString())
+                "report" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    val reason = (body["reason"] as kotlinx.serialization.json.JsonPrimitive).content
+                    val details = (body["details"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    api.reportUser(intent.targetId, owner, reason, details, intent.clientId)
+                }
+                "folder-create" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    api.createFolder(owner,
+                        (body["name"] as kotlinx.serialization.json.JsonPrimitive).content,
+                        (body["emoji"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "",
+                        intent.clientId)
+                }
+                "phrase-create" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    api.createPhrase(owner, (body["text"] as kotlinx.serialization.json.JsonPrimitive).content, intent.clientId)
+                }
+                "phrase-delete" -> api.deletePhrase(owner, intent.targetId, intent.clientId)
+                else -> null
+            }
+            when (receipt) {
+                is PulseResult.Success -> section8Journal.confirm(owner, intent.clientId)
+                is PulseResult.Failure -> if (receipt.kind in PERMANENT_SECTION8_FAILURES) {
+                    // A permanent refusal can never succeed; retire the row honestly.
+                    section8Journal.confirm(owner, intent.clientId)
+                } else return // transport-class failure: keep the row for the next flush
+            }
+        }
+    }
     private var selfHealJob: Job? = null
 
     override fun stop() {
@@ -3561,6 +3612,7 @@ class PulseRepositoryImpl constructor(
                 return@serialized FlushReport(sent = 0, dropped = 0, pending = pendingOutboxCount())
             }
             outboxRetryJournal.restore(checkNotNull(viewerId))
+            flushSection8Intents()
             if (dispatchGate.remainingDelayMillis() > 0L) {
                 scheduleSelfHeal()
                 return@serialized FlushReport(pending = pendingOutboxCount())
@@ -4149,14 +4201,36 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun block(userId: String): Result<Unit> =
-        ownedPeerRequest { api.blockUser(userId, it) }.map { Unit }
+    override suspend fun block(userId: String): Result<Unit> = section8Intent("block", userId) { owner, receipt ->
+        api.blockUser(userId, owner, receipt.clientId, java.time.Instant.ofEpochMilli(receipt.intentAtMs).toString())
+    }.map { Unit }
 
-    override suspend fun unblock(userId: String): Result<Unit> =
-        ownedPeerRequest { api.unblockUser(userId, it) }.map { Unit }
+    override suspend fun unblock(userId: String): Result<Unit> = section8Intent("unblock", userId) { owner, receipt ->
+        api.unblockUser(userId, owner, receipt.clientId, java.time.Instant.ofEpochMilli(receipt.intentAtMs).toString())
+    }.map { Unit }
 
-    override suspend fun report(userId: String, reason: String, details: String?): Result<Unit> =
-        ownedPeerRequest { api.reportUser(userId, it, reason, details) }.map { Unit }
+    override suspend fun report(userId: String, reason: String, details: String?): Result<Unit> = section8Intent("report", userId,
+        payload = kotlinx.serialization.json.buildJsonObject {
+            put("reason", reason)
+            if (details != null) put("details", details)
+        }) { owner, receipt ->
+        api.reportUser(userId, owner, reason, details, receipt.clientId)
+    }.map { Unit }
+
+    /** Journal first, then send: an uncertain ACK replays with the SAME identity. */
+    private suspend fun <T> section8Intent(
+        kind: String,
+        targetId: String,
+        payload: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.buildJsonObject { },
+        send: suspend (owner: String, receipt: app.pulse.data.repository.Section8Intent) -> PulseResult<T>,
+    ): Result<T> {
+        val viewer = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val receipt = section8Journal.enqueue(viewer, kind, targetId, payload)
+        return when (val r = send(viewer, receipt)) {
+            is PulseResult.Success -> { section8Journal.confirm(viewer, receipt.clientId); Result.success(r.value) }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+    }
 
     // N10 home-page era
 
@@ -5253,14 +5327,17 @@ class PulseRepositoryImpl constructor(
             page.phrases.map { QuickPhrase(id = it.id, text = it.text, position = it.position) }.sortedBy { it.position }
         }
 
-    override suspend fun addPhrase(text: String): Result<QuickPhrase> =
-        ownedAccountRequest { api.createPhrase(it, text) }.map { receipt ->
-            val phrase = requireNotNull(receipt.phrase)
-            QuickPhrase(id = phrase.id, text = phrase.text, position = phrase.position)
-        }
+    override suspend fun addPhrase(text: String): Result<QuickPhrase> = section8Intent("phrase-create", "",
+        payload = kotlinx.serialization.json.buildJsonObject { put("text", text) }) { owner, receipt ->
+        api.createPhrase(owner, text, receipt.clientId)
+    }.map { receipt ->
+        val phrase = requireNotNull(receipt.phrase)
+        QuickPhrase(id = phrase.id, text = phrase.text, position = phrase.position)
+    }
 
-    override suspend fun deletePhrase(phraseId: String): Result<Unit> =
-        ownedAccountRequest { api.deletePhrase(it, phraseId) }.map { Unit }
+    override suspend fun deletePhrase(phraseId: String): Result<Unit> = section8Intent("phrase-delete", phraseId) { owner, receipt ->
+        api.deletePhrase(owner, phraseId, receipt.clientId)
+    }.map { Unit }
 
     override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))
@@ -5671,8 +5748,13 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun createFolder(name: String, emoji: String): Result<FolderSummary> =
-        ownedAccountRequest { api.createFolder(it, name, emoji) }.map { it.toFolderSummary() }
+    override suspend fun createFolder(name: String, emoji: String): Result<FolderSummary> = section8Intent("folder-create", "",
+        payload = kotlinx.serialization.json.buildJsonObject {
+            put("name", name)
+            put("emoji", emoji)
+        }) { owner, receipt ->
+        api.createFolder(owner, name, emoji, receipt.clientId)
+    }.map { r -> r.toFolderSummary() }
 
     override suspend fun updateFolder(folderId: String, name: String?, emoji: String?, position: Int?): Result<Unit> =
         ownedAccountRequest { api.patchFolder(folderId, name, emoji, position, it) }.map { Unit }

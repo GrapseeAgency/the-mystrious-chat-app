@@ -82,11 +82,11 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (denied) return denied
   try {
     const patch = conversationMetadataPatch(body, GROUP_NAME_MAX)
-    const recipients = await patchConversationMetadata(db, id, requesterId, patch)
-    await notifySocket('conversation:updated', recipients, {
+    const applied = await patchConversationMetadata(db, id, requesterId, patch)
+    await notifySocket('conversation:updated', applied.userIds, {
       type: 'conversation:updated',
       conversationId: id,
-      recipientIds: recipients,
+      recipientIds: applied.userIds,
     })
     const updated = await db.$transaction(
       (tx) =>
@@ -101,7 +101,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
         { error: 'Conversation is no longer available to this participant.' },
         { status: 403 },
       )
-    return NextResponse.json({ conversation: await buildConversationDetail(updated, requesterId) })
+    return NextResponse.json({ conversation: await buildConversationDetail(updated, requesterId), metadataRev: applied.metadataRev })
   } catch (error) {
     if (error instanceof ConversationMetadataError)
       return NextResponse.json({ error: error.message }, { status: error.status })

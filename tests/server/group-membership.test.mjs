@@ -28,7 +28,7 @@ async function fixture(run) {
   try {
     for (const sql of [
       'CREATE TABLE User(id TEXT PRIMARY KEY, preferences TEXT)',
-      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME, inviteCode TEXT UNIQUE, name TEXT, photo TEXT, screenPrivacy BOOLEAN DEFAULT false, ttlSeconds INTEGER DEFAULT 0, slowModeSeconds INTEGER DEFAULT 0)',
+      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME, inviteCode TEXT UNIQUE, inviteExpiresAt DATETIME, metadataRev INTEGER DEFAULT 0, name TEXT, photo TEXT, screenPrivacy BOOLEAN DEFAULT false, ttlSeconds INTEGER DEFAULT 0, slowModeSeconds INTEGER DEFAULT 0)',
       `CREATE TABLE ConversationParticipant(draftRevision TEXT NOT NULL DEFAULT 0, id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT,
         role TEXT DEFAULT 'member', joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, lastReadAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME, handRaisedAt DATETIME,
@@ -140,7 +140,7 @@ test('an ordinary empty group can be left without inventing a successor', () =>
   fixture(async (db) => {
     await removeGroupMember(db, 'group', 'a', 'b')
     await removeGroupMember(db, 'group', 'a', 'c')
-    assert.deepEqual(await leaveGroup(db, 'group', 'a'), { promotedUserId: null, recipients: [] })
+    assert.deepEqual(await leaveGroup(db, 'group', 'a'), { promotedUserId: null, metadataRev: 3, recipients: [] })
     await assert.rejects(leaveGroup(db, 'group', 'd'), { status: 403 })
   }))
 test('failed membership writes roll back promotion and succession together', () =>
@@ -258,7 +258,7 @@ test('actual targeted PATCH handler projects private fields for the requesting a
     { params: Promise.resolve({ id: 'group', userId: 'target' }) },
   )
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { conversation: { myDraft: 'my own draft' } })
+  assert.deepEqual(await response.json(), { conversation: { myDraft: 'my own draft' }, metadataRev: null })
   assert.deepEqual(calls[0].slice(1), ['group', 'requester', 'target', 'admin'])
   deps.bearerToken = () => 'foreign-owner-token'
   deps.requireActionOwner = async (_, actor) => {

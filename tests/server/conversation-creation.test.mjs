@@ -17,7 +17,7 @@ async function fixture(run) {
         description TEXT NOT NULL DEFAULT '', photo TEXT, inviteCode TEXT, ttlSeconds INTEGER NOT NULL DEFAULT 0,
         broadcastMode BOOLEAN NOT NULL DEFAULT false, screenPrivacy BOOLEAN NOT NULL DEFAULT false,
         slowModeSeconds INTEGER NOT NULL DEFAULT 0, isSelf BOOLEAN NOT NULL DEFAULT false, appKey TEXT,
-        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME NOT NULL)`,
+        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME NOT NULL, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)`,
       `CREATE TABLE ConversationParticipant(draftRevision TEXT NOT NULL DEFAULT 0, id TEXT PRIMARY KEY, userId TEXT NOT NULL, conversationId TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'member', joinedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         lastReadAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME,

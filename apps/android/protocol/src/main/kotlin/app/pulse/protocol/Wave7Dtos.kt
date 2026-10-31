@@ -300,10 +300,19 @@ data class QuickPhraseDto(
 )
 
 @Serializable
-data class PhrasesPageDto(val phrases: List<QuickPhraseDto> = emptyList())
+data class PhrasesPageDto(
+    val phrases: List<QuickPhraseDto> = emptyList(),
+    /** Section 8 item 10: the rail's monotonic list revision. */
+    val listRev: Int = 0,
+)
 
 @Serializable
-data class PhraseEnvelopeDto(val phrase: QuickPhraseDto? = null)
+data class PhraseEnvelopeDto(
+    val phrase: QuickPhraseDto? = null,
+    /** Section 8 item 10: receipt ordering + lost-ACK replay flag. */
+    val listRev: Int = 0,
+    val replayed: Boolean = false,
+)
 
 @Serializable
 data class ReminderResolveDto(

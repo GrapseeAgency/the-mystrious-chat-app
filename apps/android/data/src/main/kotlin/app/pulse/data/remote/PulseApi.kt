@@ -1544,6 +1544,8 @@ class PulseApi(
             raw["actorId"] != JsonPrimitive(actor) || raw["targetId"] != JsonPrimitive(target) ||
             raw["blocked"] != JsonPrimitive(state.blocked) || (desired != null && state.blocked != desired))
             throw kotlinx.serialization.SerializationException("The requested block state was not confirmed")
+        if (state.intentAt != null && runCatching { java.time.Instant.parse(state.intentAt) }.isFailure)
+            throw kotlinx.serialization.SerializationException("The block intent watermark was not a timestamp")
         return state
     }
     suspend fun blockState(targetId: String, actorId: String): PulseResult<BlockStateDto> =
@@ -1554,18 +1556,30 @@ class PulseApi(
             blockReceipt(it, actorId, targetId)
         }
 
-    /** POST /api/users/{id}/block { userId } - idempotent (actor in the BODY). */
-    suspend fun blockUser(targetId: String, actorId: String): PulseResult<BlockStateDto> =
+    /** POST /api/users/{id}/block { userId, clientId?, intentAt? } - idempotent
+     * (actor in the BODY). Section 8 item 6: a durable offline intent carries
+     * its retry identity + original client clock; the server orders opposite
+     * writes by intentAt and answers with stale/replayed. */
+    suspend fun blockUser(targetId: String, actorId: String, clientId: String? = null, intentAt: String? = null): PulseResult<BlockStateDto> =
         post(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
-            jsonOf("userId" to actorId),
+            buildJsonObject {
+                put("userId", actorId)
+                if (clientId != null) put("clientId", clientId)
+                if (intentAt != null) put("intentAt", intentAt)
+            },
         ) { blockReceipt(it, actorId, targetId, true) }
 
-    /** DELETE /api/users/{id}/block?userId= - idempotent unblock (POST /unblock does NOT exist). */
-    suspend fun unblockUser(targetId: String, actorId: String): PulseResult<BlockStateDto> =
-        deleteWithQuery(
-            "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block",
-            actorId,
+    /** DELETE /api/users/{id}/block?userId= - idempotent unblock (POST /unblock does NOT exist).
+     * Section 8 item 6: a durable offline intent carries clientId + intentAt in the BODY. */
+    suspend fun unblockUser(targetId: String, actorId: String, clientId: String? = null, intentAt: String? = null): PulseResult<BlockStateDto> =
+        deleteWithJson(
+            "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/block?userId=" +
+                java.net.URLEncoder.encode(actorId, "UTF-8"),
+            buildJsonObject {
+                if (clientId != null) put("clientId", clientId)
+                if (intentAt != null) put("intentAt", intentAt)
+            },
         ) { blockReceipt(it, actorId, targetId, false) }
 
     /** GET /api/users/{id}/blocks?userId= - self-service list (403 otherwise). */
@@ -1585,14 +1599,30 @@ class PulseApi(
             page
         }
 
-    /** POST /api/users/{id}/report { userId, reason, details? } → 201/200 { reported }. */
-    suspend fun reportUser(targetId: String, reporterId: String, reason: String, details: String?): PulseResult<ReportAckDto> =
+    /** GET /api/users?limit=&after= - Section 8 item 5: the contact directory
+     * pages by keyset cursor (name,id); hasMore + nextCursor drive the loop. */
+    suspend fun directoryPage(limit: Int = 200, after: String? = null): PulseResult<UsersPageDto> =
+        get("/api/users?limit=" + limit.coerceIn(1, 500) + (after?.let { "&after=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            require(root?.get("users") is JsonArray) { "Contact directory page is missing." }
+            require(root["hasMore"]?.toString() in listOf("true", "false")) { "Contact directory paging was not confirmed." }
+            PulseJson.decodeFromString(UsersPageDto.serializer(), it).also { page ->
+                require(page.users.all { row -> row.id.isNotBlank() }) { "Invalid directory page." }
+                require((page.nextCursor != null) == page.hasMore) { "Directory cursor must match hasMore." }
+            }
+        }
+
+    /** POST /api/users/{id}/report { userId, reason, details?, clientId? } → 201/200.
+     * Section 8 item 7: an offline report journals its clientId; a lost-ACK
+     * replay with the SAME identity returns the SAME stored receipt. */
+    suspend fun reportUser(targetId: String, reporterId: String, reason: String, details: String?, clientId: String? = null): PulseResult<ReportAckDto> =
         post(
             "/api/users/" + java.net.URLEncoder.encode(targetId, "UTF-8") + "/report",
             buildJsonObject {
                 put("userId", reporterId)
                 put("reason", reason)
                 if (details != null) put("details", details)
+                if (clientId != null) put("clientId", clientId)
             },
         ) {
             val raw = PulseJson.parseToJsonElement(it) as? JsonObject
@@ -1706,19 +1736,29 @@ class PulseApi(
             result
         }
 
-    /** POST /api/folders { userId, name, emoji? } → 201 { folder }. */
-    suspend fun createFolder(userId: String, name: String, emoji: String): PulseResult<FolderDto> =
+    /** POST /api/folders { userId, name, emoji?, clientId? } → 201 { folder }.
+     * Section 8 item 8: with a durable clientId a lost-ACK retry replays the
+     * SAME folder (replayed=true, 200) instead of duplicating the rail. */
+    suspend fun createFolder(userId: String, name: String, emoji: String, clientId: String? = null): PulseResult<FolderDto> =
         post(
             "/api/folders",
             buildJsonObject {
                 put("userId", userId)
                 put("name", name)
                 if (emoji.isNotBlank()) put("emoji", emoji)
+                if (clientId != null) put("clientId", clientId)
             },
         ) {
-            folderOf(it, userId).also { folder ->
-                require(folder.name == name.trim() && folder.emoji == app.pulse.protocol.folderIconId(emoji)) { "Folder creation was not confirmed." }
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            val folder = folderOf(it, userId).also { row ->
+                require(row.name == name.trim() && row.emoji == app.pulse.protocol.folderIconId(emoji)) { "Folder creation was not confirmed." }
             }
+            if (clientId != null) {
+                require(root?.get("replayed") in listOf(JsonPrimitive(true), JsonPrimitive(false))) { "Folder creation receipt was not confirmed; keep the same retry identity." }
+                val folderRev = (root?.get("rev") as? JsonPrimitive)?.content?.toIntOrNull() ?: folder.rev
+                require(folderRev >= 0) { "Folder revision was not confirmed." }
+            }
+            folder
         }
 
     /** PATCH /api/folders/[id] { name?, emoji?, position? } → { folder }. */
@@ -2172,14 +2212,18 @@ class PulseApi(
         get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases") {
             val root = PulseJson.parseToJsonElement(it) as? JsonObject
             require(root?.get("phrases") is JsonArray) { "Quick phrases were not confirmed." }
+            require(((root!!["listRev"] as? JsonPrimitive)?.content?.toIntOrNull() ?: -1) >= 0) { "Quick-phrase revision was not confirmed." }
             PulseJson.decodeFromString(PhrasesPageDto.serializer(), it).also { page ->
                 require(page.phrases.all { row -> row.id.isNotBlank() && row.text.isNotBlank() && row.position >= 0 } &&
                     page.phrases.map { row -> row.id }.distinct().size == page.phrases.size) { "Invalid quick-phrase list." }
             }
         }
 
-    suspend fun createPhrase(userId: String, text: String): PulseResult<PhraseEnvelopeDto> =
-        post("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases", jsonOf("text" to text)) {
+    suspend fun createPhrase(userId: String, text: String, clientId: String? = null): PulseResult<PhraseEnvelopeDto> =
+        post("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases", buildJsonObject {
+            put("text", text)
+            if (clientId != null) put("clientId", clientId)
+        }) {
             // Decode the envelope once. Unwrapping first silently decoded a null
             // phrase, which the repository used to turn into a blank-ID success.
             PulseJson.decodeFromString(PhraseEnvelopeDto.serializer(), it).also { receipt ->
@@ -2187,18 +2231,27 @@ class PulseApi(
                 require(phrase.id.isNotBlank() && phrase.text == text.trim() && phrase.text.isNotBlank() && phrase.position >= 0) {
                     "Phrase creation was not confirmed."
                 }
+                if (clientId != null) {
+                    require(receipt.replayed || it.contains("\"replayed\":false")) { "Phrase replay receipt was not confirmed." }
+                    require(receipt.listRev >= 0) { "Phrase revision was not confirmed." }
+                }
             }
         }
 
-    suspend fun deletePhrase(userId: String, phraseId: String): PulseResult<OkDto> =
+    suspend fun deletePhrase(userId: String, phraseId: String, clientId: String? = null): PulseResult<OkDto> =
         deleteWithJson(
-            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases?phraseId=" + java.net.URLEncoder.encode(phraseId, "UTF-8"),
+            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases?phraseId=" +
+                java.net.URLEncoder.encode(phraseId, "UTF-8") +
+                (clientId?.let { "&clientId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""),
             buildJsonObject { },
         ) {
             val root = PulseJson.parseToJsonElement(it) as? JsonObject ?: error("Phrase receipt is missing.")
             require(root["ok"]?.toString() == "true" && root["deleted"]?.toString() == "true" &&
                 (root["userId"] as? JsonPrimitive)?.content == userId &&
                 (root["phraseId"] as? JsonPrimitive)?.content == phraseId) { "Phrase deletion was not confirmed." }
+            if (clientId != null) {
+                require(((root["listRev"] as? JsonPrimitive)?.content?.toIntOrNull() ?: -1) >= 0) { "Phrase revision was not confirmed." }
+            }
             OkDto(ok = true)
         }
 

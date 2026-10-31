@@ -30,6 +30,10 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (!conv || !conv.isGroup) {
     return NextResponse.json({ error: 'This invite link is no longer valid.' }, { status: 404 })
   }
+  // Section 8 item 4: an expired code previews as dead - joining would 404 too.
+  if (conv.inviteExpiresAt && conv.inviteExpiresAt.getTime() <= Date.now()) {
+    return NextResponse.json({ error: 'This invite link has expired.' }, { status: 404 })
+  }
 
   const url = new URL(req.url)
   const userId = url.searchParams.get('userId')
@@ -41,6 +45,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     name: conv.name,
     memberCount: conv.participants.length,
     alreadyMember: userId ? conv.participants.some((p) => p.userId === userId) : false,
+    expiresAt: conv.inviteExpiresAt ? conv.inviteExpiresAt.toISOString() : null,
   }
   return NextResponse.json({ invite })
 }

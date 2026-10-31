@@ -70,7 +70,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
         { error: 'Conversation is no longer available to this participant.' },
         { status: 403 },
       )
-    return NextResponse.json({ conversation, added: result.added })
+    return NextResponse.json({ conversation, added: result.added, metadataRev: result.metadataRev ?? null })
   } catch (error) {
     return failure(error)
   }
@@ -93,6 +93,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
       ok: true,
       remainingMembers: result.recipients.length,
       promotedUserId: result.promotedUserId,
+      metadataRev: result.metadataRev ?? null,
     })
   } catch (error) {
     return failure(error)
@@ -122,7 +123,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
         { error: 'Conversation is no longer available to this participant.' },
         { status: 403 },
       )
-    return NextResponse.json({ conversation })
+    return NextResponse.json({ conversation, metadataRev: result.metadataRev ?? null })
   } catch (error) {
     return failure(error)
   }

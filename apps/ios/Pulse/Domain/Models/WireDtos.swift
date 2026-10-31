@@ -612,11 +612,16 @@ public struct WireQuickPhrase: Codable, Hashable, Sendable, Identifiable {
 /// GET /api/users/{id}/phrases → { phrases: [...] }.
 public struct WirePhrasesPage: Codable, Sendable {
     public let phrases: [WireQuickPhrase]?
+    /// Section 8 item 10: the rail's monotonic list revision.
+    public let listRev: Int?
 }
 
 /// POST /api/users/{id}/phrases → 201 { phrase } (tolerant envelope OR bare).
 public struct WirePhraseEnvelope: Codable, Sendable {
     public let phrase: WireQuickPhrase?
+    /// Section 8 item 10: receipt ordering + lost-ACK replay flag.
+    public let listRev: Int?
+    public let replayed: Bool?
 }
 
 public struct WireConversationMember: Codable, Hashable, Sendable {
@@ -833,11 +838,15 @@ public struct WireFolder: Codable, Hashable, Sendable {
     public let name: String
     public let emoji: String?
     public let position: Int?
+    /// Section 8 item 9: per-folder revision; every accepted edit increments it.
+    public let rev: Int?
     public let conversationIds: [String]?
 }
 
 public struct WireFoldersPage: Codable, Sendable {
     public let folders: [WireFolder]?
+    /// Section 8 items 8/9: the rail's monotonic list revision.
+    public let rev: Int?
 }
 
 /// GET /api/mentions?userId= - only the item count feeds the entry pill.

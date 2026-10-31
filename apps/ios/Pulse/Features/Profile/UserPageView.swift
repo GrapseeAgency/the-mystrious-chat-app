@@ -479,8 +479,16 @@ final class UserPageModel: ObservableObject {
                 blocked = state; blockKnown = true
                 return
             }
-            if wasBlocked { try await api.unblock(userId: target) }
-            else { try await api.block(userId: target) }
+            // Section 8 item 6: journal the intent first; a lost ACK replays
+            // the SAME clientId + original client clock, never a flip-flop.
+            let journal = PulseSection8Journal.shared
+            let intent = journal.enqueue(owner: api.userId, kind: wasBlocked ? "unblock" : "block",
+                                         targetId: target,
+                                         payload: ["intentAt": ISO8601DateFormatter().string(from: Date())])
+            defer { journal.confirm(owner: api.userId, clientId: intent.clientId) }
+            let stamp = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(intent.intentAtMs) / 1000))
+            if wasBlocked { try await api.unblock(userId: target, clientId: intent.clientId, intentAt: stamp) }
+            else { try await api.block(userId: target, clientId: intent.clientId, intentAt: stamp) }
             guard !Task.isCancelled, session.sessionGeneration == epoch, userId == target, blockRevision == ticket else { return }
             blocked = !wasBlocked
             PulseHaptics.success()

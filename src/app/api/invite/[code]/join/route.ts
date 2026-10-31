@@ -32,6 +32,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({
       conversationId: result.conversationId,
       alreadyMember: result.alreadyMember,
+      metadataRev: result.metadataRev ?? null,
     })
   } catch (error) {
     if (error instanceof GroupMembershipError)

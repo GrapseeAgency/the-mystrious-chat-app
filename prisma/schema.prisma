@@ -67,6 +67,7 @@ model AccountReport {
   id         String   @id @default(cuid())
   reporterId String
   reportedId String
+  evidenceRev Int     @default(0) // Section 8 item 7: evidence revision, bumped on every accepted details refresh
   reason     String // spam|harassment|impersonation|inappropriate|scam|other
   details    String   @default("") // optional free-text context (0..500 chars)
   createdAt  DateTime @default(now())
@@ -89,6 +90,8 @@ model UserBlock {
   blockerId String // the user who issued the block
   blockedId String // the user who is blocked
   createdAt DateTime @default(now())
+  lastIntentAt    DateTime? // Section 8 item 6: client intent watermark of the winning write (LWW over offline journals)
+  lastClientId    String? // Section 8 item 6: retry identity of the winning write
   blocker   User     @relation("BlocksIssued", fields: [blockerId], references: [id], onDelete: Cascade)
   blocked   User     @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
 
@@ -283,6 +286,8 @@ model Conversation {
   description       String                    @default("") // channel/group purpose line (channel directory + info page)
   photo             String? // channel/group photo path (/uploads/<uuid>.<ext>) — null = palette icon fallback
   inviteCode        String?                   @unique // shareable join code (groups only; null = no active link)
+  inviteExpiresAt   DateTime? // Section 8 item 4: invite expiry watermark (null = the active code never expires)
+  metadataRev       Int                       @default(0) // Section 8 items 1/3: monotonic per-room counter that totally orders competing metadata and membership writes across devices
   ttlSeconds        Int                       @default(0) // disappearing-message TTL (0 = off; applied at send time)
   broadcastMode     Boolean                   @default(false) // Discord-stage/Telegram-channel style admin-only posting
   screenPrivacy     Boolean                   @default(false) // R38 Signal screen security: frost the message area while the Pulse window is unfocused
@@ -612,6 +617,7 @@ model Folder {
   name      String
   emoji     String               @default("folder")
   position  Int                  @default(0)
+  rev       Int                  @default(0) // Section 8 item 9: per-folder revision; every accepted edit increments it
   createdAt DateTime             @default(now())
   user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   entries   FolderConversation[]
@@ -1001,4 +1007,67 @@ model LivePushReceipt {
   bindingHash String
   createdAtMs BigInt
   @@id([messageId, bindingHash])
+}
+
+/** Section 8 item 8 — folder creation replay receipt (mirror of
+ * ConversationCreationOperation): the same (owner, clientId) always returns
+ * the same folder, so an uncertain acknowledgement can never duplicate. */
+model FolderCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  folderId    String
+
+  @@id([userId, clientId])
+}
+
+/** Section 8 items 9/10 — per-user monotonic list revision shared by the
+ * folder rail and the quick-phrase rail: competing cross-device writes are
+ * totally ordered by the revision the server hands back with each receipt. */
+model UserListRevision {
+  userId String
+  kind   String // "folders" | "phrases"
+  rev    Int    @default(0)
+
+  @@id([userId, kind])
+}
+
+/** Section 8 item 10 — quick-phrase operation replay receipt: a lost ACK is
+ * retried with the same clientId and converges on the same outcome instead
+ * of duplicating or clobbering a newer edit. */
+model QuickPhraseOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  action      String // "create" | "update" | "delete"
+  phraseId    String
+
+  @@id([userId, clientId])
+}
+
+/** Section 8 item 6 — durable block intents. Every accepted block/unblock
+ * records its intent watermark; a late opposite write whose intentAt is older
+ * than the winning intent must not regress the pair state. */
+model PeerBlockIntent {
+  blockerId String
+  blockedId String
+  clientId  String
+  desired   Boolean
+  intentAt  DateTime
+
+  @@id([blockerId, blockedId, clientId])
+  @@index([blockerId, blockedId, intentAt])
+}
+
+/** Section 8 item 7 — account-report replay receipt: an offline report whose
+ * ACK was lost replays with the same clientId and receives the SAME stored
+ * receipt (reportId + evidenceRev) instead of refreshing the evidence. */
+model ReportOperation {
+  reporterId  String
+  clientId    String
+  requestHash String
+  reportId    String
+  evidenceRev Int
+
+  @@id([reporterId, clientId])
 }

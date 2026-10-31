@@ -57,7 +57,7 @@ async function patchHandler(body, { denied = null, stillMember = true } = {}) {
     bearerToken: () => 'supplied', requireActionOwner: async (_, owner) => { assert.equal(owner, 'viewer'); return denied },
     conversationMetadataPatch, ConversationMetadataError,
     patchConversationMetadata: async (_, room, actor, patch) => {
-      assert.equal(room, 'room'); assert.equal(actor, 'viewer'); writes.push(patch); return ['viewer', 'member']
+      assert.equal(room, 'room'); assert.equal(actor, 'viewer'); writes.push(patch); return { userIds: ['viewer', 'member'], metadataRev: 1 }
     },
     notifySocket: async (_, recipients) => assert.deepEqual(recipients, ['viewer', 'member']),
     buildConversationDetail: async (_, owner) => { serialized++; assert.equal(owner, 'viewer'); return { id: 'room', myDraft: 'my private draft' } },

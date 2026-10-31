@@ -31,7 +31,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'UserVerification', 'Message', 'SavedMessage', 'SavedMessageState', 'Reminder', 'ComposerOperation']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'PeerBlockIntent', 'ReportOperation', 'UserVerification', 'Message', 'SavedMessage', 'SavedMessageState', 'Reminder', 'ComposerOperation']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -101,7 +101,7 @@ async function fixture(run, database = db => db) {
       method:'PATCH',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId,...body}),
     }),{params:Promise.resolve({id:'room'})})
     const blockDeps = {db,requireActionOwner,peerBlock,PeerBlockError,NextResponse:Response,
-      safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',notifySocket:async(...args)=>notices.push(args)}
+      safeJson:async r=>{try{const p=await r.json();return p&&typeof p==='object'&&!Array.isArray(p)?p:{}}catch{return{}}},strField:v=>typeof v==='string'?v.trim():'',notifySocket:async(...args)=>notices.push(args)}
     const pairRoutes=await load('src/app/api/users/[id]/block/route.ts',blockDeps,'({GET,POST,DELETE})')
     const listRoute=await load('src/app/api/users/[id]/blocks/route.ts',blockDeps,'GET')
     const peer=(method,token='synthetic-owner',actor='owner',target='other')=>pairRoutes[method](new Request(`https://settings.test?userId=${actor}`,{
@@ -375,8 +375,8 @@ test('report receipts confirm exact evidence, repeated reason updates one row an
     const response=await report('POST',{details});assert.equal(response.status,updated?200:201)
     assert.equal(response.headers.get('cache-control'),'private, no-store')
     const receipt=await response.json();assert.ok(Number.isFinite(Date.parse(receipt.reportedAt)))
-    assert.deepEqual({...receipt,reportedAt:null},{ok:true,reportReceiptVersion:1,reporterId:'owner',reportedId:'other',
-      reason:'spam',details,reported:true,updated,reportedAt:null})
+    assert.deepEqual({...receipt,reportedAt:null,reportId:null},{ok:true,reportReceiptVersion:1,reporterId:'owner',reportedId:'other',
+      reason:'spam',details,reported:true,updated,replayed:false,reportId:null,evidenceRev:updated?1:0,reportedAt:null})
     assert.equal(await db.accountReport.count(),1)
     assert.equal((await db.accountReport.findFirst()).details,details)
   }

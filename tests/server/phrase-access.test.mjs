@@ -16,11 +16,13 @@ async function fixture(run) {
   for(const sql of [
    'CREATE TABLE User(id TEXT PRIMARY KEY, sessionTokenHash TEXT, legacyTokenHashes TEXT)',
    'CREATE TABLE QuickPhrase(id TEXT PRIMARY KEY, userId TEXT, text TEXT, position INTEGER DEFAULT 0, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
+   'CREATE TABLE UserListRevision(userId TEXT, kind TEXT, rev INTEGER DEFAULT 0, PRIMARY KEY(userId, kind))',
+   'CREATE TABLE QuickPhraseOperation(userId TEXT, clientId TEXT, requestHash TEXT, action TEXT, phraseId TEXT, PRIMARY KEY(userId, clientId))',
   ]) await db.$executeRawUnsafe(sql)
   for(const id of ['me','other']) await db.$executeRawUnsafe('INSERT INTO User VALUES (?,?,?)',id,hashSessionToken(`synthetic-${id}`),'[]')
   await db.quickPhrase.create({data:{id:'p1',userId:'me',text:'On my way',position:0}})
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
-  const h=await load('src/app/api/users/[id]/phrases/route.ts',{db,requireActionOwner,NextResponse:{json:Response.json},safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():''},'({GET,POST,DELETE})')
+  const h=await load('src/app/api/users/[id]/phrases/route.ts',{db,requireActionOwner,NextResponse:{json:Response.json},safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():''},'({GET,POST,PATCH,DELETE})')
   await run(db,h)
  }finally{await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
@@ -40,7 +42,7 @@ test('create returns the actual row; deletion receipt identifies the exact owned
  const {phrase}=await created.json();assert.ok(phrase.id);assert.equal(phrase.text,'Hello');assert.equal(phrase.position,1)
  assert.equal((await h.DELETE(req('DELETE','synthetic-other'),ctx('other'))).status,404)
  assert.equal(await db.quickPhrase.count(),2)
- const deleted=await h.DELETE(req('DELETE'),ctx());assert.deepEqual(await deleted.json(),{ok:true,phraseId:'p1',userId:'me',deleted:true})
+ const deleted=await h.DELETE(req('DELETE'),ctx());assert.deepEqual(await deleted.json(),{ok:true,phraseId:'p1',userId:'me',deleted:true,listRev:2,replayed:false})
  assert.equal(await db.quickPhrase.count(),1)
  assert.equal((await h.DELETE(req('DELETE'),ctx())).status,404)
 }))

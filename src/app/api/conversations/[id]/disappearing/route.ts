@@ -31,11 +31,11 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   try {
     const ttlSeconds = body.ttlSeconds
     requirePreset(ttlSeconds, TTL_PRESETS, 'ttlSeconds')
-    const recipients = await patchConversationMetadata(db, id, userId, { ttlSeconds })
-    await notifySocket('conversation:updated', recipients, {
+    const applied = await patchConversationMetadata(db, id, userId, { ttlSeconds })
+    await notifySocket('conversation:updated', applied.userIds, {
       type: 'conversation:updated',
       conversationId: id,
-      recipientIds: recipients,
+      recipientIds: applied.userIds,
     })
     const updated = await db.$transaction(
       (tx) =>
@@ -50,7 +50,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
         { error: 'Conversation is no longer available to this participant.' },
         { status: 403 },
       )
-    return NextResponse.json({ conversation: await buildConversationDetail(updated, userId) })
+    return NextResponse.json({ conversation: await buildConversationDetail(updated, userId), metadataRev: applied.metadataRev })
   } catch (error) {
     if (error instanceof ConversationMetadataError)
       return NextResponse.json({ error: error.message }, { status: error.status })

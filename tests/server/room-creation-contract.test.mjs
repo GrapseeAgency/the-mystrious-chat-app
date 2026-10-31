@@ -11,14 +11,14 @@ async function fixture(run) {
   const db = new PrismaClient({ datasourceUrl: `file:${join(dir, 'fixture.sqlite')}` })
   try {
     for (const sql of [
-      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, ttlSeconds INTEGER DEFAULT 0, updatedAt DATETIME)',
+      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, ttlSeconds INTEGER DEFAULT 0, updatedAt DATETIME, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)',
       'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT, lastReadAt DATETIME, archivedAt DATETIME, UNIQUE(userId,conversationId))',
       'CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, senderId TEXT, content TEXT, kind TEXT, payload TEXT, createdAt DATETIME, expiresAt DATETIME, deletedAt DATETIME, anon BOOLEAN DEFAULT 0, viaAutomation BOOLEAN DEFAULT 0, viewOnce BOOLEAN DEFAULT 0)',
       'CREATE TABLE GameMatch(id TEXT PRIMARY KEY, conversationId TEXT, game TEXT DEFAULT "tictactoe", playerXId TEXT, playerOId TEXT, board TEXT DEFAULT "         ", turn TEXT DEFAULT "X", status TEXT DEFAULT "active", winnerId TEXT, winLine TEXT, moveCount INTEGER DEFAULT 0, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
       'CREATE TABLE Tournament(id TEXT PRIMARY KEY, conversationId TEXT, name TEXT, game TEXT DEFAULT "tictactoe", status TEXT DEFAULT "running", createdById TEXT, endsAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
       'CREATE TABLE TournamentPlayer(id TEXT PRIMARY KEY, tournamentId TEXT, userId TEXT, points INTEGER DEFAULT 0, wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0, draws INTEGER DEFAULT 0, joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(tournamentId,userId))',
       'CREATE TABLE LogEvent(id TEXT PRIMARY KEY, userId TEXT, kind TEXT, message TEXT, meta TEXT, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
-      `INSERT INTO Conversation VALUES ('room',60,'2020-01-01T00:00:00.000Z'),('other',0,'2020-01-01T00:00:00.000Z')`,
+      `INSERT INTO Conversation (id,ttlSeconds,updatedAt) VALUES ('room',60,'2020-01-01T00:00:00.000Z'),('other',0,'2020-01-01T00:00:00.000Z')`,
       `INSERT INTO ConversationParticipant VALUES ('px','x','room',NULL,NULL),('po','o','room',NULL,'2020-01-01T00:00:00.000Z'),('px2','x','other',NULL,NULL)`,
     ]) await db.$executeRawUnsafe(sql)
     const patch = await readFile(new URL('../../prisma/patches/20261019_message_send_operation.sql', import.meta.url), 'utf8')

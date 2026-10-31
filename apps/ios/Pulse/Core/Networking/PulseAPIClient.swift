@@ -807,31 +807,56 @@ public struct PulseAPIClient: Sendable {
         }
         return receipt.blocked
     }
-    public func block(userId target: String) async throws {
-        let data = try await postRaw("/api/users/\(q(target))/block", body: ["userId": userId])
+    /// Section 8 item 6: a durable offline intent carries clientId + the
+    /// ORIGINAL client clock; the server orders opposite writes by intentAt.
+    public func block(userId target: String, clientId: String? = nil, intentAt: String? = nil) async throws {
+        var body: [String: Any] = ["userId": userId]
+        if let clientId { body["clientId"] = clientId }
+        if let intentAt { body["intentAt"] = intentAt }
+        let data = try await postRaw("/api/users/\(q(target))/block", body: body)
+        try confirmedBlockIntent(data)
         _ = try confirmedBlock(data, target: target, desired: true)
     }
-    public func unblock(userId target: String) async throws {
-        let data = try await deleteRaw("/api/users/\(q(target))/block?userId=\(q(userId))", body: ["userId": userId])
+    public func unblock(userId target: String, clientId: String? = nil, intentAt: String? = nil) async throws {
+        var body: [String: Any] = ["userId": userId]
+        if let clientId { body["clientId"] = clientId }
+        if let intentAt { body["intentAt"] = intentAt }
+        let data = try await deleteRaw("/api/users/\(q(target))/block?userId=\(q(userId))", body: body)
+        try confirmedBlockIntent(data)
         _ = try confirmedBlock(data, target: target, desired: false)
+    }
+    /// The intent fields are only validated when present; a malformed
+    /// watermark is refused client-side before any trust is extended.
+    private func confirmedBlockIntent(_ data: Data) throws {
+        guard let intent = try? decoder.decode(WireBlockIntentVerdict.self, from: data),
+              let at = intent.intentAt else { return }
+        guard PulseFormat.date(at) != nil else {
+            throw Failure(kind: .server, message: "The block intent watermark was not a timestamp.")
+        }
     }
     /// POST /api/users/{id}/report { userId, reason, details? } - repeat with
     /// the same reason refreshes the row → { reported, updated: true }.
-    public func report(userId target: String, reason: String, details: String?) async throws -> WireReportVerdict {
+    /// Section 8 item 7: an offline report journals its clientId; a lost-ACK
+    /// replay with the SAME identity returns the SAME stored receipt.
+    public func report(userId target: String, reason: String, details: String?, clientId: String? = nil) async throws -> WireReportVerdict {
         var body: [String: Any] = ["userId": userId, "reason": reason]
         if let details { body["details"] = details }
+        if let clientId { body["clientId"] = clientId }
         struct Receipt: Decodable {
             let ok: Bool; let reportReceiptVersion: Int; let reporterId: String; let reportedId: String
             let reported: Bool; let updated: Bool; let reason: String; let details: String; let reportedAt: String
+            let replayed: Bool?; let reportId: String?; let evidenceRev: Int?
         }
         let data = try await postRaw("/api/users/\(q(target))/report", body: body)
         let receipt = try decoder.decode(Receipt.self, from: data)
         guard receipt.ok, receipt.reported, receipt.reportReceiptVersion == 1, receipt.reporterId == userId,
               receipt.reportedId == target, receipt.reason == reason, receipt.details == (details ?? ""),
-              PulseFormat.date(receipt.reportedAt) != nil else {
+              PulseFormat.date(receipt.reportedAt) != nil,
+              (clientId == nil || (receipt.replayed != nil && receipt.reportId != nil && (receipt.evidenceRev ?? -1) >= 0)) else {
             throw Failure(kind: .server, message: "The report was not confirmed for this account and content.")
         }
-        return WireReportVerdict(reported: true, updated: receipt.updated)
+        return WireReportVerdict(reported: true, updated: receipt.updated,
+                                 replayed: receipt.replayed, reportId: receipt.reportId, evidenceRev: receipt.evidenceRev)
     }
 
     // Wave 6 - social graph & discovery (F-CP/F-SM/F-FD/F-CH)
@@ -840,6 +865,24 @@ public struct PulseAPIClient: Sendable {
     public func user(_ id: String) async throws -> WireUser {
         let envelope: WireUserEnvelope = try await get("/api/users/\(id)")
         return envelope.user
+    }
+
+    /// GET /api/users?limit=&after= - Section 8 item 5: the contact directory
+    /// pages by keyset cursor (name,id); hasMore + nextCursor drive the loop.
+    public func directoryPage(limit: Int = 200, after: String? = nil) async throws -> WireDirectoryPage {
+        var path = "/api/users?limit=\(min(max(limit, 1), 500))"
+        if let after { path += "&after=\(q(after))" }
+        struct Page: Decodable {
+            let users: [WireUser]?
+            let nextCursor: String?
+            let hasMore: Bool
+        }
+        let page = try await get(path, as: Page.self)
+        guard let users = page.users, users.allSatisfy({ !$0.id.isEmpty }),
+              page.hasMore == (page.nextCursor != nil) else {
+            throw Failure(kind: .server, message: "Contact directory paging was not confirmed.")
+        }
+        return WireDirectoryPage(users: users, nextCursor: page.nextCursor, hasMore: page.hasMore)
     }
 
     /// GET /api/users/{id}/stats → { stats } (real activity stamps;
@@ -1036,6 +1079,9 @@ public struct PulseAPIClient: Sendable {
         let folderId: String?
         let deleted: Bool?
         let ok: Bool?
+        /// Section 8 items 8/9: replay flag + rail/folder revisions.
+        let replayed: Bool?
+        let rev: Int?
     }
     private func folderReceipt(_ data: Data) throws -> FolderReceipt {
         let value = try decoder.decode(FolderReceipt.self, from: data)
@@ -1058,10 +1104,20 @@ public struct PulseAPIClient: Sendable {
         try validateFolder(folder)
         return folder
     }
-    public func createFolder(name: String, emoji: String?) async throws -> WireFolder {
+    /// Section 8 item 8: with a durable clientId a lost-ACK retry replays the
+    /// SAME folder (replayed=true) instead of duplicating the rail.
+    public func createFolder(name: String, emoji: String?, clientId: String? = nil) async throws -> WireFolder {
         var body: [String: Any] = ["userId": userId, "name": name]
         if let emoji, !emoji.isEmpty { body["emoji"] = emoji }
-        let folder = try confirmedFolder(try await postRaw("/api/folders", body: body))
+        if let clientId { body["clientId"] = clientId }
+        let data = try await postRaw("/api/folders", body: body)
+        if let clientId {
+            let receipt = try folderReceipt(data)
+            guard receipt.replayed != nil, (receipt.rev ?? -1) >= 0 else {
+                throw Failure(kind: .server, message: "Folder creation receipt was not confirmed; keep the same retry identity.")
+            }
+        }
+        let folder = try confirmedFolder(data)
         guard folder.name == name.trimmingCharacters(in: .whitespacesAndNewlines),
               folder.emoji == PulseFolderIconId.normalize(emoji).rawValue else {
             throw Failure(kind: .server, message: "Folder creation was not confirmed.")
@@ -2392,7 +2448,8 @@ public struct PulseAPIClient: Sendable {
     public func quickPhrases() async throws -> [WireQuickPhrase] {
         let page: WirePhrasesPage = try await get("/api/users/\(q(userId))/phrases")
         guard let phrases = page.phrases, Set(phrases.map(\.id)).count == phrases.count,
-              phrases.allSatisfy({ !$0.id.isEmpty && !$0.text.isEmpty && ($0.position ?? -1) >= 0 }) else {
+              phrases.allSatisfy({ !$0.id.isEmpty && !$0.text.isEmpty && ($0.position ?? -1) >= 0 }),
+              (page.listRev ?? -1) >= 0 else {
             throw Failure(kind: .server, message: "Quick phrases were not confirmed.")
         }
         return phrases
@@ -2400,9 +2457,19 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/users/{id}/phrases { text } → 201 { phrase } (append at
     /// end; 400 on >120 chars or >12 rows - server copy surfaces verbatim).
-    public func createQuickPhrase(text: String) async throws -> WireQuickPhrase {
-        let data = try await postRaw("/api/users/\(q(userId))/phrases", body: ["text": text])
-        guard let phrase = try decoder.decode(WirePhraseEnvelope.self, from: data).phrase,
+    /// Section 8 item 10: a journaled clientId replays the same row after a
+    /// lost ACK; the receipt must carry the rail revision.
+    public func createQuickPhrase(text: String, clientId: String? = nil) async throws -> WireQuickPhrase {
+        var body: [String: Any] = ["text": text]
+        if let clientId { body["clientId"] = clientId }
+        let data = try await postRaw("/api/users/\(q(userId))/phrases", body: body)
+        let envelope = try decoder.decode(WirePhraseEnvelope.self, from: data)
+        if let clientId {
+            guard envelope.replayed != nil, (envelope.listRev ?? -1) >= 0 else {
+                throw Failure(kind: .server, message: "Phrase replay receipt was not confirmed.")
+            }
+        }
+        guard let phrase = envelope.phrase,
               !phrase.id.isEmpty, !phrase.text.isEmpty, phrase.text == text.trimmingCharacters(in: .whitespacesAndNewlines),
               (phrase.position ?? -1) >= 0 else {
             throw Failure(kind: .server, message: "Phrase creation was not confirmed.")
@@ -2411,11 +2478,14 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// DELETE /api/users/{id}/phrases?phraseId= → { ok } (owner-guarded).
-    public func deleteQuickPhrase(_ phraseId: String) async throws {
-        struct Receipt: Decodable { let ok: Bool; let deleted: Bool; let userId: String; let phraseId: String }
-        let data = try await deleteRaw("/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))", body: ["userId": userId])
+    public func deleteQuickPhrase(_ phraseId: String, clientId: String? = nil) async throws {
+        struct Receipt: Decodable { let ok: Bool; let deleted: Bool; let userId: String; let phraseId: String; let listRev: Int? }
+        var path = "/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))"
+        if let clientId { path += "&clientId=\(q(clientId))" }
+        let data = try await deleteRaw(path, body: ["userId": userId])
         let receipt = try decoder.decode(Receipt.self, from: data)
-        guard receipt.ok, receipt.deleted, receipt.userId == userId, receipt.phraseId == phraseId else {
+        guard receipt.ok, receipt.deleted, receipt.userId == userId, receipt.phraseId == phraseId,
+              (clientId == nil || (receipt.listRev ?? -1) >= 0) else {
             throw Failure(kind: .server, message: "Phrase deletion was not confirmed.")
         }
     }

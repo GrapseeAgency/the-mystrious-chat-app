@@ -64,6 +64,24 @@ public struct WireBlocksPage: Codable, Sendable {
 public struct WireReportVerdict: Codable, Sendable {
     public let reported: Bool?
     public let updated: Bool?
+    /// Section 8 item 7: replay receipt (same clientId returns the same row).
+    public let replayed: Bool?
+    public let reportId: String?
+    public let evidenceRev: Int?
+}
+
+/// Section 8 item 5: one page of the contact directory (keyset cursor).
+public struct WireDirectoryPage: Codable, Sendable {
+    public let users: [WireUser]
+    public let nextCursor: String?
+    public let hasMore: Bool
+}
+/// Section 8 item 6: durable block-intent receipt fields (optionals: only
+/// present when the caller journaled a clientId + intentAt).
+public struct WireBlockIntentVerdict: Codable, Sendable {
+    public let stale: Bool?
+    public let replayed: Bool?
+    public let intentAt: String?
 }
 
 /// One row of GET /api/users/{id}/report?userId= - the reporter's OWN prior

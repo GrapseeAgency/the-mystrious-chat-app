@@ -224,7 +224,13 @@ struct ReportPanelView: View {
         submitTask = Task { @MainActor in
             defer { if owns(epoch, target), actionTicket == ticket { pending = false; submitTask = nil } }
             do {
-                let verdict = try await api.report(userId: target, reason: chosenReason, details: content)
+                // Section 8 item 7: an offline report journals its clientId;
+                // the replay returns the SAME stored receipt, never a duplicate.
+                let journal = PulseSection8Journal.shared
+                let intent = journal.enqueue(owner: api.userId, kind: "report", targetId: target,
+                                             payload: ["reason": chosenReason])
+                defer { journal.confirm(owner: api.userId, clientId: intent.clientId) }
+                let verdict = try await api.report(userId: target, reason: chosenReason, details: content, clientId: intent.clientId)
                 guard owns(epoch, target), actionTicket == ticket else { return }
                 PulseHaptics.success()
                 session.toasts.show(verdict.updated == true

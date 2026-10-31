@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
+import { createHash } from 'node:crypto'
 import { folderIconId } from '../../src/lib/icon-ids.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path, bindings, expression) {
@@ -16,23 +17,25 @@ async function fixture(run) {
  try {
   for(const sql of [
    'CREATE TABLE User(id TEXT PRIMARY KEY, sessionTokenHash TEXT, legacyTokenHashes TEXT)',
-   'CREATE TABLE Conversation(id TEXT PRIMARY KEY)',
+   'CREATE TABLE Conversation(id TEXT PRIMARY KEY, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)',
    'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT, UNIQUE(userId,conversationId))',
-   'CREATE TABLE Folder(id TEXT PRIMARY KEY, userId TEXT NOT NULL, name TEXT NOT NULL, emoji TEXT DEFAULT "folder", position INTEGER DEFAULT 0, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
+   'CREATE TABLE Folder(id TEXT PRIMARY KEY, userId TEXT NOT NULL, name TEXT NOT NULL, emoji TEXT DEFAULT "folder", position INTEGER DEFAULT 0, rev INTEGER DEFAULT 0, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
+   'CREATE TABLE FolderCreationOperation(userId TEXT, clientId TEXT, requestHash TEXT, folderId TEXT, PRIMARY KEY(userId, clientId))',
+   'CREATE TABLE UserListRevision(userId TEXT, kind TEXT, rev INTEGER DEFAULT 0, PRIMARY KEY(userId, kind))',
    'CREATE TABLE FolderConversation(id TEXT PRIMARY KEY, folderId TEXT REFERENCES Folder(id) ON DELETE CASCADE, conversationId TEXT REFERENCES Conversation(id) ON DELETE CASCADE, position INTEGER DEFAULT 0, UNIQUE(folderId,conversationId))',
    'CREATE TABLE LogEvent(id TEXT PRIMARY KEY, userId TEXT, kind TEXT, message TEXT, meta TEXT, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
-   "INSERT INTO Conversation VALUES ('room'),('archived'),('foreign')",
+   "INSERT INTO Conversation (id) VALUES ('room'),('archived'),('foreign')",
    "INSERT INTO ConversationParticipant VALUES ('p1','me','room'),('p2','me','archived'),('p3','other','foreign')",
   ]) await db.$executeRawUnsafe(sql)
   for(const id of ['me','other']) await db.$executeRawUnsafe('INSERT INTO User VALUES (?,?,?)',id,hashSessionToken(`synthetic-${id}`),'[]')
   for(const [id,userId,position]of [['f1','me',0],['f2','me',1],['f3','me',2],['alien','other',0]]) await db.folder.create({data:{id,userId,name:id,position}})
   await db.folderConversation.create({data:{folderId:'f1',conversationId:'room'}})
-  const helper=await load('src/lib/folder-operation.ts',{bearerToken,tokenAccepted},'({withFolderOwner,FolderError,folderErrorResponse,folderHeaders,folderInclude,folderWire,folderScope,folderName,folderSelection})')
+  const helper=await load('src/lib/folder-operation.ts',{bearerToken,tokenAccepted,createHash},'({withFolderOwner,FolderError,folderErrorResponse,folderHeaders,folderInclude,folderWire,folderScope,folderName,folderSelection,folderCreateOnce,folderRequestHash,FOLDER_CLIENT_ID_RE,readFolderListRev,bumpFolderListRev})')
   const bindings={db,...helper,folderIconId,NextResponse:{json:Response.json},safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():''}
   const base=await load('src/app/api/folders/route.ts',bindings,'({GET,POST})')
   const single=await load('src/app/api/folders/[id]/route.ts',bindings,'({PATCH,DELETE})')
-  const member=await load('src/app/api/folders/[id]/conversations/route.ts',bindings,'PUT')
-  await run(db,{...base,...single,PUT:member})
+  const member=await load('src/app/api/folders/[id]/conversations/route.ts',bindings,'({GET,PUT})')
+  await run(db,{...base,...single,PUT:member.PUT,memberGET:member.GET})
  } finally {await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
 const ctx=(id='f1')=>({params:Promise.resolve({id})})
@@ -80,7 +83,7 @@ test('create and log commit together; confirmed delete leaves chats intact',()=>
  const created=await h.POST(req('POST',{userId:'me',name:' Work '}));assert.equal(created.status,201)
  const body=await created.json();assert.equal(body.folder.name,'Work');assert.equal(body.folder.position,3);assert.equal(await db.logEvent.count(),1)
  const deleted=await(await h.DELETE(req('DELETE'),ctx())).json()
- assert.deepEqual(deleted,{folderVersion:1,userId:'me',folderId:'f1',deleted:true,ok:true})
+ assert.deepEqual(deleted,{folderVersion:1,rev:2,userId:'me',folderId:'f1',deleted:true,ok:true})
  assert.equal(await db.folderConversation.count(),0);assert.equal(await db.conversation.count(),3)
 }))
 test('failed replacement or reorder rolls back every earlier write in its transaction',()=>fixture(async(db,h)=>{

@@ -13,7 +13,8 @@ async function action(route, body, { denied = null, stillMember = true } = {}) {
     safeJson: req => req.json(), strField: value => typeof value === 'string' ? value.trim() : '',
     bearerToken: () => 'supplied', requireActionOwner: async (_, actor) => { assert.equal(actor, 'viewer'); return denied },
     patchConversationMetadata: async (_, room, actor, patch) => {
-      assert.equal(room, 'room'); assert.equal(actor, 'viewer'); writes.push(patch); return ['viewer', 'other']
+      assert.equal(room, 'room'); assert.equal(actor, 'viewer'); writes.push(patch)
+      return { userIds: ['viewer', 'other'], metadataRev: 1 }
     },
     patchMyScreenPrivacy: async (_, room, actor, on) => {
       assert.equal(room, 'room'); assert.equal(actor, 'viewer'); writes.push({ on })
@@ -58,7 +59,7 @@ test('personal privacy notifies only its owner; slow mode notifies current room 
   assert.deepEqual(personal.notices, [['viewer']])
   const throttle = await action('slow-mode', { seconds: 5 })
   assert.equal(throttle.response.status, 200)
-  assert.deepEqual(await throttle.response.json(), { ok: true, slowModeSeconds: 5 })
+  assert.deepEqual(await throttle.response.json(), { ok: true, slowModeSeconds: 5, metadataRev: 1 })
   assert.deepEqual(throttle.writes, [{ slowModeSeconds: 5 }])
   assert.deepEqual(throttle.notices, [['viewer', 'other']])
 })

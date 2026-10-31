@@ -192,6 +192,10 @@ export interface ConversationDetail {
   name: string | null
   createdAt: string
   updatedAt: string
+  /** Section 8 items 1/3 additive: monotonic per-room revision over metadata
+   *  and membership writes; clients apply remote changes only when this
+   *  strictly increases so cross-device updates are totally ordered. */
+  metadataRev: number
   // per-member read watermark (→ double ticks) + group role (groups only)
   members: Array<AppUser & { lastReadAt: string; role: GroupRole; readMembershipId?: string; readIntent?: string | null }>
   myMutedUntil: string | null // viewer's notification-mute watermark (null = unmuted)
@@ -237,6 +241,8 @@ export interface InvitePreview {
   memberCount: number
   /** true when ?userId= is already a participant (join is then idempotent) */
   alreadyMember: boolean
+  /** Section 8 item 4 additive: invite expiry watermark (null = lives until revoked). */
+  expiresAt?: string | null
 }
 
 /** Global search hit - a message plus the conversation it lives in. */

@@ -74,9 +74,9 @@ test('bad limits and cursor shapes fail explicitly while an actually empty threa
 test('saved selection excludes dead ancestors, private one-time rows, and unavailable memberships', () => fixture(async (db) => {
   const { savedMessagesWhere, visibleInboxPreview } = await import('../../src/lib/message-visibility.ts')
   await db.$executeRawUnsafe('ALTER TABLE Message ADD COLUMN viewOnce BOOLEAN NOT NULL DEFAULT false')
-  await db.$executeRawUnsafe('CREATE TABLE Conversation(id TEXT PRIMARY KEY)')
+  await db.$executeRawUnsafe('CREATE TABLE Conversation(id TEXT PRIMARY KEY, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)')
   await db.$executeRawUnsafe('CREATE TABLE SavedMessage(id TEXT PRIMARY KEY,userId TEXT,messageId TEXT,savedAt DATETIME)')
-  await db.$executeRaw`INSERT INTO Conversation VALUES ('room'),('other')`
+  await db.$executeRaw`INSERT INTO Conversation (id) VALUES ('room'),('other')`
   await db.$executeRaw`INSERT INTO SavedMessage VALUES ('s','viewer','m000',${now})`
   const list = () => db.savedMessage.findMany({ where: savedMessagesWhere('viewer', now), select: { message: { select: {
     ...fields, parent: { select: fields },

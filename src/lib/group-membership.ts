@@ -49,6 +49,18 @@ async function group(tx: Prisma.TransactionClient, room: string, channelOnly = f
   return row
 }
 
+/** Section 8 item 3: membership changes share the room's metadataRev counter
+ * (item 1), so every device can reconcile its role/member caches from one
+ * totally ordered sequence instead of guessing from stale snapshots. */
+async function bumpMetadataRev(tx: Prisma.TransactionClient, room: string): Promise<number> {
+  const row = await tx.conversation.update({
+    where: { id: room },
+    data: { metadataRev: { increment: 1 } },
+    select: { metadataRev: true },
+  })
+  return row.metadataRev
+}
+
 function participant(tx: Prisma.TransactionClient, room: string, userId: string) {
   return tx.conversationParticipant.findUnique({
     where: { userId_conversationId: { userId, conversationId: room } },
@@ -113,7 +125,8 @@ export function setGroupRole(
         select: { id: true },
       })
     }
-    return { changed, recipients: await recipients(tx, room) }
+    const metadataRev = changed ? await bumpMetadataRev(tx, room) : undefined
+    return { changed, metadataRev, recipients: await recipients(tx, room) }
   })
 }
 
@@ -129,7 +142,8 @@ export function removeGroupMember(db: PrismaClient, room: string, actor: string,
     if (target)
       await tx.conversationParticipant.delete({ where: { id: target.id }, select: { id: true } })
     // Repeat-safe only for a still-authorized admin, not for arbitrary former members.
-    return { changed: target !== null, recipients: await recipients(tx, room) }
+    const metadataRev = target ? await bumpMetadataRev(tx, room) : undefined
+    return { changed: target !== null, metadataRev, recipients: await recipients(tx, room) }
   })
 }
 
@@ -172,7 +186,8 @@ export function addGroupMembers(
         select: { id: true },
       })
     }
-    return { added, recipients: await recipients(tx, room) }
+    const metadataRev = added.length ? await bumpMetadataRev(tx, room) : undefined
+    return { added, metadataRev, recipients: await recipients(tx, room) }
   })
 }
 
@@ -195,7 +210,8 @@ export function joinChannel(db: PrismaClient, room: string, actor: string) {
         select: { id: true },
       })
     }
-    return { already: existing !== null, recipients: await recipients(tx, room) }
+    const metadataRev = existing ? undefined : await bumpMetadataRev(tx, room)
+    return { already: existing !== null, metadataRev, recipients: await recipients(tx, room) }
   })
 }
 
@@ -236,26 +252,31 @@ export function leaveGroup(db: PrismaClient, room: string, actor: string, channe
       }
     }
     await tx.conversationParticipant.delete({ where: { id: leaver.id }, select: { id: true } })
-    return { promotedUserId, recipients: await recipients(tx, room) }
+    const metadataRev = await bumpMetadataRev(tx, room)
+    return { promotedUserId, metadataRev, recipients: await recipients(tx, room) }
   })
 }
 
-/** Lazy creation must converge; a preflight read must not mint several dead links. */
+/** Section 8 item 3/4: lazy invite creation must converge; a preflight read
+ * must not mint several dead links. The active code may carry an expiry
+ * watermark (inviteExpiresAt); regeneration replaces both. */
 export function groupInvite(
   db: PrismaClient,
   room: string,
   actor: string,
   regenerate: boolean,
   mint: () => string,
+  expiresAt?: Date | null,
 ) {
   return transaction(db, async (tx) => {
     await group(tx, room)
     await admin(tx, room, actor)
     const current = await tx.conversation.findUniqueOrThrow({
       where: { id: room },
-      select: { inviteCode: true },
+      select: { inviteCode: true, inviteExpiresAt: true },
     })
     let code = current.inviteCode
+    let nextExpiry = current.inviteExpiresAt
     if (regenerate || !code) {
       for (let attempt = 0; attempt < 5; attempt++) {
         const candidate = mint()
@@ -266,21 +287,52 @@ export function groupInvite(
       }
       if (!code || code === current.inviteCode)
         throw new GroupMembershipError(503, 'Could not generate a new invite link. Try again.')
+      // A fresh code starts a fresh lifecycle: an explicit expiry replaces the
+      // previous watermark, and no expiry means the code lives until revoked.
+      nextExpiry = expiresAt ?? null
       await tx.conversation.update({
         where: { id: room },
-        data: { inviteCode: code },
+        data: { inviteCode: code, inviteExpiresAt: nextExpiry },
         select: { id: true },
       })
     }
+    const metadataRev = code !== current.inviteCode ? await bumpMetadataRev(tx, room) : undefined
     return {
       inviteCode: code,
+      inviteExpiresAt: nextExpiry ? nextExpiry.toISOString() : null,
       changed: code !== current.inviteCode,
+      metadataRev,
       recipients: await recipients(tx, room),
     }
   })
 }
 
-/** Redemption and rotation both participate in SQLite's serializable write ordering. */
+/** Section 8 item 4: revocation is explicit, not a side effect of regeneration.
+ * The code is cleared in the same serialized snapshot, so every later
+ * redemption (old link reuse) deterministically 404s. */
+export function revokeGroupInvite(db: PrismaClient, room: string, actor: string) {
+  return transaction(db, async (tx) => {
+    await group(tx, room)
+    await admin(tx, room, actor)
+    const current = await tx.conversation.findUniqueOrThrow({
+      where: { id: room },
+      select: { inviteCode: true },
+    })
+    if (current.inviteCode) {
+      await tx.conversation.update({
+        where: { id: room },
+        data: { inviteCode: null, inviteExpiresAt: null },
+        select: { id: true },
+      })
+    }
+    const metadataRev = current.inviteCode ? await bumpMetadataRev(tx, room) : undefined
+    return { revoked: current.inviteCode !== null, metadataRev, recipients: await recipients(tx, room) }
+  })
+}
+
+/** Redemption and rotation both participate in SQLite's serializable write ordering.
+ * Section 8 item 4: an expired code is dead on arrival - the same 404 family
+ * as a revoked code, with an honest distinct message. */
 export function joinGroupInvite(db: PrismaClient, rawCode: string, actor: string) {
   const code = rawCode.trim().toUpperCase()
   if (!/^[A-Z0-9]{4,16}$/.test(code))
@@ -288,10 +340,12 @@ export function joinGroupInvite(db: PrismaClient, rawCode: string, actor: string
   return transaction(db, async (tx) => {
     const conversation = await tx.conversation.findUnique({
       where: { inviteCode: code },
-      select: { id: true, isGroup: true },
+      select: { id: true, isGroup: true, inviteExpiresAt: true },
     })
     if (!conversation?.isGroup)
       throw new GroupMembershipError(404, 'This invite link is no longer valid.')
+    if (conversation.inviteExpiresAt && conversation.inviteExpiresAt.getTime() <= Date.now())
+      throw new GroupMembershipError(404, 'This invite link has expired.')
     if (!(await tx.user.findUnique({ where: { id: actor }, select: { id: true } })))
       throw new GroupMembershipError(404, 'Unknown user.')
     const existing = await participant(tx, conversation.id, actor)
@@ -308,9 +362,11 @@ export function joinGroupInvite(db: PrismaClient, rawCode: string, actor: string
         select: { id: true },
       })
     }
+    const metadataRev = existing ? undefined : await bumpMetadataRev(tx, conversation.id)
     return {
       conversationId: conversation.id,
       alreadyMember: existing !== null,
+      metadataRev,
       recipients: await recipients(tx, conversation.id),
     }
   })

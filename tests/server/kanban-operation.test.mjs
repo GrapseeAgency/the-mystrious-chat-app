@@ -13,13 +13,13 @@ async function fixture(run) {
   try {
     for (const sql of [
       'CREATE TABLE User(id TEXT PRIMARY KEY,name TEXT)',
-      'CREATE TABLE Conversation(id TEXT PRIMARY KEY,isGroup BOOLEAN)',
+      'CREATE TABLE Conversation(id TEXT PRIMARY KEY,isGroup BOOLEAN, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)',
       'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY,userId TEXT,conversationId TEXT,role TEXT,UNIQUE(userId,conversationId))',
       'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,content TEXT,deletedAt DATETIME,viewOnce BOOLEAN NOT NULL DEFAULT false,expiresAt DATETIME,parentId TEXT)',
       'CREATE TABLE KanbanCard(id TEXT PRIMARY KEY,conversationId TEXT,title TEXT,column TEXT,position INTEGER,assigneeId TEXT,createdById TEXT,sourceMessageId TEXT,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updatedAt DATETIME NOT NULL)',
       'CREATE TABLE LogEvent(id TEXT PRIMARY KEY,userId TEXT,kind TEXT,message TEXT,meta TEXT,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)',
       "INSERT INTO User VALUES ('me','Me'),('peer','Peer'),('admin','Admin')",
-      "INSERT INTO Conversation VALUES ('room',true),('elsewhere',true)",
+      "INSERT INTO Conversation (id,isGroup) VALUES ('room',true),('elsewhere',true)",
       "INSERT INTO ConversationParticipant VALUES ('a','me','room','member'),('b','peer','room','member'),('c','admin','room','admin')",
       "INSERT INTO Message(id,conversationId,content) VALUES ('root','room','Root'),('foreign','elsewhere','Foreign')",
       "INSERT INTO Message(id,conversationId,content,parentId) VALUES ('reply','room','  private   task\ntext  ','root')",

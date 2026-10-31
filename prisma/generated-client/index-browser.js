@@ -142,6 +142,7 @@ exports.Prisma.AccountReportScalarFieldEnum = {
   id: 'id',
   reporterId: 'reporterId',
   reportedId: 'reportedId',
+  evidenceRev: 'evidenceRev',
   reason: 'reason',
   details: 'details',
   createdAt: 'createdAt'
@@ -151,7 +152,9 @@ exports.Prisma.UserBlockScalarFieldEnum = {
   id: 'id',
   blockerId: 'blockerId',
   blockedId: 'blockedId',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  lastIntentAt: 'lastIntentAt',
+  lastClientId: 'lastClientId'
 };
 
 exports.Prisma.ReminderScalarFieldEnum = {
@@ -264,6 +267,8 @@ exports.Prisma.ConversationScalarFieldEnum = {
   description: 'description',
   photo: 'photo',
   inviteCode: 'inviteCode',
+  inviteExpiresAt: 'inviteExpiresAt',
+  metadataRev: 'metadataRev',
   ttlSeconds: 'ttlSeconds',
   broadcastMode: 'broadcastMode',
   screenPrivacy: 'screenPrivacy',
@@ -457,6 +462,7 @@ exports.Prisma.FolderScalarFieldEnum = {
   name: 'name',
   emoji: 'emoji',
   position: 'position',
+  rev: 'rev',
   createdAt: 'createdAt'
 };
 
@@ -714,6 +720,43 @@ exports.Prisma.LivePushReceiptScalarFieldEnum = {
   createdAtMs: 'createdAtMs'
 };
 
+exports.Prisma.FolderCreationOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  folderId: 'folderId'
+};
+
+exports.Prisma.UserListRevisionScalarFieldEnum = {
+  userId: 'userId',
+  kind: 'kind',
+  rev: 'rev'
+};
+
+exports.Prisma.QuickPhraseOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  action: 'action',
+  phraseId: 'phraseId'
+};
+
+exports.Prisma.PeerBlockIntentScalarFieldEnum = {
+  blockerId: 'blockerId',
+  blockedId: 'blockedId',
+  clientId: 'clientId',
+  desired: 'desired',
+  intentAt: 'intentAt'
+};
+
+exports.Prisma.ReportOperationScalarFieldEnum = {
+  reporterId: 'reporterId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  reportId: 'reportId',
+  evidenceRev: 'evidenceRev'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -786,7 +829,12 @@ exports.Prisma.ModelName = {
   ScheduledDeliveryNotice: 'ScheduledDeliveryNotice',
   ScheduledPushReceipt: 'ScheduledPushReceipt',
   LivePushOutbox: 'LivePushOutbox',
-  LivePushReceipt: 'LivePushReceipt'
+  LivePushReceipt: 'LivePushReceipt',
+  FolderCreationOperation: 'FolderCreationOperation',
+  UserListRevision: 'UserListRevision',
+  QuickPhraseOperation: 'QuickPhraseOperation',
+  PeerBlockIntent: 'PeerBlockIntent',
+  ReportOperation: 'ReportOperation'
 };
 
 /**

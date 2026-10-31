@@ -14,12 +14,12 @@ async function fixture(run) {
     for (const sql of [
       'PRAGMA foreign_keys=ON',
       'CREATE TABLE User(id TEXT PRIMARY KEY,name TEXT,xp INTEGER NOT NULL DEFAULT 0)',
-      'CREATE TABLE Conversation(id TEXT PRIMARY KEY)',
+      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)',
       'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY,userId TEXT,conversationId TEXT,role TEXT,UNIQUE(userId,conversationId))',
       'CREATE TABLE GroupEvent(id TEXT PRIMARY KEY,conversationId TEXT,title TEXT,description TEXT,location TEXT,startsAt DATETIME,createdById TEXT,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)',
       'CREATE TABLE EventRsvp(id TEXT PRIMARY KEY,eventId TEXT REFERENCES GroupEvent(id) ON DELETE CASCADE,userId TEXT,status TEXT,checkedInAt DATETIME,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(eventId,userId))',
       "INSERT INTO User(id,name) VALUES ('me','Member'),('creator','Creator'),('admin','Admin')",
-      "INSERT INTO Conversation VALUES ('room')",
+      "INSERT INTO Conversation (id) VALUES ('room')",
       "INSERT INTO ConversationParticipant VALUES ('p','me','room','member'),('q','creator','room','member'),('a','admin','room','admin')",
     ]) await db.$executeRawUnsafe(sql)
     await db.groupEvent.create({ data: { id: 'event', conversationId: 'room', title: 'Meet', startsAt: now, createdById: 'creator' } })

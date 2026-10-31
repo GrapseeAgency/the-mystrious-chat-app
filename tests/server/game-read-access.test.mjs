@@ -17,12 +17,12 @@ async function fixture(run) {
  try {
   for(const sql of [
    'CREATE TABLE User(id TEXT PRIMARY KEY, name TEXT, color TEXT, sessionTokenHash TEXT, legacyTokenHashes TEXT)',
-   'CREATE TABLE Conversation(id TEXT PRIMARY KEY)',
+   'CREATE TABLE Conversation(id TEXT PRIMARY KEY, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)',
    'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT, UNIQUE(userId,conversationId))',
    'CREATE TABLE GameMatch(id TEXT PRIMARY KEY, conversationId TEXT, game TEXT DEFAULT "tictactoe", playerXId TEXT, playerOId TEXT, board TEXT DEFAULT "         ", turn TEXT DEFAULT "X", status TEXT DEFAULT "active", winnerId TEXT, winLine TEXT, moveCount INTEGER DEFAULT 0, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
    'CREATE TABLE Tournament(id TEXT PRIMARY KEY, conversationId TEXT, name TEXT, game TEXT DEFAULT "tictactoe", status TEXT DEFAULT "running", createdById TEXT, endsAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
    'CREATE TABLE TournamentPlayer(id TEXT PRIMARY KEY, tournamentId TEXT, userId TEXT, points INTEGER DEFAULT 0, wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0, draws INTEGER DEFAULT 0, joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(tournamentId,userId))',
-   "INSERT INTO Conversation VALUES ('room'),('other')",
+   "INSERT INTO Conversation (id) VALUES ('room'),('other')",
    "INSERT INTO ConversationParticipant VALUES ('member','me','room'),('outsider','out','other')",
   ]) await db.$executeRawUnsafe(sql)
   for(const id of ['me','out']) await db.$executeRawUnsafe('INSERT INTO User VALUES (?,?,?,?,?)',id,id,'#F2A65A',hashSessionToken(`synthetic-${id}`),'[]')

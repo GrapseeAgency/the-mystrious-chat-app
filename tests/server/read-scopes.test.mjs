@@ -16,7 +16,7 @@ async function fixture(run) {
       'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY,userId TEXT,conversationId TEXT,joinedAt DATETIME,lastReadAt DATETIME,manualUnread BOOLEAN DEFAULT false,UNIQUE(userId,conversationId))',
       'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,senderId TEXT,createdAt DATETIME,parentId TEXT,topicId TEXT,deletedAt DATETIME,expiresAt DATETIME,viaAutomation BOOLEAN DEFAULT false)',
       "CREATE TABLE Topic(id TEXT PRIMARY KEY,conversationId TEXT,name TEXT DEFAULT 'Topic',emoji TEXT DEFAULT 'chat',createdById TEXT,createdAt DATETIME DEFAULT 0,lastMessageAt DATETIME DEFAULT 0)",
-      'CREATE TABLE Conversation(id TEXT PRIMARY KEY)',
+      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)',
       'CREATE TABLE User(id TEXT PRIMARY KEY,preferences TEXT)',
 
     ]) await db.$executeRawUnsafe(sql)

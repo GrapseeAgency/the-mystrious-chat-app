@@ -479,7 +479,6 @@ export async function buildConversationDetail(
   viewerId?: string,
   client: Prisma.TransactionClient = db,
 ): Promise<ConversationDetail> {
-  const mine = viewerId ? conv.participants.find((p) => p.userId === viewerId) : undefined
   const streakRow = viewerId
     ? await client.conversationStreak.findUnique({
         where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
@@ -504,12 +503,16 @@ export async function buildConversationDetail(
         })) > 0
     }
   }
+  const mine = viewerId ? conv.participants.find((p) => p.userId === viewerId) : undefined
   return {
     id: conv.id,
     isGroup: conv.isGroup,
     name: conv.name,
     createdAt: conv.createdAt.toISOString(),
     updatedAt: conv.updatedAt.toISOString(),
+    // Section 8 items 1/3 additive: the room's metadata/membership revision.
+    // (Omitted, never null, when a legacy read path has not selected it.)
+    ...(conv.metadataRev === undefined ? {} : { metadataRev: conv.metadataRev }),
     members: membersForViewer(conv.participants, viewerId),
     myMutedUntil: mine?.mutedUntil ? mine.mutedUntil.toISOString() : null,
     myStreak:

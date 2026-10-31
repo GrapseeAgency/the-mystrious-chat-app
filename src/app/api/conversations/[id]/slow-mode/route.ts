@@ -25,13 +25,13 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   try {
     const seconds = body.seconds
     requirePreset(seconds, SLOW_MODE_PRESETS, 'seconds')
-    const recipients = await patchConversationMetadata(db, id, userId, { slowModeSeconds: seconds })
-    await notifySocket('conversation:updated', recipients, {
+    const applied = await patchConversationMetadata(db, id, userId, { slowModeSeconds: seconds })
+    await notifySocket('conversation:updated', applied.userIds, {
       type: 'conversation:updated',
       conversationId: id,
-      recipientIds: recipients,
+      recipientIds: applied.userIds,
     })
-    return NextResponse.json({ ok: true, slowModeSeconds: seconds })
+    return NextResponse.json({ ok: true, slowModeSeconds: seconds, metadataRev: applied.metadataRev })
   } catch (error) {
     if (error instanceof ConversationMetadataError)
       return NextResponse.json({ error: error.message }, { status: error.status })

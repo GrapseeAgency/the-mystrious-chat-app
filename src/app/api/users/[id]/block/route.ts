@@ -10,12 +10,20 @@ interface RouteCtx { params: Promise<{ id: string }> }
 
 async function act(req: Request, { params }: RouteCtx, desired: boolean | null) {
   const { id: targetId } = await params
-  const actorId = desired === true ? strField((await safeJson(req)).userId) : new URL(req.url).searchParams.get('userId')?.trim() ?? ''
+  const body = desired === null ? {} : await safeJson(req)
+  const actorId = desired === true
+    ? strField(body.userId)
+    : (strField(body.userId) || (new URL(req.url).searchParams.get('userId')?.trim() ?? ''))
   if (!actorId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   const denied = await requireActionOwner(req, actorId, 'peer block')
   if (denied) return denied
   try {
-    const receipt = await peerBlock(db, actorId, targetId, desired)
+    // Section 8 item 6: durable offline intents carry clientId + intentAt;
+    // legacy callers (no intent fields) keep the immediate-apply behavior.
+    const receipt = await peerBlock(db, actorId, targetId, desired, {
+      clientId: body.clientId,
+      intentAt: body.intentAt,
+    })
     if (desired !== null) {
       // Refresh the actor's own DM policy caches, without broadcasting their
       // private block list or a block event to the other account.

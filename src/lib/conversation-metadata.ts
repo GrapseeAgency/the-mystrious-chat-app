@@ -57,13 +57,16 @@ export function conversationMetadataPatch(
   return patch
 }
 
-/** Admin/participant authority is evaluated in the same snapshot as the write. */
+/** Section 8 item 1: every competing metadata write takes the next revision.
+ * Serializable SQLite serializes writers, so the increment order IS the total
+ * order; the ACK hands the winning revision back so every device can discard
+ * stale applications (apply only when rev strictly increases). */
 export async function patchConversationMetadata(
   db: PrismaClient,
   room: string,
   actor: string,
   patch: ConversationMetadataPatch,
-) {
+): Promise<{ userIds: string[]; metadataRev: number }> {
   if (patch.ttlSeconds !== undefined) requirePreset(patch.ttlSeconds, TTL_PRESETS, 'ttlSeconds')
   if (patch.slowModeSeconds !== undefined)
     requirePreset(patch.slowModeSeconds, SLOW_MODE_PRESETS, 'seconds')
@@ -99,13 +102,18 @@ export async function patchConversationMetadata(
             403,
             'Only current group admins can change group name, photo, announcement mode or slow mode.',
           )
-        await tx.conversation.update({ where: { id: room }, data: patch, select: { id: true } })
-        return (
+        const written = await tx.conversation.update({
+          where: { id: room },
+          data: { ...patch, metadataRev: { increment: 1 } },
+          select: { metadataRev: true },
+        })
+        const userIds = (
           await tx.conversationParticipant.findMany({
             where: { conversationId: room },
             select: { userId: true },
           })
         ).map((row) => row.userId)
+        return { userIds, metadataRev: written.metadataRev }
       },
       { isolationLevel: 'Serializable' },
     )

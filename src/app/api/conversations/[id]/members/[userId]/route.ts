@@ -64,7 +64,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
         { status: 403 },
       )
     // Viewer-private fields belong to the requester, NEVER the role-change target.
-    return NextResponse.json({ conversation: await buildConversationDetail(updated, requesterId) })
+    return NextResponse.json({ conversation: await buildConversationDetail(updated, requesterId), metadataRev: result.metadataRev ?? null })
   } catch (error) {
     return failure(error)
   }
@@ -85,7 +85,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
       invalidateNativeReadState(userId, id)
       await notify(id, [...result.recipients, userId])
     }
-    return NextResponse.json({ ok: true, remainingMembers: result.recipients.length })
+    return NextResponse.json({ ok: true, remainingMembers: result.recipients.length, metadataRev: result.metadataRev ?? null })
   } catch (error) {
     return failure(error)
   }

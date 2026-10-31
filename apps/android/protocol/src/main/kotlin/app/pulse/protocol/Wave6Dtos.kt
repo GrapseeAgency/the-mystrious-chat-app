@@ -86,6 +86,10 @@ data class VerifyAckDto(
 data class BlockStateDto(
     val ok: Boolean? = null,
     val blocked: Boolean = false,
+    /** Section 8 item 6: present only for durable offline intents. */
+    val stale: Boolean? = null,
+    val replayed: Boolean? = null,
+    val intentAt: String? = null,
 )
 
 /** One row of the owner's block list (GET /api/users/{id}/blocks). */
@@ -109,6 +113,10 @@ data class BlockedPageDto(
 data class ReportAckDto(
     val reported: Boolean = false,
     val updated: Boolean = false,
+    /** Section 8 item 7: replay receipt (same clientId returns the same row). */
+    val replayed: Boolean? = null,
+    val reportId: String? = null,
+    val evidenceRev: Int? = null,
 )
 
 /** GET /api/users/{id}/report?userId= → { reasons: [{reason, at}] } (private). */

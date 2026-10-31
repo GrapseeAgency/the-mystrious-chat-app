@@ -17,12 +17,12 @@ async function fixture(run){
  try{
   for(const sql of [
    'CREATE TABLE User(id TEXT PRIMARY KEY,sessionTokenHash TEXT,legacyTokenHashes TEXT)',
-   'CREATE TABLE Conversation(id TEXT PRIMARY KEY)',
+   'CREATE TABLE Conversation(id TEXT PRIMARY KEY, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)',
    'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY,userId TEXT,conversationId TEXT,draft TEXT,draftRevision TEXT NOT NULL DEFAULT "0",UNIQUE(userId,conversationId))',
    'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,senderId TEXT,content TEXT,editedAt DATETIME,parentId TEXT,deletedAt DATETIME,expiresAt DATETIME,viewOnce BOOLEAN DEFAULT false,viewedAt DATETIME,pinnedAt DATETIME)',
    'CREATE TABLE ComposerOperation(userId TEXT,clientId TEXT,kind TEXT,targetId TEXT,rootId TEXT,requestHash TEXT,revision TEXT,outcome TEXT,createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(userId,clientId))',
    'CREATE TABLE ThreadDraftState(userId TEXT,conversationId TEXT,rootId TEXT,draft TEXT,revision TEXT,PRIMARY KEY(userId,conversationId,rootId))',
-   "INSERT INTO Conversation VALUES ('room')",
+   "INSERT INTO Conversation (id) VALUES ('room')",
    "INSERT INTO ConversationParticipant(id,userId,conversationId) VALUES ('membership','owner','room'),('peer-membership','peer','room')",
    "INSERT INTO Message(id,conversationId,senderId,content) VALUES ('m','room','owner','original'),('root','room','owner','root')",
   ])await db.$executeRawUnsafe(sql)

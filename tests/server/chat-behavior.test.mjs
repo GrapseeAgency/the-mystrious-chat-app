@@ -26,7 +26,7 @@ async function fixture(run) {
         description TEXT NOT NULL DEFAULT '', photo TEXT, inviteCode TEXT, ttlSeconds INTEGER NOT NULL DEFAULT 0,
         broadcastMode BOOLEAN NOT NULL DEFAULT false, screenPrivacy BOOLEAN NOT NULL DEFAULT false,
         slowModeSeconds INTEGER NOT NULL DEFAULT 0, isSelf BOOLEAN NOT NULL DEFAULT false, appKey TEXT,
-        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME NOT NULL)`,
+        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt DATETIME NOT NULL, metadataRev INTEGER DEFAULT 0, inviteExpiresAt DATETIME)`,
       `CREATE TABLE ConversationParticipant(draftRevision TEXT NOT NULL DEFAULT 0, id TEXT PRIMARY KEY, userId TEXT NOT NULL, conversationId TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'member', joinedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         lastReadAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME,
@@ -35,7 +35,7 @@ async function fixture(run) {
       await readFile(new URL('../../prisma/patches/20261026_read_intent_state.sql', import.meta.url), 'utf8'),
       `CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, createdAt DATETIME, senderId TEXT,
         expiresAt DATETIME, deletedAt DATETIME, parentId TEXT, topicId TEXT, viaAutomation BOOLEAN NOT NULL DEFAULT false)`,
-      `CREATE TABLE UserBlock(id TEXT PRIMARY KEY, blockerId TEXT, blockedId TEXT)`,
+      `CREATE TABLE UserBlock(id TEXT PRIMARY KEY, blockerId TEXT, blockedId TEXT, lastIntentAt DATETIME, lastClientId TEXT)`,
     ]) await db.$executeRawUnsafe(sql)
     await exactMigration(db)
     await run(db)
@@ -121,12 +121,12 @@ test('simultaneous contact taps converge without duplicate DM threads', () => fi
   assert.equal(await db.conversation.count(), 1)
 }))
 test('either-direction block forbids a new DM but preserves existing history', () => fixture(async db => {
-  await db.$executeRaw`INSERT INTO UserBlock VALUES ('block','b','a')`
+  await db.$executeRaw`INSERT INTO UserBlock (id,blockerId,blockedId) VALUES ('block','b','a')`
   await assert.rejects(openDirectConversation(db, ['a','b']), { status: 403 })
   assert.equal(await db.conversation.count(), 0)
   await db.$executeRaw`DELETE FROM UserBlock`
   const first = await openDirectConversation(db, ['a','b'])
-  await db.$executeRaw`INSERT INTO UserBlock VALUES ('block','a','b')`
+  await db.$executeRaw`INSERT INTO UserBlock (id,blockerId,blockedId) VALUES ('block','a','b')`
   assert.equal((await openDirectConversation(db, ['b','a'])).id, first.id)
 }))
 
@@ -169,7 +169,7 @@ test('a DM blocked after scheduling is refused at delivery time in either direct
   await scheduledFixture(db, false)
   for (const [a,b] of [['sender','peer'],['peer','sender']]) {
     await db.$executeRaw`DELETE FROM UserBlock`
-    await db.$executeRaw`INSERT INTO UserBlock VALUES ('block',${a},${b})`
+    await db.$executeRaw`INSERT INTO UserBlock (id,blockerId,blockedId) VALUES ('block',${a},${b})`
     assert.deepEqual(await scheduledDeliveryDecision(db, 'room', 'sender', t(20)), { state: 'cancel', reason: 'blocked' })
   }
 }))
