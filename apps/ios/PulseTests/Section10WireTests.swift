@@ -75,7 +75,7 @@ final class Section10WireTests: XCTestCase {
             startsAtIso: "2026-11-03T09:00:00.000Z", description: nil, location: nil, clientId: "event00000000000000001")
         XCTAssertTrue(Stub.bodies.last?.contains("event00000000000000001") == true)
 
-        Stub.responses["/api/hub/tasks"] = (201, ["task": ["id": "t1", "ownerId": "u", "title": "Ship", "status": "todo"]])
+        Stub.responses["/api/hub/tasks"] = (201, ["task": ["id": "t1", "ownerId": "u", "title": "Ship", "status": "todo", "createdAt": "2026-11-01T09:00:00.000Z", "updatedAt": "2026-11-01T09:00:00.000Z"]])
         _ = try await api().createHubTaskCore(title: "Ship", status: nil, clientId: "task000000000000000001")
         XCTAssertTrue(Stub.bodies.last?.contains("task000000000000000001") == true)
 
