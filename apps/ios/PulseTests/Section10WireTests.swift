@@ -82,7 +82,8 @@ final class Section10WireTests: XCTestCase {
         Stub.responses["/api/conversations/room/kanban"] = (201, ["boardReceiptVersion": 1, "userId": "u",
             "conversationId": "room", "card": ["id": "c1", "conversationId": "room", "title": "Card", "column": "todo",
             "position": 0, "assigneeId": nil, "assigneeName": nil, "createdById": "u", "createdByName": nil,
-            "sourceMessageId": nil, "sourceRevoked": false, "sourceAvailable": nil, "createdAt": "", "updatedAt": ""]])
+            "sourceMessageId": nil, "sourceRevoked": false, "sourceAvailable": nil,
+            "createdAt": "2026-11-01T09:00:00.000Z", "updatedAt": "2026-11-01T09:00:00.000Z"]])
         _ = try await api().createKanbanCardCore(conversationId: "room", title: "Card", column: nil,
             assigneeId: nil, messageId: nil, clientId: "kanban00000000000000001")
         XCTAssertTrue(Stub.bodies.last?.contains("kanban00000000000000001") == true)
