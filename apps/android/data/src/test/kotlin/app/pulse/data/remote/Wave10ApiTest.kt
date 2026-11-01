@@ -103,7 +103,8 @@ class Wave10ApiTest {
 
     @Test fun `kanban card creation carries the identity and board pages gate their receipt`() = runTest {
         PulseEndpoints.applyBase("https://prod.example")
-        val r = api(body = cardJson).createKanbanCard("room", "u1", "Card", null, null, null, clientId = "kanban00000000000000001")
+        val receipt = """{"boardReceiptVersion":1,"userId":"u1","conversationId":"room","replayed":false,"card":$cardJson}"""
+        val r = api(body = receipt).createKanbanCard("room", "u1", "Card", null, null, null, clientId = "kanban00000000000000001")
         assertTrue(r is PulseResult.Success)
         assertTrue(lastBody.contains("kanban00000000000000001"))
 

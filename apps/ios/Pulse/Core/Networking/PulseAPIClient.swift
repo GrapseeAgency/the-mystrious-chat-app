@@ -1578,8 +1578,9 @@ public struct PulseAPIClient: Sendable {
     public func createRedPacket(conversationId: String, total: Int, count: Int, note: String?) async throws -> WireRedPacketCreateResult {
         // Section 10 item 13: journaled packet identity - a lost ACK replays
         // the SAME clientId so the wallet can never be debited twice.
-        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "redpacket-create", targetId: conversationId,
-            payload: ["total": String(total), "count": String(count)] + (note.map { ["note": $0] } ?? [:]))
+        var packetPayload: [String: String] = ["total": String(total), "count": String(count)]
+        if let note { packetPayload["note"] = note }
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "redpacket-create", targetId: conversationId, payload: packetPayload)
         do {
             let result = try await createRedPacketCore(conversationId: conversationId, total: total, count: count, note: note, clientId: intent.clientId)
             await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
@@ -1774,10 +1775,10 @@ public struct PulseAPIClient: Sendable {
         if let description { body["description"] = description }
         if let location { body["location"] = location }
         // Section 10 item 1: journaled event-creation identity.
-        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "event-create", targetId: conversationId,
-            payload: ["title": title, "startsAtIso": startsAtIso]
-                + (description.map { ["description": $0] } ?? [:])
-                + (location.map { ["location": $0] } ?? [:]))
+        var eventPayload: [String: String] = ["title": title, "startsAtIso": startsAtIso]
+        if let description { eventPayload["description"] = description }
+        if let location { eventPayload["location"] = location }
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "event-create", targetId: conversationId, payload: eventPayload)
         do {
             let event = try await createEventCore(conversationId: conversationId, title: title, startsAtIso: startsAtIso,
                 description: description, location: location, clientId: intent.clientId)
@@ -2170,8 +2171,9 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/hub/tasks { userId, title, status? } → { task }.
     public func createHubTask(title: String, status: String?) async throws -> WireHubTask {
         // Section 10 item 4: journaled personal-task identity.
-        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "task-create", targetId: "",
-            payload: ["title": title] + (status.map { ["status": $0] } ?? [:]))
+        var taskPayload: [String: String] = ["title": title]
+        if let status { taskPayload["status"] = status }
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "task-create", targetId: "", payload: taskPayload)
         do {
             let task = try await createHubTaskCore(title: title, status: status, clientId: intent.clientId)
             await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
