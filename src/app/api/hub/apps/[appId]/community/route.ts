@@ -21,7 +21,11 @@ export async function GET(req: Request, { params }: RouteCtx) {
     const denied = await requireActionOwner(req, userId, 'app')
     if (denied) return denied
   }
-  try { return NextResponse.json(await appCommunitySnapshot(db, appId, userId), { headers }) }
+  try {
+    const url = new URL(req.url)
+    return NextResponse.json(await appCommunitySnapshot(db, appId, userId,
+      url.searchParams.get('limit'), url.searchParams.get('cursor')), { headers })
+  }
   catch (error) { return hubAppErrorResponse(error) }
 }
 export async function POST(req: Request, { params }: RouteCtx) {

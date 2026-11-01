@@ -1185,3 +1185,45 @@ model RoomListRevision {
 
   @@id([conversationId, kind])
 }
+
+/**
+ * Section 11 items 1/2 — marketplace listing creation replay receipt: a lost
+ * ACK must never mint a second listing; the same clientId returns the SAME
+ * row and a reused identity with different instructions is a 409.
+ */
+model MarketCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  listingId   String
+
+  @@id([userId, clientId])
+}
+
+/**
+ * Section 11 item 8 — per-user monotonic app-connection revision. Every
+ * accepted connect/disconnect bumps it inside its commit and every install
+ * snapshot carries the current value, so cross-device clients refresh only
+ * on strictly-greater revisions.
+ */
+model AppInstallRevision {
+  userId String
+  rev    Int    @default(0)
+
+  @@id([userId])
+}
+
+/**
+ * Section 11 item 8 — durable connect/disconnect replay receipt for the
+ * offline journal: the same clientId replays the SAME verdict instead of
+ * relying on the caller's memory of which way the toggle was headed.
+ */
+model AppConnectionOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  appId       String
+  installed   Boolean
+
+  @@id([userId, clientId])
+}

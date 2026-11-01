@@ -32,7 +32,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   const denied = await requireActionOwner(req, userId, 'app')
   if (denied) return denied
-  try { return NextResponse.json(await setAppInstalled(db, appId, userId, true), { headers }) }
+  // Section 11 item 8: durable connect identity for the offline journal.
+  const clientId = typeof body.clientId === 'string' && body.clientId ? body.clientId : null
+  try { return NextResponse.json(await setAppInstalled(db, appId, userId, true, clientId), { headers }) }
   catch (error) { return hubAppErrorResponse(error) }
 }
 export async function DELETE(req: Request, { params }: RouteCtx) {
@@ -44,6 +46,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   const denied = await requireActionOwner(req, userId, 'app')
   if (denied) return denied
-  try { return NextResponse.json(await setAppInstalled(db, appId, userId, false), { headers }) }
+  const clientId = typeof body.clientId === 'string' && body.clientId ? body.clientId : null
+  try { return NextResponse.json(await setAppInstalled(db, appId, userId, false, clientId), { headers }) }
   catch (error) { return hubAppErrorResponse(error) }
 }

@@ -42,7 +42,10 @@ async function fixture(run) {
         else if (f.default?.name === 'now') def = ' DEFAULT CURRENT_TIMESTAMP'
         return `"${f.name}" ${type}${f.isId ? ' PRIMARY KEY' : f.isUnique ? ' UNIQUE' : ''}${def}`
       })
-      if (model.primaryKey) columns.push(`PRIMARY KEY (${model.primaryKey.fields.map(f => `"${f}"`).join(',')})`)
+      // A single-field @@id already inlines PRIMARY KEY on its column; only
+      // composite primary keys need the table-level clause (Section 11's
+      // AppInstallRevision is a single-field @@id and must not get both).
+      if (model.primaryKey && model.primaryKey.fields.length > 1) columns.push(`PRIMARY KEY (${model.primaryKey.fields.map(f => `"${f}"`).join(',')})`)
       for (const fields of model.uniqueFields) columns.push(`UNIQUE (${fields.map(f => `"${f}"`).join(',')})`)
       await db.$executeRawUnsafe(`CREATE TABLE "${model.name}" (${columns.join(',')})`)
     }

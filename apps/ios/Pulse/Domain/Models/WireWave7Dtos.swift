@@ -285,6 +285,9 @@ public struct WireGameMatchCreateResult: Codable, Sendable {
 }
 
 public struct WireGamesPage: Codable, Sendable {
+    // Section 11 item 11: cursor pages walk past the legacy 25-row boundary.
+    public var hasMore: Bool? = nil
+    public var nextCursor: String? = nil
     public let matches: [WireGameMatch]
 }
 
@@ -322,6 +325,9 @@ public struct WireTournamentSummary: Codable, Hashable, Sendable {
 }
 
 public struct WireTournamentsPage: Codable, Sendable {
+    // Section 11 item 11: cursor pages walk past the legacy 5-row boundary.
+    public var hasMore: Bool? = nil
+    public var nextCursor: String? = nil
     public let tournaments: [WireTournamentSummary]
 }
 
@@ -459,6 +465,10 @@ public struct WireMarketListing: Codable, Hashable, Sendable {
 }
 
 public struct WireMarketPage: Codable, Sendable {
+    // Section 11 item 3: bounded board pages walk past the legacy 60-row
+    // cap; without limit/cursor the legacy shape (no paging fields) is kept.
+    public var hasMore: Bool? = nil
+    public var nextCursor: String? = nil
     public let marketVersion: Int
     public let userId: String
     public let listings: [WireMarketListing]
@@ -468,6 +478,10 @@ public struct WireMarketListingEnvelope: Codable, Sendable {
     public let marketVersion: Int
     public let userId: String
     public let listing: WireMarketListing?
+    // Section 11 item 1: replay receipt for the durable listing identity
+    // (var + nil default keeps the memberwise init for existing call sites).
+    public var replayed: Bool? = nil
+    public var clientId: String? = nil
 }
 
 public struct WireMarketBuyResult: Codable, Sendable {
@@ -510,6 +524,10 @@ public struct WireAppInstallState: Codable, Hashable, Sendable {
     public let installedAt: String?
     public let installs: Int?
     public let installers: [WireHubLogUser]?
+    // Section 11 items 6/8: the user's install revision rides every
+    // snapshot; a replayed connect/disconnect is an ACKNOWLEDGEMENT.
+    public var installsRev: Int? = nil
+    public var replayed: Bool? = nil
 }
 
 public struct WireAppInstallResult: Codable, Sendable {
@@ -521,6 +539,29 @@ public struct WireAppInstallResult: Codable, Sendable {
     public let installs: Int?
     public let installedAt: String?
     public let installers: [WireHubLogUser]?
+    // Section 11 item 8: per-app write snapshots carry the revision + the
+    // replay receipt (a replay returns the untouched current snapshot).
+    public var installsRev: Int? = nil
+    public var replayed: Bool? = nil
+}
+
+/// Section 11 item 6 - ONE batch snapshot for the whole catalog
+/// (GET /api/hub/apps/installs). Rows cover every catalog id in server
+/// order; the batch shape is leaner than the per-app snapshot (no
+/// appVersion/userId per row - the envelope owns them), so it decodes
+/// into its own row type.
+public struct WireAppInstallBatchRow: Codable, Hashable, Sendable {
+    public let appId: String
+    public let order: Int?
+    public let installed: Bool?
+    public let installedAt: String?
+}
+
+public struct WireAppInstallsBatch: Codable, Sendable {
+    public var appVersion: Int?
+    public var userId: String?
+    public var installsRev: Int?
+    public var apps: [WireAppInstallBatchRow]?
 }
 
 public struct WireAppCommunity: Codable, Sendable {

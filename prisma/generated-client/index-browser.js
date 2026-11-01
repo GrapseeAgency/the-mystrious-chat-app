@@ -804,6 +804,26 @@ exports.Prisma.RoomListRevisionScalarFieldEnum = {
   rev: 'rev'
 };
 
+exports.Prisma.MarketCreationOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  listingId: 'listingId'
+};
+
+exports.Prisma.AppInstallRevisionScalarFieldEnum = {
+  userId: 'userId',
+  rev: 'rev'
+};
+
+exports.Prisma.AppConnectionOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  appId: 'appId',
+  installed: 'installed'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -887,7 +907,10 @@ exports.Prisma.ModelName = {
   KanbanCardOperation: 'KanbanCardOperation',
   ReminderCreationOperation: 'ReminderCreationOperation',
   RedPacketCreationOperation: 'RedPacketCreationOperation',
-  RoomListRevision: 'RoomListRevision'
+  RoomListRevision: 'RoomListRevision',
+  MarketCreationOperation: 'MarketCreationOperation',
+  AppInstallRevision: 'AppInstallRevision',
+  AppConnectionOperation: 'AppConnectionOperation'
 };
 
 /**

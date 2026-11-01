@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
 import * as contract from '../../src/lib/wallet-contract.ts'
+import * as marketContract from '../../src/lib/market-contract.ts'
+import * as section10 from '../../src/lib/section10-contracts.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 const NextResponse = { json: (body, init) => Response.json(body, init) }
 async function load(path, bindings, exports) {
@@ -48,6 +50,9 @@ async function fixture(run) {
     const routes = {}
     for (const [name, path] of Object.entries(paths)) routes[name] = await load(`src/app/api/${path}/route.ts`, {
       db, NextResponse, ...auth, ...contract,
+      createListingReceipted: marketContract.createListingReceipted,
+      MarketOperationError: marketContract.MarketOperationError,
+      pageLimit: section10.pageLimit,
       safeJson: async req => req.json(), strField: v => typeof v === 'string' ? v.trim() : '',
     }, name === 'market' || name === 'swap' ? 'GET, POST' : 'POST')
     await run(db, routes)

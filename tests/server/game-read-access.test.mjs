@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import * as access from '../../src/lib/game-read.ts'
+import * as section10 from '../../src/lib/section10-contracts.ts'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
 const {PrismaClient}=createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path, bindings, name) {
@@ -31,7 +32,7 @@ async function fixture(run) {
   await db.tournamentPlayer.create({data:{tournamentId:'season',userId:'me'}})
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
   const handlers=[]
-  for(const path of routes) handlers.push(await load(`src/app/api/${path}`,{db,...access,requireActionOwner,NextResponse:{json:Response.json},strField:v=>typeof v==='string'?v.trim():''},'GET'))
+  for(const path of routes) handlers.push(await load(`src/app/api/${path}`,{db,...access,...section10,requireActionOwner,NextResponse:{json:Response.json},strField:v=>typeof v==='string'?v.trim():''},'GET'))
   await run(db,handlers)
  } finally {await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }

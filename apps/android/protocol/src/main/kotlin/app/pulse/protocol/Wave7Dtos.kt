@@ -40,6 +40,10 @@ import kotlinx.serialization.Serializable
  *   GET  /api/hub/logs                  → { logs }
  *   GET|POST|DELETE /api/hub/apps/[appId]/install → { installed, status, installedAt, installs, installers } …
  *   GET|POST /api/hub/apps/[appId]/community → { conversation, memberCount, joined }
+ *   Section 11: market pages add hasMore/nextCursor, the listing receipt adds
+ *   clientId/replayed, installs add installsRev + a batch snapshot
+ *   (GET /api/hub/apps/installs), communities add roster paging, and the
+ *   games/tournaments lists add hasMore/nextCursor under limit/cursor.
  */
 
 // Red packets (F-RO-02)
@@ -393,7 +397,13 @@ data class GameMatchCreateResultDto(
 )
 
 @Serializable
-data class GamesPageDto(val matches: List<GameMatchDto> = emptyList())
+data class GamesPageDto(
+    val matches: List<GameMatchDto> = emptyList(),
+    // Section 11 item 7: bounded keyset continuation (present only when the
+    // request carried limit/cursor; legacy pages keep the bare shape).
+    val hasMore: Boolean? = null,
+    val nextCursor: String? = null,
+)
 
 /** Parses a `kind=="game"` message payload string: {matchId, game}. */
 @Serializable
@@ -434,7 +444,13 @@ data class TournamentEntryDto(
 )
 
 @Serializable
-data class TournamentsPageDto(val tournaments: List<TournamentSummaryDto> = emptyList())
+data class TournamentsPageDto(
+    val tournaments: List<TournamentSummaryDto> = emptyList(),
+    // Section 11 item 7: bounded keyset continuation (present only when the
+    // request carried limit/cursor; legacy pages keep the bare shape).
+    val hasMore: Boolean? = null,
+    val nextCursor: String? = null,
+)
 
 @Serializable
 data class TournamentCreateResultDto(
@@ -594,10 +610,26 @@ data class MarketListingDto(
 )
 
 @Serializable
-data class MarketPageDto(val marketVersion: Int, val userId: String, val listings: List<MarketListingDto>)
+data class MarketPageDto(
+    val marketVersion: Int,
+    val userId: String,
+    val listings: List<MarketListingDto>,
+    // Section 11 item 3: bounded board continuation (present only when the
+    // request carried limit/cursor; legacy pages keep the bare 60-row shape).
+    val hasMore: Boolean? = null,
+    val nextCursor: String? = null,
+)
 
 @Serializable
-data class MarketListingEnvelopeDto(val marketVersion: Int, val userId: String, val listing: MarketListingDto)
+data class MarketListingEnvelopeDto(
+    val marketVersion: Int,
+    val userId: String,
+    val listing: MarketListingDto,
+    // Section 11 item 4: durable creation identity - the echoed clientId plus
+    // the lost-ACK replay flag (true = the SAME journaled identity accepted).
+    val clientId: String? = null,
+    val replayed: Boolean? = null,
+)
 
 @Serializable
 data class MarketBuyResultDto(
@@ -641,6 +673,9 @@ data class AppInstallStateDto(
     val installedAt: String? = null,
     val installs: Int,
     val installers: List<HubLogUserDto>,
+    // Section 11 item 8: the owner's install revision + lost-ACK replay flag.
+    val installsRev: Int? = null,
+    val replayed: Boolean? = null,
 )
 
 @Serializable
@@ -653,6 +688,33 @@ data class AppInstallResultDto(
     val installs: Int,
     val installedAt: String? = null,
     val installers: List<HubLogUserDto> = emptyList(),
+    // Section 11 item 8: replay receipt - a replayed connect/disconnect is an
+    // ACKNOWLEDGEMENT of the same identity, never a duplicate to retry.
+    val installsRev: Int? = null,
+    val replayed: Boolean? = null,
+)
+
+/** One catalog row inside the Section 11 item 6 batch install snapshot
+ * (GET /api/hub/apps/installs): the batch carries only the connected flag
+ * per app - full per-app state still lives on the per-app route. */
+@Serializable
+data class AppInstallBatchRowDto(
+    val appId: String = "",
+    /** Catalog position (MATRIX index) - informational ordering. */
+    val order: Int = 0,
+    val installed: Boolean = false,
+    val installedAt: String? = null,
+)
+
+/** Section 11 item 6 - ONE request for the whole catalog:
+ * GET /api/hub/apps/installs?userId= → { appVersion:2, userId, installsRev, apps }. */
+@Serializable
+data class AppInstallsBatchDto(
+    val appVersion: Int,
+    val userId: String,
+    // The owner's install revision (null on gateways predating item 8).
+    val installsRev: Int? = null,
+    val apps: List<AppInstallBatchRowDto> = emptyList(),
 )
 
 @Serializable
@@ -664,4 +726,8 @@ data class AppCommunityDto(
     val conversation: ConversationSummaryDto? = null,
     val memberCount: Long,
     val joined: Boolean,
+    // Section 11 item 5: bounded roster continuation (present only when the
+    // request carried limit/cursor; legacy reads keep the full roster).
+    val rosterHasMore: Boolean? = null,
+    val rosterNextCursor: String? = null,
 )

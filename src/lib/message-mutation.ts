@@ -1,5 +1,6 @@
 import type { PrismaClient, Prisma } from '../../prisma/generated-client'
 import { reactionId } from './icon-ids.ts'
+import { matchIdsFromPayloads, abandonMatchesForCarriers } from './game-carrier-lifecycle.ts'
 
 export class MessageMutationError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
@@ -76,6 +77,20 @@ export async function mutateMessage<T>(db: PrismaClient, id: string, owner: stri
             // Legacy contract fixtures build only the tables they exercise;
             // production schemas always carry the section-10 tables.
             if ((error as { code?: string })?.code !== 'P2021') throw error
+          }
+          // Section 11 item 10: a deleted MATCH carrier abandons its
+          // still-active match. Tournaments are season containers and keep
+          // running by policy. The carrier read is a guarded side query so
+          // legacy fixtures without the kind/payload columns keep working.
+          try {
+            const carrier = await tx.message.findUnique({ where: { id }, select: { kind: true, payload: true } })
+            if (carrier?.kind === 'game') {
+              await abandonMatchesForCarriers(tx, matchIdsFromPayloads([carrier.payload]))
+            }
+          } catch (error) {
+            // P2021 (table) / P2022 (column): legacy fixtures predate the
+            // section-11 columns; production schemas always carry them.
+            if (!['P2021', 'P2022'].includes((error as { code?: string })?.code ?? '')) throw error
           }
           break
         case 'react': {

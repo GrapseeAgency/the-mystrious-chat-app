@@ -19,6 +19,7 @@ import app.pulse.protocol.ChatMessageDto
 import app.pulse.protocol.AppCommunityDto
 import app.pulse.protocol.AppInstallResultDto
 import app.pulse.protocol.AppInstallStateDto
+import app.pulse.protocol.AppInstallsBatchDto
 import app.pulse.protocol.AiRecapDto
 import app.pulse.protocol.AutomationEnvelopeDto
 import app.pulse.protocol.AutomationsPageDto
@@ -2383,16 +2384,24 @@ class PulseApi(
             result
         }
 
-    /** GET /api/games?conversationId= → { matches } newest 25 (list page for the room games view). */
-    suspend fun games(conversationId: String, userId: String): PulseResult<GamesPageDto> =
-        get("/api/games?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+    /** GET /api/games?conversationId= → { matches } newest 25 (list page for the room games view).
+     *  Section 11 item 7: limit/cursor switch to the bounded keyset page
+     *  ({hasMore, nextCursor}); without them the legacy shape is kept. */
+    suspend fun games(conversationId: String, userId: String, limit: Int? = null, cursor: String? = null): PulseResult<GamesPageDto> {
+        var path = "/api/games?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")
+        if (limit != null) path += "&limit=" + limit
+        if (cursor != null) path += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(path) {
             requireGameRead(it, userId, conversationId)
             require(PulseJson.parseToJsonElement(it).jsonObject["matches"] is JsonArray)
             PulseJson.decodeFromString(GamesPageDto.serializer(), it).also { page ->
                 require(page.matches.map { row -> row.id }.distinct().size == page.matches.size)
                 page.matches.forEach { row -> require(row.id.isNotBlank() && row.conversationId == conversationId) }
+                if (page.hasMore == true && page.nextCursor.isNullOrBlank())
+                    throw kotlinx.serialization.SerializationException("Games page missing its cursor")
             }
         }
+    }
 
     /** GET /api/games/{id} → { match, playerX, playerO }. */
     suspend fun game(matchId: String, userId: String): PulseResult<GameDetailDto> =
@@ -2433,10 +2442,15 @@ class PulseApi(
             result
         }
 
-    /** GET /api/tournaments?conversationId= → { tournaments } newest 5 with playerCount. */
-    suspend fun tournaments(conversationId: String, userId: String): PulseResult<TournamentsPageDto> =
-        get("/api/tournaments?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
-            "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+    /** GET /api/tournaments?conversationId= → { tournaments } newest 5 with playerCount.
+     *  Section 11 item 7: limit/cursor switch to the bounded keyset page
+     *  ({hasMore, nextCursor}); without them the legacy shape is kept. */
+    suspend fun tournaments(conversationId: String, userId: String, limit: Int? = null, cursor: String? = null): PulseResult<TournamentsPageDto> {
+        var path = "/api/tournaments?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+            "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")
+        if (limit != null) path += "&limit=" + limit
+        if (cursor != null) path += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(path) {
             requireGameRead(it, userId, conversationId)
             if ((PulseJson.parseToJsonElement(it) as? JsonObject)?.get("tournaments") !is kotlinx.serialization.json.JsonArray) {
                 throw kotlinx.serialization.SerializationException("Tournament list was not returned")
@@ -2445,8 +2459,12 @@ class PulseApi(
             if (result.tournaments.map { row -> row.id }.distinct().size != result.tournaments.size || result.tournaments.any { season -> season.id.isBlank() || season.conversationId != conversationId || season.joined == null || season.status !in listOf("running", "finished") }) {
                 throw kotlinx.serialization.SerializationException("Invalid tournament list")
             }
+            if (result.hasMore == true && result.nextCursor.isNullOrBlank()) {
+                throw kotlinx.serialization.SerializationException("Tournament page missing its cursor")
+            }
             result
         }
+    }
 
     /** GET /api/tournaments/{id} → { tournament } standings (points → wins → joinedAt). */
     suspend fun tournament(tournamentId: String, userId: String): PulseResult<TournamentSummaryDto> =
@@ -2606,19 +2624,29 @@ class PulseApi(
             OkDto(ok = true)
         }
 
-    /** GET /api/hub/market?userId= - open listings + viewer's own (any status), ≤60. */
-    suspend fun market(userId: String): PulseResult<MarketPageDto> =
-        get("/api/hub/market?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+    /** GET /api/hub/market?userId= - open listings + viewer's own (any status), ≤60.
+     *  Section 11 item 3: limit/cursor switch to the bounded board page
+     *  ({hasMore, nextCursor}); without them the legacy shape is kept. */
+    suspend fun market(userId: String, limit: Int? = null, cursor: String? = null): PulseResult<MarketPageDto> {
+        var path = "/api/hub/market?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")
+        if (limit != null) path += "&limit=" + limit
+        if (cursor != null) path += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(path) {
             PulseJson.decodeFromString(MarketPageDto.serializer(), it).also { page ->
                 require(page.marketVersion == 1 && page.userId == userId && page.listings.map { row -> row.id }.distinct().size == page.listings.size) {
                     "Market ownership could not be verified. Update the gateway before retrying."
                 }
                 page.listings.forEach { row -> requireMarketListing(row, userId) }
+                if (page.hasMore == true && page.nextCursor.isNullOrBlank())
+                    throw kotlinx.serialization.SerializationException("Market board page missing its cursor")
             }
         }
+    }
 
-    /** POST /api/hub/market { userId, title 1..80, description?, price 1..100000 } → { listing }. */
-    suspend fun createListing(userId: String, title: String, description: String?, price: Long): PulseResult<MarketListingDto> =
+    /** POST /api/hub/market { userId, title 1..80, description?, price 1..100000, clientId? }
+     *  → 201 { listing } | 200 { listing, replayed:true } (Section 11 item 4:
+     *  a replayed receipt is the SAME confirmed listing, never a duplicate). */
+    suspend fun createListing(userId: String, title: String, description: String?, price: Long, clientId: String? = null): PulseResult<MarketListingDto> =
         post(
             "/api/hub/market",
             buildJsonObject {
@@ -2626,10 +2654,13 @@ class PulseApi(
                 put("title", title)
                 if (!description.isNullOrBlank()) put("description", description)
                 put("price", price)
+                // Section 11 item 4: durable creation identity (lost-ACK replay).
+                if (clientId != null) put("clientId", clientId)
             },
         ) {
             val receipt = PulseJson.decodeFromString(app.pulse.protocol.MarketListingEnvelopeDto.serializer(), it)
             require(receipt.marketVersion == 1 && receipt.userId == userId) { "Listing ownership was not confirmed." }
+            if (clientId != null && receipt.clientId != clientId) throw kotlinx.serialization.SerializationException("Creation receipt was not confirmed; retry the same instructions")
             receipt.listing.also { row ->
                 requireMarketListing(row, userId)
                 require(row.mine && row.status == "open" && row.title == title.trim() && row.price == price) { "Listing details were not confirmed." }
@@ -2687,9 +2718,29 @@ class PulseApi(
             }
         }
 
-    /** POST /api/hub/apps/{appId}/install { userId } - idempotent connect. */
-    suspend fun installApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
-        post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", jsonOf("userId" to userId)) {
+    /** Section 11 item 6 - ONE request for the whole catalog:
+     *  GET /api/hub/apps/installs?userId= → { appVersion:2, userId, installsRev, apps }. */
+    suspend fun appInstallsBatch(userId: String): PulseResult<AppInstallsBatchDto> =
+        get("/api/hub/apps/installs?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            PulseJson.decodeFromString(AppInstallsBatchDto.serializer(), it).also { page ->
+                require(page.appVersion == 2 && page.userId == userId && page.apps.map { row -> row.appId }.distinct().size == page.apps.size) {
+                    "Catalog connections could not be verified. Update the gateway before retrying."
+                }
+                page.apps.forEach { row ->
+                    require(row.appId.isNotBlank() && (row.installed || row.installedAt == null)) {
+                        "Catalog connections could not be verified. Update the gateway before retrying."
+                    }
+                    if (row.installedAt != null) java.time.Instant.parse(row.installedAt)
+                }
+            }
+        }
+
+    /** POST /api/hub/apps/{appId}/install { userId, clientId? } - idempotent connect.
+     *  Section 11 item 8: the per-app snapshot may carry installsRev/replayed;
+     *  a replayed receipt is an ACKNOWLEDGEMENT of the same identity and
+     *  decodes like a fresh one (never a validation failure). */
+    suspend fun installApp(appId: String, userId: String, clientId: String? = null): PulseResult<AppInstallResultDto> =
+        post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", jsonOf("userId" to userId, "clientId" to clientId)) {
             PulseJson.decodeFromString(AppInstallResultDto.serializer(), it).also { row ->
                 requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
                 requireInstallState(row.installed, row.status, row.installs)
@@ -2697,9 +2748,10 @@ class PulseApi(
             }
         }
 
-    /** DELETE /api/hub/apps/{appId}/install { userId } - hard remove. */
-    suspend fun uninstallApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
-        deleteWithBody("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", userId) {
+    /** DELETE /api/hub/apps/{appId}/install { userId, clientId? } - hard remove.
+     *  Same replay tolerance as the connect route (Section 11 item 8). */
+    suspend fun uninstallApp(appId: String, userId: String, clientId: String? = null): PulseResult<AppInstallResultDto> =
+        deleteWithJson("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", jsonOf("userId" to userId, "clientId" to clientId)) {
             PulseJson.decodeFromString(AppInstallResultDto.serializer(), it).also { row ->
                 requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
                 requireInstallState(row.installed, row.status, row.installs)

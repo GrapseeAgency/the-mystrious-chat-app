@@ -11,10 +11,13 @@ import java.util.UUID
 
 /** One durable section-8 intent (block/unblock, report, folder/phrase write).
  * Serialized to the account-scoped wave7 KV journal so an uncertain
- * acknowledgement survives process loss and replays with the SAME identity. */
+ * acknowledgement survives process loss and replays with the SAME identity.
+ * Later sections reused the same journal (Section 9 stories, Section 10
+ * events/tasks/kanban/reminders/packets, Section 11 market-create and
+ * app-connect/app-disconnect). */
 @kotlinx.serialization.Serializable
 data class Section8Intent(
-    val kind: String, // "block" | "unblock" | "report" | "folder-create" | "phrase-create" | "phrase-delete"
+    val kind: String, // "block" | "unblock" | "report" | "folder-create" | "phrase-create" | "phrase-delete" | … | "market-create" | "app-connect" | "app-disconnect"
     val clientId: String,
     val intentAtMs: Long,
     val targetId: String,

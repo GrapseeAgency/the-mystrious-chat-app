@@ -3,13 +3,46 @@ import { requireWalletOwner } from '@/lib/wallet-authorization'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
+import { createListingReceipted, MarketOperationError } from '@/lib/market-contract'
+import { pageLimit } from '@/lib/section10-contracts'
 
 export const dynamic = 'force-dynamic'
 
+const BOARD_PAGE_MAX = 100
+const LEGACY_BOARD_CAP = 60
+
+/** Board order: status asc ('cancelled' < 'open' < 'sold'), then (createdAt, id) desc. */
+type BoardStatus = string
+type BoardCursor = { status: BoardStatus; atMs: number; id: string }
+
+/** Decode a `<status>.<epochMs>.<id>` board cursor. The id may contain dots. */
+function decodeBoardCursor(raw: string | null): { ok: true; cursor: BoardCursor | null } | { ok: false } {
+  if (raw === null || raw === '') return { ok: true, cursor: null }
+  if (raw.length > 256) return { ok: false }
+  const first = raw.indexOf('.')
+  if (first <= 0) return { ok: false }
+  const status = raw.slice(0, first)
+  const rest = raw.slice(first + 1)
+  const second = rest.indexOf('.')
+  if (second <= 0 || second === rest.length - 1) return { ok: false }
+  const atMs = Number(rest.slice(0, second))
+  const id = rest.slice(second + 1)
+  if (!['cancelled', 'open', 'sold'].includes(status)) return { ok: false }
+  if (!Number.isSafeInteger(atMs) || atMs < 0 || id.length === 0 || id.length > 128) return { ok: false }
+  return { ok: true, cursor: { status, atMs, id } }
+}
+
+function encodeBoardCursor(status: BoardStatus, atMs: number, id: string): string {
+  return `${status}.${atMs}.${id}`
+}
+
 /**
- * GET /api/hub/market?userId=x → { listings }
- * Open listings first (newest), then the viewer's sold history.
- * Seller info is embedded for the row UI.
+ * GET /api/hub/market?userId=x[&limit=1..100][&cursor=status.ms.id]
+ * → { listings, nextCursor?, hasMore? }
+ * Open listings first (newest), then the viewer's own history.
+ * Section 11 item 3: cursor pages walk past the legacy 60-row boundary;
+ * without a cursor the legacy shape (60 rows, no paging fields) is kept so
+ * every existing client keeps working unchanged.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -19,19 +52,46 @@ export async function GET(req: Request) {
     if (denied) return denied
   }
 
+  const limitParsed = pageLimit(url.searchParams.get('limit'), BOARD_PAGE_MAX)
+  if (!limitParsed.ok) {
+    return NextResponse.json({ error: 'limit must be an integer between 1 and 100.' }, { status: 400 })
+  }
+  const cursorParsed = decodeBoardCursor(url.searchParams.get('cursor'))
+  if (!cursorParsed.ok) {
+    return NextResponse.json({ error: 'cursor is invalid.' }, { status: 400 })
+  }
+  const cursor = cursorParsed.cursor
+  const paging = limitParsed.limit !== null || cursor !== null
+  const limit = limitParsed.limit ?? (cursor !== null ? 25 : LEGACY_BOARD_CAP)
+
+  const keyset = cursor ? {
+    OR: [
+      { status: { gt: cursor.status } },
+      { status: cursor.status, createdAt: { lt: new Date(cursor.atMs) } },
+      { status: cursor.status, createdAt: new Date(cursor.atMs), id: { lt: cursor.id } },
+    ],
+  } : {}
+
   const listings = await db.marketListing.findMany({
-    where: { OR: [{ status: 'open' }, ...(userId ? [{ sellerId: userId }] : [])] },
+    where: { AND: [
+      { OR: [{ status: 'open' }, ...(userId ? [{ sellerId: userId }] : [])] },
+      keyset,
+    ] },
     orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
-    take: 60,
+    take: paging ? limit + 1 : limit,
     include: {
       seller: { select: { id: true, name: true, username: true, color: true } },
       buyer: { select: { id: true, name: true, username: true, color: true } },
     },
   })
 
+  const page = paging ? listings.slice(0, limit) : listings
+  const hasMore = paging && listings.length > limit
+  const last = page.at(-1)
+
   return NextResponse.json({
     marketVersion: 1, userId: userId || null,
-    listings: listings.map((l) => ({
+    listings: page.map((l) => ({
       id: l.id,
       title: l.title,
       description: l.description,
@@ -43,10 +103,15 @@ export async function GET(req: Request) {
       buyer: userId === l.sellerId ? l.buyer : null,
       mine: userId === l.sellerId,
     })),
+    ...(paging ? {
+      hasMore,
+      nextCursor: hasMore && last ? encodeBoardCursor(last.status, last.createdAt.getTime(), last.id) : null,
+    } : {}),
   }, { headers: { 'Cache-Control': 'private, no-store', Vary: 'Authorization' } })
 }
 
-/** POST /api/hub/market { userId, title, description?, price } → 201 { listing } */
+/** POST /api/hub/market { userId, title, description?, price, clientId? }
+ * → 201 { listing } / 200 { listing, replayed: true } / 409 / 410 */
 export async function POST(req: Request) {
   const body = await safeJson(req)
   const userId = strField(body.userId)
@@ -65,36 +130,18 @@ export async function POST(req: Request) {
   if (!Number.isInteger(price) || price <= 0 || price > 100_000) {
     return NextResponse.json({ error: 'Price must be a positive whole number (max 100,000 PC).' }, { status: 400 })
   }
+  const clientId = typeof body.clientId === 'string' && body.clientId ? body.clientId : null
 
-  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, username: true, color: true } })
-  if (!user) {
-    return NextResponse.json({ error: 'User not found.' }, { status: 404 })
-  }
-
-  return db.$transaction(async tx => {
-    const listing = await tx.marketListing.create({
-      data: { sellerId: userId, title, description, price },
-    })
-
-    await tx.logEvent.create({
-      data: { userId, kind: 'market', message: `listed "${title}" for ${price} PC` },
-    })
-
+  try {
+    const receipt = await createListingReceipted(db, { userId, title, description, price, clientId })
     return NextResponse.json(
-      {
-        marketVersion: 1, userId,
-        listing: {
-          id: listing.id,
-          title: listing.title,
-          description: listing.description,
-          price: listing.price,
-          asset: listing.asset,
-          status: listing.status,
-          createdAt: listing.createdAt.toISOString(),
-          seller: user, buyer: null, mine: true,
-        },
-      },
-      { status: 201 },
+      { marketVersion: 1, userId, listing: receipt.listing, clientId: receipt.clientId, replayed: receipt.replayed },
+      { status: receipt.replayed ? 200 : 201 },
     )
-  }, { isolationLevel: 'Serializable' })
+  } catch (error) {
+    if (error instanceof MarketOperationError) {
+      return NextResponse.json({ error: error.message, code: error.code, clientId: error.clientId }, { status: error.status })
+    }
+    throw error
+  }
 }

@@ -308,6 +308,10 @@ private val HUB_PANELS = listOf(
 private val HUB_FIELD_BG = Color(0x12FFFFFF) // white/[0.07] field fill
 private val HUB_CARD_BG = SubPageInk.Panel // glass-deep dark
 
+/** Section 11 item 3 - market board page size (server cap 1..100; the legacy
+ * bare read held 60 rows, so the bounded page keeps the same breadth). */
+private const val MARKET_PAGE_LIMIT = 60
+
 @Composable
 private fun HubField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, numeric: Boolean = false, enabled: Boolean = true) {
     Box(
@@ -756,6 +760,11 @@ private fun HubTasksPanel(repository: PulseRepository, viewerId: String) {
 @Composable
 private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoinsChanged: () -> Unit) {
     var listings by remember { mutableStateOf<List<MarketListingDto>>(emptyList()) }
+    // Section 11 item 3: the board rides bounded keyset pages - the panel
+    // keeps the continuation cursor and appends "Load more" pages to it.
+    var nextPage by remember { mutableStateOf<String?>(null) }
+    var hasMore by remember { mutableStateOf(false) }
+    var loadingMore by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
@@ -775,14 +784,41 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
         loading = true
         try {
             if (!current()) return
-            val page = owned.market().getOrThrow()
+            val page = owned.market(limit = MARKET_PAGE_LIMIT).getOrThrow()
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            if (current() && gate.accepts(ticket)) { listings = page.listings; loaded = true }
+            if (current() && gate.accepts(ticket)) {
+                listings = page.listings
+                nextPage = page.nextCursor
+                hasMore = page.hasMore == true && page.nextCursor != null
+                loaded = true
+            }
             val wallet = owned.wallet().getOrThrow()
             if (current() && gate.accepts(ticket)) coins = wallet.wallet.coins
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (error: Exception) { if (current() && gate.accepts(ticket)) notice = error.message ?: "Could not refresh the market."
         } finally { if (current() && gate.accepts(ticket)) loading = false }
+    }
+    fun loadMore() {
+        val cursor = nextPage ?: return
+        if (loading || loadingMore || busy || !current()) return
+        scope.launch {
+            val ticket = gate.beginRead() ?: return@launch
+            loadingMore = true
+            try {
+                if (!current()) return@launch
+                val page = owned.market(limit = MARKET_PAGE_LIMIT, cursor = cursor).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) {
+                    // Keyset pages never overlap; the filter only keeps an
+                    // honest board if a legacy row shifted mid-walk.
+                    listings = listings + page.listings.filterNot { row -> listings.any { it.id == row.id } }
+                    nextPage = page.nextCursor
+                    hasMore = page.hasMore == true && page.nextCursor != null
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current() && gate.accepts(ticket)) notice = error.message ?: "Could not refresh the market."
+            } finally { if (current() && gate.accepts(ticket)) loadingMore = false }
+        }
     }
     LaunchedEffect(owned) { refresh() }
     fun <T> mutate(operation: suspend () -> Result<T>, accepted: (T) -> Unit) {
@@ -909,6 +945,20 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
         }
 
         if (loading) Text("Refreshing market…", color = SubPageInk.Zinc500, fontSize = 12.sp)
+        if (hasMore && nextPage != null) {
+            Text(
+                if (loadingMore) "Loading more…" else "Load more",
+                color = SubPageInk.Amber400,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(enabled = !loadingMore && !busy && !loading) { loadMore() }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
         if (notice != null) HubPrimaryButton(label = "Refresh", enabled = !busy && !loading, onClick = { scope.launch { refresh() } })
         if (loaded && listings.isEmpty()) {
             Text(
@@ -1243,7 +1293,8 @@ private fun HubAppsPanel(
         loading = true
         try {
             if (!current()) return
-            val ids = app.pulse.domain.sync.appInstallSnapshot(HubCatalog.MATRIX.map { it.n.toString() }, viewerId) { owned.appInstallState(it) }
+            // Section 11 item 6: ONE batch request replaces the 100-app fan-out.
+            val ids = owned.appInstalls().getOrThrow().apps.filter { it.installed }.map { it.appId }.toSet()
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (current() && gate.accepts(ticket)) { installed = ids; notice = null }
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
@@ -1546,7 +1597,8 @@ private fun MirrorHubCategoryContent(
         scope.launch {
             try {
                 if (!current()) return@launch
-                val ids = app.pulse.domain.sync.appInstallSnapshot(HubCatalog.MATRIX.map { it.n.toString() }, owner.orEmpty()) { owned.appInstallState(it) }
+                // Section 11 item 6: ONE batch request replaces the fan-out.
+                val ids = owned.appInstalls().getOrThrow().apps.filter { it.installed }.map { it.appId }.toSet()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (current()) { installed = ids; installFailed = false }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled

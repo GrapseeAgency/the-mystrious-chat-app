@@ -1996,6 +1996,21 @@ public struct PulseAPIClient: Sendable {
         return result
     }
 
+    /// GET /api/games?conversationId=[&limit=1..100][&cursor=ms.id] → { matches }.
+    /// Section 11 item 11: a page request walks past the legacy 25-row
+    /// boundary; without limit/cursor the legacy shape (no paging fields)
+    /// is kept.
+    public func gamesPage(conversationId: String, limit: Int? = nil, cursor: String? = nil) async throws -> WireGamesPage {
+        var path = "/api/games?conversationId=\(q(conversationId))&userId=\(q(userId))"
+        if let limit { path += "&limit=\(limit)" }
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireGamesPage = try await get(path)
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return a game history cursor.")
+        }
+        return page
+    }
+
     /// POST /api/games/{id}/move { userId, cell 0..8 } → { match, playerX, playerO }.
     public func gameMove(_ matchId: String, cell: Int) async throws -> WireGameDetail {
         let data = try await postRaw("/api/games/\(q(matchId))/move", body: ["userId": userId, "cell": cell])
@@ -2081,6 +2096,21 @@ public struct PulseAPIClient: Sendable {
             throw Failure(kind: .server, message: "Season membership was not confirmed.")
         }
         return result
+    }
+
+    /// GET /api/tournaments?conversationId=[&limit=1..100][&cursor=ms.id] → { tournaments }.
+    /// Section 11 item 11: a page request walks past the legacy 5-row
+    /// boundary; without limit/cursor the legacy shape (no paging fields)
+    /// is kept.
+    public func tournamentsPage(conversationId: String, limit: Int? = nil, cursor: String? = nil) async throws -> WireTournamentsPage {
+        var path = "/api/tournaments?conversationId=\(q(conversationId))&userId=\(q(userId))"
+        if let limit { path += "&limit=\(limit)" }
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireTournamentsPage = try await get(path)
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return a tournament history cursor.")
+        }
+        return page
     }
 
     // MARK: leaderboard
@@ -2258,20 +2288,33 @@ public struct PulseAPIClient: Sendable {
         }
     }
 
-    /// GET /api/hub/market?userId= → { listings }.
-    public func market() async throws -> WireMarketPage {
-        let page: WireMarketPage = try await get("/api/hub/market?userId=\(q(userId))")
+    /// GET /api/hub/market?userId=[&limit=1..100][&cursor=status.ms.id] → { listings }.
+    /// Section 11 item 3: a page request walks past the legacy 60-row cap;
+    /// without limit/cursor the legacy shape (no paging fields) is kept.
+    public func market(limit: Int? = nil, cursor: String? = nil) async throws -> WireMarketPage {
+        var path = "/api/hub/market?userId=\(q(userId))"
+        if let limit { path += "&limit=\(limit)" }
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireMarketPage = try await get(path)
         guard page.marketVersion == 1, page.userId == userId, Set(page.listings.map(\.id)).count == page.listings.count else {
             throw Failure(kind: .validation, message: "Market ownership could not be verified. Update the gateway before retrying.")
         }
         for row in page.listings { try requireMarketListing(row) }
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return a market cursor.")
+        }
         return page
     }
 
-    /// POST /api/hub/market { userId, title, description?, price } → { listing }.
-    public func createListing(title: String, description: String?, price: Int) async throws -> WireMarketListing {
+    /// POST /api/hub/market { userId, title, description?, price, clientId? } → { listing }.
+    /// Money-adjacent identity: the CALLER passes the durable clientId (the
+    /// journaled replay path passes the SAME id; nil keeps the legacy
+    /// identity-less call). A 200 replayed:true envelope is an
+    /// ACKNOWLEDGEMENT of the earlier creation - the same listing decodes.
+    public func createListing(title: String, description: String?, price: Int, clientId: String? = nil) async throws -> WireMarketListing {
         var body: [String: Any] = ["userId": userId, "title": title, "price": price]
         if let description { body["description"] = description }
+        if let clientId { body["clientId"] = clientId }
         let data = try await postRaw("/api/hub/market", body: body)
         let receipt = try envelope(WireMarketListingEnvelope.self, from: data)
         guard receipt.marketVersion == 1, receipt.userId == userId, let row = receipt.listing else {
@@ -2337,9 +2380,26 @@ public struct PulseAPIClient: Sendable {
         return row
     }
 
-    /// POST /api/hub/apps/{appId}/install { userId } - idempotent connect.
-    public func installApp(appId: String) async throws -> WireAppInstallResult {
-        let data = try await postRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
+    /// GET /api/hub/apps/installs?userId= - Section 11 item 6: ONE batch
+    /// snapshot for the whole catalog (appVersion 2), replacing the per-app
+    /// sequential scan. Rows cover every catalog id in server order.
+    public func appInstalls() async throws -> WireAppInstallsBatch {
+        let batch: WireAppInstallsBatch = try await get("/api/hub/apps/installs?userId=\(q(userId))")
+        guard batch.appVersion == 2, batch.userId == userId, let rows = batch.apps,
+              Set(rows.map(\.appId)).count == rows.count, rows.allSatisfy({ !$0.appId.isEmpty }) else {
+            throw Failure(kind: .validation, message: "App catalog ownership could not be verified. Update the gateway before retrying.")
+        }
+        return batch
+    }
+
+    /// POST /api/hub/apps/{appId}/install { userId, clientId? } - idempotent connect.
+    /// Section 11 item 8: the CALLER passes the journaled clientId; a
+    /// replayed:true snapshot is an acknowledgement (the untouched current
+    /// state), never a hard failure.
+    public func installApp(appId: String, clientId: String? = nil) async throws -> WireAppInstallResult {
+        var body: [String: Any] = ["userId": userId]
+        if let clientId { body["clientId"] = clientId }
+        let data = try await postRaw("/api/hub/apps/\(q(appId))/install", body: body)
         let row = try envelope(WireAppInstallResult.self, from: data)
         try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
         try requireInstallState(row.installed, row.status, row.installs)
@@ -2347,9 +2407,11 @@ public struct PulseAPIClient: Sendable {
         return row
     }
 
-    /// DELETE /api/hub/apps/{appId}/install { userId } - hard remove.
-    public func uninstallApp(appId: String) async throws -> WireAppInstallResult {
-        let data = try await deleteRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
+    /// DELETE /api/hub/apps/{appId}/install { userId, clientId? } - hard remove.
+    public func uninstallApp(appId: String, clientId: String? = nil) async throws -> WireAppInstallResult {
+        var body: [String: Any] = ["userId": userId]
+        if let clientId { body["clientId"] = clientId }
+        let data = try await deleteRaw("/api/hub/apps/\(q(appId))/install", body: body)
         let row = try envelope(WireAppInstallResult.self, from: data)
         try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
         try requireInstallState(row.installed, row.status, row.installs)

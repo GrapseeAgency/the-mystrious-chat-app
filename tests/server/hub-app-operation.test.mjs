@@ -24,6 +24,8 @@ async function fixture(run) {
       'CREATE TABLE ConversationParticipant(draftRevision TEXT NOT NULL DEFAULT 0, id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT, role TEXT DEFAULT "member", joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, lastReadAt DATETIME DEFAULT CURRENT_TIMESTAMP, pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME, handRaisedAt DATETIME, screenPrivacy BOOLEAN DEFAULT false, manualUnread BOOLEAN DEFAULT false, draft TEXT, UNIQUE(userId,conversationId))',
       'CREATE TABLE Message(id TEXT PRIMARY KEY,conversationId TEXT,senderId TEXT,createdAt DATETIME,parentId TEXT,topicId TEXT,deletedAt DATETIME,expiresAt DATETIME,viaAutomation BOOLEAN DEFAULT false)',
       "CREATE TABLE MessageReadObservation(participantId TEXT,messageId TEXT,observedAt DATETIME,source TEXT DEFAULT 'visible',PRIMARY KEY(participantId,messageId),FOREIGN KEY(participantId) REFERENCES ConversationParticipant(id) ON DELETE CASCADE)",
+      'CREATE TABLE AppInstallRevision(userId TEXT PRIMARY KEY, rev INTEGER DEFAULT 0)',
+      'CREATE TABLE AppConnectionOperation(userId TEXT, clientId TEXT, requestHash TEXT, appId TEXT, installed BOOLEAN, PRIMARY KEY(userId,clientId))',
     ]) await db.$executeRawUnsafe(sql)
     for (const id of ['a','b','c']) await db.$executeRawUnsafe('INSERT INTO User VALUES (?,?,?,?,?,?)',id,id,id,'#F2A65A',hashSessionToken(`synthetic-${id}`),'[]')
     const auth = await load('src/lib/wallet-authorization.ts', { db, bearerToken, tokenAccepted }, 'requireActionOwner')

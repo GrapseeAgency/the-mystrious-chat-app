@@ -448,6 +448,28 @@ export type RedPacketCreationOperation = $Result.DefaultSelection<Prisma.$RedPac
  *  * strictly-greater revisions.
  */
 export type RoomListRevision = $Result.DefaultSelection<Prisma.$RoomListRevisionPayload>
+/**
+ * Model MarketCreationOperation
+ * * Section 11 items 1/2 — marketplace listing creation replay receipt: a lost
+ *  * ACK must never mint a second listing; the same clientId returns the SAME
+ *  * row and a reused identity with different instructions is a 409.
+ */
+export type MarketCreationOperation = $Result.DefaultSelection<Prisma.$MarketCreationOperationPayload>
+/**
+ * Model AppInstallRevision
+ * * Section 11 item 8 — per-user monotonic app-connection revision. Every
+ *  * accepted connect/disconnect bumps it inside its commit and every install
+ *  * snapshot carries the current value, so cross-device clients refresh only
+ *  * on strictly-greater revisions.
+ */
+export type AppInstallRevision = $Result.DefaultSelection<Prisma.$AppInstallRevisionPayload>
+/**
+ * Model AppConnectionOperation
+ * * Section 11 item 8 — durable connect/disconnect replay receipt for the
+ *  * offline journal: the same clientId replays the SAME verdict instead of
+ *  * relying on the caller's memory of which way the toggle was headed.
+ */
+export type AppConnectionOperation = $Result.DefaultSelection<Prisma.$AppConnectionOperationPayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -1286,6 +1308,36 @@ export class PrismaClient<
     * ```
     */
   get roomListRevision(): Prisma.RoomListRevisionDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.marketCreationOperation`: Exposes CRUD operations for the **MarketCreationOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more MarketCreationOperations
+    * const marketCreationOperations = await prisma.marketCreationOperation.findMany()
+    * ```
+    */
+  get marketCreationOperation(): Prisma.MarketCreationOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.appInstallRevision`: Exposes CRUD operations for the **AppInstallRevision** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more AppInstallRevisions
+    * const appInstallRevisions = await prisma.appInstallRevision.findMany()
+    * ```
+    */
+  get appInstallRevision(): Prisma.AppInstallRevisionDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.appConnectionOperation`: Exposes CRUD operations for the **AppConnectionOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more AppConnectionOperations
+    * const appConnectionOperations = await prisma.appConnectionOperation.findMany()
+    * ```
+    */
+  get appConnectionOperation(): Prisma.AppConnectionOperationDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1798,7 +1850,10 @@ export namespace Prisma {
     KanbanCardOperation: 'KanbanCardOperation',
     ReminderCreationOperation: 'ReminderCreationOperation',
     RedPacketCreationOperation: 'RedPacketCreationOperation',
-    RoomListRevision: 'RoomListRevision'
+    RoomListRevision: 'RoomListRevision',
+    MarketCreationOperation: 'MarketCreationOperation',
+    AppInstallRevision: 'AppInstallRevision',
+    AppConnectionOperation: 'AppConnectionOperation'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1817,7 +1872,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "uploadOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt" | "livePushOutbox" | "livePushReceipt" | "folderCreationOperation" | "userListRevision" | "quickPhraseOperation" | "peerBlockIntent" | "reportOperation" | "eventCreationOperation" | "taskCreationOperation" | "kanbanCardOperation" | "reminderCreationOperation" | "redPacketCreationOperation" | "roomListRevision"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "uploadOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt" | "livePushOutbox" | "livePushReceipt" | "folderCreationOperation" | "userListRevision" | "quickPhraseOperation" | "peerBlockIntent" | "reportOperation" | "eventCreationOperation" | "taskCreationOperation" | "kanbanCardOperation" | "reminderCreationOperation" | "redPacketCreationOperation" | "roomListRevision" | "marketCreationOperation" | "appInstallRevision" | "appConnectionOperation"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -7149,6 +7204,228 @@ export namespace Prisma {
           }
         }
       }
+      MarketCreationOperation: {
+        payload: Prisma.$MarketCreationOperationPayload<ExtArgs>
+        fields: Prisma.MarketCreationOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.MarketCreationOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.MarketCreationOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.MarketCreationOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.MarketCreationOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>
+          }
+          findMany: {
+            args: Prisma.MarketCreationOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>[]
+          }
+          create: {
+            args: Prisma.MarketCreationOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>
+          }
+          createMany: {
+            args: Prisma.MarketCreationOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.MarketCreationOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.MarketCreationOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>
+          }
+          update: {
+            args: Prisma.MarketCreationOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.MarketCreationOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.MarketCreationOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.MarketCreationOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.MarketCreationOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$MarketCreationOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.MarketCreationOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateMarketCreationOperation>
+          }
+          groupBy: {
+            args: Prisma.MarketCreationOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<MarketCreationOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.MarketCreationOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<MarketCreationOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      AppInstallRevision: {
+        payload: Prisma.$AppInstallRevisionPayload<ExtArgs>
+        fields: Prisma.AppInstallRevisionFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.AppInstallRevisionFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.AppInstallRevisionFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>
+          }
+          findFirst: {
+            args: Prisma.AppInstallRevisionFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.AppInstallRevisionFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>
+          }
+          findMany: {
+            args: Prisma.AppInstallRevisionFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>[]
+          }
+          create: {
+            args: Prisma.AppInstallRevisionCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>
+          }
+          createMany: {
+            args: Prisma.AppInstallRevisionCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.AppInstallRevisionCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>[]
+          }
+          delete: {
+            args: Prisma.AppInstallRevisionDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>
+          }
+          update: {
+            args: Prisma.AppInstallRevisionUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>
+          }
+          deleteMany: {
+            args: Prisma.AppInstallRevisionDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.AppInstallRevisionUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.AppInstallRevisionUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>[]
+          }
+          upsert: {
+            args: Prisma.AppInstallRevisionUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppInstallRevisionPayload>
+          }
+          aggregate: {
+            args: Prisma.AppInstallRevisionAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateAppInstallRevision>
+          }
+          groupBy: {
+            args: Prisma.AppInstallRevisionGroupByArgs<ExtArgs>
+            result: $Utils.Optional<AppInstallRevisionGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.AppInstallRevisionCountArgs<ExtArgs>
+            result: $Utils.Optional<AppInstallRevisionCountAggregateOutputType> | number
+          }
+        }
+      }
+      AppConnectionOperation: {
+        payload: Prisma.$AppConnectionOperationPayload<ExtArgs>
+        fields: Prisma.AppConnectionOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.AppConnectionOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.AppConnectionOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.AppConnectionOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.AppConnectionOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>
+          }
+          findMany: {
+            args: Prisma.AppConnectionOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>[]
+          }
+          create: {
+            args: Prisma.AppConnectionOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>
+          }
+          createMany: {
+            args: Prisma.AppConnectionOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.AppConnectionOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.AppConnectionOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>
+          }
+          update: {
+            args: Prisma.AppConnectionOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.AppConnectionOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.AppConnectionOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.AppConnectionOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.AppConnectionOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$AppConnectionOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.AppConnectionOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateAppConnectionOperation>
+          }
+          groupBy: {
+            args: Prisma.AppConnectionOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<AppConnectionOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.AppConnectionOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<AppConnectionOperationCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -7317,6 +7594,9 @@ export namespace Prisma {
     reminderCreationOperation?: ReminderCreationOperationOmit
     redPacketCreationOperation?: RedPacketCreationOperationOmit
     roomListRevision?: RoomListRevisionOmit
+    marketCreationOperation?: MarketCreationOperationOmit
+    appInstallRevision?: AppInstallRevisionOmit
+    appConnectionOperation?: AppConnectionOperationOmit
   }
 
   /* Types for Logging */
@@ -86459,6 +86739,2967 @@ export namespace Prisma {
 
 
   /**
+   * Model MarketCreationOperation
+   */
+
+  export type AggregateMarketCreationOperation = {
+    _count: MarketCreationOperationCountAggregateOutputType | null
+    _min: MarketCreationOperationMinAggregateOutputType | null
+    _max: MarketCreationOperationMaxAggregateOutputType | null
+  }
+
+  export type MarketCreationOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    listingId: string | null
+  }
+
+  export type MarketCreationOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    listingId: string | null
+  }
+
+  export type MarketCreationOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    listingId: number
+    _all: number
+  }
+
+
+  export type MarketCreationOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    listingId?: true
+  }
+
+  export type MarketCreationOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    listingId?: true
+  }
+
+  export type MarketCreationOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    listingId?: true
+    _all?: true
+  }
+
+  export type MarketCreationOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which MarketCreationOperation to aggregate.
+     */
+    where?: MarketCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of MarketCreationOperations to fetch.
+     */
+    orderBy?: MarketCreationOperationOrderByWithRelationInput | MarketCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: MarketCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` MarketCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` MarketCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned MarketCreationOperations
+    **/
+    _count?: true | MarketCreationOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: MarketCreationOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: MarketCreationOperationMaxAggregateInputType
+  }
+
+  export type GetMarketCreationOperationAggregateType<T extends MarketCreationOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateMarketCreationOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateMarketCreationOperation[P]>
+      : GetScalarType<T[P], AggregateMarketCreationOperation[P]>
+  }
+
+
+
+
+  export type MarketCreationOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: MarketCreationOperationWhereInput
+    orderBy?: MarketCreationOperationOrderByWithAggregationInput | MarketCreationOperationOrderByWithAggregationInput[]
+    by: MarketCreationOperationScalarFieldEnum[] | MarketCreationOperationScalarFieldEnum
+    having?: MarketCreationOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: MarketCreationOperationCountAggregateInputType | true
+    _min?: MarketCreationOperationMinAggregateInputType
+    _max?: MarketCreationOperationMaxAggregateInputType
+  }
+
+  export type MarketCreationOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    listingId: string
+    _count: MarketCreationOperationCountAggregateOutputType | null
+    _min: MarketCreationOperationMinAggregateOutputType | null
+    _max: MarketCreationOperationMaxAggregateOutputType | null
+  }
+
+  type GetMarketCreationOperationGroupByPayload<T extends MarketCreationOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<MarketCreationOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof MarketCreationOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], MarketCreationOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], MarketCreationOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type MarketCreationOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    listingId?: boolean
+  }, ExtArgs["result"]["marketCreationOperation"]>
+
+  export type MarketCreationOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    listingId?: boolean
+  }, ExtArgs["result"]["marketCreationOperation"]>
+
+  export type MarketCreationOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    listingId?: boolean
+  }, ExtArgs["result"]["marketCreationOperation"]>
+
+  export type MarketCreationOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    listingId?: boolean
+  }
+
+  export type MarketCreationOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "listingId", ExtArgs["result"]["marketCreationOperation"]>
+
+  export type $MarketCreationOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "MarketCreationOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      listingId: string
+    }, ExtArgs["result"]["marketCreationOperation"]>
+    composites: {}
+  }
+
+  type MarketCreationOperationGetPayload<S extends boolean | null | undefined | MarketCreationOperationDefaultArgs> = $Result.GetResult<Prisma.$MarketCreationOperationPayload, S>
+
+  type MarketCreationOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<MarketCreationOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: MarketCreationOperationCountAggregateInputType | true
+    }
+
+  export interface MarketCreationOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['MarketCreationOperation'], meta: { name: 'MarketCreationOperation' } }
+    /**
+     * Find zero or one MarketCreationOperation that matches the filter.
+     * @param {MarketCreationOperationFindUniqueArgs} args - Arguments to find a MarketCreationOperation
+     * @example
+     * // Get one MarketCreationOperation
+     * const marketCreationOperation = await prisma.marketCreationOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends MarketCreationOperationFindUniqueArgs>(args: SelectSubset<T, MarketCreationOperationFindUniqueArgs<ExtArgs>>): Prisma__MarketCreationOperationClient<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one MarketCreationOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {MarketCreationOperationFindUniqueOrThrowArgs} args - Arguments to find a MarketCreationOperation
+     * @example
+     * // Get one MarketCreationOperation
+     * const marketCreationOperation = await prisma.marketCreationOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends MarketCreationOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, MarketCreationOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__MarketCreationOperationClient<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first MarketCreationOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MarketCreationOperationFindFirstArgs} args - Arguments to find a MarketCreationOperation
+     * @example
+     * // Get one MarketCreationOperation
+     * const marketCreationOperation = await prisma.marketCreationOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends MarketCreationOperationFindFirstArgs>(args?: SelectSubset<T, MarketCreationOperationFindFirstArgs<ExtArgs>>): Prisma__MarketCreationOperationClient<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first MarketCreationOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MarketCreationOperationFindFirstOrThrowArgs} args - Arguments to find a MarketCreationOperation
+     * @example
+     * // Get one MarketCreationOperation
+     * const marketCreationOperation = await prisma.marketCreationOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends MarketCreationOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, MarketCreationOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__MarketCreationOperationClient<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more MarketCreationOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MarketCreationOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all MarketCreationOperations
+     * const marketCreationOperations = await prisma.marketCreationOperation.findMany()
+     * 
+     * // Get first 10 MarketCreationOperations
+     * const marketCreationOperations = await prisma.marketCreationOperation.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const marketCreationOperationWithUserIdOnly = await prisma.marketCreationOperation.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends MarketCreationOperationFindManyArgs>(args?: SelectSubset<T, MarketCreationOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a MarketCreationOperation.
+     * @param {MarketCreationOperationCreateArgs} args - Arguments to create a MarketCreationOperation.
+     * @example
+     * // Create one MarketCreationOperation
+     * const MarketCreationOperation = await prisma.marketCreationOperation.create({
+     *   data: {
+     *     // ... data to create a MarketCreationOperation
+     *   }
+     * })
+     * 
+     */
+    create<T extends MarketCreationOperationCreateArgs>(args: SelectSubset<T, MarketCreationOperationCreateArgs<ExtArgs>>): Prisma__MarketCreationOperationClient<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many MarketCreationOperations.
+     * @param {MarketCreationOperationCreateManyArgs} args - Arguments to create many MarketCreationOperations.
+     * @example
+     * // Create many MarketCreationOperations
+     * const marketCreationOperation = await prisma.marketCreationOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends MarketCreationOperationCreateManyArgs>(args?: SelectSubset<T, MarketCreationOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many MarketCreationOperations and returns the data saved in the database.
+     * @param {MarketCreationOperationCreateManyAndReturnArgs} args - Arguments to create many MarketCreationOperations.
+     * @example
+     * // Create many MarketCreationOperations
+     * const marketCreationOperation = await prisma.marketCreationOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many MarketCreationOperations and only return the `userId`
+     * const marketCreationOperationWithUserIdOnly = await prisma.marketCreationOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends MarketCreationOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, MarketCreationOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a MarketCreationOperation.
+     * @param {MarketCreationOperationDeleteArgs} args - Arguments to delete one MarketCreationOperation.
+     * @example
+     * // Delete one MarketCreationOperation
+     * const MarketCreationOperation = await prisma.marketCreationOperation.delete({
+     *   where: {
+     *     // ... filter to delete one MarketCreationOperation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends MarketCreationOperationDeleteArgs>(args: SelectSubset<T, MarketCreationOperationDeleteArgs<ExtArgs>>): Prisma__MarketCreationOperationClient<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one MarketCreationOperation.
+     * @param {MarketCreationOperationUpdateArgs} args - Arguments to update one MarketCreationOperation.
+     * @example
+     * // Update one MarketCreationOperation
+     * const marketCreationOperation = await prisma.marketCreationOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends MarketCreationOperationUpdateArgs>(args: SelectSubset<T, MarketCreationOperationUpdateArgs<ExtArgs>>): Prisma__MarketCreationOperationClient<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more MarketCreationOperations.
+     * @param {MarketCreationOperationDeleteManyArgs} args - Arguments to filter MarketCreationOperations to delete.
+     * @example
+     * // Delete a few MarketCreationOperations
+     * const { count } = await prisma.marketCreationOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends MarketCreationOperationDeleteManyArgs>(args?: SelectSubset<T, MarketCreationOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more MarketCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MarketCreationOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many MarketCreationOperations
+     * const marketCreationOperation = await prisma.marketCreationOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends MarketCreationOperationUpdateManyArgs>(args: SelectSubset<T, MarketCreationOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more MarketCreationOperations and returns the data updated in the database.
+     * @param {MarketCreationOperationUpdateManyAndReturnArgs} args - Arguments to update many MarketCreationOperations.
+     * @example
+     * // Update many MarketCreationOperations
+     * const marketCreationOperation = await prisma.marketCreationOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more MarketCreationOperations and only return the `userId`
+     * const marketCreationOperationWithUserIdOnly = await prisma.marketCreationOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends MarketCreationOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, MarketCreationOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one MarketCreationOperation.
+     * @param {MarketCreationOperationUpsertArgs} args - Arguments to update or create a MarketCreationOperation.
+     * @example
+     * // Update or create a MarketCreationOperation
+     * const marketCreationOperation = await prisma.marketCreationOperation.upsert({
+     *   create: {
+     *     // ... data to create a MarketCreationOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the MarketCreationOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends MarketCreationOperationUpsertArgs>(args: SelectSubset<T, MarketCreationOperationUpsertArgs<ExtArgs>>): Prisma__MarketCreationOperationClient<$Result.GetResult<Prisma.$MarketCreationOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of MarketCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MarketCreationOperationCountArgs} args - Arguments to filter MarketCreationOperations to count.
+     * @example
+     * // Count the number of MarketCreationOperations
+     * const count = await prisma.marketCreationOperation.count({
+     *   where: {
+     *     // ... the filter for the MarketCreationOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends MarketCreationOperationCountArgs>(
+      args?: Subset<T, MarketCreationOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], MarketCreationOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a MarketCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MarketCreationOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends MarketCreationOperationAggregateArgs>(args: Subset<T, MarketCreationOperationAggregateArgs>): Prisma.PrismaPromise<GetMarketCreationOperationAggregateType<T>>
+
+    /**
+     * Group by MarketCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {MarketCreationOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends MarketCreationOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: MarketCreationOperationGroupByArgs['orderBy'] }
+        : { orderBy?: MarketCreationOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, MarketCreationOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetMarketCreationOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the MarketCreationOperation model
+   */
+  readonly fields: MarketCreationOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for MarketCreationOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__MarketCreationOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the MarketCreationOperation model
+   */
+  interface MarketCreationOperationFieldRefs {
+    readonly userId: FieldRef<"MarketCreationOperation", 'String'>
+    readonly clientId: FieldRef<"MarketCreationOperation", 'String'>
+    readonly requestHash: FieldRef<"MarketCreationOperation", 'String'>
+    readonly listingId: FieldRef<"MarketCreationOperation", 'String'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * MarketCreationOperation findUnique
+   */
+  export type MarketCreationOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MarketCreationOperation to fetch.
+     */
+    where: MarketCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * MarketCreationOperation findUniqueOrThrow
+   */
+  export type MarketCreationOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MarketCreationOperation to fetch.
+     */
+    where: MarketCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * MarketCreationOperation findFirst
+   */
+  export type MarketCreationOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MarketCreationOperation to fetch.
+     */
+    where?: MarketCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of MarketCreationOperations to fetch.
+     */
+    orderBy?: MarketCreationOperationOrderByWithRelationInput | MarketCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for MarketCreationOperations.
+     */
+    cursor?: MarketCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` MarketCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` MarketCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of MarketCreationOperations.
+     */
+    distinct?: MarketCreationOperationScalarFieldEnum | MarketCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * MarketCreationOperation findFirstOrThrow
+   */
+  export type MarketCreationOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MarketCreationOperation to fetch.
+     */
+    where?: MarketCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of MarketCreationOperations to fetch.
+     */
+    orderBy?: MarketCreationOperationOrderByWithRelationInput | MarketCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for MarketCreationOperations.
+     */
+    cursor?: MarketCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` MarketCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` MarketCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of MarketCreationOperations.
+     */
+    distinct?: MarketCreationOperationScalarFieldEnum | MarketCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * MarketCreationOperation findMany
+   */
+  export type MarketCreationOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which MarketCreationOperations to fetch.
+     */
+    where?: MarketCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of MarketCreationOperations to fetch.
+     */
+    orderBy?: MarketCreationOperationOrderByWithRelationInput | MarketCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing MarketCreationOperations.
+     */
+    cursor?: MarketCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` MarketCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` MarketCreationOperations.
+     */
+    skip?: number
+    distinct?: MarketCreationOperationScalarFieldEnum | MarketCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * MarketCreationOperation create
+   */
+  export type MarketCreationOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a MarketCreationOperation.
+     */
+    data: XOR<MarketCreationOperationCreateInput, MarketCreationOperationUncheckedCreateInput>
+  }
+
+  /**
+   * MarketCreationOperation createMany
+   */
+  export type MarketCreationOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many MarketCreationOperations.
+     */
+    data: MarketCreationOperationCreateManyInput | MarketCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * MarketCreationOperation createManyAndReturn
+   */
+  export type MarketCreationOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many MarketCreationOperations.
+     */
+    data: MarketCreationOperationCreateManyInput | MarketCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * MarketCreationOperation update
+   */
+  export type MarketCreationOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a MarketCreationOperation.
+     */
+    data: XOR<MarketCreationOperationUpdateInput, MarketCreationOperationUncheckedUpdateInput>
+    /**
+     * Choose, which MarketCreationOperation to update.
+     */
+    where: MarketCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * MarketCreationOperation updateMany
+   */
+  export type MarketCreationOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update MarketCreationOperations.
+     */
+    data: XOR<MarketCreationOperationUpdateManyMutationInput, MarketCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which MarketCreationOperations to update
+     */
+    where?: MarketCreationOperationWhereInput
+    /**
+     * Limit how many MarketCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * MarketCreationOperation updateManyAndReturn
+   */
+  export type MarketCreationOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update MarketCreationOperations.
+     */
+    data: XOR<MarketCreationOperationUpdateManyMutationInput, MarketCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which MarketCreationOperations to update
+     */
+    where?: MarketCreationOperationWhereInput
+    /**
+     * Limit how many MarketCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * MarketCreationOperation upsert
+   */
+  export type MarketCreationOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the MarketCreationOperation to update in case it exists.
+     */
+    where: MarketCreationOperationWhereUniqueInput
+    /**
+     * In case the MarketCreationOperation found by the `where` argument doesn't exist, create a new MarketCreationOperation with this data.
+     */
+    create: XOR<MarketCreationOperationCreateInput, MarketCreationOperationUncheckedCreateInput>
+    /**
+     * In case the MarketCreationOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<MarketCreationOperationUpdateInput, MarketCreationOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * MarketCreationOperation delete
+   */
+  export type MarketCreationOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter which MarketCreationOperation to delete.
+     */
+    where: MarketCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * MarketCreationOperation deleteMany
+   */
+  export type MarketCreationOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which MarketCreationOperations to delete
+     */
+    where?: MarketCreationOperationWhereInput
+    /**
+     * Limit how many MarketCreationOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * MarketCreationOperation without action
+   */
+  export type MarketCreationOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the MarketCreationOperation
+     */
+    select?: MarketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the MarketCreationOperation
+     */
+    omit?: MarketCreationOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model AppInstallRevision
+   */
+
+  export type AggregateAppInstallRevision = {
+    _count: AppInstallRevisionCountAggregateOutputType | null
+    _avg: AppInstallRevisionAvgAggregateOutputType | null
+    _sum: AppInstallRevisionSumAggregateOutputType | null
+    _min: AppInstallRevisionMinAggregateOutputType | null
+    _max: AppInstallRevisionMaxAggregateOutputType | null
+  }
+
+  export type AppInstallRevisionAvgAggregateOutputType = {
+    rev: number | null
+  }
+
+  export type AppInstallRevisionSumAggregateOutputType = {
+    rev: number | null
+  }
+
+  export type AppInstallRevisionMinAggregateOutputType = {
+    userId: string | null
+    rev: number | null
+  }
+
+  export type AppInstallRevisionMaxAggregateOutputType = {
+    userId: string | null
+    rev: number | null
+  }
+
+  export type AppInstallRevisionCountAggregateOutputType = {
+    userId: number
+    rev: number
+    _all: number
+  }
+
+
+  export type AppInstallRevisionAvgAggregateInputType = {
+    rev?: true
+  }
+
+  export type AppInstallRevisionSumAggregateInputType = {
+    rev?: true
+  }
+
+  export type AppInstallRevisionMinAggregateInputType = {
+    userId?: true
+    rev?: true
+  }
+
+  export type AppInstallRevisionMaxAggregateInputType = {
+    userId?: true
+    rev?: true
+  }
+
+  export type AppInstallRevisionCountAggregateInputType = {
+    userId?: true
+    rev?: true
+    _all?: true
+  }
+
+  export type AppInstallRevisionAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which AppInstallRevision to aggregate.
+     */
+    where?: AppInstallRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AppInstallRevisions to fetch.
+     */
+    orderBy?: AppInstallRevisionOrderByWithRelationInput | AppInstallRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: AppInstallRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AppInstallRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AppInstallRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned AppInstallRevisions
+    **/
+    _count?: true | AppInstallRevisionCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: AppInstallRevisionAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: AppInstallRevisionSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: AppInstallRevisionMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: AppInstallRevisionMaxAggregateInputType
+  }
+
+  export type GetAppInstallRevisionAggregateType<T extends AppInstallRevisionAggregateArgs> = {
+        [P in keyof T & keyof AggregateAppInstallRevision]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateAppInstallRevision[P]>
+      : GetScalarType<T[P], AggregateAppInstallRevision[P]>
+  }
+
+
+
+
+  export type AppInstallRevisionGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: AppInstallRevisionWhereInput
+    orderBy?: AppInstallRevisionOrderByWithAggregationInput | AppInstallRevisionOrderByWithAggregationInput[]
+    by: AppInstallRevisionScalarFieldEnum[] | AppInstallRevisionScalarFieldEnum
+    having?: AppInstallRevisionScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: AppInstallRevisionCountAggregateInputType | true
+    _avg?: AppInstallRevisionAvgAggregateInputType
+    _sum?: AppInstallRevisionSumAggregateInputType
+    _min?: AppInstallRevisionMinAggregateInputType
+    _max?: AppInstallRevisionMaxAggregateInputType
+  }
+
+  export type AppInstallRevisionGroupByOutputType = {
+    userId: string
+    rev: number
+    _count: AppInstallRevisionCountAggregateOutputType | null
+    _avg: AppInstallRevisionAvgAggregateOutputType | null
+    _sum: AppInstallRevisionSumAggregateOutputType | null
+    _min: AppInstallRevisionMinAggregateOutputType | null
+    _max: AppInstallRevisionMaxAggregateOutputType | null
+  }
+
+  type GetAppInstallRevisionGroupByPayload<T extends AppInstallRevisionGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<AppInstallRevisionGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof AppInstallRevisionGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], AppInstallRevisionGroupByOutputType[P]>
+            : GetScalarType<T[P], AppInstallRevisionGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type AppInstallRevisionSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    rev?: boolean
+  }, ExtArgs["result"]["appInstallRevision"]>
+
+  export type AppInstallRevisionSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    rev?: boolean
+  }, ExtArgs["result"]["appInstallRevision"]>
+
+  export type AppInstallRevisionSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    rev?: boolean
+  }, ExtArgs["result"]["appInstallRevision"]>
+
+  export type AppInstallRevisionSelectScalar = {
+    userId?: boolean
+    rev?: boolean
+  }
+
+  export type AppInstallRevisionOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "rev", ExtArgs["result"]["appInstallRevision"]>
+
+  export type $AppInstallRevisionPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "AppInstallRevision"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      rev: number
+    }, ExtArgs["result"]["appInstallRevision"]>
+    composites: {}
+  }
+
+  type AppInstallRevisionGetPayload<S extends boolean | null | undefined | AppInstallRevisionDefaultArgs> = $Result.GetResult<Prisma.$AppInstallRevisionPayload, S>
+
+  type AppInstallRevisionCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<AppInstallRevisionFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: AppInstallRevisionCountAggregateInputType | true
+    }
+
+  export interface AppInstallRevisionDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['AppInstallRevision'], meta: { name: 'AppInstallRevision' } }
+    /**
+     * Find zero or one AppInstallRevision that matches the filter.
+     * @param {AppInstallRevisionFindUniqueArgs} args - Arguments to find a AppInstallRevision
+     * @example
+     * // Get one AppInstallRevision
+     * const appInstallRevision = await prisma.appInstallRevision.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends AppInstallRevisionFindUniqueArgs>(args: SelectSubset<T, AppInstallRevisionFindUniqueArgs<ExtArgs>>): Prisma__AppInstallRevisionClient<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one AppInstallRevision that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {AppInstallRevisionFindUniqueOrThrowArgs} args - Arguments to find a AppInstallRevision
+     * @example
+     * // Get one AppInstallRevision
+     * const appInstallRevision = await prisma.appInstallRevision.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends AppInstallRevisionFindUniqueOrThrowArgs>(args: SelectSubset<T, AppInstallRevisionFindUniqueOrThrowArgs<ExtArgs>>): Prisma__AppInstallRevisionClient<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first AppInstallRevision that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppInstallRevisionFindFirstArgs} args - Arguments to find a AppInstallRevision
+     * @example
+     * // Get one AppInstallRevision
+     * const appInstallRevision = await prisma.appInstallRevision.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends AppInstallRevisionFindFirstArgs>(args?: SelectSubset<T, AppInstallRevisionFindFirstArgs<ExtArgs>>): Prisma__AppInstallRevisionClient<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first AppInstallRevision that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppInstallRevisionFindFirstOrThrowArgs} args - Arguments to find a AppInstallRevision
+     * @example
+     * // Get one AppInstallRevision
+     * const appInstallRevision = await prisma.appInstallRevision.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends AppInstallRevisionFindFirstOrThrowArgs>(args?: SelectSubset<T, AppInstallRevisionFindFirstOrThrowArgs<ExtArgs>>): Prisma__AppInstallRevisionClient<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more AppInstallRevisions that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppInstallRevisionFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all AppInstallRevisions
+     * const appInstallRevisions = await prisma.appInstallRevision.findMany()
+     * 
+     * // Get first 10 AppInstallRevisions
+     * const appInstallRevisions = await prisma.appInstallRevision.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const appInstallRevisionWithUserIdOnly = await prisma.appInstallRevision.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends AppInstallRevisionFindManyArgs>(args?: SelectSubset<T, AppInstallRevisionFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a AppInstallRevision.
+     * @param {AppInstallRevisionCreateArgs} args - Arguments to create a AppInstallRevision.
+     * @example
+     * // Create one AppInstallRevision
+     * const AppInstallRevision = await prisma.appInstallRevision.create({
+     *   data: {
+     *     // ... data to create a AppInstallRevision
+     *   }
+     * })
+     * 
+     */
+    create<T extends AppInstallRevisionCreateArgs>(args: SelectSubset<T, AppInstallRevisionCreateArgs<ExtArgs>>): Prisma__AppInstallRevisionClient<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many AppInstallRevisions.
+     * @param {AppInstallRevisionCreateManyArgs} args - Arguments to create many AppInstallRevisions.
+     * @example
+     * // Create many AppInstallRevisions
+     * const appInstallRevision = await prisma.appInstallRevision.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends AppInstallRevisionCreateManyArgs>(args?: SelectSubset<T, AppInstallRevisionCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many AppInstallRevisions and returns the data saved in the database.
+     * @param {AppInstallRevisionCreateManyAndReturnArgs} args - Arguments to create many AppInstallRevisions.
+     * @example
+     * // Create many AppInstallRevisions
+     * const appInstallRevision = await prisma.appInstallRevision.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many AppInstallRevisions and only return the `userId`
+     * const appInstallRevisionWithUserIdOnly = await prisma.appInstallRevision.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends AppInstallRevisionCreateManyAndReturnArgs>(args?: SelectSubset<T, AppInstallRevisionCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a AppInstallRevision.
+     * @param {AppInstallRevisionDeleteArgs} args - Arguments to delete one AppInstallRevision.
+     * @example
+     * // Delete one AppInstallRevision
+     * const AppInstallRevision = await prisma.appInstallRevision.delete({
+     *   where: {
+     *     // ... filter to delete one AppInstallRevision
+     *   }
+     * })
+     * 
+     */
+    delete<T extends AppInstallRevisionDeleteArgs>(args: SelectSubset<T, AppInstallRevisionDeleteArgs<ExtArgs>>): Prisma__AppInstallRevisionClient<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one AppInstallRevision.
+     * @param {AppInstallRevisionUpdateArgs} args - Arguments to update one AppInstallRevision.
+     * @example
+     * // Update one AppInstallRevision
+     * const appInstallRevision = await prisma.appInstallRevision.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends AppInstallRevisionUpdateArgs>(args: SelectSubset<T, AppInstallRevisionUpdateArgs<ExtArgs>>): Prisma__AppInstallRevisionClient<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more AppInstallRevisions.
+     * @param {AppInstallRevisionDeleteManyArgs} args - Arguments to filter AppInstallRevisions to delete.
+     * @example
+     * // Delete a few AppInstallRevisions
+     * const { count } = await prisma.appInstallRevision.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends AppInstallRevisionDeleteManyArgs>(args?: SelectSubset<T, AppInstallRevisionDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more AppInstallRevisions.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppInstallRevisionUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many AppInstallRevisions
+     * const appInstallRevision = await prisma.appInstallRevision.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends AppInstallRevisionUpdateManyArgs>(args: SelectSubset<T, AppInstallRevisionUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more AppInstallRevisions and returns the data updated in the database.
+     * @param {AppInstallRevisionUpdateManyAndReturnArgs} args - Arguments to update many AppInstallRevisions.
+     * @example
+     * // Update many AppInstallRevisions
+     * const appInstallRevision = await prisma.appInstallRevision.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more AppInstallRevisions and only return the `userId`
+     * const appInstallRevisionWithUserIdOnly = await prisma.appInstallRevision.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends AppInstallRevisionUpdateManyAndReturnArgs>(args: SelectSubset<T, AppInstallRevisionUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one AppInstallRevision.
+     * @param {AppInstallRevisionUpsertArgs} args - Arguments to update or create a AppInstallRevision.
+     * @example
+     * // Update or create a AppInstallRevision
+     * const appInstallRevision = await prisma.appInstallRevision.upsert({
+     *   create: {
+     *     // ... data to create a AppInstallRevision
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the AppInstallRevision we want to update
+     *   }
+     * })
+     */
+    upsert<T extends AppInstallRevisionUpsertArgs>(args: SelectSubset<T, AppInstallRevisionUpsertArgs<ExtArgs>>): Prisma__AppInstallRevisionClient<$Result.GetResult<Prisma.$AppInstallRevisionPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of AppInstallRevisions.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppInstallRevisionCountArgs} args - Arguments to filter AppInstallRevisions to count.
+     * @example
+     * // Count the number of AppInstallRevisions
+     * const count = await prisma.appInstallRevision.count({
+     *   where: {
+     *     // ... the filter for the AppInstallRevisions we want to count
+     *   }
+     * })
+    **/
+    count<T extends AppInstallRevisionCountArgs>(
+      args?: Subset<T, AppInstallRevisionCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], AppInstallRevisionCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a AppInstallRevision.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppInstallRevisionAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends AppInstallRevisionAggregateArgs>(args: Subset<T, AppInstallRevisionAggregateArgs>): Prisma.PrismaPromise<GetAppInstallRevisionAggregateType<T>>
+
+    /**
+     * Group by AppInstallRevision.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppInstallRevisionGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends AppInstallRevisionGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: AppInstallRevisionGroupByArgs['orderBy'] }
+        : { orderBy?: AppInstallRevisionGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, AppInstallRevisionGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetAppInstallRevisionGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the AppInstallRevision model
+   */
+  readonly fields: AppInstallRevisionFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for AppInstallRevision.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__AppInstallRevisionClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the AppInstallRevision model
+   */
+  interface AppInstallRevisionFieldRefs {
+    readonly userId: FieldRef<"AppInstallRevision", 'String'>
+    readonly rev: FieldRef<"AppInstallRevision", 'Int'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * AppInstallRevision findUnique
+   */
+  export type AppInstallRevisionFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which AppInstallRevision to fetch.
+     */
+    where: AppInstallRevisionWhereUniqueInput
+  }
+
+  /**
+   * AppInstallRevision findUniqueOrThrow
+   */
+  export type AppInstallRevisionFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which AppInstallRevision to fetch.
+     */
+    where: AppInstallRevisionWhereUniqueInput
+  }
+
+  /**
+   * AppInstallRevision findFirst
+   */
+  export type AppInstallRevisionFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which AppInstallRevision to fetch.
+     */
+    where?: AppInstallRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AppInstallRevisions to fetch.
+     */
+    orderBy?: AppInstallRevisionOrderByWithRelationInput | AppInstallRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for AppInstallRevisions.
+     */
+    cursor?: AppInstallRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AppInstallRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AppInstallRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of AppInstallRevisions.
+     */
+    distinct?: AppInstallRevisionScalarFieldEnum | AppInstallRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * AppInstallRevision findFirstOrThrow
+   */
+  export type AppInstallRevisionFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which AppInstallRevision to fetch.
+     */
+    where?: AppInstallRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AppInstallRevisions to fetch.
+     */
+    orderBy?: AppInstallRevisionOrderByWithRelationInput | AppInstallRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for AppInstallRevisions.
+     */
+    cursor?: AppInstallRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AppInstallRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AppInstallRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of AppInstallRevisions.
+     */
+    distinct?: AppInstallRevisionScalarFieldEnum | AppInstallRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * AppInstallRevision findMany
+   */
+  export type AppInstallRevisionFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which AppInstallRevisions to fetch.
+     */
+    where?: AppInstallRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AppInstallRevisions to fetch.
+     */
+    orderBy?: AppInstallRevisionOrderByWithRelationInput | AppInstallRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing AppInstallRevisions.
+     */
+    cursor?: AppInstallRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AppInstallRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AppInstallRevisions.
+     */
+    skip?: number
+    distinct?: AppInstallRevisionScalarFieldEnum | AppInstallRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * AppInstallRevision create
+   */
+  export type AppInstallRevisionCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * The data needed to create a AppInstallRevision.
+     */
+    data: XOR<AppInstallRevisionCreateInput, AppInstallRevisionUncheckedCreateInput>
+  }
+
+  /**
+   * AppInstallRevision createMany
+   */
+  export type AppInstallRevisionCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many AppInstallRevisions.
+     */
+    data: AppInstallRevisionCreateManyInput | AppInstallRevisionCreateManyInput[]
+  }
+
+  /**
+   * AppInstallRevision createManyAndReturn
+   */
+  export type AppInstallRevisionCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * The data used to create many AppInstallRevisions.
+     */
+    data: AppInstallRevisionCreateManyInput | AppInstallRevisionCreateManyInput[]
+  }
+
+  /**
+   * AppInstallRevision update
+   */
+  export type AppInstallRevisionUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * The data needed to update a AppInstallRevision.
+     */
+    data: XOR<AppInstallRevisionUpdateInput, AppInstallRevisionUncheckedUpdateInput>
+    /**
+     * Choose, which AppInstallRevision to update.
+     */
+    where: AppInstallRevisionWhereUniqueInput
+  }
+
+  /**
+   * AppInstallRevision updateMany
+   */
+  export type AppInstallRevisionUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update AppInstallRevisions.
+     */
+    data: XOR<AppInstallRevisionUpdateManyMutationInput, AppInstallRevisionUncheckedUpdateManyInput>
+    /**
+     * Filter which AppInstallRevisions to update
+     */
+    where?: AppInstallRevisionWhereInput
+    /**
+     * Limit how many AppInstallRevisions to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * AppInstallRevision updateManyAndReturn
+   */
+  export type AppInstallRevisionUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * The data used to update AppInstallRevisions.
+     */
+    data: XOR<AppInstallRevisionUpdateManyMutationInput, AppInstallRevisionUncheckedUpdateManyInput>
+    /**
+     * Filter which AppInstallRevisions to update
+     */
+    where?: AppInstallRevisionWhereInput
+    /**
+     * Limit how many AppInstallRevisions to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * AppInstallRevision upsert
+   */
+  export type AppInstallRevisionUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * The filter to search for the AppInstallRevision to update in case it exists.
+     */
+    where: AppInstallRevisionWhereUniqueInput
+    /**
+     * In case the AppInstallRevision found by the `where` argument doesn't exist, create a new AppInstallRevision with this data.
+     */
+    create: XOR<AppInstallRevisionCreateInput, AppInstallRevisionUncheckedCreateInput>
+    /**
+     * In case the AppInstallRevision was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<AppInstallRevisionUpdateInput, AppInstallRevisionUncheckedUpdateInput>
+  }
+
+  /**
+   * AppInstallRevision delete
+   */
+  export type AppInstallRevisionDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+    /**
+     * Filter which AppInstallRevision to delete.
+     */
+    where: AppInstallRevisionWhereUniqueInput
+  }
+
+  /**
+   * AppInstallRevision deleteMany
+   */
+  export type AppInstallRevisionDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which AppInstallRevisions to delete
+     */
+    where?: AppInstallRevisionWhereInput
+    /**
+     * Limit how many AppInstallRevisions to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * AppInstallRevision without action
+   */
+  export type AppInstallRevisionDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppInstallRevision
+     */
+    select?: AppInstallRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppInstallRevision
+     */
+    omit?: AppInstallRevisionOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model AppConnectionOperation
+   */
+
+  export type AggregateAppConnectionOperation = {
+    _count: AppConnectionOperationCountAggregateOutputType | null
+    _min: AppConnectionOperationMinAggregateOutputType | null
+    _max: AppConnectionOperationMaxAggregateOutputType | null
+  }
+
+  export type AppConnectionOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    appId: string | null
+    installed: boolean | null
+  }
+
+  export type AppConnectionOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    appId: string | null
+    installed: boolean | null
+  }
+
+  export type AppConnectionOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    appId: number
+    installed: number
+    _all: number
+  }
+
+
+  export type AppConnectionOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    appId?: true
+    installed?: true
+  }
+
+  export type AppConnectionOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    appId?: true
+    installed?: true
+  }
+
+  export type AppConnectionOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    appId?: true
+    installed?: true
+    _all?: true
+  }
+
+  export type AppConnectionOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which AppConnectionOperation to aggregate.
+     */
+    where?: AppConnectionOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AppConnectionOperations to fetch.
+     */
+    orderBy?: AppConnectionOperationOrderByWithRelationInput | AppConnectionOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: AppConnectionOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AppConnectionOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AppConnectionOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned AppConnectionOperations
+    **/
+    _count?: true | AppConnectionOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: AppConnectionOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: AppConnectionOperationMaxAggregateInputType
+  }
+
+  export type GetAppConnectionOperationAggregateType<T extends AppConnectionOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateAppConnectionOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateAppConnectionOperation[P]>
+      : GetScalarType<T[P], AggregateAppConnectionOperation[P]>
+  }
+
+
+
+
+  export type AppConnectionOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: AppConnectionOperationWhereInput
+    orderBy?: AppConnectionOperationOrderByWithAggregationInput | AppConnectionOperationOrderByWithAggregationInput[]
+    by: AppConnectionOperationScalarFieldEnum[] | AppConnectionOperationScalarFieldEnum
+    having?: AppConnectionOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: AppConnectionOperationCountAggregateInputType | true
+    _min?: AppConnectionOperationMinAggregateInputType
+    _max?: AppConnectionOperationMaxAggregateInputType
+  }
+
+  export type AppConnectionOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    appId: string
+    installed: boolean
+    _count: AppConnectionOperationCountAggregateOutputType | null
+    _min: AppConnectionOperationMinAggregateOutputType | null
+    _max: AppConnectionOperationMaxAggregateOutputType | null
+  }
+
+  type GetAppConnectionOperationGroupByPayload<T extends AppConnectionOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<AppConnectionOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof AppConnectionOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], AppConnectionOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], AppConnectionOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type AppConnectionOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    appId?: boolean
+    installed?: boolean
+  }, ExtArgs["result"]["appConnectionOperation"]>
+
+  export type AppConnectionOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    appId?: boolean
+    installed?: boolean
+  }, ExtArgs["result"]["appConnectionOperation"]>
+
+  export type AppConnectionOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    appId?: boolean
+    installed?: boolean
+  }, ExtArgs["result"]["appConnectionOperation"]>
+
+  export type AppConnectionOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    appId?: boolean
+    installed?: boolean
+  }
+
+  export type AppConnectionOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "appId" | "installed", ExtArgs["result"]["appConnectionOperation"]>
+
+  export type $AppConnectionOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "AppConnectionOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      appId: string
+      installed: boolean
+    }, ExtArgs["result"]["appConnectionOperation"]>
+    composites: {}
+  }
+
+  type AppConnectionOperationGetPayload<S extends boolean | null | undefined | AppConnectionOperationDefaultArgs> = $Result.GetResult<Prisma.$AppConnectionOperationPayload, S>
+
+  type AppConnectionOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<AppConnectionOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: AppConnectionOperationCountAggregateInputType | true
+    }
+
+  export interface AppConnectionOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['AppConnectionOperation'], meta: { name: 'AppConnectionOperation' } }
+    /**
+     * Find zero or one AppConnectionOperation that matches the filter.
+     * @param {AppConnectionOperationFindUniqueArgs} args - Arguments to find a AppConnectionOperation
+     * @example
+     * // Get one AppConnectionOperation
+     * const appConnectionOperation = await prisma.appConnectionOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends AppConnectionOperationFindUniqueArgs>(args: SelectSubset<T, AppConnectionOperationFindUniqueArgs<ExtArgs>>): Prisma__AppConnectionOperationClient<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one AppConnectionOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {AppConnectionOperationFindUniqueOrThrowArgs} args - Arguments to find a AppConnectionOperation
+     * @example
+     * // Get one AppConnectionOperation
+     * const appConnectionOperation = await prisma.appConnectionOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends AppConnectionOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, AppConnectionOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__AppConnectionOperationClient<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first AppConnectionOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppConnectionOperationFindFirstArgs} args - Arguments to find a AppConnectionOperation
+     * @example
+     * // Get one AppConnectionOperation
+     * const appConnectionOperation = await prisma.appConnectionOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends AppConnectionOperationFindFirstArgs>(args?: SelectSubset<T, AppConnectionOperationFindFirstArgs<ExtArgs>>): Prisma__AppConnectionOperationClient<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first AppConnectionOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppConnectionOperationFindFirstOrThrowArgs} args - Arguments to find a AppConnectionOperation
+     * @example
+     * // Get one AppConnectionOperation
+     * const appConnectionOperation = await prisma.appConnectionOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends AppConnectionOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, AppConnectionOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__AppConnectionOperationClient<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more AppConnectionOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppConnectionOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all AppConnectionOperations
+     * const appConnectionOperations = await prisma.appConnectionOperation.findMany()
+     * 
+     * // Get first 10 AppConnectionOperations
+     * const appConnectionOperations = await prisma.appConnectionOperation.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const appConnectionOperationWithUserIdOnly = await prisma.appConnectionOperation.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends AppConnectionOperationFindManyArgs>(args?: SelectSubset<T, AppConnectionOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a AppConnectionOperation.
+     * @param {AppConnectionOperationCreateArgs} args - Arguments to create a AppConnectionOperation.
+     * @example
+     * // Create one AppConnectionOperation
+     * const AppConnectionOperation = await prisma.appConnectionOperation.create({
+     *   data: {
+     *     // ... data to create a AppConnectionOperation
+     *   }
+     * })
+     * 
+     */
+    create<T extends AppConnectionOperationCreateArgs>(args: SelectSubset<T, AppConnectionOperationCreateArgs<ExtArgs>>): Prisma__AppConnectionOperationClient<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many AppConnectionOperations.
+     * @param {AppConnectionOperationCreateManyArgs} args - Arguments to create many AppConnectionOperations.
+     * @example
+     * // Create many AppConnectionOperations
+     * const appConnectionOperation = await prisma.appConnectionOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends AppConnectionOperationCreateManyArgs>(args?: SelectSubset<T, AppConnectionOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many AppConnectionOperations and returns the data saved in the database.
+     * @param {AppConnectionOperationCreateManyAndReturnArgs} args - Arguments to create many AppConnectionOperations.
+     * @example
+     * // Create many AppConnectionOperations
+     * const appConnectionOperation = await prisma.appConnectionOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many AppConnectionOperations and only return the `userId`
+     * const appConnectionOperationWithUserIdOnly = await prisma.appConnectionOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends AppConnectionOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, AppConnectionOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a AppConnectionOperation.
+     * @param {AppConnectionOperationDeleteArgs} args - Arguments to delete one AppConnectionOperation.
+     * @example
+     * // Delete one AppConnectionOperation
+     * const AppConnectionOperation = await prisma.appConnectionOperation.delete({
+     *   where: {
+     *     // ... filter to delete one AppConnectionOperation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends AppConnectionOperationDeleteArgs>(args: SelectSubset<T, AppConnectionOperationDeleteArgs<ExtArgs>>): Prisma__AppConnectionOperationClient<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one AppConnectionOperation.
+     * @param {AppConnectionOperationUpdateArgs} args - Arguments to update one AppConnectionOperation.
+     * @example
+     * // Update one AppConnectionOperation
+     * const appConnectionOperation = await prisma.appConnectionOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends AppConnectionOperationUpdateArgs>(args: SelectSubset<T, AppConnectionOperationUpdateArgs<ExtArgs>>): Prisma__AppConnectionOperationClient<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more AppConnectionOperations.
+     * @param {AppConnectionOperationDeleteManyArgs} args - Arguments to filter AppConnectionOperations to delete.
+     * @example
+     * // Delete a few AppConnectionOperations
+     * const { count } = await prisma.appConnectionOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends AppConnectionOperationDeleteManyArgs>(args?: SelectSubset<T, AppConnectionOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more AppConnectionOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppConnectionOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many AppConnectionOperations
+     * const appConnectionOperation = await prisma.appConnectionOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends AppConnectionOperationUpdateManyArgs>(args: SelectSubset<T, AppConnectionOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more AppConnectionOperations and returns the data updated in the database.
+     * @param {AppConnectionOperationUpdateManyAndReturnArgs} args - Arguments to update many AppConnectionOperations.
+     * @example
+     * // Update many AppConnectionOperations
+     * const appConnectionOperation = await prisma.appConnectionOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more AppConnectionOperations and only return the `userId`
+     * const appConnectionOperationWithUserIdOnly = await prisma.appConnectionOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends AppConnectionOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, AppConnectionOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one AppConnectionOperation.
+     * @param {AppConnectionOperationUpsertArgs} args - Arguments to update or create a AppConnectionOperation.
+     * @example
+     * // Update or create a AppConnectionOperation
+     * const appConnectionOperation = await prisma.appConnectionOperation.upsert({
+     *   create: {
+     *     // ... data to create a AppConnectionOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the AppConnectionOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends AppConnectionOperationUpsertArgs>(args: SelectSubset<T, AppConnectionOperationUpsertArgs<ExtArgs>>): Prisma__AppConnectionOperationClient<$Result.GetResult<Prisma.$AppConnectionOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of AppConnectionOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppConnectionOperationCountArgs} args - Arguments to filter AppConnectionOperations to count.
+     * @example
+     * // Count the number of AppConnectionOperations
+     * const count = await prisma.appConnectionOperation.count({
+     *   where: {
+     *     // ... the filter for the AppConnectionOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends AppConnectionOperationCountArgs>(
+      args?: Subset<T, AppConnectionOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], AppConnectionOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a AppConnectionOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppConnectionOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends AppConnectionOperationAggregateArgs>(args: Subset<T, AppConnectionOperationAggregateArgs>): Prisma.PrismaPromise<GetAppConnectionOperationAggregateType<T>>
+
+    /**
+     * Group by AppConnectionOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {AppConnectionOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends AppConnectionOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: AppConnectionOperationGroupByArgs['orderBy'] }
+        : { orderBy?: AppConnectionOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, AppConnectionOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetAppConnectionOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the AppConnectionOperation model
+   */
+  readonly fields: AppConnectionOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for AppConnectionOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__AppConnectionOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the AppConnectionOperation model
+   */
+  interface AppConnectionOperationFieldRefs {
+    readonly userId: FieldRef<"AppConnectionOperation", 'String'>
+    readonly clientId: FieldRef<"AppConnectionOperation", 'String'>
+    readonly requestHash: FieldRef<"AppConnectionOperation", 'String'>
+    readonly appId: FieldRef<"AppConnectionOperation", 'String'>
+    readonly installed: FieldRef<"AppConnectionOperation", 'Boolean'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * AppConnectionOperation findUnique
+   */
+  export type AppConnectionOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which AppConnectionOperation to fetch.
+     */
+    where: AppConnectionOperationWhereUniqueInput
+  }
+
+  /**
+   * AppConnectionOperation findUniqueOrThrow
+   */
+  export type AppConnectionOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which AppConnectionOperation to fetch.
+     */
+    where: AppConnectionOperationWhereUniqueInput
+  }
+
+  /**
+   * AppConnectionOperation findFirst
+   */
+  export type AppConnectionOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which AppConnectionOperation to fetch.
+     */
+    where?: AppConnectionOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AppConnectionOperations to fetch.
+     */
+    orderBy?: AppConnectionOperationOrderByWithRelationInput | AppConnectionOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for AppConnectionOperations.
+     */
+    cursor?: AppConnectionOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AppConnectionOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AppConnectionOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of AppConnectionOperations.
+     */
+    distinct?: AppConnectionOperationScalarFieldEnum | AppConnectionOperationScalarFieldEnum[]
+  }
+
+  /**
+   * AppConnectionOperation findFirstOrThrow
+   */
+  export type AppConnectionOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which AppConnectionOperation to fetch.
+     */
+    where?: AppConnectionOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AppConnectionOperations to fetch.
+     */
+    orderBy?: AppConnectionOperationOrderByWithRelationInput | AppConnectionOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for AppConnectionOperations.
+     */
+    cursor?: AppConnectionOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AppConnectionOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AppConnectionOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of AppConnectionOperations.
+     */
+    distinct?: AppConnectionOperationScalarFieldEnum | AppConnectionOperationScalarFieldEnum[]
+  }
+
+  /**
+   * AppConnectionOperation findMany
+   */
+  export type AppConnectionOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which AppConnectionOperations to fetch.
+     */
+    where?: AppConnectionOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of AppConnectionOperations to fetch.
+     */
+    orderBy?: AppConnectionOperationOrderByWithRelationInput | AppConnectionOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing AppConnectionOperations.
+     */
+    cursor?: AppConnectionOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` AppConnectionOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` AppConnectionOperations.
+     */
+    skip?: number
+    distinct?: AppConnectionOperationScalarFieldEnum | AppConnectionOperationScalarFieldEnum[]
+  }
+
+  /**
+   * AppConnectionOperation create
+   */
+  export type AppConnectionOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a AppConnectionOperation.
+     */
+    data: XOR<AppConnectionOperationCreateInput, AppConnectionOperationUncheckedCreateInput>
+  }
+
+  /**
+   * AppConnectionOperation createMany
+   */
+  export type AppConnectionOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many AppConnectionOperations.
+     */
+    data: AppConnectionOperationCreateManyInput | AppConnectionOperationCreateManyInput[]
+  }
+
+  /**
+   * AppConnectionOperation createManyAndReturn
+   */
+  export type AppConnectionOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many AppConnectionOperations.
+     */
+    data: AppConnectionOperationCreateManyInput | AppConnectionOperationCreateManyInput[]
+  }
+
+  /**
+   * AppConnectionOperation update
+   */
+  export type AppConnectionOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a AppConnectionOperation.
+     */
+    data: XOR<AppConnectionOperationUpdateInput, AppConnectionOperationUncheckedUpdateInput>
+    /**
+     * Choose, which AppConnectionOperation to update.
+     */
+    where: AppConnectionOperationWhereUniqueInput
+  }
+
+  /**
+   * AppConnectionOperation updateMany
+   */
+  export type AppConnectionOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update AppConnectionOperations.
+     */
+    data: XOR<AppConnectionOperationUpdateManyMutationInput, AppConnectionOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which AppConnectionOperations to update
+     */
+    where?: AppConnectionOperationWhereInput
+    /**
+     * Limit how many AppConnectionOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * AppConnectionOperation updateManyAndReturn
+   */
+  export type AppConnectionOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update AppConnectionOperations.
+     */
+    data: XOR<AppConnectionOperationUpdateManyMutationInput, AppConnectionOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which AppConnectionOperations to update
+     */
+    where?: AppConnectionOperationWhereInput
+    /**
+     * Limit how many AppConnectionOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * AppConnectionOperation upsert
+   */
+  export type AppConnectionOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the AppConnectionOperation to update in case it exists.
+     */
+    where: AppConnectionOperationWhereUniqueInput
+    /**
+     * In case the AppConnectionOperation found by the `where` argument doesn't exist, create a new AppConnectionOperation with this data.
+     */
+    create: XOR<AppConnectionOperationCreateInput, AppConnectionOperationUncheckedCreateInput>
+    /**
+     * In case the AppConnectionOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<AppConnectionOperationUpdateInput, AppConnectionOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * AppConnectionOperation delete
+   */
+  export type AppConnectionOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+    /**
+     * Filter which AppConnectionOperation to delete.
+     */
+    where: AppConnectionOperationWhereUniqueInput
+  }
+
+  /**
+   * AppConnectionOperation deleteMany
+   */
+  export type AppConnectionOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which AppConnectionOperations to delete
+     */
+    where?: AppConnectionOperationWhereInput
+    /**
+     * Limit how many AppConnectionOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * AppConnectionOperation without action
+   */
+  export type AppConnectionOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the AppConnectionOperation
+     */
+    select?: AppConnectionOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the AppConnectionOperation
+     */
+    omit?: AppConnectionOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -87369,6 +90610,35 @@ export namespace Prisma {
   };
 
   export type RoomListRevisionScalarFieldEnum = (typeof RoomListRevisionScalarFieldEnum)[keyof typeof RoomListRevisionScalarFieldEnum]
+
+
+  export const MarketCreationOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    listingId: 'listingId'
+  };
+
+  export type MarketCreationOperationScalarFieldEnum = (typeof MarketCreationOperationScalarFieldEnum)[keyof typeof MarketCreationOperationScalarFieldEnum]
+
+
+  export const AppInstallRevisionScalarFieldEnum: {
+    userId: 'userId',
+    rev: 'rev'
+  };
+
+  export type AppInstallRevisionScalarFieldEnum = (typeof AppInstallRevisionScalarFieldEnum)[keyof typeof AppInstallRevisionScalarFieldEnum]
+
+
+  export const AppConnectionOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    appId: 'appId',
+    installed: 'installed'
+  };
+
+  export type AppConnectionOperationScalarFieldEnum = (typeof AppConnectionOperationScalarFieldEnum)[keyof typeof AppConnectionOperationScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -92152,6 +95422,146 @@ export namespace Prisma {
     conversationId?: StringWithAggregatesFilter<"RoomListRevision"> | string
     kind?: StringWithAggregatesFilter<"RoomListRevision"> | string
     rev?: IntWithAggregatesFilter<"RoomListRevision"> | number
+  }
+
+  export type MarketCreationOperationWhereInput = {
+    AND?: MarketCreationOperationWhereInput | MarketCreationOperationWhereInput[]
+    OR?: MarketCreationOperationWhereInput[]
+    NOT?: MarketCreationOperationWhereInput | MarketCreationOperationWhereInput[]
+    userId?: StringFilter<"MarketCreationOperation"> | string
+    clientId?: StringFilter<"MarketCreationOperation"> | string
+    requestHash?: StringFilter<"MarketCreationOperation"> | string
+    listingId?: StringFilter<"MarketCreationOperation"> | string
+  }
+
+  export type MarketCreationOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    listingId?: SortOrder
+  }
+
+  export type MarketCreationOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: MarketCreationOperationUserIdClientIdCompoundUniqueInput
+    AND?: MarketCreationOperationWhereInput | MarketCreationOperationWhereInput[]
+    OR?: MarketCreationOperationWhereInput[]
+    NOT?: MarketCreationOperationWhereInput | MarketCreationOperationWhereInput[]
+    userId?: StringFilter<"MarketCreationOperation"> | string
+    clientId?: StringFilter<"MarketCreationOperation"> | string
+    requestHash?: StringFilter<"MarketCreationOperation"> | string
+    listingId?: StringFilter<"MarketCreationOperation"> | string
+  }, "userId_clientId">
+
+  export type MarketCreationOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    listingId?: SortOrder
+    _count?: MarketCreationOperationCountOrderByAggregateInput
+    _max?: MarketCreationOperationMaxOrderByAggregateInput
+    _min?: MarketCreationOperationMinOrderByAggregateInput
+  }
+
+  export type MarketCreationOperationScalarWhereWithAggregatesInput = {
+    AND?: MarketCreationOperationScalarWhereWithAggregatesInput | MarketCreationOperationScalarWhereWithAggregatesInput[]
+    OR?: MarketCreationOperationScalarWhereWithAggregatesInput[]
+    NOT?: MarketCreationOperationScalarWhereWithAggregatesInput | MarketCreationOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"MarketCreationOperation"> | string
+    clientId?: StringWithAggregatesFilter<"MarketCreationOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"MarketCreationOperation"> | string
+    listingId?: StringWithAggregatesFilter<"MarketCreationOperation"> | string
+  }
+
+  export type AppInstallRevisionWhereInput = {
+    AND?: AppInstallRevisionWhereInput | AppInstallRevisionWhereInput[]
+    OR?: AppInstallRevisionWhereInput[]
+    NOT?: AppInstallRevisionWhereInput | AppInstallRevisionWhereInput[]
+    userId?: StringFilter<"AppInstallRevision"> | string
+    rev?: IntFilter<"AppInstallRevision"> | number
+  }
+
+  export type AppInstallRevisionOrderByWithRelationInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+  }
+
+  export type AppInstallRevisionWhereUniqueInput = Prisma.AtLeast<{
+    userId?: string
+    AND?: AppInstallRevisionWhereInput | AppInstallRevisionWhereInput[]
+    OR?: AppInstallRevisionWhereInput[]
+    NOT?: AppInstallRevisionWhereInput | AppInstallRevisionWhereInput[]
+    rev?: IntFilter<"AppInstallRevision"> | number
+  }, "userId">
+
+  export type AppInstallRevisionOrderByWithAggregationInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+    _count?: AppInstallRevisionCountOrderByAggregateInput
+    _avg?: AppInstallRevisionAvgOrderByAggregateInput
+    _max?: AppInstallRevisionMaxOrderByAggregateInput
+    _min?: AppInstallRevisionMinOrderByAggregateInput
+    _sum?: AppInstallRevisionSumOrderByAggregateInput
+  }
+
+  export type AppInstallRevisionScalarWhereWithAggregatesInput = {
+    AND?: AppInstallRevisionScalarWhereWithAggregatesInput | AppInstallRevisionScalarWhereWithAggregatesInput[]
+    OR?: AppInstallRevisionScalarWhereWithAggregatesInput[]
+    NOT?: AppInstallRevisionScalarWhereWithAggregatesInput | AppInstallRevisionScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"AppInstallRevision"> | string
+    rev?: IntWithAggregatesFilter<"AppInstallRevision"> | number
+  }
+
+  export type AppConnectionOperationWhereInput = {
+    AND?: AppConnectionOperationWhereInput | AppConnectionOperationWhereInput[]
+    OR?: AppConnectionOperationWhereInput[]
+    NOT?: AppConnectionOperationWhereInput | AppConnectionOperationWhereInput[]
+    userId?: StringFilter<"AppConnectionOperation"> | string
+    clientId?: StringFilter<"AppConnectionOperation"> | string
+    requestHash?: StringFilter<"AppConnectionOperation"> | string
+    appId?: StringFilter<"AppConnectionOperation"> | string
+    installed?: BoolFilter<"AppConnectionOperation"> | boolean
+  }
+
+  export type AppConnectionOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    appId?: SortOrder
+    installed?: SortOrder
+  }
+
+  export type AppConnectionOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: AppConnectionOperationUserIdClientIdCompoundUniqueInput
+    AND?: AppConnectionOperationWhereInput | AppConnectionOperationWhereInput[]
+    OR?: AppConnectionOperationWhereInput[]
+    NOT?: AppConnectionOperationWhereInput | AppConnectionOperationWhereInput[]
+    userId?: StringFilter<"AppConnectionOperation"> | string
+    clientId?: StringFilter<"AppConnectionOperation"> | string
+    requestHash?: StringFilter<"AppConnectionOperation"> | string
+    appId?: StringFilter<"AppConnectionOperation"> | string
+    installed?: BoolFilter<"AppConnectionOperation"> | boolean
+  }, "userId_clientId">
+
+  export type AppConnectionOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    appId?: SortOrder
+    installed?: SortOrder
+    _count?: AppConnectionOperationCountOrderByAggregateInput
+    _max?: AppConnectionOperationMaxOrderByAggregateInput
+    _min?: AppConnectionOperationMinOrderByAggregateInput
+  }
+
+  export type AppConnectionOperationScalarWhereWithAggregatesInput = {
+    AND?: AppConnectionOperationScalarWhereWithAggregatesInput | AppConnectionOperationScalarWhereWithAggregatesInput[]
+    OR?: AppConnectionOperationScalarWhereWithAggregatesInput[]
+    NOT?: AppConnectionOperationScalarWhereWithAggregatesInput | AppConnectionOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"AppConnectionOperation"> | string
+    clientId?: StringWithAggregatesFilter<"AppConnectionOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"AppConnectionOperation"> | string
+    appId?: StringWithAggregatesFilter<"AppConnectionOperation"> | string
+    installed?: BoolWithAggregatesFilter<"AppConnectionOperation"> | boolean
   }
 
   export type UserCreateInput = {
@@ -97115,6 +100525,146 @@ export namespace Prisma {
     rev?: IntFieldUpdateOperationsInput | number
   }
 
+  export type MarketCreationOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    listingId: string
+  }
+
+  export type MarketCreationOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    listingId: string
+  }
+
+  export type MarketCreationOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    listingId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MarketCreationOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    listingId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MarketCreationOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    listingId: string
+  }
+
+  export type MarketCreationOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    listingId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type MarketCreationOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    listingId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type AppInstallRevisionCreateInput = {
+    userId: string
+    rev?: number
+  }
+
+  export type AppInstallRevisionUncheckedCreateInput = {
+    userId: string
+    rev?: number
+  }
+
+  export type AppInstallRevisionUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type AppInstallRevisionUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type AppInstallRevisionCreateManyInput = {
+    userId: string
+    rev?: number
+  }
+
+  export type AppInstallRevisionUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type AppInstallRevisionUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type AppConnectionOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    appId: string
+    installed: boolean
+  }
+
+  export type AppConnectionOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    appId: string
+    installed: boolean
+  }
+
+  export type AppConnectionOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    appId?: StringFieldUpdateOperationsInput | string
+    installed?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type AppConnectionOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    appId?: StringFieldUpdateOperationsInput | string
+    installed?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type AppConnectionOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    appId: string
+    installed: boolean
+  }
+
+  export type AppConnectionOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    appId?: StringFieldUpdateOperationsInput | string
+    installed?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type AppConnectionOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    appId?: StringFieldUpdateOperationsInput | string
+    installed?: BoolFieldUpdateOperationsInput | boolean
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -100376,6 +103926,84 @@ export namespace Prisma {
 
   export type RoomListRevisionSumOrderByAggregateInput = {
     rev?: SortOrder
+  }
+
+  export type MarketCreationOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type MarketCreationOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    listingId?: SortOrder
+  }
+
+  export type MarketCreationOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    listingId?: SortOrder
+  }
+
+  export type MarketCreationOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    listingId?: SortOrder
+  }
+
+  export type AppInstallRevisionCountOrderByAggregateInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+  }
+
+  export type AppInstallRevisionAvgOrderByAggregateInput = {
+    rev?: SortOrder
+  }
+
+  export type AppInstallRevisionMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+  }
+
+  export type AppInstallRevisionMinOrderByAggregateInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+  }
+
+  export type AppInstallRevisionSumOrderByAggregateInput = {
+    rev?: SortOrder
+  }
+
+  export type AppConnectionOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type AppConnectionOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    appId?: SortOrder
+    installed?: SortOrder
+  }
+
+  export type AppConnectionOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    appId?: SortOrder
+    installed?: SortOrder
+  }
+
+  export type AppConnectionOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    appId?: SortOrder
+    installed?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {

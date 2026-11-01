@@ -9,8 +9,8 @@ import UIKit
 // tasks, market with atomic buy, logs stream, the 100-app matrix
 // from the bundled catalog JSON (browsable offline), install/
 // connect, app communities (auto-provisioned real conversations)
-// and My apps (fan-out per-app install state - web hub-data
-// parity). Server error copy surfaces verbatim.
+// and My apps (Section 11: ONE batch install snapshot per catalog
+// scan). Server error copy surfaces verbatim.
 
 enum HubCatalogStore {
     static func load() -> HubCatalog {
@@ -257,11 +257,19 @@ final class HubViewModel: ObservableObject {
     @Published private(set) var marketError: String?
     @Published private(set) var marketActionError: String?
     private var marketOwner: String?
+    // Section 11 item 3 - bounded board pages: the cursor the gateway handed
+    // back while hasMore stands; loadMoreMarket() appends the next page.
+    @Published private(set) var marketHasMore = false
+    private var marketNextCursor: String?
+    /// The board page size (the legacy shape caps at 60 rows; paging walks
+    /// past that boundary page by page).
+    private static let marketPageLimit = 60
 
     func loadMarket() {
         if marketOwner != viewerId {
             listings = []; marketLoaded = false; marketOwner = viewerId
             marketError = "Account changed. Refresh the market."; marketActionError = nil; marketRequest = UUID()
+            marketHasMore = false; marketNextCursor = nil
         }
         guard !marketBusy else { return }
         guard let client = api else { marketError = "No gateway configured."; return }
@@ -273,9 +281,38 @@ final class HubViewModel: ObservableObject {
             guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
             defer { if marketRequest == ticket, session.sessionGeneration == epoch { marketLoading = false } }
             do {
-                let fresh = try await client.market().listings
+                let page = try await client.market(limit: Self.marketPageLimit, cursor: nil)
                 guard !Task.isCancelled, marketRequest == ticket, session.sessionGeneration == epoch else { return }
-                listings = fresh; marketLoaded = true
+                listings = page.listings; marketLoaded = true
+                marketHasMore = page.hasMore == true
+                marketNextCursor = marketHasMore ? page.nextCursor : nil
+            } catch {
+                guard !Task.isCancelled, marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                marketError = describe(error)
+            }
+        }
+    }
+
+    /// Section 11 item 3 - appends the next board page when the gateway says
+    /// there is more (hasMore ⇒ nextCursor). A failed page keeps the loaded
+    /// rows and surfaces the same honest inline error + Retry as loadMarket.
+    func loadMoreMarket() {
+        guard marketHasMore, let cursor = marketNextCursor, !marketBusy, let client = api else { return }
+        let ticket = UUID()
+        marketRequest = ticket
+        marketLoading = true; marketError = nil
+        let epoch = session.sessionGeneration
+        Task { @MainActor in
+            guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
+            defer { if marketRequest == ticket, session.sessionGeneration == epoch { marketLoading = false } }
+            do {
+                let page = try await client.market(limit: Self.marketPageLimit, cursor: cursor)
+                guard !Task.isCancelled, marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                var merged = listings
+                for row in page.listings where !merged.contains(where: { $0.id == row.id }) { merged.append(row) }
+                listings = merged; marketLoaded = true
+                marketHasMore = page.hasMore == true
+                marketNextCursor = marketHasMore ? page.nextCursor : nil
             } catch {
                 guard !Task.isCancelled, marketRequest == ticket, session.sessionGeneration == epoch else { return }
                 marketError = describe(error)
@@ -310,7 +347,25 @@ final class HubViewModel: ObservableObject {
 
     func createListing(_ title: String, price: Int, completion: @escaping (Bool) -> Void) {
         marketAction(operation: { client in
-            try await client.createListing(title: title, description: nil, price: price)
+            // Section 11 item 1: the listing identity is journaled BEFORE the
+            // wire (money-adjacent creation, redpacket-create rules); a lost
+            // ACK replays the SAME clientId so the board can never hold a
+            // duplicate sell order. Only a confirmed receipt or a permanent
+            // refusal retires the row - transport failures stay journaled.
+            let journal = PulseSection8Journal.shared
+            let intent = journal.enqueue(owner: client.userId, kind: "market-create", targetId: "",
+                payload: ["title": title.trimmingCharacters(in: .whitespacesAndNewlines),
+                          "description": "",
+                          "price": String(price)])
+            do {
+                let row = try await client.createListing(title: title, description: nil, price: price, clientId: intent.clientId)
+                journal.confirm(owner: client.userId, clientId: intent.clientId)
+                return row
+            } catch let failure as PulseAPIClient.Failure
+                  where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                journal.confirm(owner: client.userId, clientId: intent.clientId) // permanent refusal
+                throw failure
+            }
         }, accepted: { row in
             self.listings = [row] + self.listings.filter { $0.id != row.id }; self.marketLoaded = true
             self.toast("Listed \"\(row.title ?? title)\" for \(price) PC")
@@ -421,11 +476,29 @@ final class HubViewModel: ObservableObject {
         guard let state = installs[id], !installStateFailed.contains(id) else { loadInstallState(appId: id); return }
         let disconnect = state.installed == true
         appAction("install:" + id, operation: { client in
-            if disconnect { return try await client.uninstallApp(appId: id) }
-            return try await client.installApp(appId: id)
+            // Section 11 item 8: the connect/disconnect identity is journaled
+            // AROUND the wire call (same enqueue/confirm rules as the market
+            // create); a lost ACK replays the SAME clientId and the server
+            // answers with the untouched snapshot (replayed receipt), so a
+            // late retry can never override a newer toggle.
+            let journal = PulseSection8Journal.shared
+            let intent = journal.enqueue(owner: client.userId,
+                kind: disconnect ? "app-disconnect" : "app-connect", targetId: id)
+            do {
+                let row = disconnect
+                    ? try await client.uninstallApp(appId: id, clientId: intent.clientId)
+                    : try await client.installApp(appId: id, clientId: intent.clientId)
+                journal.confirm(owner: client.userId, clientId: intent.clientId)
+                return row
+            } catch let failure as PulseAPIClient.Failure
+                  where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                journal.confirm(owner: client.userId, clientId: intent.clientId) // permanent refusal
+                throw failure
+            }
         }, accepted: { row in
             self.installs[id] = WireAppInstallState(appVersion: row.appVersion, appId: row.appId, userId: row.userId,
-                installed: row.installed, status: row.status, installedAt: row.installedAt, installs: row.installs, installers: row.installers)
+                installed: row.installed, status: row.status, installedAt: row.installedAt, installs: row.installs, installers: row.installers,
+                installsRev: row.installsRev, replayed: row.replayed)
             self.toast(disconnect ? "Disconnected from \(app.name)" : "Connected to \(app.name)")
         }, refresh: { self.loadInstallState(appId: id) })
     }
@@ -444,9 +517,26 @@ final class HubViewModel: ObservableObject {
         appsLoading = true
         Task { @MainActor in
             defer { if appsRequest == ticket, session.sessionGeneration == epoch { appsLoading = false } }
-            for app in catalog.apps {
+            // Section 11 item 6: ONE batch snapshot (appVersion 2) replaces
+            // the per-app sequential scan - a scan of the 100-app matrix
+            // costs a single request. A failed batch is ONE honest failure
+            // (Retry reloads the whole catalog), never a partial scan
+            // pretending success; previously confirmed rows stay in place.
+            do {
+                let batch = try await client.appInstalls()
                 guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
-                await fetchInstall(String(app.n), client: client, epoch: epoch)
+                var next = installs
+                for row in batch.apps ?? [] {
+                    next[row.appId] = WireAppInstallState(appVersion: batch.appVersion ?? 2, appId: row.appId,
+                        userId: batch.userId ?? client.userId, installed: row.installed,
+                        status: row.installed == true ? "connected" : nil, installedAt: row.installedAt,
+                        installs: nil, installers: nil)
+                    installStateFailed.remove(row.appId)
+                }
+                installs = next
+            } catch {
+                guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
+                installStateFailed = Set(catalog.apps.map { String($0.n) })
             }
         }
     }
@@ -919,6 +1009,20 @@ private struct HubMarketSheet: View {
                         }
                     }
                 }
+                // Section 11 item 3 - the board walks past the legacy cap one
+                // confirmed page at a time (hasMore ⇒ nextCursor).
+                if vm.marketHasMore {
+                    Button {
+                        vm.loadMoreMarket()
+                    } label: {
+                        if vm.marketLoading {
+                            HStack(spacing: 8) { ProgressView(); Text("Loading more…") }
+                        } else {
+                            Text("Load more listings")
+                        }
+                    }
+                    .disabled(vm.marketLoading)
+                }
             }
         }
         .disabled(vm.marketBusy || vm.walletMutationBusy)
@@ -1011,9 +1115,15 @@ private struct HubAppsList: View {
                             .background(PulseTheme.emberGlowBottom, in: Circle())
                         VStack(alignment: .leading, spacing: 1) {
                             Text(app.name).font(.subheadline)
-                            Text(installs[String(app.n)].flatMap { $0.installs }.map { "\($0) connected" } ?? "Connection count unavailable")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            // Section 11: the batch snapshot carries the
+                            // connected flag, not the global install count
+                            // (the count fills in from the per-app snapshot
+                            // once the detail sheet loads it) - the caption
+                            // never invents one.
+                            let caption = installCaption(installs[String(app.n)])
+                            if !caption.isEmpty {
+                                Text(caption).font(.caption2).foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         if installs[String(app.n)]?.installed == true {
@@ -1041,6 +1151,15 @@ private struct HubAppsList: View {
                 Capsule().fill(category == slug ? PulseTheme.emberGlowBottom.opacity(0.25) : Color(uiColor: .secondarySystemBackground))
             }
             .onTapGesture { category = slug }
+    }
+
+    /// Section 11: batch rows know the connected flag, the per-app snapshot
+    /// knows the global install count - say exactly what was confirmed and
+    /// nothing more (silence beats an invented number).
+    private func installCaption(_ state: WireAppInstallState?) -> String {
+        if let count = state?.installs { return "\(count) connected" }
+        if state?.installed == true { return "Connected" }
+        return ""
     }
 }
 

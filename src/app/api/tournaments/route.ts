@@ -23,6 +23,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { deliverLivePush } from '@/lib/live-push-outbox'
 import { createRoomObject, MessageOperationError } from '@/lib/message-operation'
+import { pageLimit, decodeKeysetCursor, keysetBefore, pageVerdict } from '@/lib/section10-contracts'
 import {
   mapMessage,
   memberIdsOf,
@@ -38,6 +39,7 @@ const NAME_MIN = 1
 const NAME_MAX = 40
 const GAMES = ['tictactoe'] as const
 const LIST_LIMIT = 5
+const PAGE_MAX = 100
 
 /** Wire shape of the list endpoint (group-info Tournament section). */
 export interface TournamentListItem {
@@ -112,8 +114,10 @@ export async function POST(req: Request) {
 }
 
 /**
- * GET /api/tournaments?conversationId= - newest 5 seasons of a room
- * with real player counts (read-only mirror of the games GET policy).
+ * GET /api/tournaments?conversationId=[&limit=1..100][&cursor=ms.id]
+ * - newest seasons of a room with real player counts (read-only mirror of
+ * the games GET policy). Section 11 item 11: cursor pages walk past the
+ * legacy 5-row boundary; without a cursor the legacy shape is kept.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -125,6 +129,19 @@ export async function GET(req: Request) {
   if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   const denied = await requireActionOwner(req, userId, 'game read')
   if (denied) return denied
+  const limitRaw = url.searchParams.get('limit')
+  const cursorRaw = url.searchParams.get('cursor')
+  const limitParsed = pageLimit(limitRaw, PAGE_MAX)
+  const cursorParsed = decodeKeysetCursor(cursorRaw)
+  if ((limitRaw !== null && !limitParsed.ok) || !cursorParsed.ok) {
+    return NextResponse.json({ error: 'limit must be an integer between 1 and 100 and cursor must be `<epochMs>.<id>`.' }, { status: 400 })
+  }
+  const explicitLimit = limitRaw !== null && limitParsed.ok ? limitParsed.limit : null
+  const cursorParts = cursorParsed.ok && 'atMs' in cursorParsed && cursorParsed.atMs !== undefined
+    ? { atMs: cursorParsed.atMs, id: cursorParsed.id } : null
+  const paging = explicitLimit !== null || cursorParts !== null
+  const take = explicitLimit ?? (cursorParts ? 25 : LIST_LIMIT)
+  const keyset = cursorParts ? keysetBefore(cursorParts.atMs, cursorParts.id) : {}
   try { return await readRoomGame(db, userId, { conversationId }, async (tx, conversationId) => {
     const conv = await tx.conversation.findUnique({
       where: { id: conversationId },
@@ -135,16 +152,18 @@ export async function GET(req: Request) {
     }
 
     const rows = await tx.tournament.findMany({
-      where: { conversationId },
+      where: { conversationId, ...keyset },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: LIST_LIMIT,
+      take: paging ? take + 1 : take,
       include: { _count: { select: { entries: true } } },
     })
+    const verdict = paging ? pageVerdict(rows, take, row => ({ atMs: row.createdAt.getTime(), id: row.id }))
+      : { rows, hasMore: false, nextCursor: null }
 
     const joined = new Set(userId ? (await tx.tournamentPlayer.findMany({
-      where: { userId, tournamentId: { in: rows.map(row => row.id) } }, select: { tournamentId: true },
+      where: { userId, tournamentId: { in: verdict.rows.map(row => row.id) } }, select: { tournamentId: true },
     })).map(entry => entry.tournamentId) : [])
-    const tournaments = rows.map((row) => ({
+    const tournaments = verdict.rows.map((row) => ({
       id: row.id, conversationId,
       name: row.name,
       game: row.game,
@@ -155,7 +174,8 @@ export async function GET(req: Request) {
     }))
 
     return NextResponse.json(
-      { gameReadVersion: 1, userId, conversationId, tournaments },
+      { gameReadVersion: 1, userId, conversationId, tournaments,
+        ...(paging ? { hasMore: verdict.hasMore, nextCursor: verdict.nextCursor } : {}) },
       { headers: gameReadHeaders },
     )
   }) } catch (error) { return gameReadErrorResponse(error) }

@@ -115,6 +115,12 @@ export async function GET(req: Request, { params }: RouteCtx) {
   }
 
   // Disappearing-message purge: hard-delete anything past its deadline before reading.
+  // Section 11 item 10: a match whose carrier is about to be purged is
+  // abandoned first, so no playable board survives its own bubble.
+  try {
+    const { abandonMatchesForExpiredCarriers } = await import('@/lib/game-carrier-lifecycle')
+    await abandonMatchesForExpiredCarriers(db, id, new Date())
+  } catch { /* purge continues even if the lifecycle sweep cannot run */ }
   await db.message.deleteMany({
     where: { conversationId: id, expiresAt: { lte: new Date() } },
   })

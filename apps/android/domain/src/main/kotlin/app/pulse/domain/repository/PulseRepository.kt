@@ -44,6 +44,7 @@ import app.pulse.protocol.PulseVoiceUser
 import app.pulse.protocol.AppCommunityDto
 import app.pulse.protocol.AppInstallResultDto
 import app.pulse.protocol.AppInstallStateDto
+import app.pulse.protocol.AppInstallsBatchDto
 import app.pulse.protocol.CheckinResultDto
 import app.pulse.protocol.CheckinWalletResultDto
 import app.pulse.protocol.EventsPageDto
@@ -1188,10 +1189,14 @@ interface PulseRepository {
     /** DELETE task (owner-only). */
     suspend fun deleteHubTask(taskId: String): Result<Unit>
 
-    /** GET market (open + own listings ≤60). */
-    suspend fun market(): Result<MarketPageDto>
+    /** GET market board (open + own listings ≤60). Section 11 item 3: a
+     *  non-null limit or cursor switches to the bounded board page and the
+     *  receipt carries {hasMore, nextCursor}; legacy reads keep the bare shape. */
+    suspend fun market(limit: Int? = null, cursor: String? = null): Result<MarketPageDto>
 
-    /** POST listing. */
+    /** POST listing - Section 11 item 4: the identity is journaled BEFORE the
+     *  POST and replays with the SAME clientId; a 200 replayed:true receipt is
+     *  the SAME confirmed listing, never a duplicate. */
     suspend fun createListing(title: String, description: String?, price: Long): Result<MarketListingDto>
 
     /** POST buy - atomic debit/credit; returns the fresh wallet. */
@@ -1203,10 +1208,18 @@ interface PulseRepository {
     /** GET install state for one app (fan-out drives My apps). */
     suspend fun appInstallState(appId: String): Result<AppInstallStateDto>
 
-    /** POST install/connect - idempotent. */
+    /** Section 11 item 6 - ONE batch snapshot for the whole catalog:
+     *  GET /api/hub/apps/installs → { appVersion:2, userId, installsRev, apps }.
+     *  Installation scans stop paying one request per app. */
+    suspend fun appInstalls(): Result<AppInstallsBatchDto>
+
+    /** POST install/connect - idempotent. Section 11 item 8: the connect
+     *  identity is journaled BEFORE the wire and replays with the SAME
+     *  clientId; a replayed receipt is an acknowledgement, not a duplicate. */
     suspend fun installApp(appId: String): Result<AppInstallResultDto>
 
-    /** DELETE install - hard remove. */
+    /** DELETE install - hard remove. Journaled + replayed like the connect
+     *  route (Section 11 item 8, kind "app-disconnect"). */
     suspend fun uninstallApp(appId: String): Result<AppInstallResultDto>
 
     /** GET app community - null conversation when none exists yet. */

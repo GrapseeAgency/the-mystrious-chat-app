@@ -116,6 +116,7 @@ import app.pulse.protocol.EventsPageDto
 import app.pulse.protocol.AppCommunityDto
 import app.pulse.protocol.AppInstallResultDto
 import app.pulse.protocol.AppInstallStateDto
+import app.pulse.protocol.AppInstallsBatchDto
 import app.pulse.protocol.FolderDto
 import app.pulse.protocol.GameDetailDto
 import app.pulse.protocol.GameMatchCreateResultDto
@@ -397,6 +398,20 @@ class PulseRepositoryImpl constructor(
                     (kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).jsonObject["count"] as kotlinx.serialization.json.JsonPrimitive).content.toInt(),
                     (kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).jsonObject["note"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
                     intent.clientId)
+                // Section 11: durable marketplace and app-connection identities
+                // replay to the SAME server row (listing create, connect,
+                // disconnect) - a late retry is an acknowledgement, never a
+                // duplicate board row or a newer toggle.
+                "market-create" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    api.createListing(owner,
+                        (body["title"] as kotlinx.serialization.json.JsonPrimitive).content,
+                        (body["description"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["price"] as kotlinx.serialization.json.JsonPrimitive).content.toLong(),
+                        intent.clientId)
+                }
+                "app-connect" -> api.installApp(intent.targetId, owner, intent.clientId)
+                "app-disconnect" -> api.uninstallApp(intent.targetId, owner, intent.clientId)
                 else -> null
             }
             when (receipt) {
@@ -5747,10 +5762,32 @@ class PulseRepositoryImpl constructor(
     override suspend fun deleteHubTask(taskId: String): Result<Unit> =
         personalTaskMutation { api.deleteHubTask(taskId, it) }.map { Unit }
 
-    override suspend fun market(): Result<MarketPageDto> = ownedAccountRequest { api.market(it) }
+    override suspend fun market(limit: Int?, cursor: String?): Result<MarketPageDto> = ownedAccountRequest { api.market(it, limit, cursor) }
 
-    override suspend fun createListing(title: String, description: String?, price: Long): Result<MarketListingDto> =
-        ownedAccountRequest { api.createListing(it, title, description, price) }
+    override suspend fun createListing(title: String, description: String?, price: Long): Result<MarketListingDto> {
+        // Section 11 item 4: the listing identity is journaled BEFORE the
+        // wire; a lost ACK replays the SAME clientId (the server answers with
+        // the SAME listing, replayed:true) so the board can never grow a
+        // duplicate row.
+        val intent = runCatching {
+            section8Journal.enqueue(viewerId ?: "", "market-create", "",
+                kotlinx.serialization.json.buildJsonObject {
+                    put("title", kotlinx.serialization.json.JsonPrimitive(title))
+                    if (description != null) put("description", kotlinx.serialization.json.JsonPrimitive(description))
+                    put("price", kotlinx.serialization.json.JsonPrimitive(price))
+                })
+        }.getOrNull()
+        return when (val r = api.createListing(viewerId ?: "", title, description, price, intent?.clientId)) {
+            is PulseResult.Success -> {
+                intent?.let { section8Journal.confirm(viewerId ?: "", it.clientId) }
+                Result.success(r.value)
+            }
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section8Journal.confirm(viewerId ?: "", it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
+        }
+    }
 
     override suspend fun buyListing(listingId: String): Result<MarketBuyResultDto> =
         ownedAccountRequest { api.buyListing(listingId, it) }
@@ -5769,8 +5806,35 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun appInstallState(appId: String): Result<AppInstallStateDto> = ownedAccountRequest { api.appInstallState(appId, it) }
-    override suspend fun installApp(appId: String): Result<AppInstallResultDto> = ownedAccountRequest { api.installApp(appId, it) }
-    override suspend fun uninstallApp(appId: String): Result<AppInstallResultDto> = ownedAccountRequest { api.uninstallApp(appId, it) }
+
+    /** Section 11 item 6: ONE batch snapshot replaces the per-app fan-out. */
+    override suspend fun appInstalls(): Result<AppInstallsBatchDto> = ownedAccountRequest { api.appInstallsBatch(it) }
+
+    override suspend fun installApp(appId: String): Result<AppInstallResultDto> = appConnectionMutation(appId, disconnect = false)
+    override suspend fun uninstallApp(appId: String): Result<AppInstallResultDto> = appConnectionMutation(appId, disconnect = true)
+
+    /** Section 11 item 8: the connect/disconnect identity is journaled BEFORE
+     *  the wire; a lost ACK replays the SAME clientId (the server answers with
+     *  the same snapshot + replayed:true) so a late retry can never override
+     *  another device's newer toggle. */
+    private suspend fun appConnectionMutation(appId: String, disconnect: Boolean): Result<AppInstallResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val intent = runCatching {
+            section8Journal.enqueue(owner, if (disconnect) "app-disconnect" else "app-connect", appId,
+                kotlinx.serialization.json.buildJsonObject { })
+        }.getOrNull()
+        return when (val r = if (disconnect) api.uninstallApp(appId, owner, intent?.clientId)
+                            else api.installApp(appId, owner, intent?.clientId)) {
+            is PulseResult.Success -> {
+                intent?.let { section8Journal.confirm(owner, it.clientId) }
+                Result.success(r.value)
+            }
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section8Journal.confirm(owner, it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
+        }
+    }
     override suspend fun appCommunity(appId: String): Result<AppCommunityDto> = ownedAccountRequest { api.appCommunity(appId, it) }
     override suspend fun joinAppCommunity(appId: String): Result<AppCommunityDto> = ownedAccountRequest { api.joinAppCommunity(appId, it) }
 

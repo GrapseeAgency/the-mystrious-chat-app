@@ -54,12 +54,15 @@ public final class StoriesSessionModel: ObservableObject {
     /// publication replay returns the SAME server row (never a duplicate);
     /// view marks are idempotent by (storyId, userId); a delete tombstone
     /// re-purges the cache, which is exactly why the row survived.
+    /// Section 11: the hub kinds ride the same durable journal (session
+    /// start = hub start): market-create replays the SAME listing identity,
+    /// app-connect/disconnect the SAME connection identity.
     public func flushStoryIntents() async {
         guard session.viewer != nil, session.sessionGeneration == ownerEpoch else { return }
         let journal = PulseSection8Journal.shared
         let owner = session.api.userId
         for intent in journal.pending(owner: owner)
-        where intent.kind.hasPrefix("story-") || intent.kind.hasSuffix("-create") {
+        where intent.kind.hasPrefix("story-") || intent.kind.hasSuffix("-create") || intent.kind.hasPrefix("app-") {
             switch intent.kind {
             case "story-publish":
                 do {
@@ -149,6 +152,29 @@ public final class StoriesSessionModel: ObservableObject {
                 } catch let failure as PulseAPIClient.Failure where failure.kind == .validation || failure.kind == .notFound {
                     journal.confirm(owner: owner, clientId: intent.clientId)
                 } catch { break }
+            case "market-create":
+                do {
+                    _ = try await session.api.createListing(title: intent.payload["title"] ?? "",
+                        description: intent.payload["description"].flatMap { $0.isEmpty ? nil : $0 },
+                        price: Int(intent.payload["price"] ?? "") ?? 0,
+                        clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure
+                      where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                    journal.confirm(owner: owner, clientId: intent.clientId) // permanent refusal
+                } catch { break } // transport-class: keep for the next flush
+            case "app-connect", "app-disconnect":
+                do {
+                    if intent.kind == "app-connect" {
+                        _ = try await session.api.installApp(appId: intent.targetId, clientId: intent.clientId)
+                    } else {
+                        _ = try await session.api.uninstallApp(appId: intent.targetId, clientId: intent.clientId)
+                    }
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure
+                      where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                    journal.confirm(owner: owner, clientId: intent.clientId) // permanent refusal
+                } catch { break } // transport-class: keep for the next flush
             default: break
             }
         }
