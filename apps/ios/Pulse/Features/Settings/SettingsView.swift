@@ -753,6 +753,11 @@ struct SettingsView: View {
             toggleRow(icon: "checkmark.circle", title: "Read receipts", description: "Show others when you've read their messages.", isOn: prefs.readReceipts) {
                 prefs.setReadReceipts($0)
             }
+            // Section 9 item 3: story-specific read privacy - off means your
+            // story views NEVER disclose to authors (lists, counts, receipts).
+            toggleRow(icon: "eye.circle", title: "Story view receipts", description: "Let others see when you view their status.", isOn: prefs.storyViewReceipts) {
+                prefs.setStoryViewReceipts($0)
+            }
             toggleRow(icon: "pencil.line", title: "Typing indicator", description: "Show others when you're typing.", isOn: prefs.typingVisible) {
                 prefs.setTypingVisible($0)
             }

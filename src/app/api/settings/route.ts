@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   if (denied) return denied
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { preferences: true },
+    select: { preferences: true, storyViewReceipts: true },
   })
   if (!user) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
@@ -34,7 +34,16 @@ export async function GET(req: Request) {
       stored = null
     }
   }
-  return NextResponse.json({ preferences: { ...mergePrefs(stored), ...privacyPreferenceSnapshot(user.preferences) } }, { headers: settingsHeaders })
+  // Section 9 item 3: the storyViewReceipts COLUMN is the disclosure truth
+  // (story receipt queries read the column, live); the JSON snapshot value is
+  // never allowed to disagree with it in the merged response.
+  return NextResponse.json({
+    preferences: {
+      ...mergePrefs(stored),
+      ...privacyPreferenceSnapshot(user.preferences),
+      storyViewReceipts: user.storyViewReceipts,
+    },
+  }, { headers: settingsHeaders })
 }
 
 /**
@@ -64,11 +73,15 @@ export async function PATCH(req: Request) {
   const denied = await requireActionOwner(req, userId, 'settings')
   if (denied) return denied
   const patch = body.preferences as Record<string, unknown>
-  for (const key of ['readReceipts', 'lastSeenVisible', 'typingVisible', 'notifPreviews']) {
+  for (const key of ['readReceipts', 'lastSeenVisible', 'typingVisible', 'notifPreviews', 'storyViewReceipts']) {
     if (Object.prototype.hasOwnProperty.call(patch, key) && typeof patch[key] !== 'boolean') {
       return NextResponse.json({ error: `${key} must be a boolean.` }, { status: 400 })
     }
   }
+  // Section 9 item 3: the story receipt disclosure lives in a real column so
+  // owner-side viewer lists and view counts can filter it in SQL (live at
+  // disclosure time). PATCH mirrors the JSON blob value into the column.
+  const storyReceiptsPatch = typeof patch.storyViewReceipts === 'boolean' ? patch.storyViewReceipts : null
 
   // Compare-and-swap the exact snapshot used for the merge. Concurrent writes
   // to distinct fields must not erase each other; retry against the latest row.
@@ -83,11 +96,17 @@ export async function PATCH(req: Request) {
       } catch { /* Invalid privacy remains conservative until an explicit change. */ }
     }
     const merged = mergePrefs({ ...stored, ...privacyPreferenceSnapshot(user.preferences), ...patch })
+    // The column (not the JSON blob) decides disclosure; keep both in the SAME
+    // atomic update so a read can never see a torn preference pair.
+    if (storyReceiptsPatch !== null) merged.storyViewReceipts = storyReceiptsPatch
     const serialized = JSON.stringify(merged)
     if (serialized.length > 4096) return NextResponse.json({ error: 'Preferences payload too large.' }, { status: 413 })
     const written = await db.user.updateMany({
       where: { id: userId, preferences: user.preferences },
-      data: { preferences: serialized },
+      data: {
+        preferences: serialized,
+        ...(storyReceiptsPatch !== null ? { storyViewReceipts: storyReceiptsPatch } : {}),
+      },
     })
     if (written.count === 1) return NextResponse.json({ preferences: merged }, { headers: settingsHeaders })
   }

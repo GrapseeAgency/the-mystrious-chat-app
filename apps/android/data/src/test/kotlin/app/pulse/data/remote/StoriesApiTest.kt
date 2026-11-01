@@ -190,4 +190,94 @@ class StoriesApiTest {
         }
         assertTrue(api(body = """{"viewCount":0}""").markStoryViewed("story", "owner") is PulseResult.Success)
     }
+
+    // Section 9 - durable publication identity (item 1), bounded pages
+    // (item 2), receipt privacy on the wire (item 3).
+
+    @Test fun `postStory carries the journaled clientId on the wire`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val r = api(body = """{"story":{"id":"s-1","kind":"text","caption":"x","background":"emerald",
+            "createdAt":"2026-02-20T09:00:00.000Z","expiresAt":"2026-02-21T09:00:00.000Z","viewCount":0,"viewedByMe":false},
+            "replayed":false}""").postStory("u1", caption = "x", clientId = "replay-identity-000000001")
+        assertTrue(r is PulseResult.Success)
+        val body = kotlinx.serialization.json.Json.parseToJsonElement(lastBody) as kotlinx.serialization.json.JsonObject
+        assertEquals("replay-identity-000000001", (body["clientId"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertEquals(false, (r as PulseResult.Success).value.replayed)
+    }
+
+    @Test fun `replayed publication receipts decode as the SAME confirmed story`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val replayBody = """{"story":{"id":"s-1","kind":"text","caption":"x","background":"emerald",
+            "createdAt":"2026-02-20T09:00:00.000Z","expiresAt":"2026-02-21T09:00:00.000Z","viewCount":2,"viewedByMe":false},
+            "replayed":true}"""
+        val r = api(body = replayBody).postStory("u1", caption = "x", clientId = "replay-identity-000000001")
+        assertTrue(r is PulseResult.Success)
+        val created = (r as PulseResult.Success).value
+        assertTrue("a replay is a confirmed publication of the SAME row", created.replayed)
+        assertEquals("s-1", created.story?.id)
+    }
+
+    @Test fun `legacy story receipts keep their shape when the replayed flag is absent`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val legacy = """{"story":{"id":"s-2","kind":"text","caption":"x","background":"emerald",
+            "createdAt":"2026-02-20T09:00:00.000Z","expiresAt":"2026-02-21T09:00:00.000Z","viewCount":0,"viewedByMe":false}}"""
+        val r = api(body = legacy).postStory("u1", caption = "x")
+        assertTrue(r is PulseResult.Success)
+        assertEquals(false, (r as PulseResult.Success).value.replayed)
+    }
+
+    @Test fun `feed pages request the keyset window and decode the continuation`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val page = """{"groups":[{"user":{"id":"u2","name":"Bob"},"stories":[{"id":"b","caption":"x",
+            "background":"emerald","createdAt":"2026-02-20T09:00:00.000Z","expiresAt":"2026-02-21T09:00:00.000Z",
+            "viewCount":1,"viewedByMe":false}]}],"nextCursor":"1771606800000.b","hasMore":true}"""
+        val r = api(body = page).storiesPage("u1", 60, "1771606800000.a")
+        assertTrue(r is PulseResult.Success)
+        val dto = (r as PulseResult.Success).value
+        assertTrue(dto.hasMore)
+        assertEquals("1771606800000.b", dto.nextCursor)
+        assertTrue("cursor must ride the query", lastUrl.contains("limit=60"))
+        assertTrue(lastUrl.contains("cursor=1771606800000.a"))
+    }
+
+    @Test fun `an opening feed page omits the cursor parameter`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val r = api(body = """{"groups":[],"nextCursor":null,"hasMore":false}""").storiesPage("u1", 60, null)
+        assertTrue(r is PulseResult.Success)
+        assertTrue("no cursor on the opening page", lastUrl.contains("limit=60") && !lastUrl.contains("cursor="))
+    }
+
+    @Test fun `a continued page without its cursor is a protocol failure`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val broken = """{"groups":[{"user":{"id":"u2","name":"Bob"},"stories":[]}],"hasMore":true}"""
+        assertTrue(api(body = broken).storiesPage("u1", 60, null) is PulseResult.Failure)
+    }
+
+    @Test fun `viewer pages decode their keyset continuation and receipt privacy`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val page = """{"viewers":[{"userId":"u2","name":"Bob","username":null,"color":"teal",
+            "viewedAt":"2026-02-20T09:05:00.000Z"}],"nextCursor":"1771607100000.u2","hasMore":true}"""
+        val r = api(body = page).storyViewersPage("s-9", "u1", 100, "1771607000000.aa")
+        assertTrue(r is PulseResult.Success)
+        val dto = (r as PulseResult.Success).value
+        assertTrue(dto.hasMore)
+        assertEquals("1771607100000.u2", dto.nextCursor)
+        assertTrue(lastUrl.contains("limit=100"))
+        assertTrue(lastUrl.contains("cursor=1771607000000.aa"))
+    }
+
+    @Test fun `a continued viewer page without its cursor is a protocol failure`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val broken = """{"viewers":[{"userId":"u2","name":"Bob","username":null,"color":"teal",
+            "viewedAt":"2026-02-20T09:05:00.000Z"}],"hasMore":true}"""
+        assertTrue(api(body = broken).storyViewersPage("s-9", "u1", 100, null) is PulseResult.Failure)
+    }
+
+    @Test fun `view acks decode receiptVisible and legacy acks stay visible`() = runTest {
+        PulseEndpoints.applyBase("https://prod.example")
+        val hidden = api(body = """{"viewCount":0,"receiptVisible":false}""").markStoryViewed("s-9", "u1")
+        assertEquals(false, (hidden as PulseResult.Success).value.receiptVisible)
+        val legacy = api(body = """{"viewCount":1}""").markStoryViewed("s-9", "u1")
+        assertEquals(true, (legacy as PulseResult.Success).value.receiptVisible)
+    }
 }

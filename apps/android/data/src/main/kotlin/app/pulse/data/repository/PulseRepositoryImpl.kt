@@ -222,6 +222,16 @@ import kotlinx.serialization.json.put
 private const val STORY_TTL_MS: Long = 24L * 60 * 60 * 1000
 
 /**
+ * Section 9 item 2 - bounded pagination constants. The feed walks story rows
+ * (server cap 60/page) and the owner sheet walks viewer rows (cap 100/page);
+ * the walk caps keep a pathological feed honest instead of unbounded.
+ */
+private const val STORY_FEED_PAGE_LIMIT = 60
+private const val STORY_FEED_PAGE_WALK_MAX = 5
+private const val STORY_VIEWERS_PAGE_LIMIT = 100
+private const val STORY_VIEWERS_WALK_MAX = 20
+
+/**
  * REAL remote-first, Room-cached repository (N3 UI-era surface).
  * Reads flow from Room; refreshes pull the gateway and upsert; writes POST
  * and cache the returned row. The socket pump turns relay signals into
@@ -333,10 +343,31 @@ class PulseRepositoryImpl constructor(
                     api.createPhrase(owner, (body["text"] as kotlinx.serialization.json.JsonPrimitive).content, intent.clientId)
                 }
                 "phrase-delete" -> api.deletePhrase(owner, intent.targetId, intent.clientId)
+                // Section 9: durable story operations replay with the SAME
+                // identity - publish (item 1/4), view mark (item 9) and the
+                // delete tombstone (item 5). The server answers are idempotent
+                // by identity (publish) or by (storyId, userId) (view).
+                "story-publish" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    api.postStory(owner,
+                        (body["caption"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["background"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["imagePath"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        intent.clientId)
+                }
+                "story-view" -> api.markStoryViewed(intent.targetId, owner)
+                "story-delete" -> api.deleteStory(intent.targetId, owner)
                 else -> null
             }
             when (receipt) {
-                is PulseResult.Success -> section8Journal.confirm(owner, intent.clientId)
+                is PulseResult.Success -> {
+                    section8Journal.confirm(owner, intent.clientId)
+                    // A replayed delete must ALSO purge the local cache again -
+                    // the row survived precisely because that purge had failed.
+                    if (intent.kind == "story-delete") {
+                        try { storySnapshots.remove("stories:$owner", intent.targetId) } catch (_: Exception) { /* next flush retries the purge */ }
+                    }
+                }
                 is PulseResult.Failure -> if (receipt.kind in PERMANENT_SECTION8_FAILURES) {
                     // A permanent refusal can never succeed; retire the row honestly.
                     section8Journal.confirm(owner, intent.clientId)
@@ -4262,7 +4293,24 @@ class PulseRepositoryImpl constructor(
         val epoch = attachmentSession
         val ticket = storySnapshots.begin("stories:$owner")
         if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Story account changed")
-        val result = ownedAccountRequest(typedFailure = true) { api.stories(it) }
+        // Section 9 item 2: the feed walks BOUNDED keyset pages to completion
+        // (the 24h TTL caps total size); every single request stays <=
+        // STORY_FEED_PAGE_LIMIT rows no matter how large the audience grows.
+        val result = run {
+            var cursor: String? = null
+            val groups = mutableListOf<app.pulse.protocol.StoryGroupDto>()
+            var pages = 0
+            while (pages < STORY_FEED_PAGE_WALK_MAX) {
+                val pageResult = ownedAccountRequest(typedFailure = true) { api.storiesPage(it, STORY_FEED_PAGE_LIMIT, cursor) }
+                val dto = pageResult.getOrNull()
+                if (dto == null) return@run pageResult
+                groups += dto.groups
+                pages++
+                if (!dto.hasMore) break
+                cursor = dto.nextCursor ?: break
+            }
+            Result.success(StoriesPageDto(groups = groups, nextCursor = null, hasMore = false))
+        }
         if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Story account changed")
         return try {
             val failure = result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException
@@ -4284,23 +4332,57 @@ class PulseRepositoryImpl constructor(
         } catch (failure: Exception) { Result.failure(failure) }
     }
 
-    override suspend fun createStory(caption: String, background: String?, imagePath: String?): Result<StoryItem> =
-        when (val r = api.postStory(viewerId ?: "", caption, background, imagePath)) {
+    override suspend fun createStory(caption: String, background: String?, imagePath: String?): Result<StoryItem> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        // Section 9 item 1: the publication identity is journaled BEFORE the
+        // wire; every retry (lost ACK, process death between acceptance and
+        // the cache refresh - item 4) replays the SAME clientId and converges
+        // on the SAME server row. A journal write failure degrades honestly
+        // to the legacy identity-less path instead of blocking publication.
+        val intent = runCatching {
+            section8Journal.enqueue(owner, "story-publish", "", kotlinx.serialization.json.buildJsonObject {
+                put("caption", kotlinx.serialization.json.JsonPrimitive(caption))
+                if (background != null) put("background", kotlinx.serialization.json.JsonPrimitive(background))
+                if (imagePath != null) put("imagePath", kotlinx.serialization.json.JsonPrimitive(imagePath))
+            })
+        }.getOrNull()
+        return when (val r = api.postStory(viewer, caption, background, imagePath, intent?.clientId)) {
             is PulseResult.Success -> {
                 val dto = r.value.story
                 val item = dto?.let { it.toStoryItem() }
                 if (item == null) {
                     Result.failure(IllegalStateException("VALIDATION: story missing in 201 body"))
                 } else {
+                    intent?.let { section8Journal.confirm(owner, it.clientId) }
                     Result.success(item)
                 }
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> {
+                // A permanent refusal can never succeed on replay; retire the row.
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section8Journal.confirm(owner, it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
         }
+    }
 
     override suspend fun markStoryViewed(storyId: String): Result<Int> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        // Section 9 item 9: the view mark is journaled BEFORE the wire and the
+        // row leaves ONLY on a confirmed ack (or a permanent refusal - the
+        // story expired/vanished), so dismissal and process death replay the
+        // same idempotent mark later instead of losing the seen-state.
+        val intent = runCatching {
+            section8Journal.enqueue(owner, "story-view", storyId, kotlinx.serialization.json.buildJsonObject { })
+        }.getOrNull()
         val result = ownedAccountRequest(typedFailure = true) { api.markStoryViewed(storyId, it) }.map { it.viewCount }
+        if (intent != null) {
+            if (result.isSuccess) {
+                section8Journal.confirm(owner, intent.clientId)
+            } else {
+                val kind = (result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.kind
+                if (kind in setOf("NOT_FOUND", "FORBIDDEN", "VALIDATION")) section8Journal.confirm(owner, intent.clientId)
+            }
+        }
         result.getOrNull()?.let { count ->
             try { storySnapshots.viewed("stories:$owner", storyId, count) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
                 android.util.Log.w("PulseStories", "Confirmed view could not be persisted in the story cache")
@@ -4309,20 +4391,48 @@ class PulseRepositoryImpl constructor(
         return result
     }
 
-    override suspend fun storyViewers(storyId: String): Result<List<StoryViewer>> =
-        ownedAccountRequest(typedFailure = true) { api.storyViewers(storyId, it) }.map { page ->
-            page.viewers.map { StoryViewer(it.userId, it.name, it.username, it.color, it.viewedAt) }
+    override suspend fun storyViewers(storyId: String): Result<List<StoryViewer>> {
+        // Section 9 item 2: the owner sheet walks bounded viewer pages to
+        // completion; a huge audience never lands in one unbounded response.
+        var cursor: String? = null
+        val viewers = mutableListOf<StoryViewer>()
+        var pages = 0
+        while (pages < STORY_VIEWERS_WALK_MAX) {
+            val pageResult = ownedAccountRequest(typedFailure = true) { api.storyViewersPage(storyId, it, STORY_VIEWERS_PAGE_LIMIT, cursor) }
+            val dto = pageResult.getOrNull()
+            if (dto == null) return Result.failure(pageResult.exceptionOrNull() ?: IllegalStateException("Viewer page was not confirmed"))
+            viewers += dto.viewers.map { StoryViewer(it.userId, it.name, it.username, it.color, it.viewedAt) }
+            pages++
+            if (!dto.hasMore) break
+            cursor = dto.nextCursor ?: break
         }
+        return Result.success(viewers)
+    }
 
     override suspend fun deleteStory(storyId: String): Result<Unit> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        // Section 9 item 5: the delete intent is durable. The journal row
+        // leaves ONLY after BOTH the server ack AND the local cache purge
+        // persisted - a broken/full disk keeps the tombstone so the restore
+        // flush re-runs the purge (the server replay 404s safely on a story
+        // that is already gone).
+        val intent = runCatching {
+            section8Journal.enqueue(owner, "story-delete", storyId, kotlinx.serialization.json.buildJsonObject { })
+        }.getOrNull()
         val result = ownedAccountRequest(typedFailure = true) { api.deleteStory(storyId, it) }
         if (result.isSuccess) {
+            var cachePersisted = true
             try { storySnapshots.remove("stories:$owner", storyId) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) {
                 // The server deletion is confirmed. Keep the in-memory tombstone and
                 // avoid reporting a false server failure if local persistence is unavailable.
                 android.util.Log.w("PulseStories", "Confirmed deletion could not be persisted in the story cache")
+                cachePersisted = false
             }
+            if (cachePersisted) intent?.let { section8Journal.confirm(owner, it.clientId) }
+        } else {
+            val kind = (result.exceptionOrNull() as? app.pulse.domain.model.PulseApiException)?.kind
+            // Already deleted/never visible = the deletion is the truth; retire the row.
+            if (kind in setOf("NOT_FOUND", "FORBIDDEN", "VALIDATION")) intent?.let { section8Journal.confirm(owner, it.clientId) }
         }
         return result.map { Unit }
     }

@@ -7595,6 +7595,7 @@ export namespace Prisma {
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
+    storyViewReceipts: boolean | null
     sessionTokenHash: string | null
     legacyTokenHashes: string | null
     createdAt: Date | null
@@ -7615,6 +7616,7 @@ export namespace Prisma {
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
+    storyViewReceipts: boolean | null
     sessionTokenHash: string | null
     legacyTokenHashes: string | null
     createdAt: Date | null
@@ -7635,6 +7637,7 @@ export namespace Prisma {
     statusEmoji: number
     statusText: number
     preferences: number
+    storyViewReceipts: number
     sessionTokenHash: number
     legacyTokenHashes: number
     createdAt: number
@@ -7667,6 +7670,7 @@ export namespace Prisma {
     statusEmoji?: true
     statusText?: true
     preferences?: true
+    storyViewReceipts?: true
     sessionTokenHash?: true
     legacyTokenHashes?: true
     createdAt?: true
@@ -7687,6 +7691,7 @@ export namespace Prisma {
     statusEmoji?: true
     statusText?: true
     preferences?: true
+    storyViewReceipts?: true
     sessionTokenHash?: true
     legacyTokenHashes?: true
     createdAt?: true
@@ -7707,6 +7712,7 @@ export namespace Prisma {
     statusEmoji?: true
     statusText?: true
     preferences?: true
+    storyViewReceipts?: true
     sessionTokenHash?: true
     legacyTokenHashes?: true
     createdAt?: true
@@ -7814,6 +7820,7 @@ export namespace Prisma {
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
+    storyViewReceipts: boolean
     sessionTokenHash: string | null
     legacyTokenHashes: string | null
     createdAt: Date
@@ -7853,6 +7860,7 @@ export namespace Prisma {
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
+    storyViewReceipts?: boolean
     sessionTokenHash?: boolean
     legacyTokenHashes?: boolean
     createdAt?: boolean
@@ -7896,6 +7904,7 @@ export namespace Prisma {
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
+    storyViewReceipts?: boolean
     sessionTokenHash?: boolean
     legacyTokenHashes?: boolean
     createdAt?: boolean
@@ -7916,6 +7925,7 @@ export namespace Prisma {
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
+    storyViewReceipts?: boolean
     sessionTokenHash?: boolean
     legacyTokenHashes?: boolean
     createdAt?: boolean
@@ -7936,6 +7946,7 @@ export namespace Prisma {
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
+    storyViewReceipts?: boolean
     sessionTokenHash?: boolean
     legacyTokenHashes?: boolean
     createdAt?: boolean
@@ -7945,7 +7956,7 @@ export namespace Prisma {
     xpDay?: boolean
   }
 
-  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "coverImage" | "statusEmoji" | "statusText" | "preferences" | "sessionTokenHash" | "legacyTokenHashes" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
+  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "coverImage" | "statusEmoji" | "statusText" | "preferences" | "storyViewReceipts" | "sessionTokenHash" | "legacyTokenHashes" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
   export type UserInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     appInstalls?: boolean | User$appInstallsArgs<ExtArgs>
     wallet?: boolean | User$walletArgs<ExtArgs>
@@ -8011,6 +8022,7 @@ export namespace Prisma {
       statusEmoji: string | null
       statusText: string | null
       preferences: string | null
+      storyViewReceipts: boolean
       sessionTokenHash: string | null
       legacyTokenHashes: string | null
       createdAt: Date
@@ -8473,6 +8485,7 @@ export namespace Prisma {
     readonly statusEmoji: FieldRef<"User", 'String'>
     readonly statusText: FieldRef<"User", 'String'>
     readonly preferences: FieldRef<"User", 'String'>
+    readonly storyViewReceipts: FieldRef<"User", 'Boolean'>
     readonly sessionTokenHash: FieldRef<"User", 'String'>
     readonly legacyTokenHashes: FieldRef<"User", 'String'>
     readonly createdAt: FieldRef<"User", 'DateTime'>
@@ -28454,6 +28467,7 @@ export namespace Prisma {
     background: string | null
     createdAt: Date | null
     expiresAt: Date | null
+    clientId: string | null
   }
 
   export type StatusStoryMaxAggregateOutputType = {
@@ -28464,6 +28478,7 @@ export namespace Prisma {
     background: string | null
     createdAt: Date | null
     expiresAt: Date | null
+    clientId: string | null
   }
 
   export type StatusStoryCountAggregateOutputType = {
@@ -28474,6 +28489,7 @@ export namespace Prisma {
     background: number
     createdAt: number
     expiresAt: number
+    clientId: number
     _all: number
   }
 
@@ -28486,6 +28502,7 @@ export namespace Prisma {
     background?: true
     createdAt?: true
     expiresAt?: true
+    clientId?: true
   }
 
   export type StatusStoryMaxAggregateInputType = {
@@ -28496,6 +28513,7 @@ export namespace Prisma {
     background?: true
     createdAt?: true
     expiresAt?: true
+    clientId?: true
   }
 
   export type StatusStoryCountAggregateInputType = {
@@ -28506,6 +28524,7 @@ export namespace Prisma {
     background?: true
     createdAt?: true
     expiresAt?: true
+    clientId?: true
     _all?: true
   }
 
@@ -28589,6 +28608,7 @@ export namespace Prisma {
     background: string
     createdAt: Date
     expiresAt: Date
+    clientId: string | null
     _count: StatusStoryCountAggregateOutputType | null
     _min: StatusStoryMinAggregateOutputType | null
     _max: StatusStoryMaxAggregateOutputType | null
@@ -28616,6 +28636,7 @@ export namespace Prisma {
     background?: boolean
     createdAt?: boolean
     expiresAt?: boolean
+    clientId?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
     views?: boolean | StatusStory$viewsArgs<ExtArgs>
     _count?: boolean | StatusStoryCountOutputTypeDefaultArgs<ExtArgs>
@@ -28629,6 +28650,7 @@ export namespace Prisma {
     background?: boolean
     createdAt?: boolean
     expiresAt?: boolean
+    clientId?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["statusStory"]>
 
@@ -28640,6 +28662,7 @@ export namespace Prisma {
     background?: boolean
     createdAt?: boolean
     expiresAt?: boolean
+    clientId?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["statusStory"]>
 
@@ -28651,9 +28674,10 @@ export namespace Prisma {
     background?: boolean
     createdAt?: boolean
     expiresAt?: boolean
+    clientId?: boolean
   }
 
-  export type StatusStoryOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "imagePath" | "caption" | "background" | "createdAt" | "expiresAt", ExtArgs["result"]["statusStory"]>
+  export type StatusStoryOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "imagePath" | "caption" | "background" | "createdAt" | "expiresAt" | "clientId", ExtArgs["result"]["statusStory"]>
   export type StatusStoryInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
     views?: boolean | StatusStory$viewsArgs<ExtArgs>
@@ -28680,6 +28704,7 @@ export namespace Prisma {
       background: string
       createdAt: Date
       expiresAt: Date
+      clientId: string | null
     }, ExtArgs["result"]["statusStory"]>
     composites: {}
   }
@@ -29112,6 +29137,7 @@ export namespace Prisma {
     readonly background: FieldRef<"StatusStory", 'String'>
     readonly createdAt: FieldRef<"StatusStory", 'DateTime'>
     readonly expiresAt: FieldRef<"StatusStory", 'DateTime'>
+    readonly clientId: FieldRef<"StatusStory", 'String'>
   }
     
 
@@ -79949,6 +79975,7 @@ export namespace Prisma {
     statusEmoji: 'statusEmoji',
     statusText: 'statusText',
     preferences: 'preferences',
+    storyViewReceipts: 'storyViewReceipts',
     sessionTokenHash: 'sessionTokenHash',
     legacyTokenHashes: 'legacyTokenHashes',
     createdAt: 'createdAt',
@@ -80192,7 +80219,8 @@ export namespace Prisma {
     caption: 'caption',
     background: 'background',
     createdAt: 'createdAt',
-    expiresAt: 'expiresAt'
+    expiresAt: 'expiresAt',
+    clientId: 'clientId'
   };
 
   export type StatusStoryScalarFieldEnum = (typeof StatusStoryScalarFieldEnum)[keyof typeof StatusStoryScalarFieldEnum]
@@ -80804,6 +80832,13 @@ export namespace Prisma {
 
 
   /**
+   * Reference to a field of type 'Boolean'
+   */
+  export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
+    
+
+
+  /**
    * Reference to a field of type 'DateTime'
    */
   export type DateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime'>
@@ -80814,13 +80849,6 @@ export namespace Prisma {
    * Reference to a field of type 'Int'
    */
   export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
-    
-
-
-  /**
-   * Reference to a field of type 'Boolean'
-   */
-  export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
     
 
 
@@ -80862,6 +80890,7 @@ export namespace Prisma {
     statusEmoji?: StringNullableFilter<"User"> | string | null
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
+    storyViewReceipts?: BoolFilter<"User"> | boolean
     sessionTokenHash?: StringNullableFilter<"User"> | string | null
     legacyTokenHashes?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
@@ -80904,6 +80933,7 @@ export namespace Prisma {
     statusEmoji?: SortOrderInput | SortOrder
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
+    storyViewReceipts?: SortOrder
     sessionTokenHash?: SortOrderInput | SortOrder
     legacyTokenHashes?: SortOrderInput | SortOrder
     createdAt?: SortOrder
@@ -80949,6 +80979,7 @@ export namespace Prisma {
     statusEmoji?: StringNullableFilter<"User"> | string | null
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
+    storyViewReceipts?: BoolFilter<"User"> | boolean
     sessionTokenHash?: StringNullableFilter<"User"> | string | null
     legacyTokenHashes?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
@@ -80991,6 +81022,7 @@ export namespace Prisma {
     statusEmoji?: SortOrderInput | SortOrder
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
+    storyViewReceipts?: SortOrder
     sessionTokenHash?: SortOrderInput | SortOrder
     legacyTokenHashes?: SortOrderInput | SortOrder
     createdAt?: SortOrder
@@ -81019,6 +81051,7 @@ export namespace Prisma {
     statusEmoji?: StringNullableWithAggregatesFilter<"User"> | string | null
     statusText?: StringNullableWithAggregatesFilter<"User"> | string | null
     preferences?: StringNullableWithAggregatesFilter<"User"> | string | null
+    storyViewReceipts?: BoolWithAggregatesFilter<"User"> | boolean
     sessionTokenHash?: StringNullableWithAggregatesFilter<"User"> | string | null
     legacyTokenHashes?: StringNullableWithAggregatesFilter<"User"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
@@ -82220,6 +82253,7 @@ export namespace Prisma {
     background?: StringFilter<"StatusStory"> | string
     createdAt?: DateTimeFilter<"StatusStory"> | Date | string
     expiresAt?: DateTimeFilter<"StatusStory"> | Date | string
+    clientId?: StringNullableFilter<"StatusStory"> | string | null
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     views?: StoryViewListRelationFilter
   }
@@ -82232,12 +82266,14 @@ export namespace Prisma {
     background?: SortOrder
     createdAt?: SortOrder
     expiresAt?: SortOrder
+    clientId?: SortOrderInput | SortOrder
     user?: UserOrderByWithRelationInput
     views?: StoryViewOrderByRelationAggregateInput
   }
 
   export type StatusStoryWhereUniqueInput = Prisma.AtLeast<{
     id?: string
+    userId_clientId?: StatusStoryUserIdClientIdCompoundUniqueInput
     AND?: StatusStoryWhereInput | StatusStoryWhereInput[]
     OR?: StatusStoryWhereInput[]
     NOT?: StatusStoryWhereInput | StatusStoryWhereInput[]
@@ -82247,9 +82283,10 @@ export namespace Prisma {
     background?: StringFilter<"StatusStory"> | string
     createdAt?: DateTimeFilter<"StatusStory"> | Date | string
     expiresAt?: DateTimeFilter<"StatusStory"> | Date | string
+    clientId?: StringNullableFilter<"StatusStory"> | string | null
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
     views?: StoryViewListRelationFilter
-  }, "id">
+  }, "id" | "userId_clientId">
 
   export type StatusStoryOrderByWithAggregationInput = {
     id?: SortOrder
@@ -82259,6 +82296,7 @@ export namespace Prisma {
     background?: SortOrder
     createdAt?: SortOrder
     expiresAt?: SortOrder
+    clientId?: SortOrderInput | SortOrder
     _count?: StatusStoryCountOrderByAggregateInput
     _max?: StatusStoryMaxOrderByAggregateInput
     _min?: StatusStoryMinOrderByAggregateInput
@@ -82275,6 +82313,7 @@ export namespace Prisma {
     background?: StringWithAggregatesFilter<"StatusStory"> | string
     createdAt?: DateTimeWithAggregatesFilter<"StatusStory"> | Date | string
     expiresAt?: DateTimeWithAggregatesFilter<"StatusStory"> | Date | string
+    clientId?: StringNullableWithAggregatesFilter<"StatusStory"> | string | null
   }
 
   export type StoryViewWhereInput = {
@@ -85253,6 +85292,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -85295,6 +85335,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -85337,6 +85378,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -85379,6 +85421,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -85421,6 +85464,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -85441,6 +85485,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -85461,6 +85506,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -86714,6 +86760,7 @@ export namespace Prisma {
     background?: string
     createdAt?: Date | string
     expiresAt: Date | string
+    clientId?: string | null
     user: UserCreateNestedOneWithoutStoriesInput
     views?: StoryViewCreateNestedManyWithoutStoryInput
   }
@@ -86726,6 +86773,7 @@ export namespace Prisma {
     background?: string
     createdAt?: Date | string
     expiresAt: Date | string
+    clientId?: string | null
     views?: StoryViewUncheckedCreateNestedManyWithoutStoryInput
   }
 
@@ -86736,6 +86784,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutStoriesNestedInput
     views?: StoryViewUpdateManyWithoutStoryNestedInput
   }
@@ -86748,6 +86797,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
     views?: StoryViewUncheckedUpdateManyWithoutStoryNestedInput
   }
 
@@ -86759,6 +86809,7 @@ export namespace Prisma {
     background?: string
     createdAt?: Date | string
     expiresAt: Date | string
+    clientId?: string | null
   }
 
   export type StatusStoryUpdateManyMutationInput = {
@@ -86768,6 +86819,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type StatusStoryUncheckedUpdateManyInput = {
@@ -86778,6 +86830,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type StoryViewCreateInput = {
@@ -89902,6 +89955,11 @@ export namespace Prisma {
     not?: NestedStringNullableFilter<$PrismaModel> | string | null
   }
 
+  export type BoolFilter<$PrismaModel = never> = {
+    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
+    not?: NestedBoolFilter<$PrismaModel> | boolean
+  }
+
   export type DateTimeFilter<$PrismaModel = never> = {
     equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
     in?: Date[] | string[]
@@ -90125,6 +90183,7 @@ export namespace Prisma {
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
+    storyViewReceipts?: SortOrder
     sessionTokenHash?: SortOrder
     legacyTokenHashes?: SortOrder
     createdAt?: SortOrder
@@ -90150,6 +90209,7 @@ export namespace Prisma {
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
+    storyViewReceipts?: SortOrder
     sessionTokenHash?: SortOrder
     legacyTokenHashes?: SortOrder
     createdAt?: SortOrder
@@ -90170,6 +90230,7 @@ export namespace Prisma {
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
+    storyViewReceipts?: SortOrder
     sessionTokenHash?: SortOrder
     legacyTokenHashes?: SortOrder
     createdAt?: SortOrder
@@ -90216,6 +90277,14 @@ export namespace Prisma {
     _count?: NestedIntNullableFilter<$PrismaModel>
     _min?: NestedStringNullableFilter<$PrismaModel>
     _max?: NestedStringNullableFilter<$PrismaModel>
+  }
+
+  export type BoolWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
+    not?: NestedBoolWithAggregatesFilter<$PrismaModel> | boolean
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedBoolFilter<$PrismaModel>
+    _max?: NestedBoolFilter<$PrismaModel>
   }
 
   export type DateTimeWithAggregatesFilter<$PrismaModel = never> = {
@@ -90737,11 +90806,6 @@ export namespace Prisma {
     position?: SortOrder
   }
 
-  export type BoolFilter<$PrismaModel = never> = {
-    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
-    not?: NestedBoolFilter<$PrismaModel> | boolean
-  }
-
   export type ScheduledMessageListRelationFilter = {
     every?: ScheduledMessageWhereInput
     some?: ScheduledMessageWhereInput
@@ -90889,14 +90953,6 @@ export namespace Prisma {
     metadataRev?: SortOrder
     ttlSeconds?: SortOrder
     slowModeSeconds?: SortOrder
-  }
-
-  export type BoolWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
-    not?: NestedBoolWithAggregatesFilter<$PrismaModel> | boolean
-    _count?: NestedIntFilter<$PrismaModel>
-    _min?: NestedBoolFilter<$PrismaModel>
-    _max?: NestedBoolFilter<$PrismaModel>
   }
 
   export type ConversationScalarRelationFilter = {
@@ -91053,6 +91109,11 @@ export namespace Prisma {
     _count?: SortOrder
   }
 
+  export type StatusStoryUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
   export type StatusStoryCountOrderByAggregateInput = {
     id?: SortOrder
     userId?: SortOrder
@@ -91061,6 +91122,7 @@ export namespace Prisma {
     background?: SortOrder
     createdAt?: SortOrder
     expiresAt?: SortOrder
+    clientId?: SortOrder
   }
 
   export type StatusStoryMaxOrderByAggregateInput = {
@@ -91071,6 +91133,7 @@ export namespace Prisma {
     background?: SortOrder
     createdAt?: SortOrder
     expiresAt?: SortOrder
+    clientId?: SortOrder
   }
 
   export type StatusStoryMinOrderByAggregateInput = {
@@ -91081,6 +91144,7 @@ export namespace Prisma {
     background?: SortOrder
     createdAt?: SortOrder
     expiresAt?: SortOrder
+    clientId?: SortOrder
   }
 
   export type StatusStoryScalarRelationFilter = {
@@ -93267,6 +93331,10 @@ export namespace Prisma {
     set?: string | null
   }
 
+  export type BoolFieldUpdateOperationsInput = {
+    set?: boolean
+  }
+
   export type DateTimeFieldUpdateOperationsInput = {
     set?: Date | string
   }
@@ -94257,10 +94325,6 @@ export namespace Prisma {
     connectOrCreate?: AutomationCreateOrConnectWithoutConversationInput | AutomationCreateOrConnectWithoutConversationInput[]
     createMany?: AutomationCreateManyConversationInputEnvelope
     connect?: AutomationWhereUniqueInput | AutomationWhereUniqueInput[]
-  }
-
-  export type BoolFieldUpdateOperationsInput = {
-    set?: boolean
   }
 
   export type ConversationParticipantUpdateManyWithoutConversationNestedInput = {
@@ -95975,6 +96039,11 @@ export namespace Prisma {
     not?: NestedStringNullableFilter<$PrismaModel> | string | null
   }
 
+  export type NestedBoolFilter<$PrismaModel = never> = {
+    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
+    not?: NestedBoolFilter<$PrismaModel> | boolean
+  }
+
   export type NestedDateTimeFilter<$PrismaModel = never> = {
     equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
     in?: Date[] | string[]
@@ -96042,6 +96111,14 @@ export namespace Prisma {
     not?: NestedIntNullableFilter<$PrismaModel> | number | null
   }
 
+  export type NestedBoolWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
+    not?: NestedBoolWithAggregatesFilter<$PrismaModel> | boolean
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedBoolFilter<$PrismaModel>
+    _max?: NestedBoolFilter<$PrismaModel>
+  }
+
   export type NestedDateTimeWithAggregatesFilter<$PrismaModel = never> = {
     equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
     in?: Date[] | string[]
@@ -96106,19 +96183,6 @@ export namespace Prisma {
     _count?: NestedIntNullableFilter<$PrismaModel>
     _min?: NestedDateTimeNullableFilter<$PrismaModel>
     _max?: NestedDateTimeNullableFilter<$PrismaModel>
-  }
-
-  export type NestedBoolFilter<$PrismaModel = never> = {
-    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
-    not?: NestedBoolFilter<$PrismaModel> | boolean
-  }
-
-  export type NestedBoolWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
-    not?: NestedBoolWithAggregatesFilter<$PrismaModel> | boolean
-    _count?: NestedIntFilter<$PrismaModel>
-    _min?: NestedBoolFilter<$PrismaModel>
-    _max?: NestedBoolFilter<$PrismaModel>
   }
 
   export type NestedFloatWithAggregatesFilter<$PrismaModel = never> = {
@@ -96605,6 +96669,7 @@ export namespace Prisma {
     background?: string
     createdAt?: Date | string
     expiresAt: Date | string
+    clientId?: string | null
     views?: StoryViewCreateNestedManyWithoutStoryInput
   }
 
@@ -96615,6 +96680,7 @@ export namespace Prisma {
     background?: string
     createdAt?: Date | string
     expiresAt: Date | string
+    clientId?: string | null
     views?: StoryViewUncheckedCreateNestedManyWithoutStoryInput
   }
 
@@ -97249,6 +97315,7 @@ export namespace Prisma {
     background?: StringFilter<"StatusStory"> | string
     createdAt?: DateTimeFilter<"StatusStory"> | Date | string
     expiresAt?: DateTimeFilter<"StatusStory"> | Date | string
+    clientId?: StringNullableFilter<"StatusStory"> | string | null
   }
 
   export type FolderUpsertWithWhereUniqueWithoutUserInput = {
@@ -97525,6 +97592,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -97566,6 +97634,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -97612,6 +97681,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -97653,6 +97723,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -97710,6 +97781,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -97751,6 +97823,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -97803,6 +97876,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -97844,6 +97918,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -97885,6 +97960,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -97926,6 +98002,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -97972,6 +98049,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98013,6 +98091,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98070,6 +98149,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98111,6 +98191,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98163,6 +98244,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98204,6 +98286,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98245,6 +98328,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98286,6 +98370,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98343,6 +98428,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98384,6 +98470,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98425,6 +98512,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98466,6 +98554,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98523,6 +98612,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98564,6 +98654,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98605,6 +98696,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98646,6 +98738,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98703,6 +98796,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98744,6 +98838,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98785,6 +98880,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98826,6 +98922,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -98883,6 +98980,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98924,6 +99022,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -98965,6 +99064,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99006,6 +99106,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99063,6 +99164,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99104,6 +99206,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99145,6 +99248,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99186,6 +99290,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99243,6 +99348,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99284,6 +99390,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99325,6 +99432,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99366,6 +99474,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99423,6 +99532,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99464,6 +99574,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99505,6 +99616,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99546,6 +99658,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99592,6 +99705,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99633,6 +99747,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99690,6 +99805,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99731,6 +99847,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99783,6 +99900,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99824,6 +99942,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -99865,6 +99984,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99906,6 +100026,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -99963,6 +100084,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -100004,6 +100126,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -100045,6 +100168,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -100086,6 +100210,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -100143,6 +100268,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -100184,6 +100310,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -100987,6 +101114,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -101028,6 +101156,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -101154,6 +101283,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -101195,6 +101325,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -101368,6 +101499,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -101409,6 +101541,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -101487,6 +101620,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -101528,6 +101662,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -101591,6 +101726,7 @@ export namespace Prisma {
     background?: string
     createdAt?: Date | string
     expiresAt: Date | string
+    clientId?: string | null
     user: UserCreateNestedOneWithoutStoriesInput
   }
 
@@ -101602,6 +101738,7 @@ export namespace Prisma {
     background?: string
     createdAt?: Date | string
     expiresAt: Date | string
+    clientId?: string | null
   }
 
   export type StatusStoryCreateOrConnectWithoutViewsInput = {
@@ -101627,6 +101764,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutStoriesNestedInput
   }
 
@@ -101638,6 +101776,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type UserCreateWithoutParticipationsInput = {
@@ -101651,6 +101790,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -101692,6 +101832,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -101846,6 +101987,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -101887,6 +102029,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -102042,6 +102185,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -102083,6 +102227,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -102747,6 +102892,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -102788,6 +102934,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -103697,6 +103844,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -103738,6 +103886,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -103882,6 +104031,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -103923,6 +104073,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -104895,6 +105046,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -104936,6 +105088,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -105014,6 +105167,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -105055,6 +105209,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -105504,6 +105659,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -105545,6 +105701,7 @@ export namespace Prisma {
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
+    storyViewReceipts?: boolean
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     createdAt?: Date | string
@@ -105635,6 +105792,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -105676,6 +105834,7 @@ export namespace Prisma {
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
+    storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
@@ -107093,6 +107252,7 @@ export namespace Prisma {
     background?: string
     createdAt?: Date | string
     expiresAt: Date | string
+    clientId?: string | null
   }
 
   export type FolderCreateManyUserInput = {
@@ -107561,6 +107721,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
     views?: StoryViewUpdateManyWithoutStoryNestedInput
   }
 
@@ -107571,6 +107732,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
     views?: StoryViewUncheckedUpdateManyWithoutStoryNestedInput
   }
 
@@ -107581,6 +107743,7 @@ export namespace Prisma {
     background?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    clientId?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type FolderUpdateWithoutUserInput = {

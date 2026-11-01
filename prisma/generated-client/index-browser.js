@@ -129,6 +129,7 @@ exports.Prisma.UserScalarFieldEnum = {
   statusEmoji: 'statusEmoji',
   statusText: 'statusText',
   preferences: 'preferences',
+  storyViewReceipts: 'storyViewReceipts',
   sessionTokenHash: 'sessionTokenHash',
   legacyTokenHashes: 'legacyTokenHashes',
   createdAt: 'createdAt',
@@ -318,7 +319,8 @@ exports.Prisma.StatusStoryScalarFieldEnum = {
   caption: 'caption',
   background: 'background',
   createdAt: 'createdAt',
-  expiresAt: 'expiresAt'
+  expiresAt: 'expiresAt',
+  clientId: 'clientId'
 };
 
 exports.Prisma.StoryViewScalarFieldEnum = {

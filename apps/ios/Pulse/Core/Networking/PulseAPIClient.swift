@@ -1195,18 +1195,53 @@ public struct PulseAPIClient: Sendable {
     /// → 201 { story }. Text stories carry `background` (one of the 8 palette
     /// keys); photo stories carry `imagePath` (from /api/uploads) - the server
     /// forces "emerald" for image stories, so it is never sent.
-    public func postStory(caption: String, background: String?, imagePath: String?) async throws -> WireStoryItem {
+    /// Section 9 item 1: `clientId` is the durable publication identity the
+    /// caller journaled BEFORE calling - a lost-ACK retry reuses the SAME
+    /// value and the server answers with the SAME story (replayed=true)
+    /// instead of duplicating. Nil keeps the legacy identity-less path.
+    public func postStory(caption: String, background: String?, imagePath: String?, clientId: String? = nil) async throws -> WireStoryItem {
         var body: [String: Any] = ["requesterId": userId]
         let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { body["caption"] = trimmed }
         if let background { body["background"] = background }
         if let imagePath { body["imagePath"] = imagePath }
+        if let clientId { body["clientId"] = clientId }
         let data = try await postRaw("/api/stories", body: body)
         let created = try decoder.decode(WireStoryCreated.self, from: data)
         guard let story = created.story, let id = story.id, !id.isEmpty else {
             throw Failure(kind: .validation, message: "Story response missing the created story")
         }
         return story
+    }
+
+    // Section 9 item 2 - bounded keyset pages (limit/cursor ride the query).
+
+    /// One feed page: `limit` (1..60) story rows newest-first; `nil` cursor
+    /// opens the walk. Continuation contract: hasMore ⇒ nextCursor non-empty.
+    public func storiesPage(limit: Int, cursor: String?) async throws -> WireStoriesPage {
+        var path = "/api/stories?requesterId=\(Self.queryEncoded(userId))&limit=\(limit)"
+        if let cursor { path += "&cursor=\(Self.queryEncoded(cursor))" }
+        let page: WireStoriesPage = try await get(path, as: WireStoriesPage.self)
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return a story feed cursor.")
+        }
+        return page
+    }
+
+    /// One owner-viewer page: `limit` (1..100) viewer rows oldest-first.
+    public func storyViewersPage(id: String, limit: Int, cursor: String?) async throws -> WireStoryViewersPage {
+        var path = "/api/stories/\(id)/view?requesterId=\(Self.queryEncoded(userId))&limit=\(limit)"
+        if let cursor { path += "&cursor=\(Self.queryEncoded(cursor))" }
+        let page: WireStoryViewersPage = try await get(path, as: WireStoryViewersPage.self)
+        guard let viewers = page.viewers,
+              viewers.allSatisfy({ !($0.userId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(viewers.compactMap(\.userId)).count == viewers.count else {
+            throw Failure(kind: .server, message: "The gateway did not return a valid viewers list.")
+        }
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return a viewers cursor.")
+        }
+        return page
     }
 
     /// POST /api/stories/{id}/view { requesterId } - idempotent view mark

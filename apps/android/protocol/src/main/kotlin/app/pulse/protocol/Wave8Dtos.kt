@@ -38,6 +38,10 @@ data class WirePulsePrefs(
     val lastSeenVisible: Boolean? = null,
     /** Send read receipts (privacy - server-enforced). */
     val readReceipts: Boolean? = null,
+    /** Section 9 item 3: disclose STORY view receipts to story authors
+     * (privacy - server-enforced; off = view without ever appearing in the
+     * author's viewer list or counts). */
+    val storyViewReceipts: Boolean? = null,
     /** Broadcast typing indicators (privacy - server-enforced). */
     val typingVisible: Boolean? = null,
     /** Reduce non-essential motion (effects/parallax) app-wide. */
@@ -84,6 +88,7 @@ fun WirePulsePrefs.toPatchJson(userId: String): JsonObject {
     prefs.notifVibrate?.let { patch["notifVibrate"] = JsonPrimitive(it) }
     prefs.lastSeenVisible?.let { patch["lastSeenVisible"] = JsonPrimitive(it) }
     prefs.readReceipts?.let { patch["readReceipts"] = JsonPrimitive(it) }
+    prefs.storyViewReceipts?.let { patch["storyViewReceipts"] = JsonPrimitive(it) }
     prefs.typingVisible?.let { patch["typingVisible"] = JsonPrimitive(it) }
     prefs.reducedMotion?.let { patch["reducedMotion"] = JsonPrimitive(it) }
     prefs.fxWebglMode?.let { patch["fx.webglMode"] = JsonPrimitive(it) }
@@ -95,7 +100,7 @@ fun WirePulsePrefs.toPatchJson(userId: String): JsonObject {
 fun JsonObject.toWirePrefsOrNull(): WirePulsePrefs? = runCatching {
     // kotlinx.serialization accepts quoted booleans. They are not boolean
     // acknowledgements under this API's contract; reject rather than opt in.
-    for (key in listOf("notifPreviews", "notifSound", "notifVibrate", "lastSeenVisible", "readReceipts", "typingVisible", "reducedMotion")) {
+    for (key in listOf("notifPreviews", "notifSound", "notifVibrate", "lastSeenVisible", "readReceipts", "storyViewReceipts", "typingVisible", "reducedMotion")) {
         val value = this[key]
         if (value != null && value != kotlinx.serialization.json.JsonNull) {
             require(value is JsonPrimitive && !value.isString && value.booleanOrNull != null) { "Invalid settings boolean" }

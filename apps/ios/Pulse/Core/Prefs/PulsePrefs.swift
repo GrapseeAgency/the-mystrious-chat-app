@@ -209,6 +209,8 @@ public struct PulsePrefsValues: Equatable, Sendable {
     public var notifVibrate = false
     public var lastSeenVisible = true
     public var readReceipts = true
+    /// Section 9 item 3: story-view receipt disclosure (default on).
+    public var storyViewReceipts = true
     public var typingVisible = true
     public var reducedMotion = false
 
@@ -221,6 +223,7 @@ public struct PulsePrefsValues: Equatable, Sendable {
         notifVibrate: Bool = false,
         lastSeenVisible: Bool = true,
         readReceipts: Bool = true,
+        storyViewReceipts: Bool = true,
         typingVisible: Bool = true,
         reducedMotion: Bool = false
     ) {
@@ -232,6 +235,7 @@ public struct PulsePrefsValues: Equatable, Sendable {
         self.notifVibrate = notifVibrate
         self.lastSeenVisible = lastSeenVisible
         self.readReceipts = readReceipts
+        self.storyViewReceipts = storyViewReceipts
         self.typingVisible = typingVisible
         self.reducedMotion = reducedMotion
     }
@@ -267,6 +271,8 @@ public final class PulsePrefs: ObservableObject {
     public static let notifVibrateKey = "prefs.notifVibrate"
     public static let lastSeenVisibleKey = "prefs.lastSeenVisible"
     public static let readReceiptsKey = "prefs.readReceipts"
+    /// Section 9 item 3 - story-view receipt disclosure.
+    public static let storyViewReceiptsKey = "prefs.storyViewReceipts"
     public static let typingVisibleKey = "prefs.typingVisible"
     public static let reducedMotionKey = "prefs.reducedMotion"
     public static let quietHoursOnKey = "quiet.hoursOn"
@@ -354,6 +360,7 @@ public final class PulsePrefs: ObservableObject {
         notifVibrate = Self.bool(defaults, Self.notifVibrateKey, default: false)
         lastSeenVisible = Self.bool(defaults, Self.lastSeenVisibleKey, default: true)
         readReceipts = Self.bool(defaults, Self.readReceiptsKey, default: true)
+        storyViewReceipts = Self.bool(defaults, Self.storyViewReceiptsKey, default: true)
         typingVisible = Self.bool(defaults, Self.typingVisibleKey, default: true)
         reducedMotion = Self.bool(defaults, Self.reducedMotionKey, default: false)
         // Wave 8 - LOCAL quiet hours + haptics master (pulse.settings.v1
@@ -397,6 +404,7 @@ public final class PulsePrefs: ObservableObject {
     @Published public private(set) var notifVibrate: Bool
     @Published public private(set) var lastSeenVisible: Bool
     @Published public private(set) var readReceipts: Bool
+    @Published public private(set) var storyViewReceipts: Bool
     @Published public private(set) var typingVisible: Bool
     @Published public private(set) var reducedMotion: Bool
 
@@ -432,6 +440,7 @@ public final class PulsePrefs: ObservableObject {
             notifVibrate: notifVibrate,
             lastSeenVisible: lastSeenVisible,
             readReceipts: readReceipts,
+            storyViewReceipts: storyViewReceipts,
             typingVisible: typingVisible,
             reducedMotion: reducedMotion
         )
@@ -713,6 +722,14 @@ public final class PulsePrefs: ObservableObject {
         patch { $0.readReceipts = enabled }
     }
 
+    /// Section 9 item 3: story-view receipt disclosure (server-enforced).
+    public func setStoryViewReceipts(_ enabled: Bool) {
+        refreshSettingsOwner()
+        storyViewReceipts = enabled
+        defaults.set(enabled, forKey: Self.storyViewReceiptsKey)
+        patch { $0.storyViewReceipts = enabled }
+    }
+
     public func setTypingVisible(_ enabled: Bool) {
         refreshSettingsOwner()
         typingVisible = enabled
@@ -825,6 +842,8 @@ public final class PulsePrefs: ObservableObject {
         defaults.set(merged.lastSeenVisible, forKey: Self.lastSeenVisibleKey)
         readReceipts = merged.readReceipts
         defaults.set(merged.readReceipts, forKey: Self.readReceiptsKey)
+        storyViewReceipts = merged.storyViewReceipts
+        defaults.set(merged.storyViewReceipts, forKey: Self.storyViewReceiptsKey)
         typingVisible = merged.typingVisible
         defaults.set(merged.typingVisible, forKey: Self.typingVisibleKey)
         reducedMotion = merged.reducedMotion
@@ -881,7 +900,8 @@ public final class PulsePrefs: ObservableObject {
         catch {
             // An unreadable journal may contain a privacy refusal. Never let a
             // cached opt-in outrank that unknown pending intent.
-            applyServer(WirePulsePrefs(notifPreviews: false, lastSeenVisible: false, readReceipts: false, typingVisible: false))
+            applyServer(WirePulsePrefs(notifPreviews: false, lastSeenVisible: false, readReceipts: false,
+                storyViewReceipts: false, typingVisible: false))
         }
     }
     private func persistSettingsSnapshot() {
@@ -889,7 +909,8 @@ public final class PulsePrefs: ObservableObject {
         let snapshot = WirePulsePrefs(bubbleRadius: bubbleRadius.rawValue, density: density.rawValue,
             wallpaper: wallpaper.rawValue, notifPreviews: notifPreviews, notifSound: notifSound,
             notifVibrate: notifVibrate, lastSeenVisible: lastSeenVisible, readReceipts: readReceipts,
-            typingVisible: typingVisible, reducedMotion: reducedMotion, convThemes: convThemes)
+            storyViewReceipts: storyViewReceipts, typingVisible: typingVisible,
+            reducedMotion: reducedMotion, convThemes: convThemes)
         if let data = try? JSONEncoder().encode(snapshot) { defaults.set(data, forKey: "pulse.settings.values.v1." + owner) }
     }
     func currentSettingsPatch(_ ticket: PulseSettingsTicket) throws -> WirePulsePrefs {

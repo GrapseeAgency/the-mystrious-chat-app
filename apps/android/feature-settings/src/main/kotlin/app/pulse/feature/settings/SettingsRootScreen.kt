@@ -988,6 +988,9 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
     SectionScaffold("Privacy & Security", onBack) {
         RowToggle("Last seen & online", "Everyone can see when you were last active. Server-enforced.", prefs.lastSeenVisible == true, viewModel::setLastSeenVisible)
         RowToggle("Read receipts", "Send and request read receipts.", prefs.readReceipts == true, viewModel::setReadReceipts)
+        // Section 9 item 3: story-specific read privacy - off means the user's
+        // story views NEVER disclose to authors (list, counts, receipts sheet).
+        RowToggle("Story view receipts", "Let others see when you view their status.", prefs.storyViewReceipts == true, viewModel::setStoryViewReceipts)
         RowToggle("Typing indicator", "Broadcast when you type. Server-enforced.", prefs.typingVisible == true, viewModel::setTypingVisible)
         HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
         // R10-a - biometric App lock (device-local). Turning it ON runs ONE

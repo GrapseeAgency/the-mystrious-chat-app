@@ -235,6 +235,8 @@ class SettingsViewModel @Inject constructor(
     fun setNotifVibrate(value: Boolean) = updatePrefs(WirePulsePrefs(notifVibrate = value))
     fun setLastSeenVisible(value: Boolean) = updatePrefs(WirePulsePrefs(lastSeenVisible = value))
     fun setReadReceipts(value: Boolean) = updatePrefs(WirePulsePrefs(readReceipts = value))
+    /** Section 9 item 3: story-view receipts disclosure (server-enforced). */
+    fun setStoryViewReceipts(value: Boolean) = updatePrefs(WirePulsePrefs(storyViewReceipts = value))
     fun setTypingVisible(value: Boolean) = updatePrefs(WirePulsePrefs(typingVisible = value))
 
     /**

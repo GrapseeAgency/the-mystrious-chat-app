@@ -984,16 +984,56 @@ class PulseApi(
     // Wave 4 stories - full native status surface (REST only, no sockets)
 
     /**
+     * Section 9 item 2: bounded feed page - `limit` (1..60) story rows
+     * newest-first with a (createdAt,id) keyset `cursor`. `null` cursor opens
+     * the walk. The receipt shape mirrors GET /api/stories plus nextCursor /
+     * hasMore (null/false on the final page).
+     */
+    suspend fun storiesPage(requesterId: String, limit: Int, cursor: String?): PulseResult<StoriesPageDto> {
+        var url = "/api/stories?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8") +
+            "&limit=" + limit
+        if (cursor != null) url += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(url) {
+            val page = PulseJson.decodeFromString(StoriesPageDto.serializer(), it)
+            if (page.hasMore && page.nextCursor.isNullOrBlank())
+                throw kotlinx.serialization.SerializationException("Story feed page missing its cursor")
+            page
+        }
+    }
+
+    /** Section 9 item 2: bounded owner-viewer page (limit 1..100, oldest-first keyset). */
+    suspend fun storyViewersPage(storyId: String, requesterId: String, limit: Int, cursor: String?): PulseResult<StoryViewersDto> {
+        var url = "/api/stories/$storyId/view?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8") +
+            "&limit=" + limit
+        if (cursor != null) url += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(url) {
+            val page = PulseJson.decodeFromString(StoryViewersDto.serializer(), it)
+            if (page.viewers.any { row -> row.userId.isBlank() } || page.viewers.map { row -> row.userId }.distinct().size != page.viewers.size)
+                throw kotlinx.serialization.SerializationException("Invalid viewers list")
+            if (page.hasMore && page.nextCursor.isNullOrBlank())
+                throw kotlinx.serialization.SerializationException("Viewers page missing its cursor")
+            page
+        }
+    }
+
+    /**
      * POST /api/stories { requesterId, caption?, background?, imagePath? } → 201 { story }.
      * Text mode sends caption + background (palette key), photo mode sends
      * imagePath (+ optional caption) - background is NEVER sent for photos
      * (the server forces "emerald" there and 400s on the combo).
+     */
+    /**
+     * Section 9 item 1: `clientId` is the durable publication identity the
+     * caller journaled BEFORE calling - a lost-ACK retry reuses the SAME value
+     * and the server answers with the SAME story (200 replayed=true) instead
+     * of duplicating. Null keeps the legacy identity-less publication.
      */
     suspend fun postStory(
         requesterId: String,
         caption: String? = null,
         background: String? = null,
         imagePath: String? = null,
+        clientId: String? = null,
     ): PulseResult<StoryCreatedDto> =
         post(
             "/api/stories",
@@ -1002,6 +1042,7 @@ class PulseApi(
                 if (!caption.isNullOrBlank()) put("caption", caption)
                 if (background != null && imagePath == null) put("background", background)
                 if (imagePath != null) put("imagePath", imagePath)
+                if (clientId != null) put("clientId", clientId)
             },
         ) {
             PulseJson.decodeFromString(StoryCreatedDto.serializer(), it)

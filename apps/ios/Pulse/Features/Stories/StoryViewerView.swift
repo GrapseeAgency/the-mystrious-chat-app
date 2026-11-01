@@ -404,11 +404,23 @@ struct StoryViewerView: View {
     private func markViewed(_ mark: StoryViewerMachine.PendingMark) async {
         guard !Task.isCancelled, session.sessionGeneration == ownerEpoch, !playbackBlocked else { return }
         let api = session.api
+        // Section 9 item 9: the mark is journaled BEFORE the wire and the row
+        // leaves ONLY on a confirmed ack (or a permanent refusal), so the
+        // retry lifetime outlives this viewer's dismissal AND process death.
+        let journal = PulseSection8Journal.shared
+        let intent = journal.enqueue(owner: api.userId, kind: "story-view", targetId: mark.storyId)
         do {
             let count = try await api.markStoryViewed(id: mark.storyId)
             guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
+            journal.confirm(owner: api.userId, clientId: intent.clientId)
             stories.markViewedLocally(storyId: mark.storyId, viewCount: count)
             machine.viewMarkOk(storyId: mark.storyId, viewCount: count)
+        } catch let failure as PulseAPIClient.Failure
+              where failure.kind == .notFound || failure.kind == .forbidden || failure.kind == .validation {
+            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
+            // The story expired/vanished: retire the tombstone honestly.
+            journal.confirm(owner: api.userId, clientId: intent.clientId)
+            machine.viewMarkFailed(storyId: mark.storyId)
         } catch {
             guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
             // Failure is not a receipt: keep retry bookkeeping in the viewer,

@@ -805,16 +805,25 @@ public struct WireStoryItem: Codable, Hashable, Sendable {
 
 public struct WireStoriesPage: Codable, Sendable {
     public let groups: [WireStoryGroup]?
+    // Section 9 item 2: (createdAt,id) keyset continuation. Legacy full feeds
+    // carry hasMore=false / nil cursor; paged walks append until hasMore=false.
+    public let nextCursor: String?
+    public let hasMore: Bool?
 }
 
-/// 201 POST /api/stories response - { story: StoryItem }.
+/// 201 POST /api/stories response - { story, replayed } (Section 9 item 1:
+/// replayed=true = the SAME journaled identity had already been accepted).
 public struct WireStoryCreated: Codable, Sendable {
     public let story: WireStoryItem?
+    public let replayed: Bool?
 }
 
-/// POST /api/stories/{id}/view response - { viewCount, owner? }.
+/// POST /api/stories/{id}/view response - { viewCount, receiptVisible, owner? }.
 public struct WireStoryViewCount: Codable, Sendable {
     public let viewCount: Int?
+    /// Section 9 item 3: whether THIS viewer's receipt discloses to the author
+    /// (their live storyViewReceipts privacy). Legacy acks decode as true.
+    public let receiptVisible: Bool?
     public let owner: Bool?
 }
 
@@ -827,9 +836,12 @@ public struct WireStoryViewer: Codable, Hashable, Sendable {
     public let viewedAt: String?
 }
 
-/// GET /api/stories/{id}/view response - { viewers: [...] }.
+/// GET /api/stories/{id}/view response - { viewers, nextCursor, hasMore }.
 public struct WireStoryViewersPage: Codable, Sendable {
     public let viewers: [WireStoryViewer]?
+    // Section 9 item 2: (createdAt,userId) keyset continuation for owner sheets.
+    public let nextCursor: String?
+    public let hasMore: Bool?
 }
 
 /// GET /api/folders?userId= - Signal/Beeper chat folders.

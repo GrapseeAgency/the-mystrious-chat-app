@@ -532,18 +532,31 @@ data class StoryGroupDto(
 @Serializable
 data class StoriesPageDto(
     val groups: List<StoryGroupDto> = emptyList(),
+    // Section 9 item 2: keyset continuation. Legacy full feeds carry
+    // hasMore=false / null cursor; paged walks append until hasMore is false.
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
 )
 
-/** POST /api/stories → 201 { story } (viewCount 0, viewedByMe false). */
+/**
+ * POST /api/stories → 201 { story, replayed: false } | 200 { story, replayed: true }.
+ * Section 9 item 1: `replayed=true` means this exact (userId, clientId)
+ * identity had ALREADY been accepted - the row is the SAME story, not a
+ * duplicate, so the caller treats it as a confirmed publication.
+ */
 @Serializable
 data class StoryCreatedDto(
     val story: StoryItemDto? = null,
+    val replayed: Boolean = false,
 )
 
-/** POST /api/stories/{id}/view { requesterId } → { viewCount, owner? } (owner short-circuits). */
+/** POST /api/stories/{id}/view { requesterId } → { viewCount, receiptVisible, owner? }. */
 @Serializable
 data class StoryViewAckDto(
     val viewCount: Int = 0,
+    // Section 9 item 3: whether THIS viewer's receipt discloses to the author
+    // (their own live storyViewReceipts privacy). Legacy rows default true.
+    val receiptVisible: Boolean = true,
     val owner: Boolean? = null,
 )
 
@@ -560,6 +573,9 @@ data class StoryViewerDto(
 @Serializable
 data class StoryViewersDto(
     val viewers: List<StoryViewerDto> = emptyList(),
+    // Section 9 item 2: (createdAt,userId) keyset continuation for owner sheets.
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
 )
 
 // Wave 2 messaging depth - polls / link previews / saved / topics / ASR

@@ -53,6 +53,9 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
     public var notifVibrate: Bool?
     public var lastSeenVisible: Bool?
     public var readReceipts: Bool?
+    /// Section 9 item 3: disclose STORY view receipts to story authors
+    /// (server-enforced; off = never appear in their viewer lists or counts).
+    public var storyViewReceipts: Bool?
     public var typingVisible: Bool?
     public var reducedMotion: Bool?
     /// R1-W2B F-FX-05 - per-conversation theme map; the wire key is the
@@ -62,7 +65,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case bubbleRadius, density, wallpaper, notifPreviews, notifSound
-        case notifVibrate, lastSeenVisible, readReceipts, typingVisible, reducedMotion
+        case notifVibrate, lastSeenVisible, readReceipts, storyViewReceipts, typingVisible, reducedMotion
         case convThemes = "chat.convThemes"
     }
 
@@ -75,6 +78,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
         notifVibrate: Bool? = nil,
         lastSeenVisible: Bool? = nil,
         readReceipts: Bool? = nil,
+        storyViewReceipts: Bool? = nil,
         typingVisible: Bool? = nil,
         reducedMotion: Bool? = nil,
         convThemes: [String: WireConvTheme]? = nil
@@ -87,6 +91,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
         self.notifVibrate = notifVibrate
         self.lastSeenVisible = lastSeenVisible
         self.readReceipts = readReceipts
+        self.storyViewReceipts = storyViewReceipts
         self.typingVisible = typingVisible
         self.reducedMotion = reducedMotion
         self.convThemes = convThemes
@@ -104,6 +109,7 @@ public struct WirePulsePrefs: Codable, Equatable, Sendable {
         if let notifVibrate { body["notifVibrate"] = notifVibrate }
         if let lastSeenVisible { body["lastSeenVisible"] = lastSeenVisible }
         if let readReceipts { body["readReceipts"] = readReceipts }
+        if let storyViewReceipts { body["storyViewReceipts"] = storyViewReceipts }
         if let typingVisible { body["typingVisible"] = typingVisible }
         if let reducedMotion { body["reducedMotion"] = reducedMotion }
         // F-FX-05 - the map rides the web's dotted key; only a non-nil map

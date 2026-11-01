@@ -72,6 +72,7 @@ public enum PulseWave8Logic {
         if let value = patch.notifVibrate { out.notifVibrate = value }
         if let value = patch.lastSeenVisible { out.lastSeenVisible = value }
         if let value = patch.readReceipts { out.readReceipts = value }
+        if let value = patch.storyViewReceipts { out.storyViewReceipts = value }
         if let value = patch.typingVisible { out.typingVisible = value }
         if let value = patch.reducedMotion { out.reducedMotion = value }
         return out

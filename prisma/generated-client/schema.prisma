@@ -23,6 +23,10 @@ model User {
   statusEmoji        String? // Discord-style custom status glyph (null = none)
   statusText         String? // Discord-style custom status line (null = none)
   preferences        String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
+  // Section 9 item 3: story-specific read privacy. False = the user's story
+  // views never disclose to authors (no viewer-list row, no viewCount) - live
+  // at disclosure time, not just at view time. Null column = default on.
+  storyViewReceipts  Boolean                   @default(true)
   sessionTokenHash   String? // sha256 hex of the native session token (spec §3.11 A-1/A-2) — raw token never stored; null = pre-token identity (migration-accepted)
   legacyTokenHashes  String? // JSON array of up to 8 recent previous session-token hashes (R52 grace list) — concurrent device logins must not invalidate each other; the newest hash stays in sessionTokenHash
   createdAt          DateTime                  @default(now())
@@ -376,9 +380,14 @@ model StatusStory {
   background String      @default("emerald") // gradient key for text stories
   createdAt  DateTime    @default(now())
   expiresAt  DateTime // createdAt + 24h — hard-filtered everywhere after
+  // Section 9 item 1: durable publication identity. The client journals this
+  // BEFORE posting; a lost-ACK replay with the same (userId, clientId) returns
+  // the SAME story instead of duplicating. Null = legacy web publications.
+  clientId   String?
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   views      StoryView[]
 
+  @@unique([userId, clientId])
   @@index([userId, expiresAt])
 }
 

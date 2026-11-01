@@ -30,7 +30,7 @@ async function fixture(run) {
   for(const id of ['me','peer','blocked','stranger'])await db.$executeRawUnsafe('INSERT INTO User(id,name,sessionTokenHash,legacyTokenHashes) VALUES(?,?,?,?)',id,'Name '+id,hashSessionToken(`synthetic-${id}`),'[]')
   await db.conversation.create({data:{id:'room',isGroup:true}})
   for(const id of ['me','peer','blocked'])await db.conversationParticipant.create({data:{id:'p-'+id,userId:id,conversationId:'room'}})
-  const access=await load('src/lib/story-access.ts',{Prisma},'({storyAudience,storyUnblocked,storyJson,privateStoryResponse})')
+  const access=await load('src/lib/story-access.ts',{Prisma},'({storyAudience,storyUnblocked,storyJson,privateStoryResponse,encodeStoryCursor,parseStoryCursor,parseStoryPageLimit,STORY_FEED_PAGE_MAX,STORY_VIEWERS_PAGE_MAX,storyReceiptDisclosed,storyViewerInAuthorAudience})')
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
   const bindings={db,Prisma,randomUUID,...access,requireActionOwner,AVATAR_COLORS:['emerald','rose','amber','violet','teal','orange','pink','cyan'],safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():''}
   const feed=await load('src/app/api/stories/route.ts',bindings,'({GET,POST})')
@@ -61,7 +61,10 @@ test('feed includes only own and current unblocked peer stories with stable tied
  await h.create('expired','peer',now-2*86400000)
  await db.userBlock.create({data:{blockerId:'blocked',blockedId:'me'}})
  let response=await h.feed.GET(req());assert.equal(response.status,200)
+ // Stories stay oldest-first INSIDE their group (viewer playback order); the
+ // Section 9 DESC walk only changes group-level tie ordering.
  const body=await response.json();assert.equal(body.groups[0].mine,true);assert.deepEqual(feedIds(body),['own','a','b'])
+ assert.equal(body.hasMore,false);assert.equal(body.nextCursor,null)
  await db.userBlock.deleteMany();await db.userBlock.create({data:{blockerId:'me',blockedId:'peer'}})
  assert.deepEqual(feedIds(await(await h.feed.GET(req())).json()),['own','hidden'])
  await db.conversationParticipant.deleteMany({where:{userId:'me'}})
@@ -80,8 +83,8 @@ test('hidden and expired story IDs cannot create views or leak view counts',()=>
 }))
 test('authorized view marks are idempotent and owner self-views are not recorded',()=>fixture(async(db,h)=>{
  await h.create('story','peer')
- for(let i=0;i<2;i++)assert.deepEqual(await(await h.views.POST(req('POST'),ctx('story'))).json(),{viewCount:1})
- assert.deepEqual(await(await h.views.POST(req('POST','peer'),ctx('story'))).json(),{viewCount:1,owner:true})
+ for(let i=0;i<2;i++)assert.deepEqual(await(await h.views.POST(req('POST'),ctx('story'))).json(),{viewCount:1,receiptVisible:true})
+ assert.deepEqual(await(await h.views.POST(req('POST','peer'),ctx('story'))).json(),{viewCount:1,receiptVisible:true,owner:true})
  assert.equal(await db.storyView.count(),1)
  const group=(await(await h.feed.GET(req())).json()).groups[0];assert.equal(group.allSeen,true);assert.equal(group.stories[0].viewedByMe,true);assert.equal(group.stories[0].viewCount,1)
 }))
@@ -91,7 +94,7 @@ test('owner viewers and counts hide currently blocked identities and ignore orph
  assert.equal((await h.views.GET(req('GET','peer'),ctx('story'))).status,403)
  const viewers=await(await h.views.GET(req(),ctx('story'))).json();assert.deepEqual(viewers.viewers.map(v=>v.userId),['peer'])
  assert.equal((await(await h.feed.GET(req())).json()).groups[0].stories[0].viewCount,1)
- assert.deepEqual(await(await h.views.POST(req('POST'),ctx('story'))).json(),{viewCount:1,owner:true})
+ assert.deepEqual(await(await h.views.POST(req('POST'),ctx('story'))).json(),{viewCount:1,receiptVisible:true,owner:true})
  await db.$executeRaw`UPDATE StatusStory SET expiresAt = 0 WHERE id = 'story'`
  assert.equal((await h.views.GET(req(),ctx('story'))).status,404)
 }))

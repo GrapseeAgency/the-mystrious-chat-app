@@ -45,6 +45,59 @@ public final class StoriesSessionModel: ObservableObject {
             groups = Self.liveGroups(page.groups ?? [], nowMs: nowMs())
             flags.loadedOnce = true
         }
+        // Section 9 items 1/4/5/9 - restore-time flush of the durable story
+        // journal (publish replays, view marks, delete tombstones).
+        Task { [weak self] in await self?.flushStoryIntents() }
+    }
+
+    /// Replays every pending story intent with its ORIGINAL identity. A
+    /// publication replay returns the SAME server row (never a duplicate);
+    /// view marks are idempotent by (storyId, userId); a delete tombstone
+    /// re-purges the cache, which is exactly why the row survived.
+    public func flushStoryIntents() async {
+        guard session.viewer != nil, session.sessionGeneration == ownerEpoch else { return }
+        let journal = PulseSection8Journal.shared
+        let owner = session.api.userId
+        for intent in journal.pending(owner: owner) where intent.kind.hasPrefix("story-") {
+            switch intent.kind {
+            case "story-publish":
+                do {
+                    _ = try await session.api.postStory(
+                        caption: intent.payload["caption"] ?? "",
+                        background: intent.payload["background"],
+                        imagePath: intent.payload["imagePath"],
+                        clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure where failure.kind == .validation {
+                    journal.confirm(owner: owner, clientId: intent.clientId) // permanent refusal
+                } catch { break } // transport-class: keep for the next flush
+            case "story-view":
+                do {
+                    _ = try await session.api.markStoryViewed(id: intent.targetId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure
+                      where failure.kind == .notFound || failure.kind == .forbidden || failure.kind == .validation {
+                    journal.confirm(owner: owner, clientId: intent.clientId) // story gone: retire honestly
+                } catch { break }
+            case "story-delete":
+                do {
+                    try await session.api.deleteStory(id: intent.targetId)
+                    removeLocal(intent.targetId)
+                    if persistCache(WireStoriesPage(groups: groups)) {
+                        journal.confirm(owner: owner, clientId: intent.clientId)
+                    }
+                } catch let failure as PulseAPIClient.Failure where failure.kind == .notFound {
+                    // Already gone server-side: the purge is the remaining duty.
+                    removeLocal(intent.targetId)
+                    if persistCache(WireStoriesPage(groups: groups)) {
+                        journal.confirm(owner: owner, clientId: intent.clientId)
+                    }
+                } catch let failure as PulseAPIClient.Failure where failure.kind == .forbidden || failure.kind == .validation {
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch { break }
+            default: break
+            }
+        }
     }
 
     /// Pull the feed. quiet=false flips the loading flag (first load).
@@ -57,11 +110,30 @@ public final class StoriesSessionModel: ObservableObject {
         let api = session.api
         if !quiet { flags.loading = true; flags.lastError = nil }
         do {
-            let page = try await api.storySnapshot()
+            // Section 9 item 2: bounded keyset pages walked to completion (the
+            // 24h TTL caps the feed); every request stays <= 60 story rows.
+            var collected: [WireStoryGroup] = []
+            var cursor: String? = nil
+            var pages = 0
+            while pages < 5 {
+                let page = try await api.storiesPage(limit: 60, cursor: cursor)
+                collected += page.groups ?? []
+                pages += 1
+                guard page.hasMore == true, let next = page.nextCursor, !next.isEmpty else { break }
+                cursor = next
+            }
+            // The same identity guards the legacy snapshot enforced.
+            let rows = collected.flatMap { $0.stories ?? [] }
+            guard collected.allSatisfy({ !($0.user?.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.stories != nil }),
+                  Set(collected.compactMap { $0.user?.id }).count == collected.count,
+                  rows.allSatisfy({ !($0.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+                  Set(rows.compactMap(\.id)).count == rows.count else {
+                throw PulseAPIClient.Failure(kind: .server, message: "The gateway did not return a valid story feed.")
+            }
             guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
-            groups = Self.liveGroups(page.groups ?? [], nowMs: nowMs())
+            groups = Self.liveGroups(PulseStoryPages.merged(groups: collected), nowMs: nowMs())
             flags.loadedOnce = true; flags.lastError = nil
-            persistCache(WireStoriesPage(groups: groups))
+            _ = persistCache(WireStoriesPage(groups: groups))
         } catch {
             guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
             if Self.discardsViewers(after: error) {
@@ -95,16 +167,28 @@ public final class StoriesSessionModel: ObservableObject {
     // publish (composer)
 
     /// POST /api/stories → refresh. Returns the server's error copy on failure.
+    /// Section 9 item 1: the publication identity is journaled BEFORE the
+    /// wire; a lost ACK (or a process death between acceptance and the cache
+    /// refresh - item 4) replays the SAME clientId and converges on the SAME
+    /// server row instead of duplicating.
     @discardableResult
     public func publish(caption: String, background: String?, imagePath: String?) async -> String? {
         guard session.sessionGeneration == ownerEpoch else { return "The original story session ended." }
         let epoch = session.sessionGeneration
         let api = session.api
+        let journal = PulseSection8Journal.shared
+        var payload: [String: String] = [:]
+        let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedCaption.isEmpty { payload["caption"] = trimmedCaption }
+        if let background { payload["background"] = background }
+        if let imagePath { payload["imagePath"] = imagePath }
+        let intent = journal.enqueue(owner: api.userId, kind: "story-publish", targetId: "", payload: payload)
         do {
             try Task.checkCancellation()
-            _ = try await api.postStory(caption: caption, background: background, imagePath: imagePath)
+            _ = try await api.postStory(caption: caption, background: background, imagePath: imagePath, clientId: intent.clientId)
             try Task.checkCancellation()
             guard session.sessionGeneration == epoch else { return "The original story session ended." }
+            journal.confirm(owner: api.userId, clientId: intent.clientId)
             // Feed refresh is not part of the publication acknowledgement.
             Task { [weak self] in
                 guard let self, self.session.sessionGeneration == epoch else { return }
@@ -112,6 +196,9 @@ public final class StoriesSessionModel: ObservableObject {
             }
             return nil
         } catch let failure as PulseAPIClient.Failure {
+            if failure.kind == .validation {
+                journal.confirm(owner: api.userId, clientId: intent.clientId) // permanent refusal
+            }
             return failure.message ?? "Could not post your status"
         } catch {
             return "Could not post your status"
@@ -143,14 +230,30 @@ public final class StoriesSessionModel: ObservableObject {
     public func deleteStory(id: String) async -> Bool {
         guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
         let api = session.api
+        // Section 9 item 5: the delete intent is durable; the journal row
+        // leaves ONLY after BOTH the server ack AND the local cache purge
+        // persisted - a broken/full disk keeps the tombstone for the restore
+        // flush (which 404s safely on an already-deleted story).
+        let journal = PulseSection8Journal.shared
+        let intent = journal.enqueue(owner: api.userId, kind: "story-delete", targetId: id)
         do {
             try await api.deleteStory(id: id)
             guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
             refreshGeneration = UUID()
             flags.loading = false
             removeLocal(id)
-            persistCache(WireStoriesPage(groups: groups))
+            if persistCache(WireStoriesPage(groups: groups)) {
+                journal.confirm(owner: api.userId, clientId: intent.clientId)
+            }
             return true
+        } catch let failure as PulseAPIClient.Failure
+              where failure.kind == .notFound || failure.kind == .forbidden {
+            // Already gone / permanently refused: the deletion is the truth.
+            removeLocal(id)
+            if persistCache(WireStoriesPage(groups: groups)) {
+                journal.confirm(owner: api.userId, clientId: intent.clientId)
+            }
+            return false
         } catch {
             return false
         }
@@ -167,9 +270,24 @@ public final class StoriesSessionModel: ObservableObject {
         let api = session.api
         viewersLoading = true
         do {
-            let list = try await api.storyViewers(id: storyId)
+            // Section 9 item 2: bounded viewer pages walked to completion; a
+            // huge audience never lands in one unbounded response.
+            var collected: [WireStoryViewer] = []
+            var cursor: String? = nil
+            var pages = 0
+            while pages < 20 {
+                let page = try await api.storyViewersPage(id: storyId, limit: 100, cursor: cursor)
+                collected += page.viewers ?? []
+                pages += 1
+                guard page.hasMore == true, let next = page.nextCursor, !next.isEmpty else { break }
+                cursor = next
+            }
+            guard collected.allSatisfy({ !($0.userId ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+                  Set(collected.compactMap(\.userId)).count == collected.count else {
+                throw PulseAPIClient.Failure(kind: .server, message: "The gateway did not return a valid viewers list.")
+            }
             guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == ownerEpoch else { return }
-            viewers = list; viewersError = nil
+            viewers = collected; viewersError = nil
         } catch {
             guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == ownerEpoch else { return }
             if Self.discardsViewers(after: error) { viewers = [] }
@@ -201,11 +319,15 @@ public final class StoriesSessionModel: ObservableObject {
         }
     }
 
-    private func persistCache(_ page: WireStoriesPage) {
+    /// False = the purge/write did NOT persist (full or broken disk) - the
+    /// caller keeps its durable journal row so the restore flush retries.
+    @discardableResult
+    private func persistCache(_ page: WireStoriesPage) -> Bool {
         guard let store = session.store,
               let data = try? JSONEncoder().encode(page),
-              let json = String(data: data, encoding: .utf8) else { return }
-        try? store.saveStoryCache(key: cacheKey, groupsJson: json, updatedAt: nowMs())
+              let json = String(data: data, encoding: .utf8) else { return false }
+        do { try store.saveStoryCache(key: cacheKey, groupsJson: json, updatedAt: nowMs()); return true }
+        catch { return false }
     }
 
     private func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
