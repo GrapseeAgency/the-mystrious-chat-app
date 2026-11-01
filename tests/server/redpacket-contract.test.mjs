@@ -14,7 +14,7 @@ async function fixture(run) {
       'CREATE TABLE User(id TEXT PRIMARY KEY, name TEXT)',
       'CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT)',
       'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT, UNIQUE(userId, conversationId))',
-      'CREATE TABLE RedPacket(id TEXT PRIMARY KEY, messageId TEXT UNIQUE, senderId TEXT, total INTEGER, count INTEGER, grabbed INTEGER DEFAULT 0, slices TEXT, note TEXT DEFAULT "", expiresAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',
+      'CREATE TABLE RedPacket(id TEXT PRIMARY KEY, messageId TEXT UNIQUE, senderId TEXT, total INTEGER, count INTEGER, grabbed INTEGER DEFAULT 0, slices TEXT, note TEXT DEFAULT "", expiresAt DATETIME, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, reconciledAt DATETIME, corrupt BOOLEAN DEFAULT false)',
       'CREATE TABLE RedPacketGrab(id TEXT PRIMARY KEY, packetId TEXT, userId TEXT, amount INTEGER, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(packetId, userId))',
       'CREATE TABLE UserWallet(userId TEXT PRIMARY KEY, coins INTEGER DEFAULT 0, gems INTEGER DEFAULT 0, streak INTEGER DEFAULT 0, lastCheckIn DATETIME)',
       'CREATE TABLE WalletLedger(id TEXT PRIMARY KEY, userId TEXT, kind TEXT, asset TEXT, amount INTEGER, note TEXT, counterpartyId TEXT, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP)',

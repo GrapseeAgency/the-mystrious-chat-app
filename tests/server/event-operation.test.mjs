@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { mutateEvent, EventOperationError } from '../../src/lib/event-operation.ts'
+import * as section10 from '../../src/lib/section10-contracts.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 const now = new Date('2026-10-22T12:00:00Z')
 async function fixture(run) {
@@ -18,6 +19,7 @@ async function fixture(run) {
       'CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY,userId TEXT,conversationId TEXT,role TEXT,UNIQUE(userId,conversationId))',
       'CREATE TABLE GroupEvent(id TEXT PRIMARY KEY,conversationId TEXT,title TEXT,description TEXT,location TEXT,startsAt DATETIME,createdById TEXT,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)',
       'CREATE TABLE EventRsvp(id TEXT PRIMARY KEY,eventId TEXT REFERENCES GroupEvent(id) ON DELETE CASCADE,userId TEXT,status TEXT,checkedInAt DATETIME,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(eventId,userId))',
+      'CREATE TABLE RoomListRevision(conversationId TEXT,kind TEXT,rev INTEGER DEFAULT 0,PRIMARY KEY(conversationId,kind))',
       "INSERT INTO User(id,name) VALUES ('me','Member'),('creator','Creator'),('admin','Admin')",
       "INSERT INTO Conversation (id) VALUES ('room')",
       "INSERT INTO ConversationParticipant VALUES ('p','me','room','member'),('q','creator','room','member'),('a','admin','room','admin')",
@@ -94,7 +96,9 @@ test('concurrent attendance converges to one bonus, and only current creator/adm
   await assert.rejects(act({ kind: 'delete' }), { status: 403 })
   await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId='creator'`
   await assert.rejects(act({ kind: 'delete' }, 'creator'), { status: 403 })
-  assert.deepEqual(await act({ kind: 'delete' }, 'admin'), { eventReceiptVersion: 1, userId: 'admin', eventId: 'event', ok: true })
+  const deletion = await act({ kind: 'delete' }, 'admin')
+  assert.equal(deletion.eventReceiptVersion, 1); assert.equal(deletion.ok, true)
+  assert.equal(typeof deletion.eventsRev, 'number'); assert.ok(deletion.eventsRev >= 1, 'deletion advances the events revision')
   assert.equal(await db.eventRsvp.count(), 0)
   await assert.rejects(act({ kind: 'checkin' }), { status: 404 })
 }))
@@ -117,7 +121,7 @@ test('all event mutation routes bind presented credentials before running the ac
 })
 test('real create/list routes preserve owner and require current membership in their transaction', () => fixture(async (db) => {
   const route = await routes('src/app/api/conversations/[id]/events/route.ts', { db, NextResponse: { json: Response.json },
-    safeJson: r => r.json(), strField: v => typeof v === 'string' ? v.trim() : '', requireActionOwner: async () => null })
+    safeJson: r => r.json(), strField: v => typeof v === 'string' ? v.trim() : '', requireActionOwner: async () => null, ...section10 })
   const ctx = {params: Promise.resolve({id:'room'})}
   const create = () => route.post(new Request('https://events.test', {method:'POST',body:JSON.stringify({ userId:'me', title:'Meet two',startsAt:now.toISOString() })}),ctx)
   const created = await create(); assert.equal(created.status,201)

@@ -412,6 +412,42 @@ export type PeerBlockIntent = $Result.DefaultSelection<Prisma.$PeerBlockIntentPa
  *  * receipt (reportId + evidenceRev) instead of refreshing the evidence.
  */
 export type ReportOperation = $Result.DefaultSelection<Prisma.$ReportOperationPayload>
+/**
+ * Model EventCreationOperation
+ * * Section 10 item 1 — event creation replay: a lost create ACK retries with
+ *  * the same clientId and receives the SAME stored event instead of a duplicate;
+ *  * a reused identity with different instructions is a 409.
+ */
+export type EventCreationOperation = $Result.DefaultSelection<Prisma.$EventCreationOperationPayload>
+/**
+ * Model TaskCreationOperation
+ * * Section 10 item 4 — personal-task creation replay receipt.
+ */
+export type TaskCreationOperation = $Result.DefaultSelection<Prisma.$TaskCreationOperationPayload>
+/**
+ * Model KanbanCardOperation
+ * * Section 10 item 6 — Kanban card creation replay receipt.
+ */
+export type KanbanCardOperation = $Result.DefaultSelection<Prisma.$KanbanCardOperationPayload>
+/**
+ * Model ReminderCreationOperation
+ * * Section 10 item 11 — reminder creation replay receipt.
+ */
+export type ReminderCreationOperation = $Result.DefaultSelection<Prisma.$ReminderCreationOperationPayload>
+/**
+ * Model RedPacketCreationOperation
+ * * Section 10 item 13 — red-packet creation replay receipt: a lost ACK must
+ *  * never double-debit the wallet; the same clientId returns the SAME packet.
+ */
+export type RedPacketCreationOperation = $Result.DefaultSelection<Prisma.$RedPacketCreationOperationPayload>
+/**
+ * Model RoomListRevision
+ * * Section 10 items 3/7 — per-room monotonic revision counters (events,
+ *  * kanban): competing cross-device mutations are totally ordered by the rev
+ *  * the server hands back with every receipt, and readers apply only
+ *  * strictly-greater revisions.
+ */
+export type RoomListRevision = $Result.DefaultSelection<Prisma.$RoomListRevisionPayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -1190,6 +1226,66 @@ export class PrismaClient<
     * ```
     */
   get reportOperation(): Prisma.ReportOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.eventCreationOperation`: Exposes CRUD operations for the **EventCreationOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more EventCreationOperations
+    * const eventCreationOperations = await prisma.eventCreationOperation.findMany()
+    * ```
+    */
+  get eventCreationOperation(): Prisma.EventCreationOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.taskCreationOperation`: Exposes CRUD operations for the **TaskCreationOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more TaskCreationOperations
+    * const taskCreationOperations = await prisma.taskCreationOperation.findMany()
+    * ```
+    */
+  get taskCreationOperation(): Prisma.TaskCreationOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.kanbanCardOperation`: Exposes CRUD operations for the **KanbanCardOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more KanbanCardOperations
+    * const kanbanCardOperations = await prisma.kanbanCardOperation.findMany()
+    * ```
+    */
+  get kanbanCardOperation(): Prisma.KanbanCardOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.reminderCreationOperation`: Exposes CRUD operations for the **ReminderCreationOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more ReminderCreationOperations
+    * const reminderCreationOperations = await prisma.reminderCreationOperation.findMany()
+    * ```
+    */
+  get reminderCreationOperation(): Prisma.ReminderCreationOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.redPacketCreationOperation`: Exposes CRUD operations for the **RedPacketCreationOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more RedPacketCreationOperations
+    * const redPacketCreationOperations = await prisma.redPacketCreationOperation.findMany()
+    * ```
+    */
+  get redPacketCreationOperation(): Prisma.RedPacketCreationOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.roomListRevision`: Exposes CRUD operations for the **RoomListRevision** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more RoomListRevisions
+    * const roomListRevisions = await prisma.roomListRevision.findMany()
+    * ```
+    */
+  get roomListRevision(): Prisma.RoomListRevisionDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1696,7 +1792,13 @@ export namespace Prisma {
     UserListRevision: 'UserListRevision',
     QuickPhraseOperation: 'QuickPhraseOperation',
     PeerBlockIntent: 'PeerBlockIntent',
-    ReportOperation: 'ReportOperation'
+    ReportOperation: 'ReportOperation',
+    EventCreationOperation: 'EventCreationOperation',
+    TaskCreationOperation: 'TaskCreationOperation',
+    KanbanCardOperation: 'KanbanCardOperation',
+    ReminderCreationOperation: 'ReminderCreationOperation',
+    RedPacketCreationOperation: 'RedPacketCreationOperation',
+    RoomListRevision: 'RoomListRevision'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1715,7 +1817,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "uploadOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt" | "livePushOutbox" | "livePushReceipt" | "folderCreationOperation" | "userListRevision" | "quickPhraseOperation" | "peerBlockIntent" | "reportOperation"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "uploadOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt" | "livePushOutbox" | "livePushReceipt" | "folderCreationOperation" | "userListRevision" | "quickPhraseOperation" | "peerBlockIntent" | "reportOperation" | "eventCreationOperation" | "taskCreationOperation" | "kanbanCardOperation" | "reminderCreationOperation" | "redPacketCreationOperation" | "roomListRevision"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -6603,6 +6705,450 @@ export namespace Prisma {
           }
         }
       }
+      EventCreationOperation: {
+        payload: Prisma.$EventCreationOperationPayload<ExtArgs>
+        fields: Prisma.EventCreationOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.EventCreationOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.EventCreationOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.EventCreationOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.EventCreationOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>
+          }
+          findMany: {
+            args: Prisma.EventCreationOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>[]
+          }
+          create: {
+            args: Prisma.EventCreationOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>
+          }
+          createMany: {
+            args: Prisma.EventCreationOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.EventCreationOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.EventCreationOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>
+          }
+          update: {
+            args: Prisma.EventCreationOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.EventCreationOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.EventCreationOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.EventCreationOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.EventCreationOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$EventCreationOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.EventCreationOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateEventCreationOperation>
+          }
+          groupBy: {
+            args: Prisma.EventCreationOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<EventCreationOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.EventCreationOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<EventCreationOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      TaskCreationOperation: {
+        payload: Prisma.$TaskCreationOperationPayload<ExtArgs>
+        fields: Prisma.TaskCreationOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.TaskCreationOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.TaskCreationOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.TaskCreationOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.TaskCreationOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>
+          }
+          findMany: {
+            args: Prisma.TaskCreationOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>[]
+          }
+          create: {
+            args: Prisma.TaskCreationOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>
+          }
+          createMany: {
+            args: Prisma.TaskCreationOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.TaskCreationOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.TaskCreationOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>
+          }
+          update: {
+            args: Prisma.TaskCreationOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.TaskCreationOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.TaskCreationOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.TaskCreationOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.TaskCreationOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$TaskCreationOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.TaskCreationOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateTaskCreationOperation>
+          }
+          groupBy: {
+            args: Prisma.TaskCreationOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<TaskCreationOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.TaskCreationOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<TaskCreationOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      KanbanCardOperation: {
+        payload: Prisma.$KanbanCardOperationPayload<ExtArgs>
+        fields: Prisma.KanbanCardOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.KanbanCardOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.KanbanCardOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.KanbanCardOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.KanbanCardOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>
+          }
+          findMany: {
+            args: Prisma.KanbanCardOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>[]
+          }
+          create: {
+            args: Prisma.KanbanCardOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>
+          }
+          createMany: {
+            args: Prisma.KanbanCardOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.KanbanCardOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.KanbanCardOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>
+          }
+          update: {
+            args: Prisma.KanbanCardOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.KanbanCardOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.KanbanCardOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.KanbanCardOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.KanbanCardOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$KanbanCardOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.KanbanCardOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateKanbanCardOperation>
+          }
+          groupBy: {
+            args: Prisma.KanbanCardOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<KanbanCardOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.KanbanCardOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<KanbanCardOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      ReminderCreationOperation: {
+        payload: Prisma.$ReminderCreationOperationPayload<ExtArgs>
+        fields: Prisma.ReminderCreationOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ReminderCreationOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ReminderCreationOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.ReminderCreationOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ReminderCreationOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>
+          }
+          findMany: {
+            args: Prisma.ReminderCreationOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>[]
+          }
+          create: {
+            args: Prisma.ReminderCreationOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>
+          }
+          createMany: {
+            args: Prisma.ReminderCreationOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ReminderCreationOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.ReminderCreationOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>
+          }
+          update: {
+            args: Prisma.ReminderCreationOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.ReminderCreationOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ReminderCreationOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ReminderCreationOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.ReminderCreationOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ReminderCreationOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.ReminderCreationOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateReminderCreationOperation>
+          }
+          groupBy: {
+            args: Prisma.ReminderCreationOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ReminderCreationOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ReminderCreationOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<ReminderCreationOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      RedPacketCreationOperation: {
+        payload: Prisma.$RedPacketCreationOperationPayload<ExtArgs>
+        fields: Prisma.RedPacketCreationOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.RedPacketCreationOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.RedPacketCreationOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.RedPacketCreationOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.RedPacketCreationOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>
+          }
+          findMany: {
+            args: Prisma.RedPacketCreationOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>[]
+          }
+          create: {
+            args: Prisma.RedPacketCreationOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>
+          }
+          createMany: {
+            args: Prisma.RedPacketCreationOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.RedPacketCreationOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.RedPacketCreationOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>
+          }
+          update: {
+            args: Prisma.RedPacketCreationOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.RedPacketCreationOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.RedPacketCreationOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.RedPacketCreationOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.RedPacketCreationOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RedPacketCreationOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.RedPacketCreationOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateRedPacketCreationOperation>
+          }
+          groupBy: {
+            args: Prisma.RedPacketCreationOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<RedPacketCreationOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.RedPacketCreationOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<RedPacketCreationOperationCountAggregateOutputType> | number
+          }
+        }
+      }
+      RoomListRevision: {
+        payload: Prisma.$RoomListRevisionPayload<ExtArgs>
+        fields: Prisma.RoomListRevisionFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.RoomListRevisionFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.RoomListRevisionFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>
+          }
+          findFirst: {
+            args: Prisma.RoomListRevisionFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.RoomListRevisionFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>
+          }
+          findMany: {
+            args: Prisma.RoomListRevisionFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>[]
+          }
+          create: {
+            args: Prisma.RoomListRevisionCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>
+          }
+          createMany: {
+            args: Prisma.RoomListRevisionCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.RoomListRevisionCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>[]
+          }
+          delete: {
+            args: Prisma.RoomListRevisionDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>
+          }
+          update: {
+            args: Prisma.RoomListRevisionUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>
+          }
+          deleteMany: {
+            args: Prisma.RoomListRevisionDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.RoomListRevisionUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.RoomListRevisionUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>[]
+          }
+          upsert: {
+            args: Prisma.RoomListRevisionUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$RoomListRevisionPayload>
+          }
+          aggregate: {
+            args: Prisma.RoomListRevisionAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateRoomListRevision>
+          }
+          groupBy: {
+            args: Prisma.RoomListRevisionGroupByArgs<ExtArgs>
+            result: $Utils.Optional<RoomListRevisionGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.RoomListRevisionCountArgs<ExtArgs>
+            result: $Utils.Optional<RoomListRevisionCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -6765,6 +7311,12 @@ export namespace Prisma {
     quickPhraseOperation?: QuickPhraseOperationOmit
     peerBlockIntent?: PeerBlockIntentOmit
     reportOperation?: ReportOperationOmit
+    eventCreationOperation?: EventCreationOperationOmit
+    taskCreationOperation?: TaskCreationOperationOmit
+    kanbanCardOperation?: KanbanCardOperationOmit
+    reminderCreationOperation?: ReminderCreationOperationOmit
+    redPacketCreationOperation?: RedPacketCreationOperationOmit
+    roomListRevision?: RoomListRevisionOmit
   }
 
   /* Types for Logging */
@@ -11640,6 +12192,7 @@ export namespace Prisma {
     remindAt: Date | null
     firedAt: Date | null
     createdAt: Date | null
+    sourceHash: string | null
   }
 
   export type ReminderMaxAggregateOutputType = {
@@ -11651,6 +12204,7 @@ export namespace Prisma {
     remindAt: Date | null
     firedAt: Date | null
     createdAt: Date | null
+    sourceHash: string | null
   }
 
   export type ReminderCountAggregateOutputType = {
@@ -11662,6 +12216,7 @@ export namespace Prisma {
     remindAt: number
     firedAt: number
     createdAt: number
+    sourceHash: number
     _all: number
   }
 
@@ -11675,6 +12230,7 @@ export namespace Prisma {
     remindAt?: true
     firedAt?: true
     createdAt?: true
+    sourceHash?: true
   }
 
   export type ReminderMaxAggregateInputType = {
@@ -11686,6 +12242,7 @@ export namespace Prisma {
     remindAt?: true
     firedAt?: true
     createdAt?: true
+    sourceHash?: true
   }
 
   export type ReminderCountAggregateInputType = {
@@ -11697,6 +12254,7 @@ export namespace Prisma {
     remindAt?: true
     firedAt?: true
     createdAt?: true
+    sourceHash?: true
     _all?: true
   }
 
@@ -11781,6 +12339,7 @@ export namespace Prisma {
     remindAt: Date
     firedAt: Date | null
     createdAt: Date
+    sourceHash: string | null
     _count: ReminderCountAggregateOutputType | null
     _min: ReminderMinAggregateOutputType | null
     _max: ReminderMaxAggregateOutputType | null
@@ -11809,6 +12368,7 @@ export namespace Prisma {
     remindAt?: boolean
     firedAt?: boolean
     createdAt?: boolean
+    sourceHash?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["reminder"]>
 
@@ -11821,6 +12381,7 @@ export namespace Prisma {
     remindAt?: boolean
     firedAt?: boolean
     createdAt?: boolean
+    sourceHash?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["reminder"]>
 
@@ -11833,6 +12394,7 @@ export namespace Prisma {
     remindAt?: boolean
     firedAt?: boolean
     createdAt?: boolean
+    sourceHash?: boolean
     user?: boolean | UserDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["reminder"]>
 
@@ -11845,9 +12407,10 @@ export namespace Prisma {
     remindAt?: boolean
     firedAt?: boolean
     createdAt?: boolean
+    sourceHash?: boolean
   }
 
-  export type ReminderOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "messageId" | "note" | "remindAt" | "firedAt" | "createdAt", ExtArgs["result"]["reminder"]>
+  export type ReminderOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "conversationId" | "messageId" | "note" | "remindAt" | "firedAt" | "createdAt" | "sourceHash", ExtArgs["result"]["reminder"]>
   export type ReminderInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
   }
@@ -11872,6 +12435,7 @@ export namespace Prisma {
       remindAt: Date
       firedAt: Date | null
       createdAt: Date
+      sourceHash: string | null
     }, ExtArgs["result"]["reminder"]>
     composites: {}
   }
@@ -12304,6 +12868,7 @@ export namespace Prisma {
     readonly remindAt: FieldRef<"Reminder", 'DateTime'>
     readonly firedAt: FieldRef<"Reminder", 'DateTime'>
     readonly createdAt: FieldRef<"Reminder", 'DateTime'>
+    readonly sourceHash: FieldRef<"Reminder", 'String'>
   }
     
 
@@ -47871,6 +48436,8 @@ export namespace Prisma {
     slices: string | null
     note: string | null
     expiresAt: Date | null
+    reconciledAt: Date | null
+    corrupt: boolean | null
     createdAt: Date | null
   }
 
@@ -47884,6 +48451,8 @@ export namespace Prisma {
     slices: string | null
     note: string | null
     expiresAt: Date | null
+    reconciledAt: Date | null
+    corrupt: boolean | null
     createdAt: Date | null
   }
 
@@ -47897,6 +48466,8 @@ export namespace Prisma {
     slices: number
     note: number
     expiresAt: number
+    reconciledAt: number
+    corrupt: number
     createdAt: number
     _all: number
   }
@@ -47924,6 +48495,8 @@ export namespace Prisma {
     slices?: true
     note?: true
     expiresAt?: true
+    reconciledAt?: true
+    corrupt?: true
     createdAt?: true
   }
 
@@ -47937,6 +48510,8 @@ export namespace Prisma {
     slices?: true
     note?: true
     expiresAt?: true
+    reconciledAt?: true
+    corrupt?: true
     createdAt?: true
   }
 
@@ -47950,6 +48525,8 @@ export namespace Prisma {
     slices?: true
     note?: true
     expiresAt?: true
+    reconciledAt?: true
+    corrupt?: true
     createdAt?: true
     _all?: true
   }
@@ -48050,6 +48627,8 @@ export namespace Prisma {
     slices: string
     note: string
     expiresAt: Date
+    reconciledAt: Date | null
+    corrupt: boolean
     createdAt: Date
     _count: RedPacketCountAggregateOutputType | null
     _avg: RedPacketAvgAggregateOutputType | null
@@ -48082,6 +48661,8 @@ export namespace Prisma {
     slices?: boolean
     note?: boolean
     expiresAt?: boolean
+    reconciledAt?: boolean
+    corrupt?: boolean
     createdAt?: boolean
     message?: boolean | MessageDefaultArgs<ExtArgs>
     grabs?: boolean | RedPacket$grabsArgs<ExtArgs>
@@ -48098,6 +48679,8 @@ export namespace Prisma {
     slices?: boolean
     note?: boolean
     expiresAt?: boolean
+    reconciledAt?: boolean
+    corrupt?: boolean
     createdAt?: boolean
     message?: boolean | MessageDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["redPacket"]>
@@ -48112,6 +48695,8 @@ export namespace Prisma {
     slices?: boolean
     note?: boolean
     expiresAt?: boolean
+    reconciledAt?: boolean
+    corrupt?: boolean
     createdAt?: boolean
     message?: boolean | MessageDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["redPacket"]>
@@ -48126,10 +48711,12 @@ export namespace Prisma {
     slices?: boolean
     note?: boolean
     expiresAt?: boolean
+    reconciledAt?: boolean
+    corrupt?: boolean
     createdAt?: boolean
   }
 
-  export type RedPacketOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "messageId" | "senderId" | "total" | "count" | "grabbed" | "slices" | "note" | "expiresAt" | "createdAt", ExtArgs["result"]["redPacket"]>
+  export type RedPacketOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "messageId" | "senderId" | "total" | "count" | "grabbed" | "slices" | "note" | "expiresAt" | "reconciledAt" | "corrupt" | "createdAt", ExtArgs["result"]["redPacket"]>
   export type RedPacketInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     message?: boolean | MessageDefaultArgs<ExtArgs>
     grabs?: boolean | RedPacket$grabsArgs<ExtArgs>
@@ -48158,6 +48745,8 @@ export namespace Prisma {
       slices: string
       note: string
       expiresAt: Date
+      reconciledAt: Date | null
+      corrupt: boolean
       createdAt: Date
     }, ExtArgs["result"]["redPacket"]>
     composites: {}
@@ -48593,6 +49182,8 @@ export namespace Prisma {
     readonly slices: FieldRef<"RedPacket", 'String'>
     readonly note: FieldRef<"RedPacket", 'String'>
     readonly expiresAt: FieldRef<"RedPacket", 'DateTime'>
+    readonly reconciledAt: FieldRef<"RedPacket", 'DateTime'>
+    readonly corrupt: FieldRef<"RedPacket", 'Boolean'>
     readonly createdAt: FieldRef<"RedPacket", 'DateTime'>
   }
     
@@ -51343,6 +51934,7 @@ export namespace Prisma {
     assigneeId: string | null
     createdById: string | null
     sourceMessageId: string | null
+    sourceRevokedAt: Date | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -51356,6 +51948,7 @@ export namespace Prisma {
     assigneeId: string | null
     createdById: string | null
     sourceMessageId: string | null
+    sourceRevokedAt: Date | null
     createdAt: Date | null
     updatedAt: Date | null
   }
@@ -51369,6 +51962,7 @@ export namespace Prisma {
     assigneeId: number
     createdById: number
     sourceMessageId: number
+    sourceRevokedAt: number
     createdAt: number
     updatedAt: number
     _all: number
@@ -51392,6 +51986,7 @@ export namespace Prisma {
     assigneeId?: true
     createdById?: true
     sourceMessageId?: true
+    sourceRevokedAt?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -51405,6 +52000,7 @@ export namespace Prisma {
     assigneeId?: true
     createdById?: true
     sourceMessageId?: true
+    sourceRevokedAt?: true
     createdAt?: true
     updatedAt?: true
   }
@@ -51418,6 +52014,7 @@ export namespace Prisma {
     assigneeId?: true
     createdById?: true
     sourceMessageId?: true
+    sourceRevokedAt?: true
     createdAt?: true
     updatedAt?: true
     _all?: true
@@ -51518,6 +52115,7 @@ export namespace Prisma {
     assigneeId: string | null
     createdById: string | null
     sourceMessageId: string | null
+    sourceRevokedAt: Date | null
     createdAt: Date
     updatedAt: Date
     _count: KanbanCardCountAggregateOutputType | null
@@ -51550,6 +52148,7 @@ export namespace Prisma {
     assigneeId?: boolean
     createdById?: boolean
     sourceMessageId?: boolean
+    sourceRevokedAt?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -51564,6 +52163,7 @@ export namespace Prisma {
     assigneeId?: boolean
     createdById?: boolean
     sourceMessageId?: boolean
+    sourceRevokedAt?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -51578,6 +52178,7 @@ export namespace Prisma {
     assigneeId?: boolean
     createdById?: boolean
     sourceMessageId?: boolean
+    sourceRevokedAt?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
@@ -51592,11 +52193,12 @@ export namespace Prisma {
     assigneeId?: boolean
     createdById?: boolean
     sourceMessageId?: boolean
+    sourceRevokedAt?: boolean
     createdAt?: boolean
     updatedAt?: boolean
   }
 
-  export type KanbanCardOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "title" | "column" | "position" | "assigneeId" | "createdById" | "sourceMessageId" | "createdAt" | "updatedAt", ExtArgs["result"]["kanbanCard"]>
+  export type KanbanCardOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "conversationId" | "title" | "column" | "position" | "assigneeId" | "createdById" | "sourceMessageId" | "sourceRevokedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["kanbanCard"]>
   export type KanbanCardInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     conversation?: boolean | ConversationDefaultArgs<ExtArgs>
   }
@@ -51621,6 +52223,7 @@ export namespace Prisma {
       assigneeId: string | null
       createdById: string | null
       sourceMessageId: string | null
+      sourceRevokedAt: Date | null
       createdAt: Date
       updatedAt: Date
     }, ExtArgs["result"]["kanbanCard"]>
@@ -52055,6 +52658,7 @@ export namespace Prisma {
     readonly assigneeId: FieldRef<"KanbanCard", 'String'>
     readonly createdById: FieldRef<"KanbanCard", 'String'>
     readonly sourceMessageId: FieldRef<"KanbanCard", 'String'>
+    readonly sourceRevokedAt: FieldRef<"KanbanCard", 'DateTime'>
     readonly createdAt: FieldRef<"KanbanCard", 'DateTime'>
     readonly updatedAt: FieldRef<"KanbanCard", 'DateTime'>
   }
@@ -79954,6 +80558,5907 @@ export namespace Prisma {
 
 
   /**
+   * Model EventCreationOperation
+   */
+
+  export type AggregateEventCreationOperation = {
+    _count: EventCreationOperationCountAggregateOutputType | null
+    _min: EventCreationOperationMinAggregateOutputType | null
+    _max: EventCreationOperationMaxAggregateOutputType | null
+  }
+
+  export type EventCreationOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    eventId: string | null
+  }
+
+  export type EventCreationOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    eventId: string | null
+  }
+
+  export type EventCreationOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    eventId: number
+    _all: number
+  }
+
+
+  export type EventCreationOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    eventId?: true
+  }
+
+  export type EventCreationOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    eventId?: true
+  }
+
+  export type EventCreationOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    eventId?: true
+    _all?: true
+  }
+
+  export type EventCreationOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which EventCreationOperation to aggregate.
+     */
+    where?: EventCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of EventCreationOperations to fetch.
+     */
+    orderBy?: EventCreationOperationOrderByWithRelationInput | EventCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: EventCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` EventCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` EventCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned EventCreationOperations
+    **/
+    _count?: true | EventCreationOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: EventCreationOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: EventCreationOperationMaxAggregateInputType
+  }
+
+  export type GetEventCreationOperationAggregateType<T extends EventCreationOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateEventCreationOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateEventCreationOperation[P]>
+      : GetScalarType<T[P], AggregateEventCreationOperation[P]>
+  }
+
+
+
+
+  export type EventCreationOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: EventCreationOperationWhereInput
+    orderBy?: EventCreationOperationOrderByWithAggregationInput | EventCreationOperationOrderByWithAggregationInput[]
+    by: EventCreationOperationScalarFieldEnum[] | EventCreationOperationScalarFieldEnum
+    having?: EventCreationOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: EventCreationOperationCountAggregateInputType | true
+    _min?: EventCreationOperationMinAggregateInputType
+    _max?: EventCreationOperationMaxAggregateInputType
+  }
+
+  export type EventCreationOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    eventId: string
+    _count: EventCreationOperationCountAggregateOutputType | null
+    _min: EventCreationOperationMinAggregateOutputType | null
+    _max: EventCreationOperationMaxAggregateOutputType | null
+  }
+
+  type GetEventCreationOperationGroupByPayload<T extends EventCreationOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<EventCreationOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof EventCreationOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], EventCreationOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], EventCreationOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type EventCreationOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    eventId?: boolean
+  }, ExtArgs["result"]["eventCreationOperation"]>
+
+  export type EventCreationOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    eventId?: boolean
+  }, ExtArgs["result"]["eventCreationOperation"]>
+
+  export type EventCreationOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    eventId?: boolean
+  }, ExtArgs["result"]["eventCreationOperation"]>
+
+  export type EventCreationOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    eventId?: boolean
+  }
+
+  export type EventCreationOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "eventId", ExtArgs["result"]["eventCreationOperation"]>
+
+  export type $EventCreationOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "EventCreationOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      eventId: string
+    }, ExtArgs["result"]["eventCreationOperation"]>
+    composites: {}
+  }
+
+  type EventCreationOperationGetPayload<S extends boolean | null | undefined | EventCreationOperationDefaultArgs> = $Result.GetResult<Prisma.$EventCreationOperationPayload, S>
+
+  type EventCreationOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<EventCreationOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: EventCreationOperationCountAggregateInputType | true
+    }
+
+  export interface EventCreationOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['EventCreationOperation'], meta: { name: 'EventCreationOperation' } }
+    /**
+     * Find zero or one EventCreationOperation that matches the filter.
+     * @param {EventCreationOperationFindUniqueArgs} args - Arguments to find a EventCreationOperation
+     * @example
+     * // Get one EventCreationOperation
+     * const eventCreationOperation = await prisma.eventCreationOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends EventCreationOperationFindUniqueArgs>(args: SelectSubset<T, EventCreationOperationFindUniqueArgs<ExtArgs>>): Prisma__EventCreationOperationClient<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one EventCreationOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {EventCreationOperationFindUniqueOrThrowArgs} args - Arguments to find a EventCreationOperation
+     * @example
+     * // Get one EventCreationOperation
+     * const eventCreationOperation = await prisma.eventCreationOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends EventCreationOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, EventCreationOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__EventCreationOperationClient<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first EventCreationOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {EventCreationOperationFindFirstArgs} args - Arguments to find a EventCreationOperation
+     * @example
+     * // Get one EventCreationOperation
+     * const eventCreationOperation = await prisma.eventCreationOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends EventCreationOperationFindFirstArgs>(args?: SelectSubset<T, EventCreationOperationFindFirstArgs<ExtArgs>>): Prisma__EventCreationOperationClient<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first EventCreationOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {EventCreationOperationFindFirstOrThrowArgs} args - Arguments to find a EventCreationOperation
+     * @example
+     * // Get one EventCreationOperation
+     * const eventCreationOperation = await prisma.eventCreationOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends EventCreationOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, EventCreationOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__EventCreationOperationClient<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more EventCreationOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {EventCreationOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all EventCreationOperations
+     * const eventCreationOperations = await prisma.eventCreationOperation.findMany()
+     * 
+     * // Get first 10 EventCreationOperations
+     * const eventCreationOperations = await prisma.eventCreationOperation.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const eventCreationOperationWithUserIdOnly = await prisma.eventCreationOperation.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends EventCreationOperationFindManyArgs>(args?: SelectSubset<T, EventCreationOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a EventCreationOperation.
+     * @param {EventCreationOperationCreateArgs} args - Arguments to create a EventCreationOperation.
+     * @example
+     * // Create one EventCreationOperation
+     * const EventCreationOperation = await prisma.eventCreationOperation.create({
+     *   data: {
+     *     // ... data to create a EventCreationOperation
+     *   }
+     * })
+     * 
+     */
+    create<T extends EventCreationOperationCreateArgs>(args: SelectSubset<T, EventCreationOperationCreateArgs<ExtArgs>>): Prisma__EventCreationOperationClient<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many EventCreationOperations.
+     * @param {EventCreationOperationCreateManyArgs} args - Arguments to create many EventCreationOperations.
+     * @example
+     * // Create many EventCreationOperations
+     * const eventCreationOperation = await prisma.eventCreationOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends EventCreationOperationCreateManyArgs>(args?: SelectSubset<T, EventCreationOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many EventCreationOperations and returns the data saved in the database.
+     * @param {EventCreationOperationCreateManyAndReturnArgs} args - Arguments to create many EventCreationOperations.
+     * @example
+     * // Create many EventCreationOperations
+     * const eventCreationOperation = await prisma.eventCreationOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many EventCreationOperations and only return the `userId`
+     * const eventCreationOperationWithUserIdOnly = await prisma.eventCreationOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends EventCreationOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, EventCreationOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a EventCreationOperation.
+     * @param {EventCreationOperationDeleteArgs} args - Arguments to delete one EventCreationOperation.
+     * @example
+     * // Delete one EventCreationOperation
+     * const EventCreationOperation = await prisma.eventCreationOperation.delete({
+     *   where: {
+     *     // ... filter to delete one EventCreationOperation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends EventCreationOperationDeleteArgs>(args: SelectSubset<T, EventCreationOperationDeleteArgs<ExtArgs>>): Prisma__EventCreationOperationClient<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one EventCreationOperation.
+     * @param {EventCreationOperationUpdateArgs} args - Arguments to update one EventCreationOperation.
+     * @example
+     * // Update one EventCreationOperation
+     * const eventCreationOperation = await prisma.eventCreationOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends EventCreationOperationUpdateArgs>(args: SelectSubset<T, EventCreationOperationUpdateArgs<ExtArgs>>): Prisma__EventCreationOperationClient<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more EventCreationOperations.
+     * @param {EventCreationOperationDeleteManyArgs} args - Arguments to filter EventCreationOperations to delete.
+     * @example
+     * // Delete a few EventCreationOperations
+     * const { count } = await prisma.eventCreationOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends EventCreationOperationDeleteManyArgs>(args?: SelectSubset<T, EventCreationOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more EventCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {EventCreationOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many EventCreationOperations
+     * const eventCreationOperation = await prisma.eventCreationOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends EventCreationOperationUpdateManyArgs>(args: SelectSubset<T, EventCreationOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more EventCreationOperations and returns the data updated in the database.
+     * @param {EventCreationOperationUpdateManyAndReturnArgs} args - Arguments to update many EventCreationOperations.
+     * @example
+     * // Update many EventCreationOperations
+     * const eventCreationOperation = await prisma.eventCreationOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more EventCreationOperations and only return the `userId`
+     * const eventCreationOperationWithUserIdOnly = await prisma.eventCreationOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends EventCreationOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, EventCreationOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one EventCreationOperation.
+     * @param {EventCreationOperationUpsertArgs} args - Arguments to update or create a EventCreationOperation.
+     * @example
+     * // Update or create a EventCreationOperation
+     * const eventCreationOperation = await prisma.eventCreationOperation.upsert({
+     *   create: {
+     *     // ... data to create a EventCreationOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the EventCreationOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends EventCreationOperationUpsertArgs>(args: SelectSubset<T, EventCreationOperationUpsertArgs<ExtArgs>>): Prisma__EventCreationOperationClient<$Result.GetResult<Prisma.$EventCreationOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of EventCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {EventCreationOperationCountArgs} args - Arguments to filter EventCreationOperations to count.
+     * @example
+     * // Count the number of EventCreationOperations
+     * const count = await prisma.eventCreationOperation.count({
+     *   where: {
+     *     // ... the filter for the EventCreationOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends EventCreationOperationCountArgs>(
+      args?: Subset<T, EventCreationOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], EventCreationOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a EventCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {EventCreationOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends EventCreationOperationAggregateArgs>(args: Subset<T, EventCreationOperationAggregateArgs>): Prisma.PrismaPromise<GetEventCreationOperationAggregateType<T>>
+
+    /**
+     * Group by EventCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {EventCreationOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends EventCreationOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: EventCreationOperationGroupByArgs['orderBy'] }
+        : { orderBy?: EventCreationOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, EventCreationOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetEventCreationOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the EventCreationOperation model
+   */
+  readonly fields: EventCreationOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for EventCreationOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__EventCreationOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the EventCreationOperation model
+   */
+  interface EventCreationOperationFieldRefs {
+    readonly userId: FieldRef<"EventCreationOperation", 'String'>
+    readonly clientId: FieldRef<"EventCreationOperation", 'String'>
+    readonly requestHash: FieldRef<"EventCreationOperation", 'String'>
+    readonly eventId: FieldRef<"EventCreationOperation", 'String'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * EventCreationOperation findUnique
+   */
+  export type EventCreationOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which EventCreationOperation to fetch.
+     */
+    where: EventCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * EventCreationOperation findUniqueOrThrow
+   */
+  export type EventCreationOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which EventCreationOperation to fetch.
+     */
+    where: EventCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * EventCreationOperation findFirst
+   */
+  export type EventCreationOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which EventCreationOperation to fetch.
+     */
+    where?: EventCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of EventCreationOperations to fetch.
+     */
+    orderBy?: EventCreationOperationOrderByWithRelationInput | EventCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for EventCreationOperations.
+     */
+    cursor?: EventCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` EventCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` EventCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of EventCreationOperations.
+     */
+    distinct?: EventCreationOperationScalarFieldEnum | EventCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * EventCreationOperation findFirstOrThrow
+   */
+  export type EventCreationOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which EventCreationOperation to fetch.
+     */
+    where?: EventCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of EventCreationOperations to fetch.
+     */
+    orderBy?: EventCreationOperationOrderByWithRelationInput | EventCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for EventCreationOperations.
+     */
+    cursor?: EventCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` EventCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` EventCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of EventCreationOperations.
+     */
+    distinct?: EventCreationOperationScalarFieldEnum | EventCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * EventCreationOperation findMany
+   */
+  export type EventCreationOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which EventCreationOperations to fetch.
+     */
+    where?: EventCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of EventCreationOperations to fetch.
+     */
+    orderBy?: EventCreationOperationOrderByWithRelationInput | EventCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing EventCreationOperations.
+     */
+    cursor?: EventCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` EventCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` EventCreationOperations.
+     */
+    skip?: number
+    distinct?: EventCreationOperationScalarFieldEnum | EventCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * EventCreationOperation create
+   */
+  export type EventCreationOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a EventCreationOperation.
+     */
+    data: XOR<EventCreationOperationCreateInput, EventCreationOperationUncheckedCreateInput>
+  }
+
+  /**
+   * EventCreationOperation createMany
+   */
+  export type EventCreationOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many EventCreationOperations.
+     */
+    data: EventCreationOperationCreateManyInput | EventCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * EventCreationOperation createManyAndReturn
+   */
+  export type EventCreationOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many EventCreationOperations.
+     */
+    data: EventCreationOperationCreateManyInput | EventCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * EventCreationOperation update
+   */
+  export type EventCreationOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a EventCreationOperation.
+     */
+    data: XOR<EventCreationOperationUpdateInput, EventCreationOperationUncheckedUpdateInput>
+    /**
+     * Choose, which EventCreationOperation to update.
+     */
+    where: EventCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * EventCreationOperation updateMany
+   */
+  export type EventCreationOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update EventCreationOperations.
+     */
+    data: XOR<EventCreationOperationUpdateManyMutationInput, EventCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which EventCreationOperations to update
+     */
+    where?: EventCreationOperationWhereInput
+    /**
+     * Limit how many EventCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * EventCreationOperation updateManyAndReturn
+   */
+  export type EventCreationOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update EventCreationOperations.
+     */
+    data: XOR<EventCreationOperationUpdateManyMutationInput, EventCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which EventCreationOperations to update
+     */
+    where?: EventCreationOperationWhereInput
+    /**
+     * Limit how many EventCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * EventCreationOperation upsert
+   */
+  export type EventCreationOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the EventCreationOperation to update in case it exists.
+     */
+    where: EventCreationOperationWhereUniqueInput
+    /**
+     * In case the EventCreationOperation found by the `where` argument doesn't exist, create a new EventCreationOperation with this data.
+     */
+    create: XOR<EventCreationOperationCreateInput, EventCreationOperationUncheckedCreateInput>
+    /**
+     * In case the EventCreationOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<EventCreationOperationUpdateInput, EventCreationOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * EventCreationOperation delete
+   */
+  export type EventCreationOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter which EventCreationOperation to delete.
+     */
+    where: EventCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * EventCreationOperation deleteMany
+   */
+  export type EventCreationOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which EventCreationOperations to delete
+     */
+    where?: EventCreationOperationWhereInput
+    /**
+     * Limit how many EventCreationOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * EventCreationOperation without action
+   */
+  export type EventCreationOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the EventCreationOperation
+     */
+    select?: EventCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the EventCreationOperation
+     */
+    omit?: EventCreationOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model TaskCreationOperation
+   */
+
+  export type AggregateTaskCreationOperation = {
+    _count: TaskCreationOperationCountAggregateOutputType | null
+    _min: TaskCreationOperationMinAggregateOutputType | null
+    _max: TaskCreationOperationMaxAggregateOutputType | null
+  }
+
+  export type TaskCreationOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    taskId: string | null
+  }
+
+  export type TaskCreationOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    taskId: string | null
+  }
+
+  export type TaskCreationOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    taskId: number
+    _all: number
+  }
+
+
+  export type TaskCreationOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    taskId?: true
+  }
+
+  export type TaskCreationOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    taskId?: true
+  }
+
+  export type TaskCreationOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    taskId?: true
+    _all?: true
+  }
+
+  export type TaskCreationOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which TaskCreationOperation to aggregate.
+     */
+    where?: TaskCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of TaskCreationOperations to fetch.
+     */
+    orderBy?: TaskCreationOperationOrderByWithRelationInput | TaskCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: TaskCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` TaskCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` TaskCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned TaskCreationOperations
+    **/
+    _count?: true | TaskCreationOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: TaskCreationOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: TaskCreationOperationMaxAggregateInputType
+  }
+
+  export type GetTaskCreationOperationAggregateType<T extends TaskCreationOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateTaskCreationOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateTaskCreationOperation[P]>
+      : GetScalarType<T[P], AggregateTaskCreationOperation[P]>
+  }
+
+
+
+
+  export type TaskCreationOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: TaskCreationOperationWhereInput
+    orderBy?: TaskCreationOperationOrderByWithAggregationInput | TaskCreationOperationOrderByWithAggregationInput[]
+    by: TaskCreationOperationScalarFieldEnum[] | TaskCreationOperationScalarFieldEnum
+    having?: TaskCreationOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: TaskCreationOperationCountAggregateInputType | true
+    _min?: TaskCreationOperationMinAggregateInputType
+    _max?: TaskCreationOperationMaxAggregateInputType
+  }
+
+  export type TaskCreationOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    taskId: string
+    _count: TaskCreationOperationCountAggregateOutputType | null
+    _min: TaskCreationOperationMinAggregateOutputType | null
+    _max: TaskCreationOperationMaxAggregateOutputType | null
+  }
+
+  type GetTaskCreationOperationGroupByPayload<T extends TaskCreationOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<TaskCreationOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof TaskCreationOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], TaskCreationOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], TaskCreationOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type TaskCreationOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    taskId?: boolean
+  }, ExtArgs["result"]["taskCreationOperation"]>
+
+  export type TaskCreationOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    taskId?: boolean
+  }, ExtArgs["result"]["taskCreationOperation"]>
+
+  export type TaskCreationOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    taskId?: boolean
+  }, ExtArgs["result"]["taskCreationOperation"]>
+
+  export type TaskCreationOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    taskId?: boolean
+  }
+
+  export type TaskCreationOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "taskId", ExtArgs["result"]["taskCreationOperation"]>
+
+  export type $TaskCreationOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "TaskCreationOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      taskId: string
+    }, ExtArgs["result"]["taskCreationOperation"]>
+    composites: {}
+  }
+
+  type TaskCreationOperationGetPayload<S extends boolean | null | undefined | TaskCreationOperationDefaultArgs> = $Result.GetResult<Prisma.$TaskCreationOperationPayload, S>
+
+  type TaskCreationOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<TaskCreationOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: TaskCreationOperationCountAggregateInputType | true
+    }
+
+  export interface TaskCreationOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['TaskCreationOperation'], meta: { name: 'TaskCreationOperation' } }
+    /**
+     * Find zero or one TaskCreationOperation that matches the filter.
+     * @param {TaskCreationOperationFindUniqueArgs} args - Arguments to find a TaskCreationOperation
+     * @example
+     * // Get one TaskCreationOperation
+     * const taskCreationOperation = await prisma.taskCreationOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends TaskCreationOperationFindUniqueArgs>(args: SelectSubset<T, TaskCreationOperationFindUniqueArgs<ExtArgs>>): Prisma__TaskCreationOperationClient<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one TaskCreationOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {TaskCreationOperationFindUniqueOrThrowArgs} args - Arguments to find a TaskCreationOperation
+     * @example
+     * // Get one TaskCreationOperation
+     * const taskCreationOperation = await prisma.taskCreationOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends TaskCreationOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, TaskCreationOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__TaskCreationOperationClient<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first TaskCreationOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {TaskCreationOperationFindFirstArgs} args - Arguments to find a TaskCreationOperation
+     * @example
+     * // Get one TaskCreationOperation
+     * const taskCreationOperation = await prisma.taskCreationOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends TaskCreationOperationFindFirstArgs>(args?: SelectSubset<T, TaskCreationOperationFindFirstArgs<ExtArgs>>): Prisma__TaskCreationOperationClient<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first TaskCreationOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {TaskCreationOperationFindFirstOrThrowArgs} args - Arguments to find a TaskCreationOperation
+     * @example
+     * // Get one TaskCreationOperation
+     * const taskCreationOperation = await prisma.taskCreationOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends TaskCreationOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, TaskCreationOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__TaskCreationOperationClient<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more TaskCreationOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {TaskCreationOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all TaskCreationOperations
+     * const taskCreationOperations = await prisma.taskCreationOperation.findMany()
+     * 
+     * // Get first 10 TaskCreationOperations
+     * const taskCreationOperations = await prisma.taskCreationOperation.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const taskCreationOperationWithUserIdOnly = await prisma.taskCreationOperation.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends TaskCreationOperationFindManyArgs>(args?: SelectSubset<T, TaskCreationOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a TaskCreationOperation.
+     * @param {TaskCreationOperationCreateArgs} args - Arguments to create a TaskCreationOperation.
+     * @example
+     * // Create one TaskCreationOperation
+     * const TaskCreationOperation = await prisma.taskCreationOperation.create({
+     *   data: {
+     *     // ... data to create a TaskCreationOperation
+     *   }
+     * })
+     * 
+     */
+    create<T extends TaskCreationOperationCreateArgs>(args: SelectSubset<T, TaskCreationOperationCreateArgs<ExtArgs>>): Prisma__TaskCreationOperationClient<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many TaskCreationOperations.
+     * @param {TaskCreationOperationCreateManyArgs} args - Arguments to create many TaskCreationOperations.
+     * @example
+     * // Create many TaskCreationOperations
+     * const taskCreationOperation = await prisma.taskCreationOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends TaskCreationOperationCreateManyArgs>(args?: SelectSubset<T, TaskCreationOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many TaskCreationOperations and returns the data saved in the database.
+     * @param {TaskCreationOperationCreateManyAndReturnArgs} args - Arguments to create many TaskCreationOperations.
+     * @example
+     * // Create many TaskCreationOperations
+     * const taskCreationOperation = await prisma.taskCreationOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many TaskCreationOperations and only return the `userId`
+     * const taskCreationOperationWithUserIdOnly = await prisma.taskCreationOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends TaskCreationOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, TaskCreationOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a TaskCreationOperation.
+     * @param {TaskCreationOperationDeleteArgs} args - Arguments to delete one TaskCreationOperation.
+     * @example
+     * // Delete one TaskCreationOperation
+     * const TaskCreationOperation = await prisma.taskCreationOperation.delete({
+     *   where: {
+     *     // ... filter to delete one TaskCreationOperation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends TaskCreationOperationDeleteArgs>(args: SelectSubset<T, TaskCreationOperationDeleteArgs<ExtArgs>>): Prisma__TaskCreationOperationClient<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one TaskCreationOperation.
+     * @param {TaskCreationOperationUpdateArgs} args - Arguments to update one TaskCreationOperation.
+     * @example
+     * // Update one TaskCreationOperation
+     * const taskCreationOperation = await prisma.taskCreationOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends TaskCreationOperationUpdateArgs>(args: SelectSubset<T, TaskCreationOperationUpdateArgs<ExtArgs>>): Prisma__TaskCreationOperationClient<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more TaskCreationOperations.
+     * @param {TaskCreationOperationDeleteManyArgs} args - Arguments to filter TaskCreationOperations to delete.
+     * @example
+     * // Delete a few TaskCreationOperations
+     * const { count } = await prisma.taskCreationOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends TaskCreationOperationDeleteManyArgs>(args?: SelectSubset<T, TaskCreationOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more TaskCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {TaskCreationOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many TaskCreationOperations
+     * const taskCreationOperation = await prisma.taskCreationOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends TaskCreationOperationUpdateManyArgs>(args: SelectSubset<T, TaskCreationOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more TaskCreationOperations and returns the data updated in the database.
+     * @param {TaskCreationOperationUpdateManyAndReturnArgs} args - Arguments to update many TaskCreationOperations.
+     * @example
+     * // Update many TaskCreationOperations
+     * const taskCreationOperation = await prisma.taskCreationOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more TaskCreationOperations and only return the `userId`
+     * const taskCreationOperationWithUserIdOnly = await prisma.taskCreationOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends TaskCreationOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, TaskCreationOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one TaskCreationOperation.
+     * @param {TaskCreationOperationUpsertArgs} args - Arguments to update or create a TaskCreationOperation.
+     * @example
+     * // Update or create a TaskCreationOperation
+     * const taskCreationOperation = await prisma.taskCreationOperation.upsert({
+     *   create: {
+     *     // ... data to create a TaskCreationOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the TaskCreationOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends TaskCreationOperationUpsertArgs>(args: SelectSubset<T, TaskCreationOperationUpsertArgs<ExtArgs>>): Prisma__TaskCreationOperationClient<$Result.GetResult<Prisma.$TaskCreationOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of TaskCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {TaskCreationOperationCountArgs} args - Arguments to filter TaskCreationOperations to count.
+     * @example
+     * // Count the number of TaskCreationOperations
+     * const count = await prisma.taskCreationOperation.count({
+     *   where: {
+     *     // ... the filter for the TaskCreationOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends TaskCreationOperationCountArgs>(
+      args?: Subset<T, TaskCreationOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], TaskCreationOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a TaskCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {TaskCreationOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends TaskCreationOperationAggregateArgs>(args: Subset<T, TaskCreationOperationAggregateArgs>): Prisma.PrismaPromise<GetTaskCreationOperationAggregateType<T>>
+
+    /**
+     * Group by TaskCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {TaskCreationOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends TaskCreationOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: TaskCreationOperationGroupByArgs['orderBy'] }
+        : { orderBy?: TaskCreationOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, TaskCreationOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetTaskCreationOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the TaskCreationOperation model
+   */
+  readonly fields: TaskCreationOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for TaskCreationOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__TaskCreationOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the TaskCreationOperation model
+   */
+  interface TaskCreationOperationFieldRefs {
+    readonly userId: FieldRef<"TaskCreationOperation", 'String'>
+    readonly clientId: FieldRef<"TaskCreationOperation", 'String'>
+    readonly requestHash: FieldRef<"TaskCreationOperation", 'String'>
+    readonly taskId: FieldRef<"TaskCreationOperation", 'String'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * TaskCreationOperation findUnique
+   */
+  export type TaskCreationOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which TaskCreationOperation to fetch.
+     */
+    where: TaskCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * TaskCreationOperation findUniqueOrThrow
+   */
+  export type TaskCreationOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which TaskCreationOperation to fetch.
+     */
+    where: TaskCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * TaskCreationOperation findFirst
+   */
+  export type TaskCreationOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which TaskCreationOperation to fetch.
+     */
+    where?: TaskCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of TaskCreationOperations to fetch.
+     */
+    orderBy?: TaskCreationOperationOrderByWithRelationInput | TaskCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for TaskCreationOperations.
+     */
+    cursor?: TaskCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` TaskCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` TaskCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of TaskCreationOperations.
+     */
+    distinct?: TaskCreationOperationScalarFieldEnum | TaskCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * TaskCreationOperation findFirstOrThrow
+   */
+  export type TaskCreationOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which TaskCreationOperation to fetch.
+     */
+    where?: TaskCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of TaskCreationOperations to fetch.
+     */
+    orderBy?: TaskCreationOperationOrderByWithRelationInput | TaskCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for TaskCreationOperations.
+     */
+    cursor?: TaskCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` TaskCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` TaskCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of TaskCreationOperations.
+     */
+    distinct?: TaskCreationOperationScalarFieldEnum | TaskCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * TaskCreationOperation findMany
+   */
+  export type TaskCreationOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which TaskCreationOperations to fetch.
+     */
+    where?: TaskCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of TaskCreationOperations to fetch.
+     */
+    orderBy?: TaskCreationOperationOrderByWithRelationInput | TaskCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing TaskCreationOperations.
+     */
+    cursor?: TaskCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` TaskCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` TaskCreationOperations.
+     */
+    skip?: number
+    distinct?: TaskCreationOperationScalarFieldEnum | TaskCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * TaskCreationOperation create
+   */
+  export type TaskCreationOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a TaskCreationOperation.
+     */
+    data: XOR<TaskCreationOperationCreateInput, TaskCreationOperationUncheckedCreateInput>
+  }
+
+  /**
+   * TaskCreationOperation createMany
+   */
+  export type TaskCreationOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many TaskCreationOperations.
+     */
+    data: TaskCreationOperationCreateManyInput | TaskCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * TaskCreationOperation createManyAndReturn
+   */
+  export type TaskCreationOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many TaskCreationOperations.
+     */
+    data: TaskCreationOperationCreateManyInput | TaskCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * TaskCreationOperation update
+   */
+  export type TaskCreationOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a TaskCreationOperation.
+     */
+    data: XOR<TaskCreationOperationUpdateInput, TaskCreationOperationUncheckedUpdateInput>
+    /**
+     * Choose, which TaskCreationOperation to update.
+     */
+    where: TaskCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * TaskCreationOperation updateMany
+   */
+  export type TaskCreationOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update TaskCreationOperations.
+     */
+    data: XOR<TaskCreationOperationUpdateManyMutationInput, TaskCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which TaskCreationOperations to update
+     */
+    where?: TaskCreationOperationWhereInput
+    /**
+     * Limit how many TaskCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * TaskCreationOperation updateManyAndReturn
+   */
+  export type TaskCreationOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update TaskCreationOperations.
+     */
+    data: XOR<TaskCreationOperationUpdateManyMutationInput, TaskCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which TaskCreationOperations to update
+     */
+    where?: TaskCreationOperationWhereInput
+    /**
+     * Limit how many TaskCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * TaskCreationOperation upsert
+   */
+  export type TaskCreationOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the TaskCreationOperation to update in case it exists.
+     */
+    where: TaskCreationOperationWhereUniqueInput
+    /**
+     * In case the TaskCreationOperation found by the `where` argument doesn't exist, create a new TaskCreationOperation with this data.
+     */
+    create: XOR<TaskCreationOperationCreateInput, TaskCreationOperationUncheckedCreateInput>
+    /**
+     * In case the TaskCreationOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<TaskCreationOperationUpdateInput, TaskCreationOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * TaskCreationOperation delete
+   */
+  export type TaskCreationOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter which TaskCreationOperation to delete.
+     */
+    where: TaskCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * TaskCreationOperation deleteMany
+   */
+  export type TaskCreationOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which TaskCreationOperations to delete
+     */
+    where?: TaskCreationOperationWhereInput
+    /**
+     * Limit how many TaskCreationOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * TaskCreationOperation without action
+   */
+  export type TaskCreationOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the TaskCreationOperation
+     */
+    select?: TaskCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the TaskCreationOperation
+     */
+    omit?: TaskCreationOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model KanbanCardOperation
+   */
+
+  export type AggregateKanbanCardOperation = {
+    _count: KanbanCardOperationCountAggregateOutputType | null
+    _min: KanbanCardOperationMinAggregateOutputType | null
+    _max: KanbanCardOperationMaxAggregateOutputType | null
+  }
+
+  export type KanbanCardOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    cardId: string | null
+  }
+
+  export type KanbanCardOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    cardId: string | null
+  }
+
+  export type KanbanCardOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    cardId: number
+    _all: number
+  }
+
+
+  export type KanbanCardOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    cardId?: true
+  }
+
+  export type KanbanCardOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    cardId?: true
+  }
+
+  export type KanbanCardOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    cardId?: true
+    _all?: true
+  }
+
+  export type KanbanCardOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which KanbanCardOperation to aggregate.
+     */
+    where?: KanbanCardOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of KanbanCardOperations to fetch.
+     */
+    orderBy?: KanbanCardOperationOrderByWithRelationInput | KanbanCardOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: KanbanCardOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` KanbanCardOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` KanbanCardOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned KanbanCardOperations
+    **/
+    _count?: true | KanbanCardOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: KanbanCardOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: KanbanCardOperationMaxAggregateInputType
+  }
+
+  export type GetKanbanCardOperationAggregateType<T extends KanbanCardOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateKanbanCardOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateKanbanCardOperation[P]>
+      : GetScalarType<T[P], AggregateKanbanCardOperation[P]>
+  }
+
+
+
+
+  export type KanbanCardOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: KanbanCardOperationWhereInput
+    orderBy?: KanbanCardOperationOrderByWithAggregationInput | KanbanCardOperationOrderByWithAggregationInput[]
+    by: KanbanCardOperationScalarFieldEnum[] | KanbanCardOperationScalarFieldEnum
+    having?: KanbanCardOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: KanbanCardOperationCountAggregateInputType | true
+    _min?: KanbanCardOperationMinAggregateInputType
+    _max?: KanbanCardOperationMaxAggregateInputType
+  }
+
+  export type KanbanCardOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    cardId: string
+    _count: KanbanCardOperationCountAggregateOutputType | null
+    _min: KanbanCardOperationMinAggregateOutputType | null
+    _max: KanbanCardOperationMaxAggregateOutputType | null
+  }
+
+  type GetKanbanCardOperationGroupByPayload<T extends KanbanCardOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<KanbanCardOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof KanbanCardOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], KanbanCardOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], KanbanCardOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type KanbanCardOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    cardId?: boolean
+  }, ExtArgs["result"]["kanbanCardOperation"]>
+
+  export type KanbanCardOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    cardId?: boolean
+  }, ExtArgs["result"]["kanbanCardOperation"]>
+
+  export type KanbanCardOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    cardId?: boolean
+  }, ExtArgs["result"]["kanbanCardOperation"]>
+
+  export type KanbanCardOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    cardId?: boolean
+  }
+
+  export type KanbanCardOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "cardId", ExtArgs["result"]["kanbanCardOperation"]>
+
+  export type $KanbanCardOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "KanbanCardOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      cardId: string
+    }, ExtArgs["result"]["kanbanCardOperation"]>
+    composites: {}
+  }
+
+  type KanbanCardOperationGetPayload<S extends boolean | null | undefined | KanbanCardOperationDefaultArgs> = $Result.GetResult<Prisma.$KanbanCardOperationPayload, S>
+
+  type KanbanCardOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<KanbanCardOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: KanbanCardOperationCountAggregateInputType | true
+    }
+
+  export interface KanbanCardOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['KanbanCardOperation'], meta: { name: 'KanbanCardOperation' } }
+    /**
+     * Find zero or one KanbanCardOperation that matches the filter.
+     * @param {KanbanCardOperationFindUniqueArgs} args - Arguments to find a KanbanCardOperation
+     * @example
+     * // Get one KanbanCardOperation
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends KanbanCardOperationFindUniqueArgs>(args: SelectSubset<T, KanbanCardOperationFindUniqueArgs<ExtArgs>>): Prisma__KanbanCardOperationClient<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one KanbanCardOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {KanbanCardOperationFindUniqueOrThrowArgs} args - Arguments to find a KanbanCardOperation
+     * @example
+     * // Get one KanbanCardOperation
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends KanbanCardOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, KanbanCardOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__KanbanCardOperationClient<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first KanbanCardOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {KanbanCardOperationFindFirstArgs} args - Arguments to find a KanbanCardOperation
+     * @example
+     * // Get one KanbanCardOperation
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends KanbanCardOperationFindFirstArgs>(args?: SelectSubset<T, KanbanCardOperationFindFirstArgs<ExtArgs>>): Prisma__KanbanCardOperationClient<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first KanbanCardOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {KanbanCardOperationFindFirstOrThrowArgs} args - Arguments to find a KanbanCardOperation
+     * @example
+     * // Get one KanbanCardOperation
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends KanbanCardOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, KanbanCardOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__KanbanCardOperationClient<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more KanbanCardOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {KanbanCardOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all KanbanCardOperations
+     * const kanbanCardOperations = await prisma.kanbanCardOperation.findMany()
+     * 
+     * // Get first 10 KanbanCardOperations
+     * const kanbanCardOperations = await prisma.kanbanCardOperation.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const kanbanCardOperationWithUserIdOnly = await prisma.kanbanCardOperation.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends KanbanCardOperationFindManyArgs>(args?: SelectSubset<T, KanbanCardOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a KanbanCardOperation.
+     * @param {KanbanCardOperationCreateArgs} args - Arguments to create a KanbanCardOperation.
+     * @example
+     * // Create one KanbanCardOperation
+     * const KanbanCardOperation = await prisma.kanbanCardOperation.create({
+     *   data: {
+     *     // ... data to create a KanbanCardOperation
+     *   }
+     * })
+     * 
+     */
+    create<T extends KanbanCardOperationCreateArgs>(args: SelectSubset<T, KanbanCardOperationCreateArgs<ExtArgs>>): Prisma__KanbanCardOperationClient<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many KanbanCardOperations.
+     * @param {KanbanCardOperationCreateManyArgs} args - Arguments to create many KanbanCardOperations.
+     * @example
+     * // Create many KanbanCardOperations
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends KanbanCardOperationCreateManyArgs>(args?: SelectSubset<T, KanbanCardOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many KanbanCardOperations and returns the data saved in the database.
+     * @param {KanbanCardOperationCreateManyAndReturnArgs} args - Arguments to create many KanbanCardOperations.
+     * @example
+     * // Create many KanbanCardOperations
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many KanbanCardOperations and only return the `userId`
+     * const kanbanCardOperationWithUserIdOnly = await prisma.kanbanCardOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends KanbanCardOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, KanbanCardOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a KanbanCardOperation.
+     * @param {KanbanCardOperationDeleteArgs} args - Arguments to delete one KanbanCardOperation.
+     * @example
+     * // Delete one KanbanCardOperation
+     * const KanbanCardOperation = await prisma.kanbanCardOperation.delete({
+     *   where: {
+     *     // ... filter to delete one KanbanCardOperation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends KanbanCardOperationDeleteArgs>(args: SelectSubset<T, KanbanCardOperationDeleteArgs<ExtArgs>>): Prisma__KanbanCardOperationClient<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one KanbanCardOperation.
+     * @param {KanbanCardOperationUpdateArgs} args - Arguments to update one KanbanCardOperation.
+     * @example
+     * // Update one KanbanCardOperation
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends KanbanCardOperationUpdateArgs>(args: SelectSubset<T, KanbanCardOperationUpdateArgs<ExtArgs>>): Prisma__KanbanCardOperationClient<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more KanbanCardOperations.
+     * @param {KanbanCardOperationDeleteManyArgs} args - Arguments to filter KanbanCardOperations to delete.
+     * @example
+     * // Delete a few KanbanCardOperations
+     * const { count } = await prisma.kanbanCardOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends KanbanCardOperationDeleteManyArgs>(args?: SelectSubset<T, KanbanCardOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more KanbanCardOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {KanbanCardOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many KanbanCardOperations
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends KanbanCardOperationUpdateManyArgs>(args: SelectSubset<T, KanbanCardOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more KanbanCardOperations and returns the data updated in the database.
+     * @param {KanbanCardOperationUpdateManyAndReturnArgs} args - Arguments to update many KanbanCardOperations.
+     * @example
+     * // Update many KanbanCardOperations
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more KanbanCardOperations and only return the `userId`
+     * const kanbanCardOperationWithUserIdOnly = await prisma.kanbanCardOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends KanbanCardOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, KanbanCardOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one KanbanCardOperation.
+     * @param {KanbanCardOperationUpsertArgs} args - Arguments to update or create a KanbanCardOperation.
+     * @example
+     * // Update or create a KanbanCardOperation
+     * const kanbanCardOperation = await prisma.kanbanCardOperation.upsert({
+     *   create: {
+     *     // ... data to create a KanbanCardOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the KanbanCardOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends KanbanCardOperationUpsertArgs>(args: SelectSubset<T, KanbanCardOperationUpsertArgs<ExtArgs>>): Prisma__KanbanCardOperationClient<$Result.GetResult<Prisma.$KanbanCardOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of KanbanCardOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {KanbanCardOperationCountArgs} args - Arguments to filter KanbanCardOperations to count.
+     * @example
+     * // Count the number of KanbanCardOperations
+     * const count = await prisma.kanbanCardOperation.count({
+     *   where: {
+     *     // ... the filter for the KanbanCardOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends KanbanCardOperationCountArgs>(
+      args?: Subset<T, KanbanCardOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], KanbanCardOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a KanbanCardOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {KanbanCardOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends KanbanCardOperationAggregateArgs>(args: Subset<T, KanbanCardOperationAggregateArgs>): Prisma.PrismaPromise<GetKanbanCardOperationAggregateType<T>>
+
+    /**
+     * Group by KanbanCardOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {KanbanCardOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends KanbanCardOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: KanbanCardOperationGroupByArgs['orderBy'] }
+        : { orderBy?: KanbanCardOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, KanbanCardOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetKanbanCardOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the KanbanCardOperation model
+   */
+  readonly fields: KanbanCardOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for KanbanCardOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__KanbanCardOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the KanbanCardOperation model
+   */
+  interface KanbanCardOperationFieldRefs {
+    readonly userId: FieldRef<"KanbanCardOperation", 'String'>
+    readonly clientId: FieldRef<"KanbanCardOperation", 'String'>
+    readonly requestHash: FieldRef<"KanbanCardOperation", 'String'>
+    readonly cardId: FieldRef<"KanbanCardOperation", 'String'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * KanbanCardOperation findUnique
+   */
+  export type KanbanCardOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which KanbanCardOperation to fetch.
+     */
+    where: KanbanCardOperationWhereUniqueInput
+  }
+
+  /**
+   * KanbanCardOperation findUniqueOrThrow
+   */
+  export type KanbanCardOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which KanbanCardOperation to fetch.
+     */
+    where: KanbanCardOperationWhereUniqueInput
+  }
+
+  /**
+   * KanbanCardOperation findFirst
+   */
+  export type KanbanCardOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which KanbanCardOperation to fetch.
+     */
+    where?: KanbanCardOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of KanbanCardOperations to fetch.
+     */
+    orderBy?: KanbanCardOperationOrderByWithRelationInput | KanbanCardOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for KanbanCardOperations.
+     */
+    cursor?: KanbanCardOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` KanbanCardOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` KanbanCardOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of KanbanCardOperations.
+     */
+    distinct?: KanbanCardOperationScalarFieldEnum | KanbanCardOperationScalarFieldEnum[]
+  }
+
+  /**
+   * KanbanCardOperation findFirstOrThrow
+   */
+  export type KanbanCardOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which KanbanCardOperation to fetch.
+     */
+    where?: KanbanCardOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of KanbanCardOperations to fetch.
+     */
+    orderBy?: KanbanCardOperationOrderByWithRelationInput | KanbanCardOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for KanbanCardOperations.
+     */
+    cursor?: KanbanCardOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` KanbanCardOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` KanbanCardOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of KanbanCardOperations.
+     */
+    distinct?: KanbanCardOperationScalarFieldEnum | KanbanCardOperationScalarFieldEnum[]
+  }
+
+  /**
+   * KanbanCardOperation findMany
+   */
+  export type KanbanCardOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which KanbanCardOperations to fetch.
+     */
+    where?: KanbanCardOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of KanbanCardOperations to fetch.
+     */
+    orderBy?: KanbanCardOperationOrderByWithRelationInput | KanbanCardOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing KanbanCardOperations.
+     */
+    cursor?: KanbanCardOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` KanbanCardOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` KanbanCardOperations.
+     */
+    skip?: number
+    distinct?: KanbanCardOperationScalarFieldEnum | KanbanCardOperationScalarFieldEnum[]
+  }
+
+  /**
+   * KanbanCardOperation create
+   */
+  export type KanbanCardOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a KanbanCardOperation.
+     */
+    data: XOR<KanbanCardOperationCreateInput, KanbanCardOperationUncheckedCreateInput>
+  }
+
+  /**
+   * KanbanCardOperation createMany
+   */
+  export type KanbanCardOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many KanbanCardOperations.
+     */
+    data: KanbanCardOperationCreateManyInput | KanbanCardOperationCreateManyInput[]
+  }
+
+  /**
+   * KanbanCardOperation createManyAndReturn
+   */
+  export type KanbanCardOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many KanbanCardOperations.
+     */
+    data: KanbanCardOperationCreateManyInput | KanbanCardOperationCreateManyInput[]
+  }
+
+  /**
+   * KanbanCardOperation update
+   */
+  export type KanbanCardOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a KanbanCardOperation.
+     */
+    data: XOR<KanbanCardOperationUpdateInput, KanbanCardOperationUncheckedUpdateInput>
+    /**
+     * Choose, which KanbanCardOperation to update.
+     */
+    where: KanbanCardOperationWhereUniqueInput
+  }
+
+  /**
+   * KanbanCardOperation updateMany
+   */
+  export type KanbanCardOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update KanbanCardOperations.
+     */
+    data: XOR<KanbanCardOperationUpdateManyMutationInput, KanbanCardOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which KanbanCardOperations to update
+     */
+    where?: KanbanCardOperationWhereInput
+    /**
+     * Limit how many KanbanCardOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * KanbanCardOperation updateManyAndReturn
+   */
+  export type KanbanCardOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update KanbanCardOperations.
+     */
+    data: XOR<KanbanCardOperationUpdateManyMutationInput, KanbanCardOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which KanbanCardOperations to update
+     */
+    where?: KanbanCardOperationWhereInput
+    /**
+     * Limit how many KanbanCardOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * KanbanCardOperation upsert
+   */
+  export type KanbanCardOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the KanbanCardOperation to update in case it exists.
+     */
+    where: KanbanCardOperationWhereUniqueInput
+    /**
+     * In case the KanbanCardOperation found by the `where` argument doesn't exist, create a new KanbanCardOperation with this data.
+     */
+    create: XOR<KanbanCardOperationCreateInput, KanbanCardOperationUncheckedCreateInput>
+    /**
+     * In case the KanbanCardOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<KanbanCardOperationUpdateInput, KanbanCardOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * KanbanCardOperation delete
+   */
+  export type KanbanCardOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+    /**
+     * Filter which KanbanCardOperation to delete.
+     */
+    where: KanbanCardOperationWhereUniqueInput
+  }
+
+  /**
+   * KanbanCardOperation deleteMany
+   */
+  export type KanbanCardOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which KanbanCardOperations to delete
+     */
+    where?: KanbanCardOperationWhereInput
+    /**
+     * Limit how many KanbanCardOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * KanbanCardOperation without action
+   */
+  export type KanbanCardOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the KanbanCardOperation
+     */
+    select?: KanbanCardOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the KanbanCardOperation
+     */
+    omit?: KanbanCardOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model ReminderCreationOperation
+   */
+
+  export type AggregateReminderCreationOperation = {
+    _count: ReminderCreationOperationCountAggregateOutputType | null
+    _min: ReminderCreationOperationMinAggregateOutputType | null
+    _max: ReminderCreationOperationMaxAggregateOutputType | null
+  }
+
+  export type ReminderCreationOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    reminderId: string | null
+  }
+
+  export type ReminderCreationOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    reminderId: string | null
+  }
+
+  export type ReminderCreationOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    reminderId: number
+    _all: number
+  }
+
+
+  export type ReminderCreationOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    reminderId?: true
+  }
+
+  export type ReminderCreationOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    reminderId?: true
+  }
+
+  export type ReminderCreationOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    reminderId?: true
+    _all?: true
+  }
+
+  export type ReminderCreationOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ReminderCreationOperation to aggregate.
+     */
+    where?: ReminderCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ReminderCreationOperations to fetch.
+     */
+    orderBy?: ReminderCreationOperationOrderByWithRelationInput | ReminderCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: ReminderCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ReminderCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ReminderCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned ReminderCreationOperations
+    **/
+    _count?: true | ReminderCreationOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: ReminderCreationOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: ReminderCreationOperationMaxAggregateInputType
+  }
+
+  export type GetReminderCreationOperationAggregateType<T extends ReminderCreationOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateReminderCreationOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateReminderCreationOperation[P]>
+      : GetScalarType<T[P], AggregateReminderCreationOperation[P]>
+  }
+
+
+
+
+  export type ReminderCreationOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ReminderCreationOperationWhereInput
+    orderBy?: ReminderCreationOperationOrderByWithAggregationInput | ReminderCreationOperationOrderByWithAggregationInput[]
+    by: ReminderCreationOperationScalarFieldEnum[] | ReminderCreationOperationScalarFieldEnum
+    having?: ReminderCreationOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ReminderCreationOperationCountAggregateInputType | true
+    _min?: ReminderCreationOperationMinAggregateInputType
+    _max?: ReminderCreationOperationMaxAggregateInputType
+  }
+
+  export type ReminderCreationOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    reminderId: string
+    _count: ReminderCreationOperationCountAggregateOutputType | null
+    _min: ReminderCreationOperationMinAggregateOutputType | null
+    _max: ReminderCreationOperationMaxAggregateOutputType | null
+  }
+
+  type GetReminderCreationOperationGroupByPayload<T extends ReminderCreationOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ReminderCreationOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ReminderCreationOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ReminderCreationOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], ReminderCreationOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ReminderCreationOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    reminderId?: boolean
+  }, ExtArgs["result"]["reminderCreationOperation"]>
+
+  export type ReminderCreationOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    reminderId?: boolean
+  }, ExtArgs["result"]["reminderCreationOperation"]>
+
+  export type ReminderCreationOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    reminderId?: boolean
+  }, ExtArgs["result"]["reminderCreationOperation"]>
+
+  export type ReminderCreationOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    reminderId?: boolean
+  }
+
+  export type ReminderCreationOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "reminderId", ExtArgs["result"]["reminderCreationOperation"]>
+
+  export type $ReminderCreationOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "ReminderCreationOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      reminderId: string
+    }, ExtArgs["result"]["reminderCreationOperation"]>
+    composites: {}
+  }
+
+  type ReminderCreationOperationGetPayload<S extends boolean | null | undefined | ReminderCreationOperationDefaultArgs> = $Result.GetResult<Prisma.$ReminderCreationOperationPayload, S>
+
+  type ReminderCreationOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ReminderCreationOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ReminderCreationOperationCountAggregateInputType | true
+    }
+
+  export interface ReminderCreationOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['ReminderCreationOperation'], meta: { name: 'ReminderCreationOperation' } }
+    /**
+     * Find zero or one ReminderCreationOperation that matches the filter.
+     * @param {ReminderCreationOperationFindUniqueArgs} args - Arguments to find a ReminderCreationOperation
+     * @example
+     * // Get one ReminderCreationOperation
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ReminderCreationOperationFindUniqueArgs>(args: SelectSubset<T, ReminderCreationOperationFindUniqueArgs<ExtArgs>>): Prisma__ReminderCreationOperationClient<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one ReminderCreationOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ReminderCreationOperationFindUniqueOrThrowArgs} args - Arguments to find a ReminderCreationOperation
+     * @example
+     * // Get one ReminderCreationOperation
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ReminderCreationOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, ReminderCreationOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ReminderCreationOperationClient<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ReminderCreationOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderCreationOperationFindFirstArgs} args - Arguments to find a ReminderCreationOperation
+     * @example
+     * // Get one ReminderCreationOperation
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ReminderCreationOperationFindFirstArgs>(args?: SelectSubset<T, ReminderCreationOperationFindFirstArgs<ExtArgs>>): Prisma__ReminderCreationOperationClient<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first ReminderCreationOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderCreationOperationFindFirstOrThrowArgs} args - Arguments to find a ReminderCreationOperation
+     * @example
+     * // Get one ReminderCreationOperation
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ReminderCreationOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, ReminderCreationOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__ReminderCreationOperationClient<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more ReminderCreationOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderCreationOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all ReminderCreationOperations
+     * const reminderCreationOperations = await prisma.reminderCreationOperation.findMany()
+     * 
+     * // Get first 10 ReminderCreationOperations
+     * const reminderCreationOperations = await prisma.reminderCreationOperation.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const reminderCreationOperationWithUserIdOnly = await prisma.reminderCreationOperation.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends ReminderCreationOperationFindManyArgs>(args?: SelectSubset<T, ReminderCreationOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a ReminderCreationOperation.
+     * @param {ReminderCreationOperationCreateArgs} args - Arguments to create a ReminderCreationOperation.
+     * @example
+     * // Create one ReminderCreationOperation
+     * const ReminderCreationOperation = await prisma.reminderCreationOperation.create({
+     *   data: {
+     *     // ... data to create a ReminderCreationOperation
+     *   }
+     * })
+     * 
+     */
+    create<T extends ReminderCreationOperationCreateArgs>(args: SelectSubset<T, ReminderCreationOperationCreateArgs<ExtArgs>>): Prisma__ReminderCreationOperationClient<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many ReminderCreationOperations.
+     * @param {ReminderCreationOperationCreateManyArgs} args - Arguments to create many ReminderCreationOperations.
+     * @example
+     * // Create many ReminderCreationOperations
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends ReminderCreationOperationCreateManyArgs>(args?: SelectSubset<T, ReminderCreationOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many ReminderCreationOperations and returns the data saved in the database.
+     * @param {ReminderCreationOperationCreateManyAndReturnArgs} args - Arguments to create many ReminderCreationOperations.
+     * @example
+     * // Create many ReminderCreationOperations
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many ReminderCreationOperations and only return the `userId`
+     * const reminderCreationOperationWithUserIdOnly = await prisma.reminderCreationOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends ReminderCreationOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, ReminderCreationOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a ReminderCreationOperation.
+     * @param {ReminderCreationOperationDeleteArgs} args - Arguments to delete one ReminderCreationOperation.
+     * @example
+     * // Delete one ReminderCreationOperation
+     * const ReminderCreationOperation = await prisma.reminderCreationOperation.delete({
+     *   where: {
+     *     // ... filter to delete one ReminderCreationOperation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends ReminderCreationOperationDeleteArgs>(args: SelectSubset<T, ReminderCreationOperationDeleteArgs<ExtArgs>>): Prisma__ReminderCreationOperationClient<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one ReminderCreationOperation.
+     * @param {ReminderCreationOperationUpdateArgs} args - Arguments to update one ReminderCreationOperation.
+     * @example
+     * // Update one ReminderCreationOperation
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends ReminderCreationOperationUpdateArgs>(args: SelectSubset<T, ReminderCreationOperationUpdateArgs<ExtArgs>>): Prisma__ReminderCreationOperationClient<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more ReminderCreationOperations.
+     * @param {ReminderCreationOperationDeleteManyArgs} args - Arguments to filter ReminderCreationOperations to delete.
+     * @example
+     * // Delete a few ReminderCreationOperations
+     * const { count } = await prisma.reminderCreationOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends ReminderCreationOperationDeleteManyArgs>(args?: SelectSubset<T, ReminderCreationOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ReminderCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderCreationOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many ReminderCreationOperations
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends ReminderCreationOperationUpdateManyArgs>(args: SelectSubset<T, ReminderCreationOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more ReminderCreationOperations and returns the data updated in the database.
+     * @param {ReminderCreationOperationUpdateManyAndReturnArgs} args - Arguments to update many ReminderCreationOperations.
+     * @example
+     * // Update many ReminderCreationOperations
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more ReminderCreationOperations and only return the `userId`
+     * const reminderCreationOperationWithUserIdOnly = await prisma.reminderCreationOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends ReminderCreationOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, ReminderCreationOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one ReminderCreationOperation.
+     * @param {ReminderCreationOperationUpsertArgs} args - Arguments to update or create a ReminderCreationOperation.
+     * @example
+     * // Update or create a ReminderCreationOperation
+     * const reminderCreationOperation = await prisma.reminderCreationOperation.upsert({
+     *   create: {
+     *     // ... data to create a ReminderCreationOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the ReminderCreationOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ReminderCreationOperationUpsertArgs>(args: SelectSubset<T, ReminderCreationOperationUpsertArgs<ExtArgs>>): Prisma__ReminderCreationOperationClient<$Result.GetResult<Prisma.$ReminderCreationOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of ReminderCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderCreationOperationCountArgs} args - Arguments to filter ReminderCreationOperations to count.
+     * @example
+     * // Count the number of ReminderCreationOperations
+     * const count = await prisma.reminderCreationOperation.count({
+     *   where: {
+     *     // ... the filter for the ReminderCreationOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends ReminderCreationOperationCountArgs>(
+      args?: Subset<T, ReminderCreationOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ReminderCreationOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a ReminderCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderCreationOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ReminderCreationOperationAggregateArgs>(args: Subset<T, ReminderCreationOperationAggregateArgs>): Prisma.PrismaPromise<GetReminderCreationOperationAggregateType<T>>
+
+    /**
+     * Group by ReminderCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ReminderCreationOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends ReminderCreationOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ReminderCreationOperationGroupByArgs['orderBy'] }
+        : { orderBy?: ReminderCreationOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ReminderCreationOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetReminderCreationOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the ReminderCreationOperation model
+   */
+  readonly fields: ReminderCreationOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for ReminderCreationOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ReminderCreationOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the ReminderCreationOperation model
+   */
+  interface ReminderCreationOperationFieldRefs {
+    readonly userId: FieldRef<"ReminderCreationOperation", 'String'>
+    readonly clientId: FieldRef<"ReminderCreationOperation", 'String'>
+    readonly requestHash: FieldRef<"ReminderCreationOperation", 'String'>
+    readonly reminderId: FieldRef<"ReminderCreationOperation", 'String'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * ReminderCreationOperation findUnique
+   */
+  export type ReminderCreationOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReminderCreationOperation to fetch.
+     */
+    where: ReminderCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ReminderCreationOperation findUniqueOrThrow
+   */
+  export type ReminderCreationOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReminderCreationOperation to fetch.
+     */
+    where: ReminderCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ReminderCreationOperation findFirst
+   */
+  export type ReminderCreationOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReminderCreationOperation to fetch.
+     */
+    where?: ReminderCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ReminderCreationOperations to fetch.
+     */
+    orderBy?: ReminderCreationOperationOrderByWithRelationInput | ReminderCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for ReminderCreationOperations.
+     */
+    cursor?: ReminderCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ReminderCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ReminderCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of ReminderCreationOperations.
+     */
+    distinct?: ReminderCreationOperationScalarFieldEnum | ReminderCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ReminderCreationOperation findFirstOrThrow
+   */
+  export type ReminderCreationOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReminderCreationOperation to fetch.
+     */
+    where?: ReminderCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ReminderCreationOperations to fetch.
+     */
+    orderBy?: ReminderCreationOperationOrderByWithRelationInput | ReminderCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for ReminderCreationOperations.
+     */
+    cursor?: ReminderCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ReminderCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ReminderCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of ReminderCreationOperations.
+     */
+    distinct?: ReminderCreationOperationScalarFieldEnum | ReminderCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ReminderCreationOperation findMany
+   */
+  export type ReminderCreationOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which ReminderCreationOperations to fetch.
+     */
+    where?: ReminderCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of ReminderCreationOperations to fetch.
+     */
+    orderBy?: ReminderCreationOperationOrderByWithRelationInput | ReminderCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing ReminderCreationOperations.
+     */
+    cursor?: ReminderCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` ReminderCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` ReminderCreationOperations.
+     */
+    skip?: number
+    distinct?: ReminderCreationOperationScalarFieldEnum | ReminderCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * ReminderCreationOperation create
+   */
+  export type ReminderCreationOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a ReminderCreationOperation.
+     */
+    data: XOR<ReminderCreationOperationCreateInput, ReminderCreationOperationUncheckedCreateInput>
+  }
+
+  /**
+   * ReminderCreationOperation createMany
+   */
+  export type ReminderCreationOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many ReminderCreationOperations.
+     */
+    data: ReminderCreationOperationCreateManyInput | ReminderCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * ReminderCreationOperation createManyAndReturn
+   */
+  export type ReminderCreationOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many ReminderCreationOperations.
+     */
+    data: ReminderCreationOperationCreateManyInput | ReminderCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * ReminderCreationOperation update
+   */
+  export type ReminderCreationOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a ReminderCreationOperation.
+     */
+    data: XOR<ReminderCreationOperationUpdateInput, ReminderCreationOperationUncheckedUpdateInput>
+    /**
+     * Choose, which ReminderCreationOperation to update.
+     */
+    where: ReminderCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ReminderCreationOperation updateMany
+   */
+  export type ReminderCreationOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update ReminderCreationOperations.
+     */
+    data: XOR<ReminderCreationOperationUpdateManyMutationInput, ReminderCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which ReminderCreationOperations to update
+     */
+    where?: ReminderCreationOperationWhereInput
+    /**
+     * Limit how many ReminderCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ReminderCreationOperation updateManyAndReturn
+   */
+  export type ReminderCreationOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update ReminderCreationOperations.
+     */
+    data: XOR<ReminderCreationOperationUpdateManyMutationInput, ReminderCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which ReminderCreationOperations to update
+     */
+    where?: ReminderCreationOperationWhereInput
+    /**
+     * Limit how many ReminderCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * ReminderCreationOperation upsert
+   */
+  export type ReminderCreationOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the ReminderCreationOperation to update in case it exists.
+     */
+    where: ReminderCreationOperationWhereUniqueInput
+    /**
+     * In case the ReminderCreationOperation found by the `where` argument doesn't exist, create a new ReminderCreationOperation with this data.
+     */
+    create: XOR<ReminderCreationOperationCreateInput, ReminderCreationOperationUncheckedCreateInput>
+    /**
+     * In case the ReminderCreationOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ReminderCreationOperationUpdateInput, ReminderCreationOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * ReminderCreationOperation delete
+   */
+  export type ReminderCreationOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter which ReminderCreationOperation to delete.
+     */
+    where: ReminderCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * ReminderCreationOperation deleteMany
+   */
+  export type ReminderCreationOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which ReminderCreationOperations to delete
+     */
+    where?: ReminderCreationOperationWhereInput
+    /**
+     * Limit how many ReminderCreationOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * ReminderCreationOperation without action
+   */
+  export type ReminderCreationOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the ReminderCreationOperation
+     */
+    select?: ReminderCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the ReminderCreationOperation
+     */
+    omit?: ReminderCreationOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model RedPacketCreationOperation
+   */
+
+  export type AggregateRedPacketCreationOperation = {
+    _count: RedPacketCreationOperationCountAggregateOutputType | null
+    _min: RedPacketCreationOperationMinAggregateOutputType | null
+    _max: RedPacketCreationOperationMaxAggregateOutputType | null
+  }
+
+  export type RedPacketCreationOperationMinAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    packetId: string | null
+  }
+
+  export type RedPacketCreationOperationMaxAggregateOutputType = {
+    userId: string | null
+    clientId: string | null
+    requestHash: string | null
+    packetId: string | null
+  }
+
+  export type RedPacketCreationOperationCountAggregateOutputType = {
+    userId: number
+    clientId: number
+    requestHash: number
+    packetId: number
+    _all: number
+  }
+
+
+  export type RedPacketCreationOperationMinAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    packetId?: true
+  }
+
+  export type RedPacketCreationOperationMaxAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    packetId?: true
+  }
+
+  export type RedPacketCreationOperationCountAggregateInputType = {
+    userId?: true
+    clientId?: true
+    requestHash?: true
+    packetId?: true
+    _all?: true
+  }
+
+  export type RedPacketCreationOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which RedPacketCreationOperation to aggregate.
+     */
+    where?: RedPacketCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of RedPacketCreationOperations to fetch.
+     */
+    orderBy?: RedPacketCreationOperationOrderByWithRelationInput | RedPacketCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: RedPacketCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` RedPacketCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` RedPacketCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned RedPacketCreationOperations
+    **/
+    _count?: true | RedPacketCreationOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: RedPacketCreationOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: RedPacketCreationOperationMaxAggregateInputType
+  }
+
+  export type GetRedPacketCreationOperationAggregateType<T extends RedPacketCreationOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateRedPacketCreationOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateRedPacketCreationOperation[P]>
+      : GetScalarType<T[P], AggregateRedPacketCreationOperation[P]>
+  }
+
+
+
+
+  export type RedPacketCreationOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: RedPacketCreationOperationWhereInput
+    orderBy?: RedPacketCreationOperationOrderByWithAggregationInput | RedPacketCreationOperationOrderByWithAggregationInput[]
+    by: RedPacketCreationOperationScalarFieldEnum[] | RedPacketCreationOperationScalarFieldEnum
+    having?: RedPacketCreationOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: RedPacketCreationOperationCountAggregateInputType | true
+    _min?: RedPacketCreationOperationMinAggregateInputType
+    _max?: RedPacketCreationOperationMaxAggregateInputType
+  }
+
+  export type RedPacketCreationOperationGroupByOutputType = {
+    userId: string
+    clientId: string
+    requestHash: string
+    packetId: string
+    _count: RedPacketCreationOperationCountAggregateOutputType | null
+    _min: RedPacketCreationOperationMinAggregateOutputType | null
+    _max: RedPacketCreationOperationMaxAggregateOutputType | null
+  }
+
+  type GetRedPacketCreationOperationGroupByPayload<T extends RedPacketCreationOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<RedPacketCreationOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof RedPacketCreationOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], RedPacketCreationOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], RedPacketCreationOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type RedPacketCreationOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    packetId?: boolean
+  }, ExtArgs["result"]["redPacketCreationOperation"]>
+
+  export type RedPacketCreationOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    packetId?: boolean
+  }, ExtArgs["result"]["redPacketCreationOperation"]>
+
+  export type RedPacketCreationOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    packetId?: boolean
+  }, ExtArgs["result"]["redPacketCreationOperation"]>
+
+  export type RedPacketCreationOperationSelectScalar = {
+    userId?: boolean
+    clientId?: boolean
+    requestHash?: boolean
+    packetId?: boolean
+  }
+
+  export type RedPacketCreationOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "clientId" | "requestHash" | "packetId", ExtArgs["result"]["redPacketCreationOperation"]>
+
+  export type $RedPacketCreationOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "RedPacketCreationOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      clientId: string
+      requestHash: string
+      packetId: string
+    }, ExtArgs["result"]["redPacketCreationOperation"]>
+    composites: {}
+  }
+
+  type RedPacketCreationOperationGetPayload<S extends boolean | null | undefined | RedPacketCreationOperationDefaultArgs> = $Result.GetResult<Prisma.$RedPacketCreationOperationPayload, S>
+
+  type RedPacketCreationOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<RedPacketCreationOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: RedPacketCreationOperationCountAggregateInputType | true
+    }
+
+  export interface RedPacketCreationOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['RedPacketCreationOperation'], meta: { name: 'RedPacketCreationOperation' } }
+    /**
+     * Find zero or one RedPacketCreationOperation that matches the filter.
+     * @param {RedPacketCreationOperationFindUniqueArgs} args - Arguments to find a RedPacketCreationOperation
+     * @example
+     * // Get one RedPacketCreationOperation
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends RedPacketCreationOperationFindUniqueArgs>(args: SelectSubset<T, RedPacketCreationOperationFindUniqueArgs<ExtArgs>>): Prisma__RedPacketCreationOperationClient<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one RedPacketCreationOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {RedPacketCreationOperationFindUniqueOrThrowArgs} args - Arguments to find a RedPacketCreationOperation
+     * @example
+     * // Get one RedPacketCreationOperation
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends RedPacketCreationOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, RedPacketCreationOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__RedPacketCreationOperationClient<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first RedPacketCreationOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RedPacketCreationOperationFindFirstArgs} args - Arguments to find a RedPacketCreationOperation
+     * @example
+     * // Get one RedPacketCreationOperation
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends RedPacketCreationOperationFindFirstArgs>(args?: SelectSubset<T, RedPacketCreationOperationFindFirstArgs<ExtArgs>>): Prisma__RedPacketCreationOperationClient<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first RedPacketCreationOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RedPacketCreationOperationFindFirstOrThrowArgs} args - Arguments to find a RedPacketCreationOperation
+     * @example
+     * // Get one RedPacketCreationOperation
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends RedPacketCreationOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, RedPacketCreationOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__RedPacketCreationOperationClient<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more RedPacketCreationOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RedPacketCreationOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all RedPacketCreationOperations
+     * const redPacketCreationOperations = await prisma.redPacketCreationOperation.findMany()
+     * 
+     * // Get first 10 RedPacketCreationOperations
+     * const redPacketCreationOperations = await prisma.redPacketCreationOperation.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const redPacketCreationOperationWithUserIdOnly = await prisma.redPacketCreationOperation.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends RedPacketCreationOperationFindManyArgs>(args?: SelectSubset<T, RedPacketCreationOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a RedPacketCreationOperation.
+     * @param {RedPacketCreationOperationCreateArgs} args - Arguments to create a RedPacketCreationOperation.
+     * @example
+     * // Create one RedPacketCreationOperation
+     * const RedPacketCreationOperation = await prisma.redPacketCreationOperation.create({
+     *   data: {
+     *     // ... data to create a RedPacketCreationOperation
+     *   }
+     * })
+     * 
+     */
+    create<T extends RedPacketCreationOperationCreateArgs>(args: SelectSubset<T, RedPacketCreationOperationCreateArgs<ExtArgs>>): Prisma__RedPacketCreationOperationClient<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many RedPacketCreationOperations.
+     * @param {RedPacketCreationOperationCreateManyArgs} args - Arguments to create many RedPacketCreationOperations.
+     * @example
+     * // Create many RedPacketCreationOperations
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends RedPacketCreationOperationCreateManyArgs>(args?: SelectSubset<T, RedPacketCreationOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many RedPacketCreationOperations and returns the data saved in the database.
+     * @param {RedPacketCreationOperationCreateManyAndReturnArgs} args - Arguments to create many RedPacketCreationOperations.
+     * @example
+     * // Create many RedPacketCreationOperations
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many RedPacketCreationOperations and only return the `userId`
+     * const redPacketCreationOperationWithUserIdOnly = await prisma.redPacketCreationOperation.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends RedPacketCreationOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, RedPacketCreationOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a RedPacketCreationOperation.
+     * @param {RedPacketCreationOperationDeleteArgs} args - Arguments to delete one RedPacketCreationOperation.
+     * @example
+     * // Delete one RedPacketCreationOperation
+     * const RedPacketCreationOperation = await prisma.redPacketCreationOperation.delete({
+     *   where: {
+     *     // ... filter to delete one RedPacketCreationOperation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends RedPacketCreationOperationDeleteArgs>(args: SelectSubset<T, RedPacketCreationOperationDeleteArgs<ExtArgs>>): Prisma__RedPacketCreationOperationClient<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one RedPacketCreationOperation.
+     * @param {RedPacketCreationOperationUpdateArgs} args - Arguments to update one RedPacketCreationOperation.
+     * @example
+     * // Update one RedPacketCreationOperation
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends RedPacketCreationOperationUpdateArgs>(args: SelectSubset<T, RedPacketCreationOperationUpdateArgs<ExtArgs>>): Prisma__RedPacketCreationOperationClient<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more RedPacketCreationOperations.
+     * @param {RedPacketCreationOperationDeleteManyArgs} args - Arguments to filter RedPacketCreationOperations to delete.
+     * @example
+     * // Delete a few RedPacketCreationOperations
+     * const { count } = await prisma.redPacketCreationOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends RedPacketCreationOperationDeleteManyArgs>(args?: SelectSubset<T, RedPacketCreationOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more RedPacketCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RedPacketCreationOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many RedPacketCreationOperations
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends RedPacketCreationOperationUpdateManyArgs>(args: SelectSubset<T, RedPacketCreationOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more RedPacketCreationOperations and returns the data updated in the database.
+     * @param {RedPacketCreationOperationUpdateManyAndReturnArgs} args - Arguments to update many RedPacketCreationOperations.
+     * @example
+     * // Update many RedPacketCreationOperations
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more RedPacketCreationOperations and only return the `userId`
+     * const redPacketCreationOperationWithUserIdOnly = await prisma.redPacketCreationOperation.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends RedPacketCreationOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, RedPacketCreationOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one RedPacketCreationOperation.
+     * @param {RedPacketCreationOperationUpsertArgs} args - Arguments to update or create a RedPacketCreationOperation.
+     * @example
+     * // Update or create a RedPacketCreationOperation
+     * const redPacketCreationOperation = await prisma.redPacketCreationOperation.upsert({
+     *   create: {
+     *     // ... data to create a RedPacketCreationOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the RedPacketCreationOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends RedPacketCreationOperationUpsertArgs>(args: SelectSubset<T, RedPacketCreationOperationUpsertArgs<ExtArgs>>): Prisma__RedPacketCreationOperationClient<$Result.GetResult<Prisma.$RedPacketCreationOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of RedPacketCreationOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RedPacketCreationOperationCountArgs} args - Arguments to filter RedPacketCreationOperations to count.
+     * @example
+     * // Count the number of RedPacketCreationOperations
+     * const count = await prisma.redPacketCreationOperation.count({
+     *   where: {
+     *     // ... the filter for the RedPacketCreationOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends RedPacketCreationOperationCountArgs>(
+      args?: Subset<T, RedPacketCreationOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], RedPacketCreationOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a RedPacketCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RedPacketCreationOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends RedPacketCreationOperationAggregateArgs>(args: Subset<T, RedPacketCreationOperationAggregateArgs>): Prisma.PrismaPromise<GetRedPacketCreationOperationAggregateType<T>>
+
+    /**
+     * Group by RedPacketCreationOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RedPacketCreationOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends RedPacketCreationOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: RedPacketCreationOperationGroupByArgs['orderBy'] }
+        : { orderBy?: RedPacketCreationOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, RedPacketCreationOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetRedPacketCreationOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the RedPacketCreationOperation model
+   */
+  readonly fields: RedPacketCreationOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for RedPacketCreationOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__RedPacketCreationOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the RedPacketCreationOperation model
+   */
+  interface RedPacketCreationOperationFieldRefs {
+    readonly userId: FieldRef<"RedPacketCreationOperation", 'String'>
+    readonly clientId: FieldRef<"RedPacketCreationOperation", 'String'>
+    readonly requestHash: FieldRef<"RedPacketCreationOperation", 'String'>
+    readonly packetId: FieldRef<"RedPacketCreationOperation", 'String'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * RedPacketCreationOperation findUnique
+   */
+  export type RedPacketCreationOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which RedPacketCreationOperation to fetch.
+     */
+    where: RedPacketCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * RedPacketCreationOperation findUniqueOrThrow
+   */
+  export type RedPacketCreationOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which RedPacketCreationOperation to fetch.
+     */
+    where: RedPacketCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * RedPacketCreationOperation findFirst
+   */
+  export type RedPacketCreationOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which RedPacketCreationOperation to fetch.
+     */
+    where?: RedPacketCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of RedPacketCreationOperations to fetch.
+     */
+    orderBy?: RedPacketCreationOperationOrderByWithRelationInput | RedPacketCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for RedPacketCreationOperations.
+     */
+    cursor?: RedPacketCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` RedPacketCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` RedPacketCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of RedPacketCreationOperations.
+     */
+    distinct?: RedPacketCreationOperationScalarFieldEnum | RedPacketCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * RedPacketCreationOperation findFirstOrThrow
+   */
+  export type RedPacketCreationOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which RedPacketCreationOperation to fetch.
+     */
+    where?: RedPacketCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of RedPacketCreationOperations to fetch.
+     */
+    orderBy?: RedPacketCreationOperationOrderByWithRelationInput | RedPacketCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for RedPacketCreationOperations.
+     */
+    cursor?: RedPacketCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` RedPacketCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` RedPacketCreationOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of RedPacketCreationOperations.
+     */
+    distinct?: RedPacketCreationOperationScalarFieldEnum | RedPacketCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * RedPacketCreationOperation findMany
+   */
+  export type RedPacketCreationOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which RedPacketCreationOperations to fetch.
+     */
+    where?: RedPacketCreationOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of RedPacketCreationOperations to fetch.
+     */
+    orderBy?: RedPacketCreationOperationOrderByWithRelationInput | RedPacketCreationOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing RedPacketCreationOperations.
+     */
+    cursor?: RedPacketCreationOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` RedPacketCreationOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` RedPacketCreationOperations.
+     */
+    skip?: number
+    distinct?: RedPacketCreationOperationScalarFieldEnum | RedPacketCreationOperationScalarFieldEnum[]
+  }
+
+  /**
+   * RedPacketCreationOperation create
+   */
+  export type RedPacketCreationOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a RedPacketCreationOperation.
+     */
+    data: XOR<RedPacketCreationOperationCreateInput, RedPacketCreationOperationUncheckedCreateInput>
+  }
+
+  /**
+   * RedPacketCreationOperation createMany
+   */
+  export type RedPacketCreationOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many RedPacketCreationOperations.
+     */
+    data: RedPacketCreationOperationCreateManyInput | RedPacketCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * RedPacketCreationOperation createManyAndReturn
+   */
+  export type RedPacketCreationOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many RedPacketCreationOperations.
+     */
+    data: RedPacketCreationOperationCreateManyInput | RedPacketCreationOperationCreateManyInput[]
+  }
+
+  /**
+   * RedPacketCreationOperation update
+   */
+  export type RedPacketCreationOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a RedPacketCreationOperation.
+     */
+    data: XOR<RedPacketCreationOperationUpdateInput, RedPacketCreationOperationUncheckedUpdateInput>
+    /**
+     * Choose, which RedPacketCreationOperation to update.
+     */
+    where: RedPacketCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * RedPacketCreationOperation updateMany
+   */
+  export type RedPacketCreationOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update RedPacketCreationOperations.
+     */
+    data: XOR<RedPacketCreationOperationUpdateManyMutationInput, RedPacketCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which RedPacketCreationOperations to update
+     */
+    where?: RedPacketCreationOperationWhereInput
+    /**
+     * Limit how many RedPacketCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * RedPacketCreationOperation updateManyAndReturn
+   */
+  export type RedPacketCreationOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update RedPacketCreationOperations.
+     */
+    data: XOR<RedPacketCreationOperationUpdateManyMutationInput, RedPacketCreationOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which RedPacketCreationOperations to update
+     */
+    where?: RedPacketCreationOperationWhereInput
+    /**
+     * Limit how many RedPacketCreationOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * RedPacketCreationOperation upsert
+   */
+  export type RedPacketCreationOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the RedPacketCreationOperation to update in case it exists.
+     */
+    where: RedPacketCreationOperationWhereUniqueInput
+    /**
+     * In case the RedPacketCreationOperation found by the `where` argument doesn't exist, create a new RedPacketCreationOperation with this data.
+     */
+    create: XOR<RedPacketCreationOperationCreateInput, RedPacketCreationOperationUncheckedCreateInput>
+    /**
+     * In case the RedPacketCreationOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<RedPacketCreationOperationUpdateInput, RedPacketCreationOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * RedPacketCreationOperation delete
+   */
+  export type RedPacketCreationOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+    /**
+     * Filter which RedPacketCreationOperation to delete.
+     */
+    where: RedPacketCreationOperationWhereUniqueInput
+  }
+
+  /**
+   * RedPacketCreationOperation deleteMany
+   */
+  export type RedPacketCreationOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which RedPacketCreationOperations to delete
+     */
+    where?: RedPacketCreationOperationWhereInput
+    /**
+     * Limit how many RedPacketCreationOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * RedPacketCreationOperation without action
+   */
+  export type RedPacketCreationOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RedPacketCreationOperation
+     */
+    select?: RedPacketCreationOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RedPacketCreationOperation
+     */
+    omit?: RedPacketCreationOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model RoomListRevision
+   */
+
+  export type AggregateRoomListRevision = {
+    _count: RoomListRevisionCountAggregateOutputType | null
+    _avg: RoomListRevisionAvgAggregateOutputType | null
+    _sum: RoomListRevisionSumAggregateOutputType | null
+    _min: RoomListRevisionMinAggregateOutputType | null
+    _max: RoomListRevisionMaxAggregateOutputType | null
+  }
+
+  export type RoomListRevisionAvgAggregateOutputType = {
+    rev: number | null
+  }
+
+  export type RoomListRevisionSumAggregateOutputType = {
+    rev: number | null
+  }
+
+  export type RoomListRevisionMinAggregateOutputType = {
+    conversationId: string | null
+    kind: string | null
+    rev: number | null
+  }
+
+  export type RoomListRevisionMaxAggregateOutputType = {
+    conversationId: string | null
+    kind: string | null
+    rev: number | null
+  }
+
+  export type RoomListRevisionCountAggregateOutputType = {
+    conversationId: number
+    kind: number
+    rev: number
+    _all: number
+  }
+
+
+  export type RoomListRevisionAvgAggregateInputType = {
+    rev?: true
+  }
+
+  export type RoomListRevisionSumAggregateInputType = {
+    rev?: true
+  }
+
+  export type RoomListRevisionMinAggregateInputType = {
+    conversationId?: true
+    kind?: true
+    rev?: true
+  }
+
+  export type RoomListRevisionMaxAggregateInputType = {
+    conversationId?: true
+    kind?: true
+    rev?: true
+  }
+
+  export type RoomListRevisionCountAggregateInputType = {
+    conversationId?: true
+    kind?: true
+    rev?: true
+    _all?: true
+  }
+
+  export type RoomListRevisionAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which RoomListRevision to aggregate.
+     */
+    where?: RoomListRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of RoomListRevisions to fetch.
+     */
+    orderBy?: RoomListRevisionOrderByWithRelationInput | RoomListRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: RoomListRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` RoomListRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` RoomListRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned RoomListRevisions
+    **/
+    _count?: true | RoomListRevisionCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: RoomListRevisionAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: RoomListRevisionSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: RoomListRevisionMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: RoomListRevisionMaxAggregateInputType
+  }
+
+  export type GetRoomListRevisionAggregateType<T extends RoomListRevisionAggregateArgs> = {
+        [P in keyof T & keyof AggregateRoomListRevision]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateRoomListRevision[P]>
+      : GetScalarType<T[P], AggregateRoomListRevision[P]>
+  }
+
+
+
+
+  export type RoomListRevisionGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: RoomListRevisionWhereInput
+    orderBy?: RoomListRevisionOrderByWithAggregationInput | RoomListRevisionOrderByWithAggregationInput[]
+    by: RoomListRevisionScalarFieldEnum[] | RoomListRevisionScalarFieldEnum
+    having?: RoomListRevisionScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: RoomListRevisionCountAggregateInputType | true
+    _avg?: RoomListRevisionAvgAggregateInputType
+    _sum?: RoomListRevisionSumAggregateInputType
+    _min?: RoomListRevisionMinAggregateInputType
+    _max?: RoomListRevisionMaxAggregateInputType
+  }
+
+  export type RoomListRevisionGroupByOutputType = {
+    conversationId: string
+    kind: string
+    rev: number
+    _count: RoomListRevisionCountAggregateOutputType | null
+    _avg: RoomListRevisionAvgAggregateOutputType | null
+    _sum: RoomListRevisionSumAggregateOutputType | null
+    _min: RoomListRevisionMinAggregateOutputType | null
+    _max: RoomListRevisionMaxAggregateOutputType | null
+  }
+
+  type GetRoomListRevisionGroupByPayload<T extends RoomListRevisionGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<RoomListRevisionGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof RoomListRevisionGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], RoomListRevisionGroupByOutputType[P]>
+            : GetScalarType<T[P], RoomListRevisionGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type RoomListRevisionSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    conversationId?: boolean
+    kind?: boolean
+    rev?: boolean
+  }, ExtArgs["result"]["roomListRevision"]>
+
+  export type RoomListRevisionSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    conversationId?: boolean
+    kind?: boolean
+    rev?: boolean
+  }, ExtArgs["result"]["roomListRevision"]>
+
+  export type RoomListRevisionSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    conversationId?: boolean
+    kind?: boolean
+    rev?: boolean
+  }, ExtArgs["result"]["roomListRevision"]>
+
+  export type RoomListRevisionSelectScalar = {
+    conversationId?: boolean
+    kind?: boolean
+    rev?: boolean
+  }
+
+  export type RoomListRevisionOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"conversationId" | "kind" | "rev", ExtArgs["result"]["roomListRevision"]>
+
+  export type $RoomListRevisionPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "RoomListRevision"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      conversationId: string
+      kind: string
+      rev: number
+    }, ExtArgs["result"]["roomListRevision"]>
+    composites: {}
+  }
+
+  type RoomListRevisionGetPayload<S extends boolean | null | undefined | RoomListRevisionDefaultArgs> = $Result.GetResult<Prisma.$RoomListRevisionPayload, S>
+
+  type RoomListRevisionCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<RoomListRevisionFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: RoomListRevisionCountAggregateInputType | true
+    }
+
+  export interface RoomListRevisionDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['RoomListRevision'], meta: { name: 'RoomListRevision' } }
+    /**
+     * Find zero or one RoomListRevision that matches the filter.
+     * @param {RoomListRevisionFindUniqueArgs} args - Arguments to find a RoomListRevision
+     * @example
+     * // Get one RoomListRevision
+     * const roomListRevision = await prisma.roomListRevision.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends RoomListRevisionFindUniqueArgs>(args: SelectSubset<T, RoomListRevisionFindUniqueArgs<ExtArgs>>): Prisma__RoomListRevisionClient<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one RoomListRevision that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {RoomListRevisionFindUniqueOrThrowArgs} args - Arguments to find a RoomListRevision
+     * @example
+     * // Get one RoomListRevision
+     * const roomListRevision = await prisma.roomListRevision.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends RoomListRevisionFindUniqueOrThrowArgs>(args: SelectSubset<T, RoomListRevisionFindUniqueOrThrowArgs<ExtArgs>>): Prisma__RoomListRevisionClient<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first RoomListRevision that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RoomListRevisionFindFirstArgs} args - Arguments to find a RoomListRevision
+     * @example
+     * // Get one RoomListRevision
+     * const roomListRevision = await prisma.roomListRevision.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends RoomListRevisionFindFirstArgs>(args?: SelectSubset<T, RoomListRevisionFindFirstArgs<ExtArgs>>): Prisma__RoomListRevisionClient<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first RoomListRevision that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RoomListRevisionFindFirstOrThrowArgs} args - Arguments to find a RoomListRevision
+     * @example
+     * // Get one RoomListRevision
+     * const roomListRevision = await prisma.roomListRevision.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends RoomListRevisionFindFirstOrThrowArgs>(args?: SelectSubset<T, RoomListRevisionFindFirstOrThrowArgs<ExtArgs>>): Prisma__RoomListRevisionClient<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more RoomListRevisions that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RoomListRevisionFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all RoomListRevisions
+     * const roomListRevisions = await prisma.roomListRevision.findMany()
+     * 
+     * // Get first 10 RoomListRevisions
+     * const roomListRevisions = await prisma.roomListRevision.findMany({ take: 10 })
+     * 
+     * // Only select the `conversationId`
+     * const roomListRevisionWithConversationIdOnly = await prisma.roomListRevision.findMany({ select: { conversationId: true } })
+     * 
+     */
+    findMany<T extends RoomListRevisionFindManyArgs>(args?: SelectSubset<T, RoomListRevisionFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a RoomListRevision.
+     * @param {RoomListRevisionCreateArgs} args - Arguments to create a RoomListRevision.
+     * @example
+     * // Create one RoomListRevision
+     * const RoomListRevision = await prisma.roomListRevision.create({
+     *   data: {
+     *     // ... data to create a RoomListRevision
+     *   }
+     * })
+     * 
+     */
+    create<T extends RoomListRevisionCreateArgs>(args: SelectSubset<T, RoomListRevisionCreateArgs<ExtArgs>>): Prisma__RoomListRevisionClient<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many RoomListRevisions.
+     * @param {RoomListRevisionCreateManyArgs} args - Arguments to create many RoomListRevisions.
+     * @example
+     * // Create many RoomListRevisions
+     * const roomListRevision = await prisma.roomListRevision.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends RoomListRevisionCreateManyArgs>(args?: SelectSubset<T, RoomListRevisionCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many RoomListRevisions and returns the data saved in the database.
+     * @param {RoomListRevisionCreateManyAndReturnArgs} args - Arguments to create many RoomListRevisions.
+     * @example
+     * // Create many RoomListRevisions
+     * const roomListRevision = await prisma.roomListRevision.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many RoomListRevisions and only return the `conversationId`
+     * const roomListRevisionWithConversationIdOnly = await prisma.roomListRevision.createManyAndReturn({
+     *   select: { conversationId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends RoomListRevisionCreateManyAndReturnArgs>(args?: SelectSubset<T, RoomListRevisionCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a RoomListRevision.
+     * @param {RoomListRevisionDeleteArgs} args - Arguments to delete one RoomListRevision.
+     * @example
+     * // Delete one RoomListRevision
+     * const RoomListRevision = await prisma.roomListRevision.delete({
+     *   where: {
+     *     // ... filter to delete one RoomListRevision
+     *   }
+     * })
+     * 
+     */
+    delete<T extends RoomListRevisionDeleteArgs>(args: SelectSubset<T, RoomListRevisionDeleteArgs<ExtArgs>>): Prisma__RoomListRevisionClient<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one RoomListRevision.
+     * @param {RoomListRevisionUpdateArgs} args - Arguments to update one RoomListRevision.
+     * @example
+     * // Update one RoomListRevision
+     * const roomListRevision = await prisma.roomListRevision.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends RoomListRevisionUpdateArgs>(args: SelectSubset<T, RoomListRevisionUpdateArgs<ExtArgs>>): Prisma__RoomListRevisionClient<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more RoomListRevisions.
+     * @param {RoomListRevisionDeleteManyArgs} args - Arguments to filter RoomListRevisions to delete.
+     * @example
+     * // Delete a few RoomListRevisions
+     * const { count } = await prisma.roomListRevision.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends RoomListRevisionDeleteManyArgs>(args?: SelectSubset<T, RoomListRevisionDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more RoomListRevisions.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RoomListRevisionUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many RoomListRevisions
+     * const roomListRevision = await prisma.roomListRevision.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends RoomListRevisionUpdateManyArgs>(args: SelectSubset<T, RoomListRevisionUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more RoomListRevisions and returns the data updated in the database.
+     * @param {RoomListRevisionUpdateManyAndReturnArgs} args - Arguments to update many RoomListRevisions.
+     * @example
+     * // Update many RoomListRevisions
+     * const roomListRevision = await prisma.roomListRevision.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more RoomListRevisions and only return the `conversationId`
+     * const roomListRevisionWithConversationIdOnly = await prisma.roomListRevision.updateManyAndReturn({
+     *   select: { conversationId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends RoomListRevisionUpdateManyAndReturnArgs>(args: SelectSubset<T, RoomListRevisionUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one RoomListRevision.
+     * @param {RoomListRevisionUpsertArgs} args - Arguments to update or create a RoomListRevision.
+     * @example
+     * // Update or create a RoomListRevision
+     * const roomListRevision = await prisma.roomListRevision.upsert({
+     *   create: {
+     *     // ... data to create a RoomListRevision
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the RoomListRevision we want to update
+     *   }
+     * })
+     */
+    upsert<T extends RoomListRevisionUpsertArgs>(args: SelectSubset<T, RoomListRevisionUpsertArgs<ExtArgs>>): Prisma__RoomListRevisionClient<$Result.GetResult<Prisma.$RoomListRevisionPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of RoomListRevisions.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RoomListRevisionCountArgs} args - Arguments to filter RoomListRevisions to count.
+     * @example
+     * // Count the number of RoomListRevisions
+     * const count = await prisma.roomListRevision.count({
+     *   where: {
+     *     // ... the filter for the RoomListRevisions we want to count
+     *   }
+     * })
+    **/
+    count<T extends RoomListRevisionCountArgs>(
+      args?: Subset<T, RoomListRevisionCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], RoomListRevisionCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a RoomListRevision.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RoomListRevisionAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends RoomListRevisionAggregateArgs>(args: Subset<T, RoomListRevisionAggregateArgs>): Prisma.PrismaPromise<GetRoomListRevisionAggregateType<T>>
+
+    /**
+     * Group by RoomListRevision.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {RoomListRevisionGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends RoomListRevisionGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: RoomListRevisionGroupByArgs['orderBy'] }
+        : { orderBy?: RoomListRevisionGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, RoomListRevisionGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetRoomListRevisionGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the RoomListRevision model
+   */
+  readonly fields: RoomListRevisionFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for RoomListRevision.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__RoomListRevisionClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the RoomListRevision model
+   */
+  interface RoomListRevisionFieldRefs {
+    readonly conversationId: FieldRef<"RoomListRevision", 'String'>
+    readonly kind: FieldRef<"RoomListRevision", 'String'>
+    readonly rev: FieldRef<"RoomListRevision", 'Int'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * RoomListRevision findUnique
+   */
+  export type RoomListRevisionFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which RoomListRevision to fetch.
+     */
+    where: RoomListRevisionWhereUniqueInput
+  }
+
+  /**
+   * RoomListRevision findUniqueOrThrow
+   */
+  export type RoomListRevisionFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which RoomListRevision to fetch.
+     */
+    where: RoomListRevisionWhereUniqueInput
+  }
+
+  /**
+   * RoomListRevision findFirst
+   */
+  export type RoomListRevisionFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which RoomListRevision to fetch.
+     */
+    where?: RoomListRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of RoomListRevisions to fetch.
+     */
+    orderBy?: RoomListRevisionOrderByWithRelationInput | RoomListRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for RoomListRevisions.
+     */
+    cursor?: RoomListRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` RoomListRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` RoomListRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of RoomListRevisions.
+     */
+    distinct?: RoomListRevisionScalarFieldEnum | RoomListRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * RoomListRevision findFirstOrThrow
+   */
+  export type RoomListRevisionFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which RoomListRevision to fetch.
+     */
+    where?: RoomListRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of RoomListRevisions to fetch.
+     */
+    orderBy?: RoomListRevisionOrderByWithRelationInput | RoomListRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for RoomListRevisions.
+     */
+    cursor?: RoomListRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` RoomListRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` RoomListRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of RoomListRevisions.
+     */
+    distinct?: RoomListRevisionScalarFieldEnum | RoomListRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * RoomListRevision findMany
+   */
+  export type RoomListRevisionFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which RoomListRevisions to fetch.
+     */
+    where?: RoomListRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of RoomListRevisions to fetch.
+     */
+    orderBy?: RoomListRevisionOrderByWithRelationInput | RoomListRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing RoomListRevisions.
+     */
+    cursor?: RoomListRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` RoomListRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` RoomListRevisions.
+     */
+    skip?: number
+    distinct?: RoomListRevisionScalarFieldEnum | RoomListRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * RoomListRevision create
+   */
+  export type RoomListRevisionCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * The data needed to create a RoomListRevision.
+     */
+    data: XOR<RoomListRevisionCreateInput, RoomListRevisionUncheckedCreateInput>
+  }
+
+  /**
+   * RoomListRevision createMany
+   */
+  export type RoomListRevisionCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many RoomListRevisions.
+     */
+    data: RoomListRevisionCreateManyInput | RoomListRevisionCreateManyInput[]
+  }
+
+  /**
+   * RoomListRevision createManyAndReturn
+   */
+  export type RoomListRevisionCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * The data used to create many RoomListRevisions.
+     */
+    data: RoomListRevisionCreateManyInput | RoomListRevisionCreateManyInput[]
+  }
+
+  /**
+   * RoomListRevision update
+   */
+  export type RoomListRevisionUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * The data needed to update a RoomListRevision.
+     */
+    data: XOR<RoomListRevisionUpdateInput, RoomListRevisionUncheckedUpdateInput>
+    /**
+     * Choose, which RoomListRevision to update.
+     */
+    where: RoomListRevisionWhereUniqueInput
+  }
+
+  /**
+   * RoomListRevision updateMany
+   */
+  export type RoomListRevisionUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update RoomListRevisions.
+     */
+    data: XOR<RoomListRevisionUpdateManyMutationInput, RoomListRevisionUncheckedUpdateManyInput>
+    /**
+     * Filter which RoomListRevisions to update
+     */
+    where?: RoomListRevisionWhereInput
+    /**
+     * Limit how many RoomListRevisions to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * RoomListRevision updateManyAndReturn
+   */
+  export type RoomListRevisionUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * The data used to update RoomListRevisions.
+     */
+    data: XOR<RoomListRevisionUpdateManyMutationInput, RoomListRevisionUncheckedUpdateManyInput>
+    /**
+     * Filter which RoomListRevisions to update
+     */
+    where?: RoomListRevisionWhereInput
+    /**
+     * Limit how many RoomListRevisions to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * RoomListRevision upsert
+   */
+  export type RoomListRevisionUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * The filter to search for the RoomListRevision to update in case it exists.
+     */
+    where: RoomListRevisionWhereUniqueInput
+    /**
+     * In case the RoomListRevision found by the `where` argument doesn't exist, create a new RoomListRevision with this data.
+     */
+    create: XOR<RoomListRevisionCreateInput, RoomListRevisionUncheckedCreateInput>
+    /**
+     * In case the RoomListRevision was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<RoomListRevisionUpdateInput, RoomListRevisionUncheckedUpdateInput>
+  }
+
+  /**
+   * RoomListRevision delete
+   */
+  export type RoomListRevisionDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+    /**
+     * Filter which RoomListRevision to delete.
+     */
+    where: RoomListRevisionWhereUniqueInput
+  }
+
+  /**
+   * RoomListRevision deleteMany
+   */
+  export type RoomListRevisionDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which RoomListRevisions to delete
+     */
+    where?: RoomListRevisionWhereInput
+    /**
+     * Limit how many RoomListRevisions to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * RoomListRevision without action
+   */
+  export type RoomListRevisionDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the RoomListRevision
+     */
+    select?: RoomListRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the RoomListRevision
+     */
+    omit?: RoomListRevisionOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -80021,7 +86526,8 @@ export namespace Prisma {
     note: 'note',
     remindAt: 'remindAt',
     firedAt: 'firedAt',
-    createdAt: 'createdAt'
+    createdAt: 'createdAt',
+    sourceHash: 'sourceHash'
   };
 
   export type ReminderScalarFieldEnum = (typeof ReminderScalarFieldEnum)[keyof typeof ReminderScalarFieldEnum]
@@ -80458,6 +86964,8 @@ export namespace Prisma {
     slices: 'slices',
     note: 'note',
     expiresAt: 'expiresAt',
+    reconciledAt: 'reconciledAt',
+    corrupt: 'corrupt',
     createdAt: 'createdAt'
   };
 
@@ -80503,6 +87011,7 @@ export namespace Prisma {
     assigneeId: 'assigneeId',
     createdById: 'createdById',
     sourceMessageId: 'sourceMessageId',
+    sourceRevokedAt: 'sourceRevokedAt',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
   };
@@ -80801,6 +87310,65 @@ export namespace Prisma {
   };
 
   export type ReportOperationScalarFieldEnum = (typeof ReportOperationScalarFieldEnum)[keyof typeof ReportOperationScalarFieldEnum]
+
+
+  export const EventCreationOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    eventId: 'eventId'
+  };
+
+  export type EventCreationOperationScalarFieldEnum = (typeof EventCreationOperationScalarFieldEnum)[keyof typeof EventCreationOperationScalarFieldEnum]
+
+
+  export const TaskCreationOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    taskId: 'taskId'
+  };
+
+  export type TaskCreationOperationScalarFieldEnum = (typeof TaskCreationOperationScalarFieldEnum)[keyof typeof TaskCreationOperationScalarFieldEnum]
+
+
+  export const KanbanCardOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    cardId: 'cardId'
+  };
+
+  export type KanbanCardOperationScalarFieldEnum = (typeof KanbanCardOperationScalarFieldEnum)[keyof typeof KanbanCardOperationScalarFieldEnum]
+
+
+  export const ReminderCreationOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    reminderId: 'reminderId'
+  };
+
+  export type ReminderCreationOperationScalarFieldEnum = (typeof ReminderCreationOperationScalarFieldEnum)[keyof typeof ReminderCreationOperationScalarFieldEnum]
+
+
+  export const RedPacketCreationOperationScalarFieldEnum: {
+    userId: 'userId',
+    clientId: 'clientId',
+    requestHash: 'requestHash',
+    packetId: 'packetId'
+  };
+
+  export type RedPacketCreationOperationScalarFieldEnum = (typeof RedPacketCreationOperationScalarFieldEnum)[keyof typeof RedPacketCreationOperationScalarFieldEnum]
+
+
+  export const RoomListRevisionScalarFieldEnum: {
+    conversationId: 'conversationId',
+    kind: 'kind',
+    rev: 'rev'
+  };
+
+  export type RoomListRevisionScalarFieldEnum = (typeof RoomListRevisionScalarFieldEnum)[keyof typeof RoomListRevisionScalarFieldEnum]
 
 
   export const SortOrder: {
@@ -81208,6 +87776,7 @@ export namespace Prisma {
     remindAt?: DateTimeFilter<"Reminder"> | Date | string
     firedAt?: DateTimeNullableFilter<"Reminder"> | Date | string | null
     createdAt?: DateTimeFilter<"Reminder"> | Date | string
+    sourceHash?: StringNullableFilter<"Reminder"> | string | null
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
   }
 
@@ -81220,6 +87789,7 @@ export namespace Prisma {
     remindAt?: SortOrder
     firedAt?: SortOrderInput | SortOrder
     createdAt?: SortOrder
+    sourceHash?: SortOrderInput | SortOrder
     user?: UserOrderByWithRelationInput
   }
 
@@ -81235,6 +87805,7 @@ export namespace Prisma {
     remindAt?: DateTimeFilter<"Reminder"> | Date | string
     firedAt?: DateTimeNullableFilter<"Reminder"> | Date | string | null
     createdAt?: DateTimeFilter<"Reminder"> | Date | string
+    sourceHash?: StringNullableFilter<"Reminder"> | string | null
     user?: XOR<UserScalarRelationFilter, UserWhereInput>
   }, "id">
 
@@ -81247,6 +87818,7 @@ export namespace Prisma {
     remindAt?: SortOrder
     firedAt?: SortOrderInput | SortOrder
     createdAt?: SortOrder
+    sourceHash?: SortOrderInput | SortOrder
     _count?: ReminderCountOrderByAggregateInput
     _max?: ReminderMaxOrderByAggregateInput
     _min?: ReminderMinOrderByAggregateInput
@@ -81264,6 +87836,7 @@ export namespace Prisma {
     remindAt?: DateTimeWithAggregatesFilter<"Reminder"> | Date | string
     firedAt?: DateTimeNullableWithAggregatesFilter<"Reminder"> | Date | string | null
     createdAt?: DateTimeWithAggregatesFilter<"Reminder"> | Date | string
+    sourceHash?: StringNullableWithAggregatesFilter<"Reminder"> | string | null
   }
 
   export type ConversationStreakWhereInput = {
@@ -83530,6 +90103,8 @@ export namespace Prisma {
     slices?: StringFilter<"RedPacket"> | string
     note?: StringFilter<"RedPacket"> | string
     expiresAt?: DateTimeFilter<"RedPacket"> | Date | string
+    reconciledAt?: DateTimeNullableFilter<"RedPacket"> | Date | string | null
+    corrupt?: BoolFilter<"RedPacket"> | boolean
     createdAt?: DateTimeFilter<"RedPacket"> | Date | string
     message?: XOR<MessageScalarRelationFilter, MessageWhereInput>
     grabs?: RedPacketGrabListRelationFilter
@@ -83545,6 +90120,8 @@ export namespace Prisma {
     slices?: SortOrder
     note?: SortOrder
     expiresAt?: SortOrder
+    reconciledAt?: SortOrderInput | SortOrder
+    corrupt?: SortOrder
     createdAt?: SortOrder
     message?: MessageOrderByWithRelationInput
     grabs?: RedPacketGrabOrderByRelationAggregateInput
@@ -83563,6 +90140,8 @@ export namespace Prisma {
     slices?: StringFilter<"RedPacket"> | string
     note?: StringFilter<"RedPacket"> | string
     expiresAt?: DateTimeFilter<"RedPacket"> | Date | string
+    reconciledAt?: DateTimeNullableFilter<"RedPacket"> | Date | string | null
+    corrupt?: BoolFilter<"RedPacket"> | boolean
     createdAt?: DateTimeFilter<"RedPacket"> | Date | string
     message?: XOR<MessageScalarRelationFilter, MessageWhereInput>
     grabs?: RedPacketGrabListRelationFilter
@@ -83578,6 +90157,8 @@ export namespace Prisma {
     slices?: SortOrder
     note?: SortOrder
     expiresAt?: SortOrder
+    reconciledAt?: SortOrderInput | SortOrder
+    corrupt?: SortOrder
     createdAt?: SortOrder
     _count?: RedPacketCountOrderByAggregateInput
     _avg?: RedPacketAvgOrderByAggregateInput
@@ -83599,6 +90180,8 @@ export namespace Prisma {
     slices?: StringWithAggregatesFilter<"RedPacket"> | string
     note?: StringWithAggregatesFilter<"RedPacket"> | string
     expiresAt?: DateTimeWithAggregatesFilter<"RedPacket"> | Date | string
+    reconciledAt?: DateTimeNullableWithAggregatesFilter<"RedPacket"> | Date | string | null
+    corrupt?: BoolWithAggregatesFilter<"RedPacket"> | boolean
     createdAt?: DateTimeWithAggregatesFilter<"RedPacket"> | Date | string
   }
 
@@ -83769,6 +90352,7 @@ export namespace Prisma {
     assigneeId?: StringNullableFilter<"KanbanCard"> | string | null
     createdById?: StringNullableFilter<"KanbanCard"> | string | null
     sourceMessageId?: StringNullableFilter<"KanbanCard"> | string | null
+    sourceRevokedAt?: DateTimeNullableFilter<"KanbanCard"> | Date | string | null
     createdAt?: DateTimeFilter<"KanbanCard"> | Date | string
     updatedAt?: DateTimeFilter<"KanbanCard"> | Date | string
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
@@ -83783,6 +90367,7 @@ export namespace Prisma {
     assigneeId?: SortOrderInput | SortOrder
     createdById?: SortOrderInput | SortOrder
     sourceMessageId?: SortOrderInput | SortOrder
+    sourceRevokedAt?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     conversation?: ConversationOrderByWithRelationInput
@@ -83800,6 +90385,7 @@ export namespace Prisma {
     assigneeId?: StringNullableFilter<"KanbanCard"> | string | null
     createdById?: StringNullableFilter<"KanbanCard"> | string | null
     sourceMessageId?: StringNullableFilter<"KanbanCard"> | string | null
+    sourceRevokedAt?: DateTimeNullableFilter<"KanbanCard"> | Date | string | null
     createdAt?: DateTimeFilter<"KanbanCard"> | Date | string
     updatedAt?: DateTimeFilter<"KanbanCard"> | Date | string
     conversation?: XOR<ConversationScalarRelationFilter, ConversationWhereInput>
@@ -83814,6 +90400,7 @@ export namespace Prisma {
     assigneeId?: SortOrderInput | SortOrder
     createdById?: SortOrderInput | SortOrder
     sourceMessageId?: SortOrderInput | SortOrder
+    sourceRevokedAt?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     _count?: KanbanCardCountOrderByAggregateInput
@@ -83835,6 +90422,7 @@ export namespace Prisma {
     assigneeId?: StringNullableWithAggregatesFilter<"KanbanCard"> | string | null
     createdById?: StringNullableWithAggregatesFilter<"KanbanCard"> | string | null
     sourceMessageId?: StringNullableWithAggregatesFilter<"KanbanCard"> | string | null
+    sourceRevokedAt?: DateTimeNullableWithAggregatesFilter<"KanbanCard"> | Date | string | null
     createdAt?: DateTimeWithAggregatesFilter<"KanbanCard"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"KanbanCard"> | Date | string
   }
@@ -85281,6 +91869,291 @@ export namespace Prisma {
     evidenceRev?: IntWithAggregatesFilter<"ReportOperation"> | number
   }
 
+  export type EventCreationOperationWhereInput = {
+    AND?: EventCreationOperationWhereInput | EventCreationOperationWhereInput[]
+    OR?: EventCreationOperationWhereInput[]
+    NOT?: EventCreationOperationWhereInput | EventCreationOperationWhereInput[]
+    userId?: StringFilter<"EventCreationOperation"> | string
+    clientId?: StringFilter<"EventCreationOperation"> | string
+    requestHash?: StringFilter<"EventCreationOperation"> | string
+    eventId?: StringFilter<"EventCreationOperation"> | string
+  }
+
+  export type EventCreationOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    eventId?: SortOrder
+  }
+
+  export type EventCreationOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: EventCreationOperationUserIdClientIdCompoundUniqueInput
+    AND?: EventCreationOperationWhereInput | EventCreationOperationWhereInput[]
+    OR?: EventCreationOperationWhereInput[]
+    NOT?: EventCreationOperationWhereInput | EventCreationOperationWhereInput[]
+    userId?: StringFilter<"EventCreationOperation"> | string
+    clientId?: StringFilter<"EventCreationOperation"> | string
+    requestHash?: StringFilter<"EventCreationOperation"> | string
+    eventId?: StringFilter<"EventCreationOperation"> | string
+  }, "userId_clientId">
+
+  export type EventCreationOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    eventId?: SortOrder
+    _count?: EventCreationOperationCountOrderByAggregateInput
+    _max?: EventCreationOperationMaxOrderByAggregateInput
+    _min?: EventCreationOperationMinOrderByAggregateInput
+  }
+
+  export type EventCreationOperationScalarWhereWithAggregatesInput = {
+    AND?: EventCreationOperationScalarWhereWithAggregatesInput | EventCreationOperationScalarWhereWithAggregatesInput[]
+    OR?: EventCreationOperationScalarWhereWithAggregatesInput[]
+    NOT?: EventCreationOperationScalarWhereWithAggregatesInput | EventCreationOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"EventCreationOperation"> | string
+    clientId?: StringWithAggregatesFilter<"EventCreationOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"EventCreationOperation"> | string
+    eventId?: StringWithAggregatesFilter<"EventCreationOperation"> | string
+  }
+
+  export type TaskCreationOperationWhereInput = {
+    AND?: TaskCreationOperationWhereInput | TaskCreationOperationWhereInput[]
+    OR?: TaskCreationOperationWhereInput[]
+    NOT?: TaskCreationOperationWhereInput | TaskCreationOperationWhereInput[]
+    userId?: StringFilter<"TaskCreationOperation"> | string
+    clientId?: StringFilter<"TaskCreationOperation"> | string
+    requestHash?: StringFilter<"TaskCreationOperation"> | string
+    taskId?: StringFilter<"TaskCreationOperation"> | string
+  }
+
+  export type TaskCreationOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    taskId?: SortOrder
+  }
+
+  export type TaskCreationOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: TaskCreationOperationUserIdClientIdCompoundUniqueInput
+    AND?: TaskCreationOperationWhereInput | TaskCreationOperationWhereInput[]
+    OR?: TaskCreationOperationWhereInput[]
+    NOT?: TaskCreationOperationWhereInput | TaskCreationOperationWhereInput[]
+    userId?: StringFilter<"TaskCreationOperation"> | string
+    clientId?: StringFilter<"TaskCreationOperation"> | string
+    requestHash?: StringFilter<"TaskCreationOperation"> | string
+    taskId?: StringFilter<"TaskCreationOperation"> | string
+  }, "userId_clientId">
+
+  export type TaskCreationOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    taskId?: SortOrder
+    _count?: TaskCreationOperationCountOrderByAggregateInput
+    _max?: TaskCreationOperationMaxOrderByAggregateInput
+    _min?: TaskCreationOperationMinOrderByAggregateInput
+  }
+
+  export type TaskCreationOperationScalarWhereWithAggregatesInput = {
+    AND?: TaskCreationOperationScalarWhereWithAggregatesInput | TaskCreationOperationScalarWhereWithAggregatesInput[]
+    OR?: TaskCreationOperationScalarWhereWithAggregatesInput[]
+    NOT?: TaskCreationOperationScalarWhereWithAggregatesInput | TaskCreationOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"TaskCreationOperation"> | string
+    clientId?: StringWithAggregatesFilter<"TaskCreationOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"TaskCreationOperation"> | string
+    taskId?: StringWithAggregatesFilter<"TaskCreationOperation"> | string
+  }
+
+  export type KanbanCardOperationWhereInput = {
+    AND?: KanbanCardOperationWhereInput | KanbanCardOperationWhereInput[]
+    OR?: KanbanCardOperationWhereInput[]
+    NOT?: KanbanCardOperationWhereInput | KanbanCardOperationWhereInput[]
+    userId?: StringFilter<"KanbanCardOperation"> | string
+    clientId?: StringFilter<"KanbanCardOperation"> | string
+    requestHash?: StringFilter<"KanbanCardOperation"> | string
+    cardId?: StringFilter<"KanbanCardOperation"> | string
+  }
+
+  export type KanbanCardOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    cardId?: SortOrder
+  }
+
+  export type KanbanCardOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: KanbanCardOperationUserIdClientIdCompoundUniqueInput
+    AND?: KanbanCardOperationWhereInput | KanbanCardOperationWhereInput[]
+    OR?: KanbanCardOperationWhereInput[]
+    NOT?: KanbanCardOperationWhereInput | KanbanCardOperationWhereInput[]
+    userId?: StringFilter<"KanbanCardOperation"> | string
+    clientId?: StringFilter<"KanbanCardOperation"> | string
+    requestHash?: StringFilter<"KanbanCardOperation"> | string
+    cardId?: StringFilter<"KanbanCardOperation"> | string
+  }, "userId_clientId">
+
+  export type KanbanCardOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    cardId?: SortOrder
+    _count?: KanbanCardOperationCountOrderByAggregateInput
+    _max?: KanbanCardOperationMaxOrderByAggregateInput
+    _min?: KanbanCardOperationMinOrderByAggregateInput
+  }
+
+  export type KanbanCardOperationScalarWhereWithAggregatesInput = {
+    AND?: KanbanCardOperationScalarWhereWithAggregatesInput | KanbanCardOperationScalarWhereWithAggregatesInput[]
+    OR?: KanbanCardOperationScalarWhereWithAggregatesInput[]
+    NOT?: KanbanCardOperationScalarWhereWithAggregatesInput | KanbanCardOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"KanbanCardOperation"> | string
+    clientId?: StringWithAggregatesFilter<"KanbanCardOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"KanbanCardOperation"> | string
+    cardId?: StringWithAggregatesFilter<"KanbanCardOperation"> | string
+  }
+
+  export type ReminderCreationOperationWhereInput = {
+    AND?: ReminderCreationOperationWhereInput | ReminderCreationOperationWhereInput[]
+    OR?: ReminderCreationOperationWhereInput[]
+    NOT?: ReminderCreationOperationWhereInput | ReminderCreationOperationWhereInput[]
+    userId?: StringFilter<"ReminderCreationOperation"> | string
+    clientId?: StringFilter<"ReminderCreationOperation"> | string
+    requestHash?: StringFilter<"ReminderCreationOperation"> | string
+    reminderId?: StringFilter<"ReminderCreationOperation"> | string
+  }
+
+  export type ReminderCreationOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    reminderId?: SortOrder
+  }
+
+  export type ReminderCreationOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: ReminderCreationOperationUserIdClientIdCompoundUniqueInput
+    AND?: ReminderCreationOperationWhereInput | ReminderCreationOperationWhereInput[]
+    OR?: ReminderCreationOperationWhereInput[]
+    NOT?: ReminderCreationOperationWhereInput | ReminderCreationOperationWhereInput[]
+    userId?: StringFilter<"ReminderCreationOperation"> | string
+    clientId?: StringFilter<"ReminderCreationOperation"> | string
+    requestHash?: StringFilter<"ReminderCreationOperation"> | string
+    reminderId?: StringFilter<"ReminderCreationOperation"> | string
+  }, "userId_clientId">
+
+  export type ReminderCreationOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    reminderId?: SortOrder
+    _count?: ReminderCreationOperationCountOrderByAggregateInput
+    _max?: ReminderCreationOperationMaxOrderByAggregateInput
+    _min?: ReminderCreationOperationMinOrderByAggregateInput
+  }
+
+  export type ReminderCreationOperationScalarWhereWithAggregatesInput = {
+    AND?: ReminderCreationOperationScalarWhereWithAggregatesInput | ReminderCreationOperationScalarWhereWithAggregatesInput[]
+    OR?: ReminderCreationOperationScalarWhereWithAggregatesInput[]
+    NOT?: ReminderCreationOperationScalarWhereWithAggregatesInput | ReminderCreationOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"ReminderCreationOperation"> | string
+    clientId?: StringWithAggregatesFilter<"ReminderCreationOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"ReminderCreationOperation"> | string
+    reminderId?: StringWithAggregatesFilter<"ReminderCreationOperation"> | string
+  }
+
+  export type RedPacketCreationOperationWhereInput = {
+    AND?: RedPacketCreationOperationWhereInput | RedPacketCreationOperationWhereInput[]
+    OR?: RedPacketCreationOperationWhereInput[]
+    NOT?: RedPacketCreationOperationWhereInput | RedPacketCreationOperationWhereInput[]
+    userId?: StringFilter<"RedPacketCreationOperation"> | string
+    clientId?: StringFilter<"RedPacketCreationOperation"> | string
+    requestHash?: StringFilter<"RedPacketCreationOperation"> | string
+    packetId?: StringFilter<"RedPacketCreationOperation"> | string
+  }
+
+  export type RedPacketCreationOperationOrderByWithRelationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    packetId?: SortOrder
+  }
+
+  export type RedPacketCreationOperationWhereUniqueInput = Prisma.AtLeast<{
+    userId_clientId?: RedPacketCreationOperationUserIdClientIdCompoundUniqueInput
+    AND?: RedPacketCreationOperationWhereInput | RedPacketCreationOperationWhereInput[]
+    OR?: RedPacketCreationOperationWhereInput[]
+    NOT?: RedPacketCreationOperationWhereInput | RedPacketCreationOperationWhereInput[]
+    userId?: StringFilter<"RedPacketCreationOperation"> | string
+    clientId?: StringFilter<"RedPacketCreationOperation"> | string
+    requestHash?: StringFilter<"RedPacketCreationOperation"> | string
+    packetId?: StringFilter<"RedPacketCreationOperation"> | string
+  }, "userId_clientId">
+
+  export type RedPacketCreationOperationOrderByWithAggregationInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    packetId?: SortOrder
+    _count?: RedPacketCreationOperationCountOrderByAggregateInput
+    _max?: RedPacketCreationOperationMaxOrderByAggregateInput
+    _min?: RedPacketCreationOperationMinOrderByAggregateInput
+  }
+
+  export type RedPacketCreationOperationScalarWhereWithAggregatesInput = {
+    AND?: RedPacketCreationOperationScalarWhereWithAggregatesInput | RedPacketCreationOperationScalarWhereWithAggregatesInput[]
+    OR?: RedPacketCreationOperationScalarWhereWithAggregatesInput[]
+    NOT?: RedPacketCreationOperationScalarWhereWithAggregatesInput | RedPacketCreationOperationScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"RedPacketCreationOperation"> | string
+    clientId?: StringWithAggregatesFilter<"RedPacketCreationOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"RedPacketCreationOperation"> | string
+    packetId?: StringWithAggregatesFilter<"RedPacketCreationOperation"> | string
+  }
+
+  export type RoomListRevisionWhereInput = {
+    AND?: RoomListRevisionWhereInput | RoomListRevisionWhereInput[]
+    OR?: RoomListRevisionWhereInput[]
+    NOT?: RoomListRevisionWhereInput | RoomListRevisionWhereInput[]
+    conversationId?: StringFilter<"RoomListRevision"> | string
+    kind?: StringFilter<"RoomListRevision"> | string
+    rev?: IntFilter<"RoomListRevision"> | number
+  }
+
+  export type RoomListRevisionOrderByWithRelationInput = {
+    conversationId?: SortOrder
+    kind?: SortOrder
+    rev?: SortOrder
+  }
+
+  export type RoomListRevisionWhereUniqueInput = Prisma.AtLeast<{
+    conversationId_kind?: RoomListRevisionConversationIdKindCompoundUniqueInput
+    AND?: RoomListRevisionWhereInput | RoomListRevisionWhereInput[]
+    OR?: RoomListRevisionWhereInput[]
+    NOT?: RoomListRevisionWhereInput | RoomListRevisionWhereInput[]
+    conversationId?: StringFilter<"RoomListRevision"> | string
+    kind?: StringFilter<"RoomListRevision"> | string
+    rev?: IntFilter<"RoomListRevision"> | number
+  }, "conversationId_kind">
+
+  export type RoomListRevisionOrderByWithAggregationInput = {
+    conversationId?: SortOrder
+    kind?: SortOrder
+    rev?: SortOrder
+    _count?: RoomListRevisionCountOrderByAggregateInput
+    _avg?: RoomListRevisionAvgOrderByAggregateInput
+    _max?: RoomListRevisionMaxOrderByAggregateInput
+    _min?: RoomListRevisionMinOrderByAggregateInput
+    _sum?: RoomListRevisionSumOrderByAggregateInput
+  }
+
+  export type RoomListRevisionScalarWhereWithAggregatesInput = {
+    AND?: RoomListRevisionScalarWhereWithAggregatesInput | RoomListRevisionScalarWhereWithAggregatesInput[]
+    OR?: RoomListRevisionScalarWhereWithAggregatesInput[]
+    NOT?: RoomListRevisionScalarWhereWithAggregatesInput | RoomListRevisionScalarWhereWithAggregatesInput[]
+    conversationId?: StringWithAggregatesFilter<"RoomListRevision"> | string
+    kind?: StringWithAggregatesFilter<"RoomListRevision"> | string
+    rev?: IntWithAggregatesFilter<"RoomListRevision"> | number
+  }
+
   export type UserCreateInput = {
     id?: string
     name: string
@@ -85653,6 +92526,7 @@ export namespace Prisma {
     remindAt: Date | string
     firedAt?: Date | string | null
     createdAt?: Date | string
+    sourceHash?: string | null
     user: UserCreateNestedOneWithoutRemindersInput
   }
 
@@ -85665,6 +92539,7 @@ export namespace Prisma {
     remindAt: Date | string
     firedAt?: Date | string | null
     createdAt?: Date | string
+    sourceHash?: string | null
   }
 
   export type ReminderUpdateInput = {
@@ -85675,6 +92550,7 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    sourceHash?: NullableStringFieldUpdateOperationsInput | string | null
     user?: UserUpdateOneRequiredWithoutRemindersNestedInput
   }
 
@@ -85687,6 +92563,7 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    sourceHash?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type ReminderCreateManyInput = {
@@ -85698,6 +92575,7 @@ export namespace Prisma {
     remindAt: Date | string
     firedAt?: Date | string | null
     createdAt?: Date | string
+    sourceHash?: string | null
   }
 
   export type ReminderUpdateManyMutationInput = {
@@ -85708,6 +92586,7 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    sourceHash?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type ReminderUncheckedUpdateManyInput = {
@@ -85719,6 +92598,7 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    sourceHash?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type ConversationStreakCreateInput = {
@@ -88100,6 +94980,8 @@ export namespace Prisma {
     slices: string
     note?: string
     expiresAt: Date | string
+    reconciledAt?: Date | string | null
+    corrupt?: boolean
     createdAt?: Date | string
     message: MessageCreateNestedOneWithoutRedPacketInput
     grabs?: RedPacketGrabCreateNestedManyWithoutPacketInput
@@ -88115,6 +94997,8 @@ export namespace Prisma {
     slices: string
     note?: string
     expiresAt: Date | string
+    reconciledAt?: Date | string | null
+    corrupt?: boolean
     createdAt?: Date | string
     grabs?: RedPacketGrabUncheckedCreateNestedManyWithoutPacketInput
   }
@@ -88128,6 +95012,8 @@ export namespace Prisma {
     slices?: StringFieldUpdateOperationsInput | string
     note?: StringFieldUpdateOperationsInput | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reconciledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    corrupt?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     message?: MessageUpdateOneRequiredWithoutRedPacketNestedInput
     grabs?: RedPacketGrabUpdateManyWithoutPacketNestedInput
@@ -88143,6 +95029,8 @@ export namespace Prisma {
     slices?: StringFieldUpdateOperationsInput | string
     note?: StringFieldUpdateOperationsInput | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reconciledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    corrupt?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     grabs?: RedPacketGrabUncheckedUpdateManyWithoutPacketNestedInput
   }
@@ -88157,6 +95045,8 @@ export namespace Prisma {
     slices: string
     note?: string
     expiresAt: Date | string
+    reconciledAt?: Date | string | null
+    corrupt?: boolean
     createdAt?: Date | string
   }
 
@@ -88169,6 +95059,8 @@ export namespace Prisma {
     slices?: StringFieldUpdateOperationsInput | string
     note?: StringFieldUpdateOperationsInput | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reconciledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    corrupt?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -88182,6 +95074,8 @@ export namespace Prisma {
     slices?: StringFieldUpdateOperationsInput | string
     note?: StringFieldUpdateOperationsInput | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reconciledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    corrupt?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -88359,6 +95253,7 @@ export namespace Prisma {
     assigneeId?: string | null
     createdById?: string | null
     sourceMessageId?: string | null
+    sourceRevokedAt?: Date | string | null
     createdAt?: Date | string
     updatedAt?: Date | string
     conversation: ConversationCreateNestedOneWithoutKanbanCardsInput
@@ -88373,6 +95268,7 @@ export namespace Prisma {
     assigneeId?: string | null
     createdById?: string | null
     sourceMessageId?: string | null
+    sourceRevokedAt?: Date | string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -88385,6 +95281,7 @@ export namespace Prisma {
     assigneeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdById?: NullableStringFieldUpdateOperationsInput | string | null
     sourceMessageId?: NullableStringFieldUpdateOperationsInput | string | null
+    sourceRevokedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     conversation?: ConversationUpdateOneRequiredWithoutKanbanCardsNestedInput
@@ -88399,6 +95296,7 @@ export namespace Prisma {
     assigneeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdById?: NullableStringFieldUpdateOperationsInput | string | null
     sourceMessageId?: NullableStringFieldUpdateOperationsInput | string | null
+    sourceRevokedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -88412,6 +95310,7 @@ export namespace Prisma {
     assigneeId?: string | null
     createdById?: string | null
     sourceMessageId?: string | null
+    sourceRevokedAt?: Date | string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -88424,6 +95323,7 @@ export namespace Prisma {
     assigneeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdById?: NullableStringFieldUpdateOperationsInput | string | null
     sourceMessageId?: NullableStringFieldUpdateOperationsInput | string | null
+    sourceRevokedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -88437,6 +95337,7 @@ export namespace Prisma {
     assigneeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdById?: NullableStringFieldUpdateOperationsInput | string | null
     sourceMessageId?: NullableStringFieldUpdateOperationsInput | string | null
+    sourceRevokedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -89927,6 +96828,293 @@ export namespace Prisma {
     evidenceRev?: IntFieldUpdateOperationsInput | number
   }
 
+  export type EventCreationOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    eventId: string
+  }
+
+  export type EventCreationOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    eventId: string
+  }
+
+  export type EventCreationOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    eventId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type EventCreationOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    eventId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type EventCreationOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    eventId: string
+  }
+
+  export type EventCreationOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    eventId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type EventCreationOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    eventId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type TaskCreationOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    taskId: string
+  }
+
+  export type TaskCreationOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    taskId: string
+  }
+
+  export type TaskCreationOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type TaskCreationOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type TaskCreationOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    taskId: string
+  }
+
+  export type TaskCreationOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type TaskCreationOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type KanbanCardOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    cardId: string
+  }
+
+  export type KanbanCardOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    cardId: string
+  }
+
+  export type KanbanCardOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    cardId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type KanbanCardOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    cardId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type KanbanCardOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    cardId: string
+  }
+
+  export type KanbanCardOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    cardId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type KanbanCardOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    cardId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReminderCreationOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    reminderId: string
+  }
+
+  export type ReminderCreationOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    reminderId: string
+  }
+
+  export type ReminderCreationOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    reminderId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReminderCreationOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    reminderId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReminderCreationOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    reminderId: string
+  }
+
+  export type ReminderCreationOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    reminderId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type ReminderCreationOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    reminderId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type RedPacketCreationOperationCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    packetId: string
+  }
+
+  export type RedPacketCreationOperationUncheckedCreateInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    packetId: string
+  }
+
+  export type RedPacketCreationOperationUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    packetId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type RedPacketCreationOperationUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    packetId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type RedPacketCreationOperationCreateManyInput = {
+    userId: string
+    clientId: string
+    requestHash: string
+    packetId: string
+  }
+
+  export type RedPacketCreationOperationUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    packetId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type RedPacketCreationOperationUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    packetId?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type RoomListRevisionCreateInput = {
+    conversationId: string
+    kind: string
+    rev?: number
+  }
+
+  export type RoomListRevisionUncheckedCreateInput = {
+    conversationId: string
+    kind: string
+    rev?: number
+  }
+
+  export type RoomListRevisionUpdateInput = {
+    conversationId?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type RoomListRevisionUncheckedUpdateInput = {
+    conversationId?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type RoomListRevisionCreateManyInput = {
+    conversationId: string
+    kind: string
+    rev?: number
+  }
+
+  export type RoomListRevisionUpdateManyMutationInput = {
+    conversationId?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+  }
+
+  export type RoomListRevisionUncheckedUpdateManyInput = {
+    conversationId?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -90432,6 +97620,7 @@ export namespace Prisma {
     remindAt?: SortOrder
     firedAt?: SortOrder
     createdAt?: SortOrder
+    sourceHash?: SortOrder
   }
 
   export type ReminderMaxOrderByAggregateInput = {
@@ -90443,6 +97632,7 @@ export namespace Prisma {
     remindAt?: SortOrder
     firedAt?: SortOrder
     createdAt?: SortOrder
+    sourceHash?: SortOrder
   }
 
   export type ReminderMinOrderByAggregateInput = {
@@ -90454,6 +97644,7 @@ export namespace Prisma {
     remindAt?: SortOrder
     firedAt?: SortOrder
     createdAt?: SortOrder
+    sourceHash?: SortOrder
   }
 
   export type ConversationStreakConversationIdUserIdCompoundUniqueInput = {
@@ -91922,6 +99113,8 @@ export namespace Prisma {
     slices?: SortOrder
     note?: SortOrder
     expiresAt?: SortOrder
+    reconciledAt?: SortOrder
+    corrupt?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -91941,6 +99134,8 @@ export namespace Prisma {
     slices?: SortOrder
     note?: SortOrder
     expiresAt?: SortOrder
+    reconciledAt?: SortOrder
+    corrupt?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -91954,6 +99149,8 @@ export namespace Prisma {
     slices?: SortOrder
     note?: SortOrder
     expiresAt?: SortOrder
+    reconciledAt?: SortOrder
+    corrupt?: SortOrder
     createdAt?: SortOrder
   }
 
@@ -92070,6 +99267,7 @@ export namespace Prisma {
     assigneeId?: SortOrder
     createdById?: SortOrder
     sourceMessageId?: SortOrder
+    sourceRevokedAt?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -92087,6 +99285,7 @@ export namespace Prisma {
     assigneeId?: SortOrder
     createdById?: SortOrder
     sourceMessageId?: SortOrder
+    sourceRevokedAt?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -92100,6 +99299,7 @@ export namespace Prisma {
     assigneeId?: SortOrder
     createdById?: SortOrder
     sourceMessageId?: SortOrder
+    sourceRevokedAt?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
   }
@@ -93015,6 +100215,167 @@ export namespace Prisma {
 
   export type ReportOperationSumOrderByAggregateInput = {
     evidenceRev?: SortOrder
+  }
+
+  export type EventCreationOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type EventCreationOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    eventId?: SortOrder
+  }
+
+  export type EventCreationOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    eventId?: SortOrder
+  }
+
+  export type EventCreationOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    eventId?: SortOrder
+  }
+
+  export type TaskCreationOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type TaskCreationOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    taskId?: SortOrder
+  }
+
+  export type TaskCreationOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    taskId?: SortOrder
+  }
+
+  export type TaskCreationOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    taskId?: SortOrder
+  }
+
+  export type KanbanCardOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type KanbanCardOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    cardId?: SortOrder
+  }
+
+  export type KanbanCardOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    cardId?: SortOrder
+  }
+
+  export type KanbanCardOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    cardId?: SortOrder
+  }
+
+  export type ReminderCreationOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type ReminderCreationOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    reminderId?: SortOrder
+  }
+
+  export type ReminderCreationOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    reminderId?: SortOrder
+  }
+
+  export type ReminderCreationOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    reminderId?: SortOrder
+  }
+
+  export type RedPacketCreationOperationUserIdClientIdCompoundUniqueInput = {
+    userId: string
+    clientId: string
+  }
+
+  export type RedPacketCreationOperationCountOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    packetId?: SortOrder
+  }
+
+  export type RedPacketCreationOperationMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    packetId?: SortOrder
+  }
+
+  export type RedPacketCreationOperationMinOrderByAggregateInput = {
+    userId?: SortOrder
+    clientId?: SortOrder
+    requestHash?: SortOrder
+    packetId?: SortOrder
+  }
+
+  export type RoomListRevisionConversationIdKindCompoundUniqueInput = {
+    conversationId: string
+    kind: string
+  }
+
+  export type RoomListRevisionCountOrderByAggregateInput = {
+    conversationId?: SortOrder
+    kind?: SortOrder
+    rev?: SortOrder
+  }
+
+  export type RoomListRevisionAvgOrderByAggregateInput = {
+    rev?: SortOrder
+  }
+
+  export type RoomListRevisionMaxOrderByAggregateInput = {
+    conversationId?: SortOrder
+    kind?: SortOrder
+    rev?: SortOrder
+  }
+
+  export type RoomListRevisionMinOrderByAggregateInput = {
+    conversationId?: SortOrder
+    kind?: SortOrder
+    rev?: SortOrder
+  }
+
+  export type RoomListRevisionSumOrderByAggregateInput = {
+    rev?: SortOrder
   }
 
   export type AppInstallCreateNestedManyWithoutUserInput = {
@@ -96759,6 +104120,7 @@ export namespace Prisma {
     remindAt: Date | string
     firedAt?: Date | string | null
     createdAt?: Date | string
+    sourceHash?: string | null
   }
 
   export type ReminderUncheckedCreateWithoutUserInput = {
@@ -96769,6 +104131,7 @@ export namespace Prisma {
     remindAt: Date | string
     firedAt?: Date | string | null
     createdAt?: Date | string
+    sourceHash?: string | null
   }
 
   export type ReminderCreateOrConnectWithoutUserInput = {
@@ -97405,6 +104768,7 @@ export namespace Prisma {
     remindAt?: DateTimeFilter<"Reminder"> | Date | string
     firedAt?: DateTimeNullableFilter<"Reminder"> | Date | string | null
     createdAt?: DateTimeFilter<"Reminder"> | Date | string
+    sourceHash?: StringNullableFilter<"Reminder"> | string | null
   }
 
   export type ConversationStreakUpsertWithWhereUniqueWithoutUserInput = {
@@ -100543,6 +107907,7 @@ export namespace Prisma {
     assigneeId?: string | null
     createdById?: string | null
     sourceMessageId?: string | null
+    sourceRevokedAt?: Date | string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -100555,6 +107920,7 @@ export namespace Prisma {
     assigneeId?: string | null
     createdById?: string | null
     sourceMessageId?: string | null
+    sourceRevokedAt?: Date | string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -100870,6 +108236,7 @@ export namespace Prisma {
     assigneeId?: StringNullableFilter<"KanbanCard"> | string | null
     createdById?: StringNullableFilter<"KanbanCard"> | string | null
     sourceMessageId?: StringNullableFilter<"KanbanCard"> | string | null
+    sourceRevokedAt?: DateTimeNullableFilter<"KanbanCard"> | Date | string | null
     createdAt?: DateTimeFilter<"KanbanCard"> | Date | string
     updatedAt?: DateTimeFilter<"KanbanCard"> | Date | string
   }
@@ -102760,6 +110127,8 @@ export namespace Prisma {
     slices: string
     note?: string
     expiresAt: Date | string
+    reconciledAt?: Date | string | null
+    corrupt?: boolean
     createdAt?: Date | string
     grabs?: RedPacketGrabCreateNestedManyWithoutPacketInput
   }
@@ -102773,6 +110142,8 @@ export namespace Prisma {
     slices: string
     note?: string
     expiresAt: Date | string
+    reconciledAt?: Date | string | null
+    corrupt?: boolean
     createdAt?: Date | string
     grabs?: RedPacketGrabUncheckedCreateNestedManyWithoutPacketInput
   }
@@ -103357,6 +110728,8 @@ export namespace Prisma {
     slices?: StringFieldUpdateOperationsInput | string
     note?: StringFieldUpdateOperationsInput | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reconciledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    corrupt?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     grabs?: RedPacketGrabUpdateManyWithoutPacketNestedInput
   }
@@ -103370,6 +110743,8 @@ export namespace Prisma {
     slices?: StringFieldUpdateOperationsInput | string
     note?: StringFieldUpdateOperationsInput | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reconciledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    corrupt?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     grabs?: RedPacketGrabUncheckedUpdateManyWithoutPacketNestedInput
   }
@@ -106104,6 +113479,8 @@ export namespace Prisma {
     slices: string
     note?: string
     expiresAt: Date | string
+    reconciledAt?: Date | string | null
+    corrupt?: boolean
     createdAt?: Date | string
     message: MessageCreateNestedOneWithoutRedPacketInput
   }
@@ -106118,6 +113495,8 @@ export namespace Prisma {
     slices: string
     note?: string
     expiresAt: Date | string
+    reconciledAt?: Date | string | null
+    corrupt?: boolean
     createdAt?: Date | string
   }
 
@@ -106146,6 +113525,8 @@ export namespace Prisma {
     slices?: StringFieldUpdateOperationsInput | string
     note?: StringFieldUpdateOperationsInput | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reconciledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    corrupt?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     message?: MessageUpdateOneRequiredWithoutRedPacketNestedInput
   }
@@ -106160,6 +113541,8 @@ export namespace Prisma {
     slices?: StringFieldUpdateOperationsInput | string
     note?: StringFieldUpdateOperationsInput | string
     expiresAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    reconciledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    corrupt?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
 
@@ -107282,6 +114665,7 @@ export namespace Prisma {
     remindAt: Date | string
     firedAt?: Date | string | null
     createdAt?: Date | string
+    sourceHash?: string | null
   }
 
   export type ConversationStreakCreateManyUserInput = {
@@ -107813,6 +115197,7 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    sourceHash?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type ReminderUncheckedUpdateWithoutUserInput = {
@@ -107823,6 +115208,7 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    sourceHash?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type ReminderUncheckedUpdateManyWithoutUserInput = {
@@ -107833,6 +115219,7 @@ export namespace Prisma {
     remindAt?: DateTimeFieldUpdateOperationsInput | Date | string
     firedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    sourceHash?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type ConversationStreakUpdateWithoutUserInput = {
@@ -108089,6 +115476,7 @@ export namespace Prisma {
     assigneeId?: string | null
     createdById?: string | null
     sourceMessageId?: string | null
+    sourceRevokedAt?: Date | string | null
     createdAt?: Date | string
     updatedAt?: Date | string
   }
@@ -108389,6 +115777,7 @@ export namespace Prisma {
     assigneeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdById?: NullableStringFieldUpdateOperationsInput | string | null
     sourceMessageId?: NullableStringFieldUpdateOperationsInput | string | null
+    sourceRevokedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -108401,6 +115790,7 @@ export namespace Prisma {
     assigneeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdById?: NullableStringFieldUpdateOperationsInput | string | null
     sourceMessageId?: NullableStringFieldUpdateOperationsInput | string | null
+    sourceRevokedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }
@@ -108413,6 +115803,7 @@ export namespace Prisma {
     assigneeId?: NullableStringFieldUpdateOperationsInput | string | null
     createdById?: NullableStringFieldUpdateOperationsInput | string | null
     sourceMessageId?: NullableStringFieldUpdateOperationsInput | string | null
+    sourceRevokedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
   }

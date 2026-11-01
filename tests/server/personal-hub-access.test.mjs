@@ -4,10 +4,11 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
+import * as section10 from '../../src/lib/section10-contracts.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path,db,auth=async(req,user)=>req.headers.get('authorization')==='Bearer '+user?null:Response.json({},{status:403})) {
   const source=stripTypeScriptTypes(await readFile(new URL('../../src/app/api/hub/'+path+'/route.ts',import.meta.url),'utf8')).replace(/^import .*$/gm,'').replace(/export /g,'')
-  const deps={db,NextResponse:{json:Response.json},safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',dayKey:d=>d.toISOString().slice(0,10),requireActionOwner:auth}
+  const deps={db,NextResponse:{json:Response.json},safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',dayKey:d=>d.toISOString().slice(0,10),requireActionOwner:auth,...section10,createHash:()=>({update:()=>({digest:()=>'hash'})})}
   return new Function(...Object.keys(deps),source+';return {GET:typeof GET==="function"?GET:null,POST:typeof POST==="function"?POST:null,PATCH:typeof PATCH==="function"?PATCH:null,DELETE:typeof DELETE==="function"?DELETE:null}')(...Object.values(deps))
 }
 const req=(method,user='me',body={},token=user)=>new Request('https://hub.test?userId='+user,{method,headers:{authorization:'Bearer '+token},...(['POST','PATCH'].includes(method)?{body:JSON.stringify({userId:user,...body})}:{})})
@@ -20,6 +21,7 @@ async function fixture(run) {
    'CREATE TABLE UserWallet(userId TEXT PRIMARY KEY,coins INTEGER NOT NULL DEFAULT 0,gems INTEGER NOT NULL DEFAULT 0,streak INTEGER NOT NULL DEFAULT 0,lastCheckIn DATETIME)',
    'CREATE TABLE WalletLedger(id TEXT PRIMARY KEY,userId TEXT,kind TEXT,asset TEXT,amount INTEGER,note TEXT,counterpartyId TEXT,createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)',
    'CREATE TABLE HubTask(id TEXT PRIMARY KEY,ownerId TEXT,title TEXT,status TEXT NOT NULL DEFAULT "todo",createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updatedAt DATETIME NOT NULL)',
+   'CREATE TABLE TaskCreationOperation(userId TEXT,clientId TEXT,requestHash TEXT,taskId TEXT,PRIMARY KEY(userId,clientId))',
    "INSERT INTO User VALUES ('me'),('other')",
    "INSERT INTO UserWallet(userId,coins) VALUES ('other',900)",
    "INSERT INTO WalletLedger(id,userId,kind,asset,amount,note) VALUES ('foreign','other','transfer_in','PC',900,'private financial note')",
@@ -58,7 +60,8 @@ test('valid personal-task intent returns canonical owner/state and a precise del
  const row=(await create.json()).task;assert.equal(row.ownerId,'me');assert.equal(row.title,'My task')
  const moved=(await (await task.PATCH(req('PATCH','me',{status:'done'}),ctx(row.id))).json()).task
  assert.equal(moved.ownerId,'me');assert.equal(moved.status,'done');assert.equal(moved.title,'My task')
- assert.deepEqual(await (await task.DELETE(req('DELETE'),ctx(row.id))).json(),{ok:true,userId:'me',taskId:row.id})
+ const deletion=(await (await task.DELETE(req('DELETE'),ctx(row.id))).json())
+ assert.equal(deletion.ok,true);assert.equal(deletion.userId,'me');assert.equal(deletion.taskId,row.id);assert.equal(deletion.replayed,false)
  assert.equal(await db.hubTask.count({where:{ownerId:'other'}}),1)
 }))
 test('wallet balance and ledger use one transaction; failed ledger reads roll initial wallet creation back',()=>fixture(async db=>{

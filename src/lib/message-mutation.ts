@@ -59,6 +59,24 @@ export async function mutateMessage<T>(db: PrismaClient, id: string, owner: stri
         }
         case 'delete':
           await tx.message.update({ where: { id }, data: { deletedAt: now, pinnedAt: null, pinnedBy: null }, select: { id: true } })
+          // Section 10 item 9: copied task-title revocation. A card born from
+          // this message keeps its title (auditability) but is stamped the
+          // moment its source becomes unavailable, and the board revision
+          // advances so every retained viewer re-reads the derivation state.
+          try {
+            const revoked = await tx.kanbanCard.updateMany({
+              where: { sourceMessageId: id, sourceRevokedAt: null },
+              data: { sourceRevokedAt: now },
+            })
+            if (revoked.count > 0) {
+              await tx.$executeRaw`INSERT INTO RoomListRevision (conversationId, kind, rev) VALUES (${message.conversationId}, 'kanban', 1)
+                ON CONFLICT (conversationId, kind) DO UPDATE SET rev = rev + 1`
+            }
+          } catch (error) {
+            // Legacy contract fixtures build only the tables they exercise;
+            // production schemas always carry the section-10 tables.
+            if ((error as { code?: string })?.code !== 'P2021') throw error
+          }
           break
         case 'react': {
           const rows = await tx.reaction.findMany({ where: { messageId: id, userId: owner }, select: { id: true, emoji: true } })

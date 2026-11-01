@@ -11,7 +11,7 @@ async function fixture(run) {
   const dir = await mkdtemp(join(tmpdir(), 'pulse-reminders-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(dir, 'test.sqlite')}` })
   try {
-    await db.$executeRawUnsafe('CREATE TABLE Reminder(id TEXT PRIMARY KEY, userId TEXT NOT NULL, conversationId TEXT NOT NULL, messageId TEXT, note TEXT NOT NULL DEFAULT "", remindAt DATETIME NOT NULL, firedAt DATETIME, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
+    await db.$executeRawUnsafe('CREATE TABLE Reminder(id TEXT PRIMARY KEY, userId TEXT NOT NULL, conversationId TEXT NOT NULL, messageId TEXT, note TEXT NOT NULL DEFAULT "", remindAt DATETIME NOT NULL, firedAt DATETIME, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, sourceHash TEXT)')
     await db.$transaction(async tx => {
       for (let i = 0; i < 250; i++) await tx.reminder.create({ data: { id: `r${String(i).padStart(3, '0')}`, userId: 'me', conversationId: 'room', remindAt: time, firedAt: i < 150 ? time : null } })
     })

@@ -61,6 +61,8 @@ data class RedPacketStubDto(
 data class RedPacketCreateResultDto(
     val message: ChatMessageDto? = null,
     val packet: RedPacketStubDto? = null,
+    // Section 10 item 13: replay receipt for the durable creation identity.
+    val replayed: Boolean = false,
 )
 
 @Serializable
@@ -131,6 +133,9 @@ data class WhiteboardPageDto(
     val strokes: List<WhiteboardStrokeDto> = emptyList(),
     val serverTime: Long? = null,
     val resetAt: Long? = null,
+    // Section 10 item 10: bounded stroke pages past the 4000-stroke snapshot.
+    val hasMore: Boolean = false,
+    val nextCursor: String? = null,
 )
 
 @Serializable
@@ -186,10 +191,27 @@ data class KanbanCardDto(
 )
 
 @Serializable
-data class KanbanPageDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val cards: List<KanbanCardDto>)
+data class KanbanPageDto(
+    val boardReceiptVersion: Int,
+    val userId: String,
+    val conversationId: String,
+    val cards: List<KanbanCardDto>,
+    // Section 10 items 7/8: board revision + bounded board pages.
+    val boardRev: Int = 0,
+    val hasMore: Boolean = false,
+    val nextCursor: String? = null,
+)
 
 @Serializable
-data class KanbanCardReceiptDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val card: KanbanCardDto)
+data class KanbanCardReceiptDto(
+    val boardReceiptVersion: Int,
+    val userId: String,
+    val conversationId: String,
+    val card: KanbanCardDto,
+    // Section 10 item 6: replay receipt - true = the SAME journaled identity
+    // had already been accepted (the same card, never a duplicate).
+    val replayed: Boolean = false,
+)
 
 @Serializable
 data class KanbanDeleteReceiptDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val cardId: String, val ok: Boolean)
@@ -229,7 +251,13 @@ data class GroupEventDto(
 )
 
 @Serializable
-data class EventsPageDto(val events: List<GroupEventDto> = emptyList())
+data class EventsPageDto(
+    val events: List<GroupEventDto> = emptyList(),
+    // Section 10 items 2/3: per-room revision + bounded history continuation.
+    val eventsRev: Int = 0,
+    val hasMore: Boolean = false,
+    val nextCursor: String? = null,
+)
 
 @Serializable
 data class RsvpResultDto(
@@ -535,7 +563,13 @@ data class HubTaskDto(
 )
 
 @Serializable
-data class HubTasksPageDto(val userId: String, val tasks: List<HubTaskDto>)
+data class HubTasksPageDto(
+    val userId: String,
+    val tasks: List<HubTaskDto>,
+    // Section 10 item 5: bounded task history continuation.
+    val hasMore: Boolean = false,
+    val nextCursor: String? = null,
+)
 
 @Serializable
 data class MarketSellerDto(

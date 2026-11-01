@@ -135,3 +135,62 @@ export async function refundRedPacket(db: PrismaClient, id: string, clock: () =>
     return refund
   })
 }
+
+/** Section 10 item 13b/c - scheduled settlement sweep. Called on every
+ * packet lifecycle touch (creation, detail reads), oldest expired packet
+ * first, bounded per call:
+ *  · healthy expired packets refund their unclaimed remainder (the same
+ *    contract refundRedPacket always honoured, now without needing a viewer);
+ *  · CORRUPT historical payouts (slices JSON that packetSlices rejects, or a
+ *    payout prefix that no longer matches the grab ledger) are quarantined:
+ *    the packet is marked corrupt, the FULL escrow returns to the sender once
+ *    (grabs keep their credited amounts - the ledger is the truth), and the
+ *    reconciliation is logged. Never a silent forever-pending escrow.
+ * Returns the number of packets settled. */
+export async function reconcileExpiredPackets(db: PrismaClient, clock: () => Date = () => new Date(), max = 50): Promise<number> {
+  const now = clock()
+  const backlog = await db.redPacket.findMany({
+    where: { expiresAt: { lte: now }, reconciledAt: null, corrupt: false, grabbed: { lt: db.redPacket.fields.count } },
+    orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
+    take: max,
+    select: { id: true },
+  })
+  let settled = 0
+  for (const row of backlog) {
+    try {
+      const refund = await refundRedPacket(db, row.id, clock)
+      if (refund > 0) settled += 1
+      // Fully-grabbed packets have no escrow left; still stamp them settled.
+      await db.redPacket.updateMany({ where: { id: row.id, reconciledAt: null }, data: { reconciledAt: now } })
+      continue
+    } catch (error) {
+      if (!(error instanceof RedPacketClaimError)) throw error
+      if (error.status !== 500) throw error // 409 races retry on the next touch
+    }
+    // Corrupt payout: quarantine + one full-escrow sender refund.
+    settled += await db.$transaction(async tx => {
+      const packet = await tx.redPacket.findUnique({ where: { id: row.id } })
+      if (!packet || packet.reconciledAt || packet.corrupt) return 0
+      const closed = await tx.redPacket.updateMany({
+        where: { id: packet.id, reconciledAt: null, corrupt: false },
+        data: { corrupt: true, grabbed: packet.count, reconciledAt: now },
+      })
+      if (closed.count !== 1) return 0
+      const refund = packet.total
+      await tx.userWallet.upsert({ where: { userId: packet.senderId }, create: { userId: packet.senderId }, update: {} })
+      const credited = await tx.userWallet.updateMany({
+        where: { userId: packet.senderId, coins: { gte: 0, lte: 2_147_483_647 - refund } },
+        data: { coins: { increment: refund } },
+      })
+      if (credited.count !== 1) {
+        // Sender balance ceiling: reopen the packet for the next sweep.
+        await tx.redPacket.update({ where: { id: packet.id }, data: { corrupt: false, grabbed: packet.grabbed, reconciledAt: null } })
+        return 0
+      }
+      await tx.walletLedger.create({ data: { userId: packet.senderId, kind: 'redpacket_refund', asset: 'PC', amount: refund, note: 'corrupt red packet quarantined and settled in full' } })
+      await tx.logEvent.create({ data: { userId: packet.senderId, kind: 'redpacket', message: 'a corrupt red packet was reconciled - full escrow refunded', meta: JSON.stringify({ packetId: packet.id, refund, corrupt: true }) } })
+      return 1
+    })
+  }
+  return settled
+}

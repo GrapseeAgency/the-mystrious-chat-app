@@ -166,7 +166,8 @@ exports.Prisma.ReminderScalarFieldEnum = {
   note: 'note',
   remindAt: 'remindAt',
   firedAt: 'firedAt',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  sourceHash: 'sourceHash'
 };
 
 exports.Prisma.ConversationStreakScalarFieldEnum = {
@@ -507,6 +508,8 @@ exports.Prisma.RedPacketScalarFieldEnum = {
   slices: 'slices',
   note: 'note',
   expiresAt: 'expiresAt',
+  reconciledAt: 'reconciledAt',
+  corrupt: 'corrupt',
   createdAt: 'createdAt'
 };
 
@@ -543,6 +546,7 @@ exports.Prisma.KanbanCardScalarFieldEnum = {
   assigneeId: 'assigneeId',
   createdById: 'createdById',
   sourceMessageId: 'sourceMessageId',
+  sourceRevokedAt: 'sourceRevokedAt',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
@@ -759,6 +763,47 @@ exports.Prisma.ReportOperationScalarFieldEnum = {
   evidenceRev: 'evidenceRev'
 };
 
+exports.Prisma.EventCreationOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  eventId: 'eventId'
+};
+
+exports.Prisma.TaskCreationOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  taskId: 'taskId'
+};
+
+exports.Prisma.KanbanCardOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  cardId: 'cardId'
+};
+
+exports.Prisma.ReminderCreationOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  reminderId: 'reminderId'
+};
+
+exports.Prisma.RedPacketCreationOperationScalarFieldEnum = {
+  userId: 'userId',
+  clientId: 'clientId',
+  requestHash: 'requestHash',
+  packetId: 'packetId'
+};
+
+exports.Prisma.RoomListRevisionScalarFieldEnum = {
+  conversationId: 'conversationId',
+  kind: 'kind',
+  rev: 'rev'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -836,7 +881,13 @@ exports.Prisma.ModelName = {
   UserListRevision: 'UserListRevision',
   QuickPhraseOperation: 'QuickPhraseOperation',
   PeerBlockIntent: 'PeerBlockIntent',
-  ReportOperation: 'ReportOperation'
+  ReportOperation: 'ReportOperation',
+  EventCreationOperation: 'EventCreationOperation',
+  TaskCreationOperation: 'TaskCreationOperation',
+  KanbanCardOperation: 'KanbanCardOperation',
+  ReminderCreationOperation: 'ReminderCreationOperation',
+  RedPacketCreationOperation: 'RedPacketCreationOperation',
+  RoomListRevision: 'RoomListRevision'
 };
 
 /**

@@ -172,6 +172,62 @@ export async function GET(req: Request, { params }: RouteCtx) {
   }
   const sinceDate = since.ok
 
+  // Section 10 item 10: bounded stroke pages - ?limit=1..500&cursor= walks
+  // (createdAt, id) ASC past the legacy 4000-stroke snapshot boundary; the
+  // legacy mode (no limit) keeps its complete-or-error shape.
+  const rawLimit = url.searchParams.get('limit')
+  let pageLimitValue: number | null = null
+  if (rawLimit !== null) {
+    const parsed = Number(rawLimit)
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
+      return NextResponse.json({ error: 'limit must be an integer from 1 to 500.' }, { status: 400 })
+    }
+    pageLimitValue = parsed
+  }
+  const rawCursor = url.searchParams.get('cursor')
+  let cursorAt: Date | null = null
+  let cursorId: string | null = null
+  if (rawCursor !== null) {
+    const dot = rawCursor.indexOf('.')
+    const atMs = dot > 0 ? Number(rawCursor.slice(0, dot)) : NaN
+    const rowId = dot > 0 ? rawCursor.slice(dot + 1) : ''
+    if (!Number.isSafeInteger(atMs) || atMs < 0 || !rowId || rowId.length > 128 || rawCursor.length > 256) {
+      return NextResponse.json({ error: 'cursor must be a stroke continuation token.' }, { status: 400 })
+    }
+    cursorAt = new Date(atMs)
+    cursorId = rowId
+  }
+  if (pageLimitValue !== null) {
+    const [pagedRows, pagedResetAt] = await db.$transaction(async tx => [
+      await tx.whiteboardStroke.findMany({
+        where: {
+          conversationId: id,
+          ...(sinceDate ? { createdAt: { gt: sinceDate } } : {}),
+          ...(cursorAt && cursorId ? { OR: [{ createdAt: { gt: cursorAt } }, { createdAt: cursorAt, id: { gt: cursorId } }] } : {}),
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: pageLimitValue! + 1,
+        select: { id: true, userId: true, color: true, width: true, points: true, createdAt: true },
+      }),
+      await boardResetAt(tx, id),
+    ] as const)
+    const hasMore = pagedRows.length > pageLimitValue!
+    const rows = hasMore ? pagedRows.slice(0, pageLimitValue!) : pagedRows
+    const last = rows.at(-1)
+    return NextResponse.json(
+      {
+        strokes: rows.map(serializeStroke),
+        complete: true,
+        hasMore,
+        nextCursor: hasMore && last ? `${last.createdAt.getTime()}.${last.id}` : null,
+        operationsVersion: 1,
+        serverTime: Date.now(),
+        resetAt: pagedResetAt,
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    )
+  }
+
   const [rows, resetAt] = await db.$transaction(async tx => [
     await tx.whiteboardStroke.findMany({
       where: {

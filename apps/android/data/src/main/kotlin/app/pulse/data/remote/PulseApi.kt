@@ -1958,6 +1958,7 @@ class PulseApi(
         total: Long,
         count: Int,
         note: String?,
+        clientId: String? = null,
     ): PulseResult<RedPacketCreateResultDto> =
         post(
             "/api/redpackets",
@@ -1967,6 +1968,9 @@ class PulseApi(
                 put("total", total)
                 put("count", count)
                 if (!note.isNullOrBlank()) put("note", note)
+                // Section 10 item 13: journaled packet identity - a retry can
+                // never double-debit the wallet.
+                if (clientId != null) put("clientId", clientId)
             },
         ) { PulseJson.decodeFromString(RedPacketCreateResultDto.serializer(), it) }
 
@@ -1991,6 +1995,20 @@ class PulseApi(
         val sinceQ = since?.let { "&since=$it" } ?: ""
         return get("/api/conversations/$conversationId/whiteboard?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8") + sinceQ) {
             PulseJson.decodeFromString(WhiteboardPageDto.serializer(), it)
+        }
+    }
+
+    /** Section 10 item 10: bounded stroke page (limit 1..500) - boards past
+     * the 4000-stroke snapshot drain incrementally. */
+    suspend fun whiteboardPage(conversationId: String, requesterId: String, limit: Int, cursor: String?): PulseResult<WhiteboardPageDto> {
+        var url = "/api/conversations/$conversationId/whiteboard?requesterId=" +
+            java.net.URLEncoder.encode(requesterId, "UTF-8") + "&limit=" + limit
+        if (cursor != null) url += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(url) {
+            val page = PulseJson.decodeFromString(WhiteboardPageDto.serializer(), it)
+            if (page.hasMore && page.nextCursor.isNullOrBlank())
+                throw kotlinx.serialization.SerializationException("Whiteboard page missing its cursor")
+            page
         }
     }
 
@@ -2052,6 +2070,24 @@ class PulseApi(
             }
         }
 
+    /** Section 10 item 8: bounded board page (limit 1..200) - large boards
+     * load incrementally instead of failing at the 500-card snapshot. */
+    suspend fun kanbanBoardPage(conversationId: String, userId: String, limit: Int, cursor: String?): PulseResult<KanbanPageDto> {
+        var url = "/api/conversations/$conversationId/kanban?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
+            "&limit=" + limit
+        if (cursor != null) url += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(url) {
+            val page = PulseJson.decodeFromString(KanbanPageDto.serializer(), it)
+            require(page.boardReceiptVersion == 1 && page.userId == userId && page.conversationId == conversationId &&
+                page.cards.size <= limit && page.cards.map { card -> card.id }.distinct().size == page.cards.size) {
+                "Board page was not confirmed."
+            }
+            if (page.hasMore && page.nextCursor.isNullOrBlank())
+                throw kotlinx.serialization.SerializationException("Board page missing its cursor")
+            page
+        }
+    }
+
     /** POST /api/conversations/{id}/kanban { userId, title?, column?, assigneeId?, messageId? }. */
     suspend fun createKanbanCard(
         conversationId: String,
@@ -2060,6 +2096,7 @@ class PulseApi(
         column: String?,
         assigneeId: String?,
         messageId: String?,
+        clientId: String? = null,
     ): PulseResult<KanbanCardDto> =
         post(
             "/api/conversations/$conversationId/kanban",
@@ -2069,6 +2106,8 @@ class PulseApi(
                 if (!column.isNullOrBlank()) put("column", column)
                 if (!assigneeId.isNullOrBlank()) put("assigneeId", assigneeId)
                 if (!messageId.isNullOrBlank()) put("messageId", messageId)
+                // Section 10 item 6: journaled card-creation identity.
+                if (clientId != null) put("clientId", clientId)
             },
         ) { raw ->
             cardOf(raw, userId, conversationId).also { card ->
@@ -2123,6 +2162,20 @@ class PulseApi(
             PulseJson.decodeFromString(EventsPageDto.serializer(), it)
         }
 
+    /** Section 10 item 2: bounded event-history page (limit 1..60, newest
+     * created first). Continuation contract: hasMore implies a nextCursor. */
+    suspend fun eventsPage(conversationId: String, userId: String, limit: Int, cursor: String?): PulseResult<EventsPageDto> {
+        var url = "/api/conversations/$conversationId/events?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
+            "&limit=" + limit
+        if (cursor != null) url += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(url) {
+            val page = PulseJson.decodeFromString(EventsPageDto.serializer(), it)
+            if (page.hasMore && page.nextCursor.isNullOrBlank())
+                throw kotlinx.serialization.SerializationException("Event history page missing its cursor")
+            page
+        }
+    }
+
     /** POST /api/conversations/{id}/events { userId, title, startsAt, description?, location? }. */
     suspend fun createEvent(
         conversationId: String,
@@ -2131,6 +2184,7 @@ class PulseApi(
         startsAtIso: String,
         description: String?,
         location: String?,
+        clientId: String? = null,
     ): PulseResult<GroupEventDto> =
         post(
             "/api/conversations/$conversationId/events",
@@ -2140,6 +2194,9 @@ class PulseApi(
                 put("startsAt", startsAtIso)
                 if (!description.isNullOrBlank()) put("description", description)
                 if (!location.isNullOrBlank()) put("location", location)
+                // Section 10 item 1: the journaled publication identity - a
+                // lost-ACK retry replays the SAME event instead of duplicating.
+                if (clientId != null) put("clientId", clientId)
             },
         ) { raw ->
             eventOf(raw).also { event ->
@@ -2217,6 +2274,7 @@ class PulseApi(
         messageId: String?,
         note: String?,
         remindAtIso: String,
+        clientId: String? = null,
     ): PulseResult<ReminderItemDto> =
         post(
             "/api/reminders",
@@ -2226,6 +2284,8 @@ class PulseApi(
                 if (!messageId.isNullOrBlank()) put("messageId", messageId)
                 if (!note.isNullOrBlank()) put("note", note)
                 put("remindAt", remindAtIso)
+                // Section 10 item 11: journaled reminder identity.
+                if (clientId != null) put("clientId", clientId)
             },
         ) {
             PulseJson.decodeFromString(
@@ -2501,10 +2561,31 @@ class PulseApi(
         }
 
     /** POST /api/hub/tasks { userId, title 1..120, status? } → { task }. */
-    suspend fun createHubTask(userId: String, title: String, status: String? = null): PulseResult<HubTaskDto> =
-        post("/api/hub/tasks", jsonOf("userId" to userId, "title" to title, "status" to (status ?: "todo"))) {
+    suspend fun createHubTask(userId: String, title: String, status: String? = null, clientId: String? = null): PulseResult<HubTaskDto> =
+        post("/api/hub/tasks", buildJsonObject {
+            put("userId", userId)
+            put("title", title)
+            put("status", status ?: "todo")
+            // Section 10 item 4: durable creation identity (lost-ACK replay).
+            if (clientId != null) put("clientId", clientId)
+        }) {
             taskOf(it, userId).also { task -> require(task.title == title.trim() && task.status == (status ?: "todo")) { "Task creation was not confirmed." } }
         }
+
+    /** Section 10 item 5: bounded personal-task history page (limit 1..100). */
+    suspend fun hubTasksPage(userId: String, limit: Int, cursor: String?): PulseResult<HubTasksPageDto> {
+        var url = "/api/hub/tasks?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=" + limit
+        if (cursor != null) url += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(url) {
+            val page = PulseJson.decodeFromString(HubTasksPageDto.serializer(), it).also { p ->
+                require(p.userId == userId && p.tasks.map { task -> task.id }.distinct().size == p.tasks.size) { "Task history owner was not confirmed." }
+                p.tasks.forEach { task -> requireHubTask(task, userId) }
+            }
+            if (page.hasMore && page.nextCursor.isNullOrBlank())
+                throw kotlinx.serialization.SerializationException("Task history page missing its cursor")
+            page
+        }
+    }
 
     /** PATCH /api/hub/tasks/{id} { userId, title?, status? } - owner-only. */
     suspend fun updateHubTask(taskId: String, userId: String, title: String?, status: String?): PulseResult<HubTaskDto> =

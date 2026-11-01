@@ -357,6 +357,46 @@ class PulseRepositoryImpl constructor(
                 }
                 "story-view" -> api.markStoryViewed(intent.targetId, owner)
                 "story-delete" -> api.deleteStory(intent.targetId, owner)
+                // Section 10: durable creation identities replay to the SAME
+                // server row (events, tasks, kanban, reminders, packets).
+                "event-create" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    api.createEvent(intent.targetId, owner,
+                        (body["title"] as kotlinx.serialization.json.JsonPrimitive).content,
+                        (body["startsAtIso"] as kotlinx.serialization.json.JsonPrimitive).content,
+                        (body["description"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["location"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        intent.clientId)
+                }
+                "task-create" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    api.createHubTask(owner,
+                        (body["title"] as kotlinx.serialization.json.JsonPrimitive).content,
+                        (body["status"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        intent.clientId)
+                }
+                "kanban-create" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    api.createKanbanCard(intent.targetId, owner,
+                        (body["title"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["column"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["assigneeId"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["messageId"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        intent.clientId)
+                }
+                "reminder-create" -> {
+                    val body = kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).let { it as kotlinx.serialization.json.JsonObject }
+                    api.createReminder(owner, intent.targetId,
+                        (body["messageId"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["note"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        (body["remindAtIso"] as kotlinx.serialization.json.JsonPrimitive).content,
+                        intent.clientId)
+                }
+                "redpacket-create" -> api.createRedPacket(owner, intent.targetId,
+                    (kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).jsonObject["total"] as kotlinx.serialization.json.JsonPrimitive).content.toLong(),
+                    (kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).jsonObject["count"] as kotlinx.serialization.json.JsonPrimitive).content.toInt(),
+                    (kotlinx.serialization.json.Json.parseToJsonElement(intent.payload).jsonObject["note"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                    intent.clientId)
                 else -> null
             }
             when (receipt) {
@@ -5265,15 +5305,31 @@ class PulseRepositoryImpl constructor(
 
     // Wave 7 - collaboration & hub
 
-    override suspend fun createRedPacket(conversationId: String, total: Long, count: Int, note: String?): Result<RedPacketCreateResultDto> =
-        when (val r = api.createRedPacket(viewerId ?: "", conversationId, total, count, note)) {
+    override suspend fun createRedPacket(conversationId: String, total: Long, count: Int, note: String?): Result<RedPacketCreateResultDto> {
+        // Section 10 item 13: the packet identity is journaled BEFORE the
+        // wire; a lost ACK replays the SAME clientId (server answers with the
+        // SAME packet) so the wallet can never be debited twice.
+        val intent = runCatching {
+            section8Journal.enqueue(viewerId ?: "", "redpacket-create", conversationId,
+                kotlinx.serialization.json.buildJsonObject {
+                    put("total", kotlinx.serialization.json.JsonPrimitive(total))
+                    put("count", kotlinx.serialization.json.JsonPrimitive(count))
+                    if (note != null) put("note", kotlinx.serialization.json.JsonPrimitive(note))
+                })
+        }.getOrNull()
+        return when (val r = api.createRedPacket(viewerId ?: "", conversationId, total, count, note, intent?.clientId)) {
             is PulseResult.Success -> {
+                intent?.let { section8Journal.confirm(viewerId ?: "", it.clientId) }
                 r.value.message?.let { upsertMessage(it.toDomain()) }
                 scheduleConversationsRefresh()
                 Result.success(r.value)
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section8Journal.confirm(viewerId ?: "", it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
         }
+    }
 
     override suspend fun redPacket(packetId: String): Result<RedPacketDetailDto> =
         when (val r = api.redPacket(packetId, viewerId ?: "")) {
@@ -5339,8 +5395,20 @@ class PulseRepositoryImpl constructor(
     override suspend fun kanbanBoard(conversationId: String): Result<KanbanPageDto> =
         ownedAccountRequest { api.kanbanBoard(conversationId, it) }
 
-    override suspend fun createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?): Result<KanbanCardDto> =
-        ownedAccountRequest { api.createKanbanCard(conversationId, it, title, column, assigneeId, messageId) }
+    override suspend fun createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?): Result<KanbanCardDto> {
+        // Section 10 item 6: durable card-creation identity (lost-ACK replay).
+        val intent = runCatching {
+            section8Journal.enqueue(viewerId ?: "", "kanban-create", conversationId,
+                kotlinx.serialization.json.buildJsonObject {
+                    if (title != null) put("title", kotlinx.serialization.json.JsonPrimitive(title))
+                    if (column != null) put("column", kotlinx.serialization.json.JsonPrimitive(column))
+                    if (assigneeId != null) put("assigneeId", kotlinx.serialization.json.JsonPrimitive(assigneeId))
+                    if (messageId != null) put("messageId", kotlinx.serialization.json.JsonPrimitive(messageId))
+                })
+        }.getOrNull()
+        return ownedAccountRequest { api.createKanbanCard(conversationId, it, title, column, assigneeId, messageId, intent?.clientId) }
+            .onSuccess { intent?.let { i -> section8Journal.confirm(viewerId ?: "", i.clientId) } }
+    }
 
     override suspend fun updateKanbanCard(cardId: String, title: String?, column: String?, assigneeId: String?, clearAssignee: Boolean, position: Long?): Result<KanbanCardDto> =
         ownedAccountRequest { api.updateKanbanCard(cardId, it, title, column, assigneeId, clearAssignee, position) }
@@ -5354,11 +5422,28 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun createEvent(conversationId: String, title: String, startsAtIso: String, description: String?, location: String?): Result<GroupEventDto> =
-        when (val r = api.createEvent(conversationId, viewerId ?: "", title, startsAtIso, description, location)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun createEvent(conversationId: String, title: String, startsAtIso: String, description: String?, location: String?): Result<GroupEventDto> {
+        // Section 10 item 1: journaled event-creation identity.
+        val intent = runCatching {
+            section8Journal.enqueue(viewerId ?: "", "event-create", conversationId,
+                kotlinx.serialization.json.buildJsonObject {
+                    put("title", kotlinx.serialization.json.JsonPrimitive(title))
+                    put("startsAtIso", kotlinx.serialization.json.JsonPrimitive(startsAtIso))
+                    if (description != null) put("description", kotlinx.serialization.json.JsonPrimitive(description))
+                    if (location != null) put("location", kotlinx.serialization.json.JsonPrimitive(location))
+                })
+        }.getOrNull()
+        return when (val r = api.createEvent(conversationId, viewerId ?: "", title, startsAtIso, description, location, intent?.clientId)) {
+            is PulseResult.Success -> {
+                intent?.let { section8Journal.confirm(viewerId ?: "", it.clientId) }
+                Result.success(r.value)
+            }
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section8Journal.confirm(viewerId ?: "", it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
         }
+    }
 
     override suspend fun deleteEvent(eventId: String): Result<Unit> =
         when (val r = api.deleteEvent(eventId, viewerId ?: "")) {
@@ -5392,14 +5477,28 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String): Result<ReminderItemDto> =
-        when (val r = api.createReminder(viewerId ?: "", conversationId, messageId, note, remindAtIso)) {
+    override suspend fun createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String): Result<ReminderItemDto> {
+        // Section 10 item 11: journaled reminder identity.
+        val intent = runCatching {
+            section8Journal.enqueue(viewerId ?: "", "reminder-create", conversationId,
+                kotlinx.serialization.json.buildJsonObject {
+                    if (messageId != null) put("messageId", kotlinx.serialization.json.JsonPrimitive(messageId))
+                    if (note != null) put("note", kotlinx.serialization.json.JsonPrimitive(note))
+                    put("remindAtIso", kotlinx.serialization.json.JsonPrimitive(remindAtIso))
+                })
+        }.getOrNull()
+        return when (val r = api.createReminder(viewerId ?: "", conversationId, messageId, note, remindAtIso, intent?.clientId)) {
             is PulseResult.Success -> {
+                intent?.let { section8Journal.confirm(viewerId ?: "", it.clientId) }
                 reminderOwner?.let { reminderEffects.schedule(it, r.value) }
                 Result.success(r.value)
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section8Journal.confirm(viewerId ?: "", it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
         }
+    }
 
     override suspend fun resolveReminder(reminderId: String): Result<ReminderResolveDto> =
         when (val r = api.resolveReminder(reminderId, viewerId ?: "")) {
@@ -5630,8 +5729,19 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun createHubTask(title: String, status: String?): Result<HubTaskDto> =
-        personalTaskMutation { api.createHubTask(it, title, status) }
+    override suspend fun createHubTask(title: String, status: String?): Result<HubTaskDto> {
+        // Section 10 item 4: journaled personal-task identity.
+        val intent = runCatching {
+            section8Journal.enqueue(viewerId ?: "", "task-create", "",
+                kotlinx.serialization.json.buildJsonObject {
+                    put("title", kotlinx.serialization.json.JsonPrimitive(title))
+                    if (status != null) put("status", kotlinx.serialization.json.JsonPrimitive(status))
+                })
+        }.getOrNull()
+        val result = personalTaskMutation { api.createHubTask(it, title, status, intent?.clientId) }
+        result.onSuccess { intent?.let { i -> section8Journal.confirm(viewerId ?: "", i.clientId) } }
+        return result
+    }
     override suspend fun updateHubTask(taskId: String, title: String?, status: String?): Result<HubTaskDto> =
         personalTaskMutation { api.updateHubTask(taskId, it, title, status) }
     override suspend fun deleteHubTask(taskId: String): Result<Unit> =

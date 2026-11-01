@@ -1,4 +1,5 @@
 import type { PrismaClient } from '../../prisma/generated-client'
+import { bumpRoomRev, readRoomRev } from './section10-contracts.ts'
 
 export class EventOperationError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
@@ -28,7 +29,9 @@ export async function mutateEvent(db: PrismaClient, eventId: string, userId: str
           throw new EventOperationError(403, 'Only the event creator or a group admin can delete this event.')
         }
         await tx.groupEvent.delete({ where: { id: eventId } })
-        return { ...identity, ok: true as const }
+        // Section 10 item 3: every accepted mutation advances the room's
+        // events revision so competing cross-device actions stay ordered.
+        return { ...identity, ok: true as const, eventsRev: await bumpRoomRev(tx, event.conversationId, 'events') }
       }
       const key = { eventId_userId: { eventId, userId } }
       if (action.kind === 'rsvp') {
@@ -39,7 +42,7 @@ export async function mutateEvent(db: PrismaClient, eventId: string, userId: str
         for (const row of rows) {
           if (row.status === 'going' || row.status === 'maybe' || row.status === 'no') counts[row.status]++
         }
-        return { ...identity, rsvp, counts }
+        return { ...identity, rsvp, counts, eventsRev: await bumpRoomRev(tx, event.conversationId, 'events') }
       }
       let row = await tx.eventRsvp.findUnique({ where: key })
       if (!row) throw new EventOperationError(400, 'You need to RSVP before you can check in.')
@@ -62,7 +65,10 @@ export async function mutateEvent(db: PrismaClient, eventId: string, userId: str
       }
       if (!row?.checkedInAt) throw new EventOperationError(409, 'Attendance could not be confirmed.')
       const checkedInCount = await tx.eventRsvp.count({ where: { eventId, checkedInAt: { not: null } } })
-      return { ...identity, checkIn: row, xpAwarded: !alreadyCheckedIn, checkedInCount, alreadyCheckedIn }
+      // A repeated check-in inside the window is a replay: the revision must
+      // not spend (no-ops never advance the counter).
+      return { ...identity, checkIn: row, xpAwarded: !alreadyCheckedIn, checkedInCount, alreadyCheckedIn,
+        eventsRev: alreadyCheckedIn ? await readRoomRev(tx, event.conversationId, 'events') : await bumpRoomRev(tx, event.conversationId, 'events') }
     }, { isolationLevel: 'Serializable' })
   } catch (error) {
     if (['P1008', 'P2028', 'P2034', 'P2002'].includes((error as { code?: string })?.code ?? '')) {

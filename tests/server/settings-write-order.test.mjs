@@ -7,6 +7,8 @@ import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
 import { DirectConversationError, openSelfConversation } from '../../src/lib/direct-conversation.ts'
 import * as reminders from '../../src/lib/reminder-contract.ts'
+import { createHash } from 'node:crypto'
+import * as section10 from '../../src/lib/section10-contracts.ts'
 import * as reads from '../../src/lib/read-receipt.ts'
 import * as sync from '../../src/lib/message-sync.ts'
 import * as feedPagination from '../../src/lib/feed-pagination.ts'
@@ -125,7 +127,7 @@ async function fixture(run, database = db => db) {
     const notebook=(token='synthetic-owner',userId='owner')=>notebookRoute(new Request('https://settings.test/api/conversations/self',{
       method:'POST',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId}),
     }))
-    const reminderDeps={...blockDeps,...reminders,clipUtf16,parseIsoDate:value=>typeof value==='string' && Number.isFinite(Date.parse(value))?new Date(value):null}
+    const reminderDeps={...blockDeps,...reminders,...section10,createHash,clipUtf16,parseIsoDate:value=>typeof value==='string' && Number.isFinite(Date.parse(value))?new Date(value):null}
     const reminderList=await load('src/app/api/reminders/route.ts',reminderDeps,'({GET,POST})')
     const reminderItem=await load('src/app/api/reminders/[id]/route.ts',reminderDeps,'({PATCH,DELETE})')
     const reminder=(method,body={},token='synthetic-owner',userId='owner',id='private-reminder')=>

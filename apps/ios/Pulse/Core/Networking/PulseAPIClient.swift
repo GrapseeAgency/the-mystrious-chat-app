@@ -1576,8 +1576,26 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/redpackets { userId, conversationId, total, count, note? } → { message, packet }.
     public func createRedPacket(conversationId: String, total: Int, count: Int, note: String?) async throws -> WireRedPacketCreateResult {
+        // Section 10 item 13: journaled packet identity - a lost ACK replays
+        // the SAME clientId so the wallet can never be debited twice.
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "redpacket-create", targetId: conversationId,
+            payload: ["total": String(total), "count": String(count)] + (note.map { ["note": $0] } ?? [:]))
+        do {
+            let result = try await createRedPacketCore(conversationId: conversationId, total: total, count: count, note: note, clientId: intent.clientId)
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            return result
+        } catch let failure as Failure where failure.kind == .notFound || failure.kind == .forbidden || failure.kind == .validation {
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId) // permanent refusal
+            throw failure
+        }
+    }
+
+    /// Core send with an EXPLICIT identity (the replay path passes the
+    /// journaled clientId; nil keeps the legacy identity-less call).
+    func createRedPacketCore(conversationId: String, total: Int, count: Int, note: String?, clientId: String?) async throws -> WireRedPacketCreateResult {
         var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "total": total, "count": count]
         if let note, !note.isEmpty { body["note"] = note }
+        if let clientId { body["clientId"] = clientId }
         let data = try await postRaw("/api/redpackets", body: body)
         return try envelope(WireRedPacketCreateResult.self, from: data)
     }
@@ -1648,11 +1666,28 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/conversations/{id}/kanban { userId, title?, column?, assigneeId?, messageId? } → { card }.
     public func createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?) async throws -> WireKanbanCard {
+        // Section 10 item 6: journaled card-creation identity.
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "kanban-create", targetId: conversationId,
+            payload: ["title": title ?? "", "column": column ?? "", "assigneeId": assigneeId ?? "", "messageId": messageId ?? ""])
+        do {
+            let card = try await createKanbanCardCore(conversationId: conversationId, title: title, column: column,
+                assigneeId: assigneeId, messageId: messageId, clientId: intent.clientId)
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            return card
+        } catch let failure as Failure where failure.kind == .notFound || failure.kind == .forbidden {
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            throw failure
+        }
+    }
+
+    /// Core send with an EXPLICIT identity (replay path passes the journaled id).
+    func createKanbanCardCore(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?, clientId: String?) async throws -> WireKanbanCard {
         var body: [String: Any] = ["userId": userId]
         if let title { body["title"] = title }
         if let column { body["column"] = column }
         if let assigneeId { body["assigneeId"] = assigneeId }
         if let messageId { body["messageId"] = messageId }
+        if let clientId { body["clientId"] = clientId }
         let data = try await postRaw("/api/conversations/\(q(conversationId))/kanban", body: body)
         let card = try acceptedBoardCard(data, room: conversationId)
         guard card.createdById == userId, card.column == (column ?? "todo"), card.assigneeId == assigneeId,
@@ -1660,6 +1695,22 @@ public struct PulseAPIClient: Sendable {
             throw Failure(kind: .validation, message: "Task creation was not confirmed.")
         }
         return card
+    }
+
+    /// Section 10 item 8: bounded board page (limit 1..200) - large boards
+    /// load incrementally instead of failing at the 500-card snapshot.
+    public func kanbanBoardPage(conversationId: String, limit: Int, cursor: String?) async throws -> WireKanbanPage {
+        var path = "/api/conversations/\(q(conversationId))/kanban?userId=\(q(userId))&limit=\(limit)"
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireKanbanPage = try await get(path)
+        guard page.boardReceiptVersion == 1, page.userId == userId, page.conversationId == conversationId,
+              page.cards.count <= limit, Set(page.cards.map(\.id)).count == page.cards.count else {
+            throw Failure(kind: .validation, message: "Board page was not confirmed.")
+        }
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return a board cursor.")
+        }
+        return page
     }
 
     /// PATCH /api/kanban/{cardId} { userId, title?, column?, assigneeId?, position? } → { card }.
@@ -1722,6 +1773,28 @@ public struct PulseAPIClient: Sendable {
         var body: [String: Any] = ["userId": userId, "title": title, "startsAt": startsAtIso]
         if let description { body["description"] = description }
         if let location { body["location"] = location }
+        // Section 10 item 1: journaled event-creation identity.
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "event-create", targetId: conversationId,
+            payload: ["title": title, "startsAtIso": startsAtIso]
+                + (description.map { ["description": $0] } ?? [:])
+                + (location.map { ["location": $0] } ?? [:]))
+        do {
+            let event = try await createEventCore(conversationId: conversationId, title: title, startsAtIso: startsAtIso,
+                description: description, location: location, clientId: intent.clientId)
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            return event
+        } catch let failure as Failure where failure.kind == .notFound || failure.kind == .forbidden {
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId) // permanent refusal
+            throw failure
+        }
+    }
+
+    /// Core send with an EXPLICIT identity (replay path passes the journaled id).
+    func createEventCore(conversationId: String, title: String, startsAtIso: String, description: String?, location: String?, clientId: String?) async throws -> WireGroupEvent {
+        var body: [String: Any] = ["userId": userId, "title": title, "startsAt": startsAtIso]
+        if let description { body["description"] = description }
+        if let location { body["location"] = location }
+        if let clientId { body["clientId"] = clientId }
         let data = try await postRaw("/api/conversations/\(q(conversationId))/events", body: body)
         guard let event = try envelope(WireEventEnvelope.self, from: data).event,
               !event.id.isEmpty, event.title == title.trimmingCharacters(in: .whitespacesAndNewlines), event.createdById == userId,
@@ -1729,6 +1802,17 @@ public struct PulseAPIClient: Sendable {
             throw Failure(kind: .validation, message: "Event creation was not confirmed.")
         }
         return event
+    }
+
+    /// Section 10 item 2: bounded event-history page (limit 1..60).
+    public func eventsPage(conversationId: String, limit: Int, cursor: String?) async throws -> WireEventsPage {
+        var path = "/api/conversations/\(q(conversationId))/events?userId=\(q(userId))&limit=\(limit)"
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireEventsPage = try await get(path)
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return an event-history cursor.")
+        }
+        return page
     }
 
     /// DELETE /api/events/{id}?userId= - creator OR group admin.
@@ -1792,12 +1876,40 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/reminders { userId, conversationId, messageId?, note?, remindAt } → { item }.
     public func createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String) async throws -> WireReminderItem {
+        // Section 10 item 11: journaled reminder identity.
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "reminder-create", targetId: conversationId,
+            payload: ["messageId": messageId ?? "", "note": note ?? "", "remindAtIso": remindAtIso])
+        do {
+            let item = try await createReminderCore(conversationId: conversationId, messageId: messageId, note: note, remindAtIso: remindAtIso, clientId: intent.clientId)
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            return item
+        } catch let failure as Failure where failure.kind == .notFound || failure.kind == .forbidden {
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            throw failure
+        }
+    }
+
+    /// Core send with an EXPLICIT identity (replay path passes the journaled id).
+    func createReminderCore(conversationId: String, messageId: String?, note: String?, remindAtIso: String, clientId: String?) async throws -> WireReminderItem {
         var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "remindAt": remindAtIso]
         if let messageId { body["messageId"] = messageId }
         if let note { body["note"] = note }
+        if let clientId { body["clientId"] = clientId }
         let data = try await postRaw("/api/reminders", body: body)
         if let page = try? envelope(WireReminderEnvelope.self, from: data), let item = page.item { return item }
         return try envelope(WireReminderItem.self, from: data)
+    }
+
+    /// Section 10 item 10: bounded stroke page (limit 1..500) - boards past
+    /// the 4000-stroke snapshot drain incrementally.
+    public func whiteboardPage(conversationId: String, limit: Int, cursor: String?) async throws -> WireWhiteboardPage {
+        var path = "/api/conversations/\(q(conversationId))/whiteboard?requesterId=\(q(userId))&limit=\(limit)"
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireWhiteboardPage = try await get(path)
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return a whiteboard cursor.")
+        }
+        return page
     }
 
     /// PATCH /api/reminders/{id} { userId } - owner-only resolve.
@@ -2057,12 +2169,44 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/hub/tasks { userId, title, status? } → { task }.
     public func createHubTask(title: String, status: String?) async throws -> WireHubTask {
-        let data = try await postRaw("/api/hub/tasks", body: ["userId": userId, "title": title, "status": status ?? "todo"])
+        // Section 10 item 4: journaled personal-task identity.
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "task-create", targetId: "",
+            payload: ["title": title] + (status.map { ["status": $0] } ?? [:]))
+        do {
+            let task = try await createHubTaskCore(title: title, status: status, clientId: intent.clientId)
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            return task
+        } catch let failure as Failure where failure.kind == .notFound || failure.kind == .forbidden {
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            throw failure
+        }
+    }
+
+    /// Core send with an EXPLICIT identity (replay path passes the journaled id).
+    func createHubTaskCore(title: String, status: String?, clientId: String?) async throws -> WireHubTask {
+        var body: [String: Any] = ["userId": userId, "title": title, "status": status ?? "todo"]
+        if let clientId { body["clientId"] = clientId }
+        let data = try await postRaw("/api/hub/tasks", body: body)
         let task = try acceptedHubTask(data)
         guard task.title == title.trimmingCharacters(in: .whitespacesAndNewlines), task.status == (status ?? "todo") else {
             throw Failure(kind: .validation, message: "Task creation was not confirmed.")
         }
         return task
+    }
+
+    /// Section 10 item 5: bounded personal-task history page (limit 1..100).
+    public func hubTasksPage(limit: Int, cursor: String?) async throws -> WireHubTasksPage {
+        var path = "/api/hub/tasks?userId=\(q(userId))&limit=\(limit)"
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireHubTasksPage = try await get(path)
+        guard page.userId == userId, Set(page.tasks.map(\.id)).count == page.tasks.count else {
+            throw Failure(kind: .validation, message: "Task history owner was not confirmed.")
+        }
+        for task in page.tasks { try requireHubTask(task) }
+        if page.hasMore == true && (page.nextCursor ?? "").isEmpty {
+            throw Failure(kind: .server, message: "The gateway did not return a task-history cursor.")
+        }
+        return page
     }
 
     /// PATCH /api/hub/tasks/{id} { userId, title?, status? } - owner-only.

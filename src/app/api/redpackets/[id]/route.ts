@@ -15,7 +15,7 @@
 // idempotent. Status is computed AFTER the refund.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { refundRedPacket, RedPacketClaimError } from '@/lib/redpacket-contract'
+import { refundRedPacket, RedPacketClaimError, reconcileExpiredPackets } from '@/lib/redpacket-contract'
 import { strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -55,6 +55,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!packet) {
     return NextResponse.json({ error: 'Red packet not found.' }, { status: 404 })
   }
+
+  // Section 10 item 13b: every lifecycle touch sweeps the refund backlog
+  // (scheduled settlement), not just this packet; the per-packet lazy refund
+  // below stays for its exact synchronous acknowledgement contract.
+  try { await reconcileExpiredPackets(db) } catch { /* retried on the next touch */ }
 
   // Corrupt/over-limit refunds fail without consuming the settlement cursor.
   if (new Date() >= packet.expiresAt && packet.grabbed < packet.count) {

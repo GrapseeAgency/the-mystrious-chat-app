@@ -117,6 +117,7 @@ model Reminder {
   remindAt       DateTime
   firedAt        DateTime? // set once the nudge has been delivered
   createdAt      DateTime  @default(now())
+  sourceHash     String? // Section 10 item 12: sha256 of the anchored message text at snapshot time
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, remindAt])
@@ -701,6 +702,8 @@ model RedPacket {
   slices    String // JSON number[] — random split summing exactly to total
   note      String          @default("") // festive caption on the bubble
   expiresAt DateTime // createdAt + 24h
+  reconciledAt DateTime? // Section 10 item 13: set once a settlement sweep closed this packet
+  corrupt   Boolean         @default(false) // Section 10 item 13: historical payout integrity flag
   createdAt DateTime        @default(now())
   message   Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
   grabs     RedPacketGrab[]
@@ -755,11 +758,13 @@ model KanbanCard {
   assigneeId      String?
   createdById     String?
   sourceMessageId String? // Chanty-style provenance: card born from a chat message
+  sourceRevokedAt DateTime? // Section 10 item 9: set when the source message becomes unavailable
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, column, position])
+  @@index([conversationId, sourceMessageId])
 }
 
 /**
@@ -1079,4 +1084,72 @@ model ReportOperation {
   evidenceRev Int
 
   @@id([reporterId, clientId])
+}
+
+// ---------------------------------------------------------------- Section 10
+// Events, tasks, Kanban, whiteboards, reminders, and packets.
+
+/** Section 10 item 1 — event creation replay: a lost create ACK retries with
+ * the same clientId and receives the SAME stored event instead of a duplicate;
+ * a reused identity with different instructions is a 409. */
+model EventCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  eventId     String
+
+  @@id([userId, clientId])
+}
+
+/** Section 10 item 4 — personal-task creation replay receipt. */
+model TaskCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  taskId      String
+
+  @@id([userId, clientId])
+}
+
+/** Section 10 item 6 — Kanban card creation replay receipt. */
+model KanbanCardOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  cardId      String
+
+  @@id([userId, clientId])
+}
+
+/** Section 10 item 11 — reminder creation replay receipt. */
+model ReminderCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  reminderId  String
+
+  @@id([userId, clientId])
+}
+
+/** Section 10 item 13 — red-packet creation replay receipt: a lost ACK must
+ * never double-debit the wallet; the same clientId returns the SAME packet. */
+model RedPacketCreationOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  packetId    String
+
+  @@id([userId, clientId])
+}
+
+/** Section 10 items 3/7 — per-room monotonic revision counters (events,
+ * kanban): competing cross-device mutations are totally ordered by the rev
+ * the server hands back with every receipt, and readers apply only
+ * strictly-greater revisions. */
+model RoomListRevision {
+  conversationId String
+  kind           String // "events" | "kanban"
+  rev            Int    @default(0)
+
+  @@id([conversationId, kind])
 }

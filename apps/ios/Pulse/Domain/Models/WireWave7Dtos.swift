@@ -22,6 +22,8 @@ public struct WireRedPacketStub: Codable, Hashable, Sendable {
 }
 
 public struct WireRedPacketCreateResult: Codable, Sendable {
+    // Section 10 item 13: replay receipt for the durable creation identity.
+    public var replayed: Bool? = nil
     public let message: WireChatMessage?
     public let packet: WireRedPacketStub?
 }
@@ -69,6 +71,9 @@ public struct WireWhiteboardStroke: Codable, Hashable, Sendable {
 }
 
 public struct WireWhiteboardPage: Codable, Sendable {
+    // Section 10 item 10: bounded stroke pages past the 4000-stroke snapshot.
+    public var hasMore: Bool? = nil
+    public var nextCursor: String? = nil
     public var operationsVersion: Int? = nil
     public var complete: Bool? = nil
     public let strokes: [WireWhiteboardStroke]?
@@ -122,6 +127,10 @@ public struct WireKanbanCard: Codable, Hashable, Sendable {
 }
 
 public struct WireKanbanPage: Codable, Sendable {
+    // Section 10 items 7/8: board revision + bounded board pages.
+    public var boardRev: Int? = nil
+    public var hasMore: Bool? = nil
+    public var nextCursor: String? = nil
     public let boardReceiptVersion: Int
     public let userId: String
     public let conversationId: String
@@ -166,6 +175,10 @@ public struct WireGroupEvent: Codable, Hashable, Sendable {
 }
 
 public struct WireEventsPage: Codable, Sendable {
+    // Section 10 items 2/3: per-room revision + bounded history continuation.
+    public var eventsRev: Int? = nil
+    public var hasMore: Bool? = nil
+    public var nextCursor: String? = nil
     public let events: [WireGroupEvent]
 }
 
@@ -414,6 +427,9 @@ public struct WireHubTask: Codable, Hashable, Sendable {
 }
 
 public struct WireHubTasksPage: Codable, Sendable {
+    // Section 10 item 5: bounded task history continuation.
+    public var hasMore: Bool? = nil
+    public var nextCursor: String? = nil
     public let userId: String
     public let tasks: [WireHubTask]
 }

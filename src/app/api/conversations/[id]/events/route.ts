@@ -24,6 +24,7 @@ import { requireActionOwner } from '@/lib/wallet-authorization'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
+import { bumpRoomRev, clientIdFrom, decodeKeysetCursor, keysetBefore, opHash, pageLimit, pageVerdict, readRoomRev } from '@/lib/section10-contracts'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,9 @@ const TITLE_MAX = 120
 const DESCRIPTION_MAX = 1000
 const LOCATION_MAX = 200
 const LIST_CAP = 50
+// Section 10 item 2: bounded history pages (legacy callers keep the
+// unpaginated merged shape); (createdAt, id) DESC keyset continuation.
+const HISTORY_PAGE_MAX = 60
 
 const RSVP_STATUSES = ['going', 'maybe', 'no'] as const
 type RsvpStatus = (typeof RSVP_STATUSES)[number]
@@ -137,7 +141,9 @@ async function nameMapOf(db: Prisma.TransactionClient, userIds: Array<string | n
 
 /**
  * GET /api/conversations/[id]/events?userId=
- * Upcoming events ascending first, then past descending, cap 50.
+ *   [&limit=1..60&cursor=<epochMs>.<id>]
+ * Legacy (no limit): upcoming ascending first, then past descending, cap 50.
+ * Paged: bounded (createdAt, id) DESC history pages + eventsRev.
  */
 async function getEvents(req: Request, { params }: RouteCtx, db: Prisma.TransactionClient) {
   const { id } = await params
@@ -149,6 +155,43 @@ async function getEvents(req: Request, { params }: RouteCtx, db: Prisma.Transact
 
   const guard = await participantGuard(db, id, userId)
   if (guard) return guard
+
+  const limitVerdict = pageLimit(url.searchParams.get('limit'), HISTORY_PAGE_MAX)
+  if (!limitVerdict.ok) {
+    return NextResponse.json({ error: `limit must be an integer from 1 to ${HISTORY_PAGE_MAX}.` }, { status: 400 })
+  }
+  const eventsRev = await readRoomRev(db, id, 'events')
+
+  if (limitVerdict.limit !== null) {
+    // Section 10 item 2: bounded history walk (event creation order).
+    const cursor = decodeKeysetCursor(url.searchParams.get('cursor'))
+    if (!cursor.ok) {
+      return NextResponse.json({ error: 'cursor must be an events continuation token.' }, { status: 400 })
+    }
+    const found = await db.groupEvent.findMany({
+      where: {
+        conversationId: id,
+        ...('atMs' in cursor && cursor.atMs !== undefined ? keysetBefore(cursor.atMs, cursor.id) : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limitVerdict.limit + 1,
+      include: {
+        rsvps: {
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { userId: true, status: true, checkedInAt: true },
+        },
+      },
+    })
+    const { rows, hasMore, nextCursor } = pageVerdict(found, limitVerdict.limit, (row) => ({ atMs: row.createdAt.getTime(), id: row.id }))
+    const names = await nameMapOf(db, [
+      ...rows.map((e) => e.createdById),
+      ...rows.flatMap((e) => e.rsvps.map((r) => r.userId)),
+    ])
+    return NextResponse.json(
+      { events: rows.map((e) => serializeEvent(e, names, userId)), eventsRev, hasMore, nextCursor },
+      { headers: { 'Cache-Control': 'no-store' } },
+    )
+  }
 
   const now = new Date()
   const [upcoming, past] = await Promise.all([
@@ -183,7 +226,7 @@ async function getEvents(req: Request, { params }: RouteCtx, db: Prisma.Transact
   ])
 
   return NextResponse.json(
-    { events: merged.map((e) => serializeEvent(e, names, userId)) },
+    { events: merged.map((e) => serializeEvent(e, names, userId)), eventsRev },
     { headers: { 'Cache-Control': 'no-store' } },
   )
 }
@@ -223,6 +266,40 @@ async function postEvent(req: Request, { params }: RouteCtx, db: Prisma.Transact
   const description = strField(body.description).slice(0, DESCRIPTION_MAX)
   const location = strField(body.location).slice(0, LOCATION_MAX)
 
+  // Section 10 item 1: durable publication identity. A lost ACK replays the
+  // SAME clientId and receives the SAME stored event; mismatched reuse 409s.
+  const clientIdVerdict = clientIdFrom(body)
+  if (!clientIdVerdict.ok) {
+    return NextResponse.json({ error: 'clientId must contain 16-128 ASCII letters, digits, underscores or hyphens.' }, { status: 400 })
+  }
+  const clientId = clientIdVerdict.clientId
+  const requestHash = opHash(['event-create', id, title, startsAtMs, description, location])
+
+  if (clientId) {
+    const prior = await db.eventCreationOperation.findUnique({
+      where: { userId_clientId: { userId, clientId } },
+    })
+    if (prior) {
+      if (prior.requestHash !== requestHash) {
+        return NextResponse.json({ error: 'This event operation ID was already used for different instructions.' }, { status: 409 })
+      }
+      const existing = await db.groupEvent.findUnique({
+        where: { id: prior.eventId },
+        include: {
+          rsvps: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { userId: true, status: true, checkedInAt: true } },
+        },
+      })
+      if (!existing) {
+        return NextResponse.json({ error: 'This created event no longer exists.' }, { status: 410 })
+      }
+      const names = await nameMapOf(db, [existing.createdById])
+      return NextResponse.json(
+        { event: serializeEvent(existing, names, userId), eventsRev: await readRoomRev(db, id, 'events'), replayed: true },
+        { status: 200 },
+      )
+    }
+  }
+
   const created = await db.groupEvent.create({
     data: {
       conversationId: id,
@@ -239,9 +316,17 @@ async function postEvent(req: Request, { params }: RouteCtx, db: Prisma.Transact
       },
     },
   })
+  if (clientId) {
+    await db.eventCreationOperation.create({
+      data: { userId, clientId, requestHash, eventId: created.id },
+    })
+  }
+  // Section 10 item 3: creation is an accepted mutation - it advances the
+  // room's events revision inside this same snapshot.
+  const eventsRev = await bumpRoomRev(db, id, 'events')
 
   const names = await nameMapOf(db, [created.createdById])
-  return NextResponse.json({ event: serializeEvent(created, names, userId) }, { status: 201 })
+  return NextResponse.json({ event: serializeEvent(created, names, userId), eventsRev, replayed: false }, { status: 201 })
 }
 
 /** Do not authorize in one snapshot and create/read in another. A failed final

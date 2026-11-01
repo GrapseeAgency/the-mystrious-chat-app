@@ -58,7 +58,8 @@ public final class StoriesSessionModel: ObservableObject {
         guard session.viewer != nil, session.sessionGeneration == ownerEpoch else { return }
         let journal = PulseSection8Journal.shared
         let owner = session.api.userId
-        for intent in journal.pending(owner: owner) where intent.kind.hasPrefix("story-") {
+        for intent in journal.pending(owner: owner)
+        where intent.kind.hasPrefix("story-") || intent.kind.hasSuffix("-create") {
             switch intent.kind {
             case "story-publish":
                 do {
@@ -93,6 +94,59 @@ public final class StoriesSessionModel: ObservableObject {
                         journal.confirm(owner: owner, clientId: intent.clientId)
                     }
                 } catch let failure as PulseAPIClient.Failure where failure.kind == .forbidden || failure.kind == .validation {
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch { break }
+            case "event-create":
+                do {
+                    _ = try await session.api.createEventCore(conversationId: intent.targetId,
+                        title: intent.payload["title"] ?? "",
+                        startsAtIso: intent.payload["startsAtIso"] ?? "",
+                        description: intent.payload["description"],
+                        location: intent.payload["location"],
+                        clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure where failure.kind == .validation {
+                    journal.confirm(owner: owner, clientId: intent.clientId) // permanent refusal
+                } catch { break } // transport-class: keep for the next flush
+            case "task-create":
+                do {
+                    _ = try await session.api.createHubTaskCore(title: intent.payload["title"] ?? "",
+                        status: intent.payload["status"], clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure where failure.kind == .validation {
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch { break }
+            case "kanban-create":
+                do {
+                    _ = try await session.api.createKanbanCardCore(conversationId: intent.targetId,
+                        title: intent.payload["title"].flatMap { $0.isEmpty ? nil : $0 },
+                        column: intent.payload["column"].flatMap { $0.isEmpty ? nil : $0 },
+                        assigneeId: intent.payload["assigneeId"].flatMap { $0.isEmpty ? nil : $0 },
+                        messageId: intent.payload["messageId"].flatMap { $0.isEmpty ? nil : $0 },
+                        clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure where failure.kind == .validation || failure.kind == .notFound {
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch { break }
+            case "reminder-create":
+                do {
+                    _ = try await session.api.createReminderCore(conversationId: intent.targetId,
+                        messageId: intent.payload["messageId"].flatMap { $0.isEmpty ? nil : $0 },
+                        note: intent.payload["note"].flatMap { $0.isEmpty ? nil : $0 },
+                        remindAtIso: intent.payload["remindAtIso"] ?? "",
+                        clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure where failure.kind == .validation || failure.kind == .notFound {
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch { break }
+            case "redpacket-create":
+                do {
+                    _ = try await session.api.createRedPacketCore(conversationId: intent.targetId,
+                        total: Int(intent.payload["total"] ?? "") ?? 0,
+                        count: Int(intent.payload["count"] ?? "") ?? 0,
+                        note: intent.payload["note"], clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure where failure.kind == .validation || failure.kind == .notFound {
                     journal.confirm(owner: owner, clientId: intent.clientId)
                 } catch { break }
             default: break

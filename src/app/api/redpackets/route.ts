@@ -13,6 +13,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { deliverLivePush } from '@/lib/live-push-outbox'
+import { reconcileExpiredPackets } from '@/lib/redpacket-contract'
 import {
   mapMessage,
   memberIdsOf,
@@ -21,6 +22,7 @@ import {
   safeJson,
   strField,
 } from '@/lib/serializers'
+import { clientIdFrom, opHash } from '@/lib/section10-contracts'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,7 +66,11 @@ function cutRopeSlices(total: number, count: number): number[] {
   return slices
 }
 
-/** POST /api/redpackets - create a packet, debit the sender, post the message. */
+/** POST /api/redpackets - create a packet, debit the sender, post the message.
+ * Section 10 item 13: the wallet debit is bound to a durable (userId, clientId)
+ * creation receipt - a lost ACK replays the SAME packet with NO second debit -
+ * and every lifecycle touch sweeps the expired-packet refund backlog oldest
+ * first (scheduled settlement, not per-packet laziness). */
 export async function POST(req: Request) {
   const body = await safeJson(req)
   const userId = strField(body.userId)
@@ -118,9 +124,56 @@ export async function POST(req: Request) {
     )
   }
 
+  const clientIdVerdict = clientIdFrom(body)
+  if (!clientIdVerdict.ok) {
+    return NextResponse.json({ error: 'clientId must contain 16-128 ASCII letters, digits, underscores or hyphens.' }, { status: 400 })
+  }
+  const clientId = clientIdVerdict.clientId
+
+  // Section 10 item 13b: scheduled settlement sweep - every lifecycle touch
+  // drains the expired-packet refund backlog oldest-first (bounded), instead
+  // of refunding only the packet that happens to be viewed.
+  try { await reconcileExpiredPackets(db, () => new Date()) } catch { /* retried on the next lifecycle touch */ }
+
   const now = new Date()
   const expiresAt = new Date(now.getTime() + EXPIRY_MS)
   const slices = cutRopeSlices(total, count)
+  const requestHash = opHash(['redpacket-create', userId, conversationId, total, count, note])
+
+  // Section 10 item 13a: replay verdict BEFORE any money moves. The receipt
+  // row and the debit share one commit, so a crash between them is impossible.
+  if (clientId) {
+    const prior = await db.redPacketCreationOperation.findUnique({
+      where: { userId_clientId: { userId, clientId } },
+    })
+    if (prior) {
+      if (prior.requestHash !== requestHash) {
+        return NextResponse.json({ error: 'This packet operation ID was already used for different instructions.' }, { status: 409 })
+      }
+      const existing = await db.redPacket.findUnique({
+        where: { id: prior.packetId },
+        include: { message: { include: MESSAGE_FULL_INCLUDE } },
+      })
+      if (!existing || !existing.message) {
+        return NextResponse.json({ error: 'This created packet no longer exists.' }, { status: 410 })
+      }
+      return NextResponse.json(
+        {
+          message: mapMessage(existing.message, userId),
+          packet: {
+            id: existing.id,
+            total: existing.total,
+            count: existing.count,
+            grabbed: existing.grabbed,
+            note: existing.note,
+            expiresAt: existing.expiresAt.toISOString(),
+          },
+          replayed: true,
+        },
+        { status: 200 },
+      )
+    }
+  }
 
   const created = await db
     .$transaction(async (tx) => {
@@ -160,6 +213,11 @@ export async function POST(req: Request) {
           expiresAt,
         },
       })
+      if (clientId) {
+        await tx.redPacketCreationOperation.create({
+          data: { userId, clientId, requestHash, packetId: packet.id },
+        })
+      }
       const finalPayload = payload(packet.id)
       await tx.message.update({
         where: { id: message.id },
@@ -234,6 +292,7 @@ export async function POST(req: Request) {
         note,
         expiresAt: expiresAt.toISOString(),
       },
+      replayed: false,
     },
     { status: 201 },
   )
