@@ -40,7 +40,7 @@ final class StoryFeedTests: XCTestCase {
             do { _ = try await api.markStoryViewed(id: "a"); XCTFail("Accepted malformed receipt: \(body)") } catch { }
         }
         let (api, session) = client(#"{"viewCount":0}"#); defer { session.invalidateAndCancel() }
-        let count = try await api.markStoryViewed(id: "a"); XCTAssertEqual(count, 0)
+        let receipt = try await api.markStoryViewed(id: "a"); XCTAssertEqual(receipt.viewCount, 0)
     }
     func testFeedPreservesAccessFailureInsteadOfReturningNil() async {
         let (api, session) = client(#"{"error":"not allowed"}"#, status: 403); defer { session.invalidateAndCancel() }

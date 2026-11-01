@@ -4346,7 +4346,7 @@ class PulseRepositoryImpl constructor(
                 if (imagePath != null) put("imagePath", kotlinx.serialization.json.JsonPrimitive(imagePath))
             })
         }.getOrNull()
-        return when (val r = api.postStory(viewer, caption, background, imagePath, intent?.clientId)) {
+        return when (val r = api.postStory(owner, caption, background, imagePath, intent?.clientId)) {
             is PulseResult.Success -> {
                 val dto = r.value.story
                 val item = dto?.let { it.toStoryItem() }

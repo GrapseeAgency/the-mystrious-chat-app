@@ -807,8 +807,9 @@ public struct WireStoriesPage: Codable, Sendable {
     public let groups: [WireStoryGroup]?
     // Section 9 item 2: (createdAt,id) keyset continuation. Legacy full feeds
     // carry hasMore=false / nil cursor; paged walks append until hasMore=false.
-    public let nextCursor: String?
-    public let hasMore: Bool?
+    // var + nil defaults keep the memberwise `WireStoriesPage(groups:)` form.
+    public var nextCursor: String? = nil
+    public var hasMore: Bool? = nil
 }
 
 /// 201 POST /api/stories response - { story, replayed } (Section 9 item 1:

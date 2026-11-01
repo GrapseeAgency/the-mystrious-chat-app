@@ -13,7 +13,9 @@ public enum PulseStoryPages {
         var order: [String] = []
         var byUser: [String: WireStoryGroup] = [:]
         for group in groups {
-            guard let user = group.user, let userId = user.id, !userId.isEmpty else { continue }
+            // WireSender.id is non-optional String; only the group is optional.
+            guard let user = group.user, !user.id.isEmpty else { continue }
+            let userId = user.id
             if byUser[userId] == nil {
                 order.append(userId)
                 byUser[userId] = WireStoryGroupCopy(group, stories: [])

@@ -410,7 +410,9 @@ struct StoryViewerView: View {
         let journal = PulseSection8Journal.shared
         let intent = journal.enqueue(owner: api.userId, kind: "story-view", targetId: mark.storyId)
         do {
-            let count = try await api.markStoryViewed(id: mark.storyId)
+            let receipt = try await api.markStoryViewed(id: mark.storyId)
+            // The API call guarantees a non-negative viewCount before returning.
+            let count = receipt.viewCount ?? 0
             guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
             journal.confirm(owner: api.userId, clientId: intent.clientId)
             stories.markViewedLocally(storyId: mark.storyId, viewCount: count)

@@ -1246,13 +1246,13 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/stories/{id}/view { requesterId } - idempotent view mark
     /// (owner short-circuits server-side without recording a self-view).
-    public func markStoryViewed(id: String) async throws -> Int {
+    public func markStoryViewed(id: String) async throws -> WireStoryViewCount {
         let data = try await postRaw("/api/stories/\(id)/view", body: ["requesterId": userId])
         let result = try decoder.decode(WireStoryViewCount.self, from: data)
         guard let count = result.viewCount, count >= 0 else {
             throw Failure(kind: .server, message: "The gateway did not confirm the story view.")
         }
-        return count
+        return result
     }
 
     /// GET /api/stories/{id}/view?requesterId= - owner-only viewers list
