@@ -45,7 +45,7 @@ import java.util.UUID
 @RunWith(AndroidJUnit4::class)
 class MarketReplayJournalTest {
 
-    private class Fixture(context: Context, http: HttpClient, owner: String, tokens: SessionTokenStore, private val db: PulseDatabase) {
+    private class Fixture(context: Context, http: HttpClient, private val owner: String, tokens: SessionTokenStore, private val db: PulseDatabase) {
         private val preferencesScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         private val preferencesFile = File(context.filesDir, "market-journal-test-${UUID.randomUUID()}.preferences_pb")
         private val preferences = PulsePrefsLocalStore(
@@ -57,7 +57,7 @@ class MarketReplayJournalTest {
             app.pulse.data.remote.PulseSocketClient("", tokenProvider = { null }, allowEndpointFallback = false),
             preferences, tokens, context,
         )
-        fun journalRows(): Int = db.wave7Dao().readJournal("section8-intent:v1|$owner|").size
+        suspend fun journalRows(): Int = db.wave7Dao().readJournal("section8-intent:v1|$owner|").size
         fun close() {
             repository.stop()
             preferencesScope.cancel()
