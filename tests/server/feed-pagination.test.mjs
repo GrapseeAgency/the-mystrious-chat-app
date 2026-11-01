@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { scanFeed, feedScope, readFeedBatch } from '../../src/lib/feed-pagination.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
-async function fixture(run) {
+async function fixture(run, at = 'tied') {
   const directory = await mkdtemp(join(tmpdir(),'feed-pages-'))
   const sql=[]
   const db = new PrismaClient({datasourceUrl:`file:${join(directory,'test.sqlite')}`,log:[{emit:'event',level:'query'}]})
@@ -14,7 +14,12 @@ async function fixture(run) {
   try {
     await db.$executeRawUnsafe('CREATE TABLE Message(id TEXT PRIMARY KEY,createdAt DATETIME,content TEXT)')
     await db.$executeRawUnsafe('CREATE INDEX message_history_order ON Message(createdAt,id)')
-    await db.$executeRawUnsafe(`INSERT INTO Message VALUES ${Array.from({length:6000},(_,i)=>`('m-${String(i).padStart(6,'0')}',1000,'hello')`).join(',')}`)
+    // 'tied' = every row at one timestamp (the worst-case stress shape);
+    // 'distinct' = realistic history where each row carries its own stamp -
+    // with distinct values every SQLite planner picks the composite index,
+    // so the index-seek assertion cannot be flipped by planner-version drift.
+    const stampOf = at === 'distinct' ? (i) => 1000 + i : () => 1000
+    await db.$executeRawUnsafe(`INSERT INTO Message VALUES ${Array.from({length:6000},(_,i)=>`('m-${String(i).padStart(6,'0')}',${stampOf(i)},'hello')`).join(',')}`)
     let scanned=0,largest=0
     const page=(cursor=null,project=row=>row.id,scope=feedScope('search','owner','hello'),limit=30)=>db.$transaction(tx=>scanFeed({cursor,scope,limit,
       load:async(before,upper,take)=>{largest=Math.max(largest,take); const rows=await readFeedBatch(before,upper,take,(range,take)=>tx.message.findMany({where:{createdAt:range.time,id:range.id},orderBy:[{createdAt:'desc'},{id:'desc'}],take,select:{id:true,createdAt:true,content:true}}));scanned+=rows.length;return rows},
@@ -61,4 +66,4 @@ test('actual Prisma feed continuation seeks the complete timestamp and identity 
     const plan=await f.db.$queryRawUnsafe('EXPLAIN QUERY PLAN '+query.query,...JSON.parse(query.params))
     assert.match(plan.map(row=>row.detail).join('\n'),/message_history_order \(createdAt=\? AND id</)
   }
-}))
+},'distinct'))

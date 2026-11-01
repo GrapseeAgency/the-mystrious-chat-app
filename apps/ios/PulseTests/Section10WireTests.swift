@@ -37,7 +37,7 @@ final class Section10WireTests: XCTestCase {
         override func stopLoading() {}
     }
 
-    private func api(userId: String = "s10-\(UUID().uuidString)") -> PulseAPIClient {
+    private func api(userId: String = "u") -> PulseAPIClient {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [Stub.self]
         return PulseAPIClient(baseURL: URL(string: "https://s10.test")!, userId: userId,
@@ -53,7 +53,9 @@ final class Section10WireTests: XCTestCase {
 
     func testRedPacketCreationCarriesClientIdDecodesReplayAndRetiresTheJournalRow() async throws {
         let userId = "s10-pkt-\(UUID().uuidString)"
-        Stub.responses["/api/redpackets"] = (201, ["message": ["id": "m1"], "packet":
+        Stub.responses["/api/redpackets"] = (201, ["message": ["id": "m1", "conversationId": "room", "senderId": "u",
+            "content": "go", "kind": "redpacket", "createdAt": "2026-11-01T09:00:00.000Z", "deletedAt": nil, "parentId": nil,
+            "imagePath": nil, "audioPath": nil, "anon": false], "packet":
             ["id": "p1", "total": 100, "count": 5, "grabbed": 0, "note": "go", "expiresAt": "2026-11-03T09:00:00.000Z"],
             "replayed": true])
         let client = api(userId: userId)
