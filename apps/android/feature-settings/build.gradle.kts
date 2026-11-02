@@ -32,6 +32,10 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
 
+    // Section 13: WirePulsePrefs now carries the chat.convThemes JsonObject default,
+    // so this module resolves the serialization type its constructor needs.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
     // R10-a - the "App lock" toggle runs its one-shot confirmation BiometricPrompt
     // locally (the host activity is MainActivity, a FragmentActivity).
     implementation(libs.androidx.biometric)
