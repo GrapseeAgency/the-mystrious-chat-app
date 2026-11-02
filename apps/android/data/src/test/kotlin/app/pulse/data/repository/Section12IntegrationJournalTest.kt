@@ -66,12 +66,15 @@ class Section12IntegrationJournalTest {
 
     @Test
     fun aLostAcknowledgementKeepsTheRowAndConfirmRemovesOnlyTheWinner() = runTest {
-        val j = journal()
+        var seq = 0
+        val j = journal(ids = { "client%016d".format(seq++) })
         val first = j.enqueue("owner", "automation-delete", "rule-1",
             buildJsonObject { put("userId", "owner") })
         val second = j.enqueue("owner", "webhook-create", "room",
             buildJsonObject { put("name", "CI bot"); put("requesterId", "owner") })
         // First intent's ACK is lost: nothing is confirmed, both stay pending.
+        // Pending rows keep FIFO order and the SECOND intent must not overwrite
+        // the first - distinct clientIds mean distinct journal rows.
         assertEquals(listOf(first.clientId, second.clientId), j.pending("owner").map { it.clientId })
         // The retry replays the SAME clientId (the receipt confirm removes it).
         j.confirm("owner", first.clientId)

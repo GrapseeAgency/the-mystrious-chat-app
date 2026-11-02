@@ -146,7 +146,7 @@ class IntegrationMutationAcceptanceTest {
             200 to """{"webhooks":[{"id":"hook","name":"Build bot","token":"capability","avatarColor":"emerald",
                 "url":"/api/webhooks/capability","createdAt":"2026-03-01T09:00:00.000Z","createdBy":"me",
                 "rotatedAt":"2026-03-01T10:00:00.000Z"}],
-                "revision":9,"page":{"nextCursor":"1717000000001.def","hasMore":false}}""",
+                "revision":9,"page":{"nextCursor":"1717000000001.def","hasMore":true}}""",
             200 to """{"webhooks":[],"revision":9}""",
         )
         try {
@@ -157,7 +157,7 @@ class IntegrationMutationAcceptanceTest {
             assertEquals(1, page.webhooks.size)
             assertEquals("2026-03-01T10:00:00.000Z", page.webhooks.single().rotatedAt)
             assertEquals("1717000000001.def", page.page?.nextCursor)
-            assertEquals(false, page.page?.hasMore)
+            assertEquals(true, page.page?.hasMore)
             assertTrue(lastPath().contains("limit=200"))
             assertTrue(lastPath().contains("cursor=1717000000000.abc"))
             assertTrue(api.webhooks("room", "me") is PulseResult.Success)
