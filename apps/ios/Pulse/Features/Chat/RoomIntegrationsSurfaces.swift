@@ -268,7 +268,7 @@ struct AutomationsSection: View {
                 guard active, life == lifetime, ticket == revision, !Task.isCancelled else { return }
                 let page = try await api.automationsPage(conversationId: conversationId, limit: 100, cursor: cursor)
                 fresh += page.automations ?? []
-                if page.hasMore == true, let next = page.page?.nextCursor, !next.isEmpty {
+                if page.page?.hasMore == true, let next = page.page?.nextCursor, !next.isEmpty {
                     cursor = next
                 } else {
                     cursor = nil
@@ -726,7 +726,7 @@ struct WebhooksSection: View {
                 guard active, life == lifetime, ticket == revision, !Task.isCancelled else { return }
                 let page = try await api.webhooksPage(conversationId: conversationId, limit: 100, cursor: cursor)
                 fresh += page.webhooks ?? []
-                if page.hasMore == true, let next = page.page?.nextCursor, !next.isEmpty {
+                if page.page?.hasMore == true, let next = page.page?.nextCursor, !next.isEmpty {
                     cursor = next
                 } else {
                     cursor = nil

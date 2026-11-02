@@ -3089,8 +3089,8 @@ class PulseApi(
         deleteWithJson(
             "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
             jsonOf("userId" to userId, "clientId" to clientId),
-        ) {
-            confirmedControlDeletion(it, userId, "automationId", automationId).also { confirmedReplayReceipt(it, clientId) }
+        ) { text ->
+            confirmedControlDeletion(text, userId, "automationId", automationId).also { confirmedReplayReceipt(text, clientId) }
         }
 
     /** GET /api/webhooks?conversationId=&requesterId=&limit=&cursor= - admins
@@ -3151,8 +3151,8 @@ class PulseApi(
         deleteWithJson(
             "/api/webhooks/" + java.net.URLEncoder.encode(token, "UTF-8"),
             jsonOf("requesterId" to requesterId, "clientId" to clientId),
-        ) {
-            confirmedControlDeletion(it, requesterId, "token", token).also { confirmedReplayReceipt(it, clientId) }
+        ) { text ->
+            confirmedControlDeletion(text, requesterId, "token", token).also { confirmedReplayReceipt(text, clientId) }
         }
 
     private fun requireAutomation(row: app.pulse.protocol.AutomationDto) {
