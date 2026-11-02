@@ -117,7 +117,7 @@ private final class PulseWindowPrivacyRegistry {
                 // previously the fallback claimed "active" and could drop a
                 // cover from a deactivation the window never saw.
                 let inactive = window.windowScene.map { $0.activationState != .foregroundActive }
-                    ?? UIApplication.shared.applicationState != .active
+                    ?? (UIApplication.shared.applicationState != .active)
                 state.setInactive(inactive)
             } else if let scene = note.object as? UIScene, scene === window.windowScene {
                 state.setInactive(note.name == UIScene.willDeactivateNotification)
@@ -132,7 +132,7 @@ private final class PulseWindowPrivacyRegistry {
             // a window without a scene yet defers to the process state instead
             // of assuming active (fail-closed, the OR-policy keeps covering).
             let inactive = window.windowScene.map { $0.activationState != .foregroundActive }
-                ?? UIApplication.shared.applicationState != .active
+                ?? (UIApplication.shared.applicationState != .active)
             state = PulseWindowPrivacyState(window: window, inactive: inactive)
             states.setObject(state, forKey: window)
         }

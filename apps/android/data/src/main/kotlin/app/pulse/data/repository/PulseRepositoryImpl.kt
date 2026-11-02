@@ -623,9 +623,12 @@ class PulseRepositoryImpl constructor(
         if (viewerId != id || attachmentSession != epoch) return
         when (val r = response) {
             is PulseResult.Success -> {
-                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it, readTicket, revision = r.value.revision) {
-                    viewerId == id && attachmentSession == epoch && settingsReadSequence.get() == readSequence
-                } }
+                r.value.preferences?.let { prefsLocalStore.replaceFromServer(
+                    server = it,
+                    readTicket = readTicket,
+                    owns = { viewerId == id && attachmentSession == epoch && settingsReadSequence.get() == readSequence },
+                    revision = r.value.revision,
+                ) }
             }
             is PulseResult.Failure -> Log.i(TAG, "settings fetch skipped: ${r.kind}")
         }

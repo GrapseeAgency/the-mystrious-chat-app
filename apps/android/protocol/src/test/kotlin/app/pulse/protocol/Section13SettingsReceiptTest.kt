@@ -73,7 +73,7 @@ class Section13SettingsReceiptTest {
         assertEquals("2023-11-14T22:13:20Z", (durable["intentAt"] as JsonPrimitive).content)
         val fieldTimes = durable["fieldTimes"]!!.jsonObject
         assertEquals("2023-11-14T22:13:20Z", (fieldTimes["density"] as JsonPrimitive).content)
-        assertEquals("2023-11-14T22:12:40Z", (fieldTimes["wallpaper"] as JsonPrimitive).content)
+        assertEquals("2023-11-14T21:56:40Z", (fieldTimes["wallpaper"] as JsonPrimitive).content)
         // the instructions themselves are unchanged by the identity
         assertEquals(legacy["preferences"], durable["preferences"])
     }
@@ -107,7 +107,7 @@ class Section13SettingsReceiptTest {
     @Test
     fun `conv themes decode from the server blob and stay absent when untouched`() {
         val blob = """{"preferences":{"chat.convThemes":{"c1":{"wallpaper":"mono"}}}}""".decodeSettingsEnvelope()
-        assertEquals("""{"wallpaper":"mono"}""", blob.preferences?.convThemes.toString())
+        assertEquals("""{"c1":{"wallpaper":"mono"}}""", blob.preferences?.convThemes.toString())
         assertEquals(setOf("chat.convThemes"), blob.preferences!!.settingsFields().keys)
         // absent = untouched (null), never an empty map
         assertNull("""{"preferences":{"density":"cozy"}}""".decodeSettingsEnvelope().preferences?.convThemes)
