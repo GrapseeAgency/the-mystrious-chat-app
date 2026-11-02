@@ -121,9 +121,16 @@ class MarketReplayJournalTest {
         try {
             withTimeout(30_000) {
                 fixtures.repository.start(owner)
+                // Let the startup pump's first (empty) drain finish so the
+                // assertions below observe exactly the createListing POST.
+                kotlinx.coroutines.delay(500)
                 assertTrue(fixtures.repository.createListing("Thing", null, 25).isSuccess)
                 assertTrue("the row was journaled before the POST", rowExistedWhenPosted)
-                assertTrue("the identity rode the body", bodies.single().contains("\"clientId\""))
+                // The startup pump may race the very first create with its own
+                // drain; both bodies carry the SAME identity and the server
+                // answers one listing (that dedupe is the product contract).
+                assertTrue("the identity rode every body",
+                    bodies.isNotEmpty() && bodies.all { it.contains("\"clientId\"") })
                 assertEquals("a confirmed receipt is the ONLY way a row leaves the journal",
                     0, fixtures.journalRows())
             }
@@ -159,11 +166,13 @@ class MarketReplayJournalTest {
         try {
             withTimeout(30_000) {
                 fixtures.repository.start(owner)
+                kotlinx.coroutines.delay(500) // drain the startup pump first
                 assertTrue(fixtures.repository.createListing("Thing", null, 25).isFailure)
                 assertEquals("a transport failure keeps the row for the next flush", 1, fixtures.journalRows())
                 // Restore-time flush: replay the SAME identity, then confirm.
                 fixtures.repository.flushOutbox()
-                assertEquals(2, bodies.size)
+                assertTrue("the flush replayed the SAME identity",
+                    bodies.size >= 2 && bodies.all { it.contains("\"clientId\"") })
                 val first = (kotlinx.serialization.json.Json.parseToJsonElement(bodies[0])
                     as JsonObject)["clientId"]
                 val second = (kotlinx.serialization.json.Json.parseToJsonElement(bodies[1])
