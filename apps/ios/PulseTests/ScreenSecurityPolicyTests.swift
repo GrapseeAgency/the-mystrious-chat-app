@@ -13,6 +13,20 @@ final class ScreenSecurityPolicyTests: XCTestCase {
             }
         }
     }
+    // Section 13 item 12 - the OR-policy is fail-closed by construction and
+    // pinned here explicitly: BOTH flags must be explicitly false before the
+    // inactive cover may be removed; any unknown/nil or enabled flag covers.
+    func testBothFlagsMustExplicitlyBeOffToRemoveTheCover() {
+        XCTAssertFalse(PulseScreenSecurityPolicy.requiresProtection(room: false, personal: false),
+            "both explicit offs are the ONLY removing combination")
+        XCTAssertTrue(PulseScreenSecurityPolicy.requiresProtection(room: false, personal: nil))
+        XCTAssertTrue(PulseScreenSecurityPolicy.requiresProtection(room: nil, personal: false))
+        XCTAssertTrue(PulseScreenSecurityPolicy.requiresProtection(room: nil, personal: nil))
+        XCTAssertTrue(PulseScreenSecurityPolicy.requiresProtection(room: true, personal: false))
+        XCTAssertTrue(PulseScreenSecurityPolicy.requiresProtection(room: false, personal: true))
+        XCTAssertFalse(PulseScreenSecurityPolicy.shouldCover(room: false, personal: false, active: false))
+        XCTAssertTrue(PulseScreenSecurityPolicy.shouldCover(room: false, personal: nil, active: false))
+    }
 }
 
 
@@ -75,5 +89,29 @@ final class WindowPrivacyLeaseTests: XCTestCase {
         required = true
         state.setInactive(true)
         XCTAssertTrue(state.isCovering)
+    }
+
+    // Section 13 item 12(a) - a presentation that lands while the app is
+    // already inactive inserts its container ABOVE a static cover. The
+    // window-level cover re-fronts itself on the next layout pass, so a
+    // late-presented surface can never paint over the shield.
+    func testLatePresentationCannotPaintOverTheCover() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+        let state = PulseWindowPrivacyState(window: window, inactive: true)
+        state.update(owner: UUID(), required: true)
+        XCTAssertTrue(state.isCovering)
+        // The presented controller's container lands above the cover...
+        let latePresentation = UIView(frame: window.bounds)
+        window.addSubview(latePresentation)
+        XCTAssertFalse(window.subviews.last === window.subviews.first { $0.accessibilityIdentifier == "pulse.windowPrivacyCover" })
+        // ...and the next layout pass (driven synchronously by UIKit after
+        // the insertion) puts the cover back on top before any snapshot.
+        window.layoutIfNeeded()
+        let coverIndex = window.subviews.lastIndex { $0.accessibilityIdentifier == "pulse.windowPrivacyCover" }
+        XCTAssertEqual(coverIndex, window.subviews.count - 1, "the cover re-fronted above the late presentation")
+        XCTAssertTrue(latePresentation.superview === window)
+        state.setInactive(false)
+        XCTAssertFalse(window.subviews.contains { $0.accessibilityIdentifier == "pulse.windowPrivacyCover" },
+            "activation still removes the cover cleanly")
     }
 }

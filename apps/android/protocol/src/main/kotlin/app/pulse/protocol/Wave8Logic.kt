@@ -84,6 +84,9 @@ object PulseWave8Logic {
             reducedMotion = bool("reducedMotion") ?: DEFAULTS.reducedMotion,
             // fx.webglMode is optional on the wire (absent = native keeps its own local FX pref)
             fxWebglMode = str("fx.webglMode", WEBGL_MODES) ?: str("fxWebglMode", WEBGL_MODES),
+            // Section 13 item 4 - the conv-theme map rides the prefs blob verbatim
+            // (same key as the web); sanitization stays in the local store projection.
+            convThemes = raw["chat.convThemes"] as? JsonObject,
         )
     }
 
@@ -103,6 +106,7 @@ object PulseWave8Logic {
         typingVisible = patch.typingVisible ?: current.typingVisible,
         reducedMotion = patch.reducedMotion ?: current.reducedMotion,
         fxWebglMode = patch.fxWebglMode ?: current.fxWebglMode,
+        convThemes = patch.convThemes ?: current.convThemes,
     )
 
     /**

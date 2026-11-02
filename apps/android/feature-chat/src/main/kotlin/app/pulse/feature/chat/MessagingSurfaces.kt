@@ -786,6 +786,8 @@ internal fun ScheduledSendsSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SlashHelpDialog(onDismiss: () -> Unit) {
+    // Section 13 item 11 - audited, NOT protected: static command reference,
+    // no room content in this AlertDialog's separate window.
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = onDismiss) { Text("Got it") } },

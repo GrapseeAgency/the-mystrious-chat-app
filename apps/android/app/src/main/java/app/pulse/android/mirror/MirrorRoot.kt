@@ -1294,10 +1294,15 @@ private fun MirrorRoomScaffold(
     // A different account/gateway session must not inherit a remembered
     // caption, picker callback, reply target or room-owned coroutine.
     androidx.compose.runtime.key(repository, convo.id, viewerId, repository.attachmentSessionKey()) {
-        MirrorRoomSecurity(enabled = screenPrivacy != false || personalPrivacy.on != false) {
+        // Section 13 item 11 - the room's screen-privacy state is ALSO handed to
+        // the room's content-bearing dialogs (the view-once lightbox owns a
+        // separate Compose window the activity-window lease never covers).
+        val roomPrivacyOn = screenPrivacy != false || personalPrivacy.on != false
+        MirrorRoomSecurity(enabled = roomPrivacyOn) {
             MirrorRoom(
                 onOpenLiveRoom = { kind -> onOpenLiveRoom(convo.id, kind) },
                 readingEnabled = readingEnabled,
+                screenPrivacyOn = roomPrivacyOn,
                 title = convo.title,
                 color = convo.accentColor ?: other?.color,
                 isGroup = convo.isGroupish,

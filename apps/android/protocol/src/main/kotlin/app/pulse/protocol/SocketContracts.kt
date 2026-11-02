@@ -56,6 +56,15 @@ object SocketEvents {
     const val SAVED_CHANGED = "saved:changed"
     const val CONVERSATION_UPDATED = "conversation:updated"
 
+    /**
+     * Section 13 item 7 - pushed on every accepted settings patch. The web
+     * relay emits this OUT-OF-BAND (notifySocket, not the contracts.ts
+     * registry - the web client also listens via a raw string), so it stays a
+     * constant here and deliberately does NOT join SERVER_EVENTS (that list
+     * mirrors contracts.ts exactly; see SocketContractsTest).
+     */
+    const val SETTINGS_CHANGED = "settings:changed"
+
     /** Wave 8 - join refused: a PRESENTED token failed server verification. */
     const val JOIN_ERROR = "join:error"
     const val VOICE_ROSTER = "voice:roster"

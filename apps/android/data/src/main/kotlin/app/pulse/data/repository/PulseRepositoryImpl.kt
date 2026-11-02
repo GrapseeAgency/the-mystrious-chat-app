@@ -242,6 +242,14 @@ private const val STORY_VIEWERS_WALK_MAX = 20
 private const val INTEGRATION_PAGE_LIMIT = 100
 private const val INTEGRATION_PAGE_WALK_MAX = 20
 
+/** Section 13 item 3 - automatic pending-settings retry policy (web prefs.ts
+ * RETRY_BASE_MS/RETRY_MAX_MS parity): immediate first flush, doubling backoff
+ * capped at 30s, and a stop after 5 consecutive failures - the intent stays
+ * queued and the next repository start / reconnect re-arms the flush. */
+private const val SETTINGS_RETRY_BASE_MS = 4_000L
+private const val SETTINGS_RETRY_MAX_MS = 30_000L
+private const val SETTINGS_RETRY_MAX_ATTEMPTS = 5
+
 /**
  * REAL remote-first, Room-cached repository (N3 UI-era surface).
  * Reads flow from Room; refreshes pull the gateway and upsert; writes POST
@@ -426,6 +434,10 @@ class PulseRepositoryImpl constructor(
                 }
                 "app-connect" -> api.installApp(intent.targetId, owner, intent.clientId)
                 "app-disconnect" -> api.uninstallApp(intent.targetId, owner, intent.clientId)
+                // Section 13 item 9 - a journaled profile patch replays with the
+                // SAME clientId: the server answers from its stored receipt
+                // (replayed=true) or re-applies the identical instructions.
+                "profile-patch" -> api.patchUser(intent.targetId, section8Journal.toProfilePatchBody(intent))
                 else -> null
             }
             when (receipt) {
@@ -437,9 +449,15 @@ class PulseRepositoryImpl constructor(
                         try { storySnapshots.remove("stories:$owner", intent.targetId) } catch (_: Exception) { /* next flush retries the purge */ }
                     }
                 }
-                is PulseResult.Failure -> if (receipt.kind in PERMANENT_SECTION8_FAILURES) {
+                is PulseResult.Failure -> if (receipt.kind in PERMANENT_SECTION8_FAILURES ||
+                    // A profile patch refused with a 4xx verdict (durable-identity
+                    // mismatch, taken handle, malformed field) can never succeed on
+                    // replay - drop the intent honestly and let the profile feed
+                    // refresh converge on server truth.
+                    (intent.kind == "profile-patch" && receipt.status in setOf(400, 409))) {
                     // A permanent refusal can never succeed; retire the row honestly.
                     section8Journal.confirm(owner, intent.clientId)
+                    if (intent.kind == "profile-patch") eventsBus.tryEmit(PulseEvent.PrivateFeedsChanged)
                 } else return // transport-class failure: keep the row for the next flush
                 null -> return // unknown intent kind: leave it for a newer binary
             }
@@ -530,7 +548,13 @@ class PulseRepositoryImpl constructor(
             }
             socket.connect(userId)
             launch { runCatching { ensureDemoSeeded(userId) } }
-            launch { fetchSettings() }
+            launch {
+                runCatching { fetchSettings() }
+                    .onFailure { Log.w(TAG, "settings snapshot deferred", it) }
+                // Section 13 item 3 - intents queued before the last process
+                // death replay right after the startup snapshot lands.
+                scheduleSettingsRetry()
+            }
             launch { refreshConversations() }
             val savedEpoch = attachmentSession
             launch {
@@ -599,7 +623,7 @@ class PulseRepositoryImpl constructor(
         if (viewerId != id || attachmentSession != epoch) return
         when (val r = response) {
             is PulseResult.Success -> {
-                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it, readTicket) {
+                r.value.preferences?.let { prefsLocalStore.replaceFromServer(it, readTicket, revision = r.value.revision) {
                     viewerId == id && attachmentSession == epoch && settingsReadSequence.get() == readSequence
                 } }
             }
@@ -614,7 +638,16 @@ class PulseRepositoryImpl constructor(
     override val convThemes: Flow<Map<String, ConvTheme>> = prefsLocalStore.convThemes
 
     override suspend fun setConvTheme(conversationId: String, theme: ConvTheme?) {
-        prefsLocalStore.setConvTheme(conversationId, theme)
+        // Section 13 item 4 - the theme change rides the SAME staged settings
+        // write as every other pref (`chat.convThemes` inside the server blob,
+        // web parity): stageSettings merges the new map into the local blob
+        // BEFORE any network attempt (local-first optimistic - the room
+        // re-renders immediately), and a failed send keeps the durable pending
+        // intent for the automatic retry policy instead of dropping it.
+        val patch = prefsLocalStore.convThemePatch(conversationId, theme)
+        if (patch.settingsFields().isEmpty()) return // junk conversation id - nothing to stage
+        submitSettings(patch)
+            .onFailure { Log.w(TAG, "Conv theme write kept as a pending settings intent", it) }
     }
 
     private val settingsWrites = SettingsWriteQueue(scope)
@@ -644,17 +677,49 @@ class PulseRepositoryImpl constructor(
                 val sent = prefsLocalStore.currentSettingsPatch(ticket)
                 if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
                 if (sent.settingsFields().isEmpty()) Result.success(Unit) // superseded before dispatch
-                else when (val response = api.updateSettings(id, sent)) {
-                    is PulseResult.Success -> {
-                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                        val confirmed = response.value.preferences ?: error("The server did not confirm these settings")
-                        prefsLocalStore.acknowledgeSettings(ticket, sent, confirmed, ::owns)
-                        Result.success(Unit)
+                else {
+                    // Section 13 item 1 - the durable receipt identity rides the
+                    // SAME instructions: the stored envelope is reused when it was
+                    // minted for exactly this field set (a lost-ACK retry then gets
+                    // the server's stored result, replayed=true); anything else
+                    // mints a fresh identity so a mismatch 409 stays unreachable.
+                    val identity = prefsLocalStore.settingsReceiptIdentity(sent.settingsFields().keys)
+                    when (val response = api.updateSettings(id, sent, identity.clientId, identity.intentAtMs, identity.fieldTimesMs)) {
+                        is PulseResult.Success -> {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            val confirmed = response.value.preferences ?: error("The server did not confirm these settings")
+                            prefsLocalStore.acknowledgeSettings(ticket, sent, confirmed, response.value, ::owns)
+                            Result.success(Unit)
+                        }
+                        is PulseResult.Failure -> Result.failure(IllegalStateException(response.message ?: "Settings were not confirmed"))
                     }
-                    is PulseResult.Failure -> Result.failure(IllegalStateException(response.message ?: "Settings were not confirmed"))
                 }
             },
         ).await()
+    }
+
+    /** Section 13 item 3 - the pending settings journal (PulsePrefsLocalStore's
+     * pending tokens) IS the durable queue; this policy is its automatic flush:
+     * replay on repository start (after the replaceFromServer snapshot) and on
+     * regaining connectivity, with a bounded exponential backoff while attempts
+     * keep failing. The attempt cap stops the loop - a still-failing intent
+     * stays PENDING and the next start / reconnect re-arms the flush. */
+    private var settingsRetryJob: Job? = null
+    private fun scheduleSettingsRetry() {
+        if (viewerId == null || settingsRetryJob?.isActive == true) return
+        settingsRetryJob = scope.launch {
+            var delayMs = SETTINGS_RETRY_BASE_MS
+            var attempts = 0
+            while (attempts < SETTINGS_RETRY_MAX_ATTEMPTS) {
+                val result = runCatching { retryPendingSettings() }
+                    .getOrDefault(Result.failure(IllegalStateException("settings retry interrupted")))
+                if (result.isSuccess) return@launch // queue drained (or nothing pending)
+                attempts += 1
+                kotlinx.coroutines.delay(delayMs)
+                delayMs = (delayMs * 2).coerceAtMost(SETTINGS_RETRY_MAX_MS)
+            }
+            Log.i(TAG, "settings retry paused after $attempts failed attempts; the intent stays queued")
+        }
     }
 
     override suspend fun login(name: String): Result<User> =
@@ -793,6 +858,9 @@ class PulseRepositoryImpl constructor(
                             // toggle made on another device must land here on
                             // reconnect too, not only on cold start.
                             scope.launch { runCatching { fetchSettings() } }
+                            // Section 13 item 3 - the relay came back: pending
+                            // settings intents replay automatically.
+                            scheduleSettingsRetry()
                             val savedOwner = viewerId
                             val savedEpoch = attachmentSession
                             if (savedOwner != null) scope.launch { flushSavedIntents(); synchronizeSavedCache(savedOwner, savedEpoch) }
@@ -845,6 +913,16 @@ class PulseRepositoryImpl constructor(
                     )
                     is PulseSocketClient.Signal.PrivateFeedsChanged -> {
                         if (signal.userId == viewerId) eventsBus.tryEmit(PulseEvent.PrivateFeedsChanged)
+                    }
+                    is PulseSocketClient.Signal.SettingsChanged -> {
+                        if (signal.userId == viewerId) {
+                            eventsBus.tryEmit(PulseEvent.SettingsChanged(signal.revision))
+                            // Section 13 item 7 - re-pull the snapshot through the
+                            // existing read-ticket path (replaceFromServer never
+                            // erases a pending intent, so queued local writes survive
+                            // the refresh and their own receipt settles them).
+                            scope.launch { runCatching { fetchSettings() } }
+                        }
                     }
                     is PulseSocketClient.Signal.SavedChanged -> {
                         if (signal.userId == viewerId) {
@@ -6110,7 +6188,7 @@ class PulseRepositoryImpl constructor(
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        val body = buildJsonObject {
+        val fields = buildJsonObject {
             patch.name?.let { put("name", it) }
             patch.about?.let { put("about", it) }
             patch.color?.let { put("color", it) }
@@ -6124,16 +6202,33 @@ class PulseRepositoryImpl constructor(
             // username is "explicit key" on the wire: null = untouched, "" = clear.
             patch.username?.let { put("username", it) }
         }
+        // Section 13 item 9 - the intent is durable BEFORE the wire and the SAME
+        // clientId rides every attempt: a lost ACK replays the identical
+        // instructions after a process death (flushSection8Intents), the server
+        // answers with its stored receipt or re-applies idempotently.
+        val intent = section8Journal.enqueue(owner, "profile-patch", owner, fields)
+        val body = section8Journal.toProfilePatchBody(intent)
         val response = api.patchUser(owner, body)
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Profile account changed")
         return when (val r = response) {
-            is PulseResult.Success -> if (r.value.id == owner) Result.success(r.value.toUserProfile()).also { eventsBus.tryEmit(PulseEvent.PrivateFeedsChanged) }
-                else Result.failure(IllegalStateException("Profile response did not match this account"))
-            is PulseResult.Failure -> Result.failure(
-                OnboardingError.of(r).takeIf { r.status == 400 || r.status == 409 }
-                    ?: IllegalStateException("${r.kind}: ${r.message}"),
-            )
+            is PulseResult.Success -> if (r.value.user.id == owner) {
+                section8Journal.confirm(owner, intent.clientId)
+                Log.i(TAG, "profile revision ${r.value.revision} (replayed=${r.value.replayed == true})")
+                Result.success(r.value.user.toUserProfile()).also { eventsBus.tryEmit(PulseEvent.PrivateFeedsChanged) }
+            } else Result.failure(IllegalStateException("Profile response did not match this account"))
+            is PulseResult.Failure -> {
+                // A permanent refusal (durable-identity mismatch, taken handle,
+                // malformed field) can never succeed on replay - drop the intent
+                // honestly; the wire's verbatim copy reaches the caller.
+                if (r.kind in PERMANENT_SECTION8_FAILURES || r.status in setOf(400, 409)) {
+                    section8Journal.confirm(owner, intent.clientId)
+                }
+                Result.failure(
+                    OnboardingError.of(r).takeIf { r.status == 400 || r.status == 409 }
+                        ?: IllegalStateException("${r.kind}: ${r.message}"),
+                )
+            }
         }
     }
 

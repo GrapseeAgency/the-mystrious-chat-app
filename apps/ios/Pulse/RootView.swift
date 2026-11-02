@@ -140,6 +140,9 @@ struct RootView: View {
             PulseQuickReplyCoordinator.shared.onOpenRoom = { [weak session] conversationId in
                 session?.pendingLinkedRoomId = conversationId
             }
+            // Section 13 item 13(d) - the app-lock escape hatch flips the
+            // PERSISTED toggle through prefs so the Settings mirror follows.
+            appLock.onEmergencyDisable = { prefs.setAppLockEnabled(false) }
             // R4-A item 3 - mirror the nav style on attach (onChange below
             // keeps the mirror live after Appearance picks).
             navStyle = prefs.navStyle

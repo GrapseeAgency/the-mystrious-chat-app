@@ -38,9 +38,9 @@ async function loadMutation() {
 }
 
 const BASE = [
-  'CREATE TABLE User (id TEXT PRIMARY KEY, name TEXT, username TEXT, color TEXT, about TEXT, avatar TEXT, coverImage TEXT, statusEmoji TEXT, statusText TEXT, preferences TEXT, storyViewReceipts BOOLEAN, sessionTokenHash TEXT, legacyTokenHashes TEXT, serviceKey TEXT, createdAt DATETIME, lastSeenAt DATETIME, xp INTEGER DEFAULT 0, xpToday INTEGER DEFAULT 0, xpDay TEXT)',
-  "INSERT INTO User VALUES ('x','X','x','emerald','','','','','',null,true,null,null,null,'2026-11-01T00:00:00.000Z','2026-11-01T00:00:00.000Z',0,0,'')",
-  "INSERT INTO User VALUES ('o','O','o','amber','','','','','',null,true,null,null,null,'2026-11-01T00:00:00.000Z','2026-11-01T00:00:00.000Z',0,0,'')",
+  'CREATE TABLE User (id TEXT PRIMARY KEY, name TEXT, username TEXT, color TEXT, about TEXT, avatar TEXT, coverImage TEXT, statusEmoji TEXT, statusText TEXT, preferences TEXT, storyViewReceipts BOOLEAN, profileRev INTEGER DEFAULT 1, sessionTokenHash TEXT, legacyTokenHashes TEXT, serviceKey TEXT, createdAt DATETIME, lastSeenAt DATETIME, xp INTEGER DEFAULT 0, xpToday INTEGER DEFAULT 0, xpDay TEXT)',
+  "INSERT INTO User VALUES ('x','X','x','emerald','','','','','',null,true,1,null,null,null,'2026-11-01T00:00:00.000Z','2026-11-01T00:00:00.000Z',0,0,'')",
+  "INSERT INTO User VALUES ('o','O','o','amber','','','','','',null,true,1,null,null,null,'2026-11-01T00:00:00.000Z','2026-11-01T00:00:00.000Z',0,0,'')",
   'CREATE TABLE Conversation (id TEXT PRIMARY KEY, isGroup BOOLEAN)',
   "INSERT INTO Conversation VALUES ('room', true)",
   'CREATE TABLE ConversationParticipant (id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT, role TEXT)',

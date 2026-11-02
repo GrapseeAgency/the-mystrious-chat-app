@@ -10,8 +10,16 @@ import app.pulse.domain.repository.PulsePrefsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+
+/**
+ * Section 13 item 5 - a protection write that did not persist must never look
+ * persisted. Thrown by [PulsePrefsStoreImpl.setAppLockEnabled] when the
+ * DataStore commit fails; callers surface it honestly instead of swallowing.
+ */
+class AppLockNotPersistedException(message: String, cause: Throwable?) : IllegalStateException(message, cause)
 
 /** Shared DataStore instance - prefs + the SecureSessionStore vault live in one file. */
 internal val Context.pulsePrefs by preferencesDataStore(name = "pulse.prefs")
@@ -99,7 +107,23 @@ class PulsePrefsStoreImpl internal constructor(
     }
 
     override suspend fun setAppLockEnabled(value: Boolean) {
-        storage.edit { it[Keys.APP_LOCK_ON] = value }
+        // Section 13 item 5 - protection writes never half-land: DataStore.edit
+        // either commits the new flag or leaves the LAST PERSISTED value intact,
+        // so the appLockEnabled flow (and every in-memory toggle derived from
+        // it) automatically reverts to the persisted truth on failure. The
+        // failure itself is rethrown honestly - the settings UI must never show
+        // a lock icon for a lock that is not persisted.
+        try {
+            storage.edit { it[Keys.APP_LOCK_ON] = value }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            throw AppLockNotPersistedException(
+                "App lock could not be saved on this device" +
+                    (if (value) " - it is NOT enabled" else " - it may still be on"),
+                error,
+            )
+        }
     }
 
     override suspend fun setViewer(id: String?, name: String?, color: String?) {

@@ -27,6 +27,10 @@ public final class PulseSocketClient {
         case messageEnvelope(event: String, conversationId: String, raw: [String: Any])
         /// Wave 0 - { conversationId, conversation?: WireConversationSummary }.
         case privateFeedsChanged(userId: String)
+        /// Section 13 item 7 - the relay's NEW `settings:changed` event
+        /// (payload { userId, revision }) fires on EVERY accepted settings
+        /// patch; the session re-pulls GET /api/settings for its own id.
+        case settingsChanged(userId: String, revision: Int64?)
         case savedChanged(userId: String, messageId: String)
         case conversationUpdated(conversationId: String, raw: [String: Any])
         case typing(conversationId: String, userId: String, userName: String, isTyping: Bool)
@@ -164,6 +168,13 @@ public final class PulseSocketClient {
         socket.on("private-feeds:changed") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any], let owner = obj["userId"] as? String else { return }
             self?.signals?(.privateFeedsChanged(userId: owner))
+        }
+        // Section 13 item 7 - { userId, revision }; the revision decodes
+        // tolerantly (absent/non-numeric → nil, the handler re-pulls anyway).
+        socket.on("settings:changed") { [weak self] data, _ in
+            guard let obj = data.first as? [String: Any], let owner = obj["userId"] as? String else { return }
+            let revision = (obj["revision"] as? NSNumber)?.int64Value
+            self?.signals?(.settingsChanged(userId: owner, revision: revision))
         }
         socket.on("saved:changed") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any], let owner = obj["userId"] as? String,

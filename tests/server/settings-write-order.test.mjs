@@ -33,7 +33,7 @@ async function fixture(run, database = db => db) {
   const directory = await mkdtemp(join(tmpdir(), 'settings-order-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(directory, 'test.sqlite')}` })
   try {
-    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'PeerBlockIntent', 'ReportOperation', 'UserVerification', 'Message', 'SavedMessage', 'SavedMessageState', 'Reminder', 'ComposerOperation']) {
+    for (const name of ['User', 'Conversation', 'ConversationParticipant', 'ReadIntentState', 'UserBlock', 'AccountReport', 'PeerBlockIntent', 'ReportOperation', 'UserVerification', 'Message', 'SavedMessage', 'SavedMessageState', 'Reminder', 'ComposerOperation', 'SettingsFieldStamp', 'SettingsRevision', 'SettingsOperation']) {
       const model = Prisma.dmmf.datamodel.models.find(m => m.name === name)
       const columns = model.fields.filter(f => f.kind !== 'object' && !f.isList).map(f => {
         const type = ['Int','Boolean','BigInt'].includes(f.type) ? 'INTEGER' : f.type === 'Float' ? 'REAL' : f.type === 'DateTime' ? 'DATETIME' : 'TEXT'
@@ -43,9 +43,15 @@ async function fixture(run, database = db => db) {
         else if (f.default?.name === 'now') def = ' DEFAULT CURRENT_TIMESTAMP'
         return `"${f.name}" ${type}${f.isId ? ' PRIMARY KEY' : ''}${def}`
       })
+      // @@id([a, b]) compound keys: DMMF carries them on model.primaryKey,
+      // not on field.isId.
+      if (model.primaryKey && model.primaryKey.fields.length > 1) {
+        columns.push(`PRIMARY KEY (${model.primaryKey.fields.map(f => `"${f}"`).join(',')})`)
+      }
       await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
     }
     await db.$executeRawUnsafe('CREATE UNIQUE INDEX ComposerOperation_identity ON ComposerOperation(userId,clientId)')
+    await db.$executeRawUnsafe('CREATE UNIQUE INDEX "SettingsOperation_identity" ON "SettingsOperation"("kind","clientId")')
     const readSQL = await readFile(new URL('../../prisma/patches/20261026_exact_read_observations.sql', import.meta.url), 'utf8')
     await db.$transaction(async tx => {
       for (const statement of readSQL.replace(/^--.*$/gm, '').split(';').map(s => s.trim()).filter(s => s && !['BEGIN IMMEDIATE','COMMIT'].includes(s))) await tx.$executeRawUnsafe(statement)
@@ -59,8 +65,12 @@ async function fixture(run, database = db => db) {
     } })
     const {requireActionOwner,requireActionActor} = await load('src/lib/wallet-authorization.ts', {db,bearerToken,tokenAccepted,hashSessionToken}, '({requireActionOwner,requireActionActor})')
     const mergePrefs = await load('src/lib/prefs-defaults.ts', {sanitizeConvThemeMap:()=>{throw Error('Unexpected theme branch')}}, 'mergePrefs')
+    const settingsContracts = await load('src/lib/settings-contracts.ts', { opHash: section10.opHash },
+      '({probeSettingsOp,settleSettingsOp,bumpSettingsRevision,readSettingsRevision,readSettingsFieldStamps,resolveSettingsFields,stampSettingsFields})')
+    const settingsNotices = []
     const route = await load('src/app/api/settings/route.ts', { db:database(db), requireActionOwner, mergePrefs,
-      privacyPreferenceSnapshot, NextResponse:{json:Response.json} }, '({GET,PATCH})')
+      privacyPreferenceSnapshot, NextResponse:{json:Response.json}, clientIdFrom: section10.clientIdFrom,
+      ...settingsContracts, notifySocket: async(...args)=>settingsNotices.push(args) }, '({GET,PATCH})')
     const patch = (preferences,token='synthetic-owner',userId='owner') => route.PATCH(new Request('https://settings.test', {
       method:'PATCH', headers:token ? {authorization:`Bearer ${token}`} : {}, body:JSON.stringify({userId,preferences}),
     }))
@@ -191,7 +201,7 @@ async function fixture(run, database = db => db) {
         headers:token?{authorization:`Bearer ${token}`}:{},
         ...(kind==='read-intent'?{}:{body:JSON.stringify({userId,...body})}),
       }),{params:Promise.resolve({id:'room'})})
-    await run({db,patch,get,setPrivacy,notices,readHints,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed,saved,attention})
+    await run({db,patch,get,setPrivacy,notices,readHints,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat,draft,feed,saved,attention,settingsNotices})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -215,7 +225,7 @@ test('simultaneous settings merges preserve both independent changes', async()=>
     assert.deepEqual(responses.map(r=>r.status),[200,200])
     const stored = JSON.parse((await db.user.findUnique({where:{id:'owner'}})).preferences)
     assert.equal(stored.readReceipts,false); assert.equal(stored.density,'compact')
-  },db=>({user:{
+  },db=>({...db,user:{
     findUnique:async args=>{
       const snapshot=await db.user.findUnique(args)
       if(++arrivals<=2){if(arrivals===2)release();await barrier}
@@ -230,7 +240,7 @@ test('exhausted contention returns a retryable conflict instead of a fake receip
   assert.equal(response.status,409);assert.equal((await response.json()).code,'settings_conflict')
   assert.equal(response.headers.get('retry-after'),'1')
   assert.equal(JSON.parse((await db.user.findUnique({where:{id:'owner'}})).preferences).readReceipts,true)
-},db=>({user:{findUnique:args=>db.user.findUnique(args),updateMany:async()=>({count:0})}})))
+},db=>({...db,user:{findUnique:args=>db.user.findUnique(args),updateMany:async()=>({count:0})}})))
 
 test('malformed privacy cannot mutate and repair does not silently opt in',()=>fixture(async({db,patch,get})=>{
   await db.user.update({where:{id:'owner'},data:{preferences:'{broken'}})

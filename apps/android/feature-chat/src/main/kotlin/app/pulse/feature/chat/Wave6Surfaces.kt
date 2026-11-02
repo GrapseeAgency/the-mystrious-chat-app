@@ -862,6 +862,8 @@ private fun FolderMembershipSheet(
         val renameState = rememberModalBottomSheetState()
         var newName by remember { mutableStateOf(folder.name) }
         var newEmoji by remember { mutableStateOf(folderIconId(folder.emoji)) }
+        // Section 13 item 11 - audited, NOT protected: folder rename form
+        // (folder metadata only), never room message content.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { renameOpen = false },
             title = { Text("Rename folder") },

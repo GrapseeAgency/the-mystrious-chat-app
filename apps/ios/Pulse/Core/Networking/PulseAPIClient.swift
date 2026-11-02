@@ -777,19 +777,41 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/settings?userId= → 200 { preferences } (defaults merged
     /// server-side). 404 = identity unknown (offline-created local ids).
+    /// Section 13 - the envelope also carries the per-user monotonic
+    /// `revision` + per-field `fieldStamps` when the relay supports them.
     public func settings() async throws -> WirePulsePrefs {
-        let envelope: WirePrefsEnvelope = try await get("/api/settings?userId=\(userId)")
-        return envelope.preferences ?? WirePulsePrefs()
+        try await settingsRead().preferences ?? WirePulsePrefs()
+    }
+
+    /// Section 13 - the same GET with the revision/stamp envelope exposed
+    /// (PulsePrefs stores the revision so a stale later reply cannot claim
+    /// newer server state).
+    public func settingsRead() async throws -> WirePrefsEnvelope {
+        try await get("/api/settings?userId=\(userId)")
     }
 
     /// PATCH /api/settings { userId, preferences: Partial } → 200
     /// { preferences } (shallow-merged + clamped server-side). Only the
     /// non-nil patch fields ride the body.
     public func updateSettings(patch: WirePulsePrefs) async throws -> WirePulsePrefs {
-        let body: [String: Any] = ["userId": userId, "preferences": patch.asPatchBody()]
+        try await updateSettingsDurable(patch: patch).preferences ?? WirePulsePrefs()
+    }
+
+    /// Section 13 items 1-3 - the durable settings patch. `clientId` /
+    /// `intentAt` / `fieldTimes` ride the BODY ROOT next to
+    /// { userId, preferences } (never inside the preferences blob): with a
+    /// clientId the write is durable - retrying the same identity with the
+    /// same instructions returns the STORED result (`replayed: true`), a
+    /// mismatched replay is refused 409 settings_operation_mismatch. All
+    /// identity parameters stay optional so the legacy call shape is intact.
+    public func updateSettingsDurable(patch: WirePulsePrefs, clientId: String? = nil,
+                                      intentAt: String? = nil, fieldTimes: [String: String] = [:]) async throws -> WireSettingsMutation {
+        var body: [String: Any] = ["userId": userId, "preferences": patch.asPatchBody()]
+        if let clientId { body["clientId"] = clientId }
+        if let intentAt { body["intentAt"] = intentAt }
+        if !fieldTimes.isEmpty { body["fieldTimes"] = fieldTimes }
         let data = try await patchRaw("/api/settings", body: body)
-        let envelope = try decoder.decode(WirePrefsEnvelope.self, from: data)
-        return envelope.preferences ?? WirePulsePrefs()
+        return try decoder.decode(WireSettingsMutation.self, from: data)
     }
 
     private struct BlockReceipt: Decodable {
@@ -962,8 +984,48 @@ public struct PulseAPIClient: Sendable {
     /// the server validates limits (name 1-32, about 1-140, statusEmoji ≤8,
     /// statusText ≤48, username 3-20 [a-z0-9_], avatar "/api/uploads/<file>").
     public func updateProfile(userId: String, body: [String: Any]) async throws -> WireUser {
-        let data = try await patchRaw("/api/users/\(userId)", body: body)
-        return try decoder.decode(WireUserEnvelope.self, from: data).user
+        try await updateProfileDurable(userId: userId, body: body).user
+    }
+
+    /// Section 13 item 9 - the durable profile patch. The intent is journaled
+    /// (kind "profile-patch") BEFORE the wire and confirmed ONLY on a 2xx
+    /// receipt; a lost ACK replays the SAME clientId (launch flush) so the
+    /// server's stored operation converges. A permanent 4xx (400s, 409
+    /// profile_operation_mismatch / username_taken) drops the intent with the
+    /// honest surfaced error - never retried forever. 401/429 and transport
+    /// failures keep the intent pending.
+    public func updateProfileDurable(userId target: String, body: [String: Any]) async throws -> WireProfileReceipt {
+        var payload: [String: String] = [:]
+        for key in Self.profilePatchFields { if let value = body[key] as? String { payload[key] = value } }
+        let intent = await PulseSection8Journal.shared.enqueue(owner: userId, kind: "profile-patch", targetId: target, payload: payload)
+        do {
+            let receipt = try await updateProfileCore(userId: target, body: body, clientId: intent.clientId)
+            await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId)
+            return receipt
+        } catch let failure as Failure {
+            let status = failure.status ?? 0
+            if status != 0, status != 401, status != 429, (400..<500).contains(status) {
+                await PulseSection8Journal.shared.confirm(owner: userId, clientId: intent.clientId) // permanent refusal
+            }
+            throw failure
+        }
+    }
+
+    /// The profile fields the durable journal persists (PATCH /api/users/{id}
+    /// contract - everything else in the body is transport-only).
+    static let profilePatchFields = ["name", "about", "color", "avatar", "coverImage", "statusEmoji", "statusText", "username"]
+
+    /// Core send with an EXPLICIT identity (the replay path passes the
+    /// journaled clientId; nil keeps the legacy identity-less call).
+    func updateProfileCore(userId target: String, body: [String: Any], clientId: String?) async throws -> WireProfileReceipt {
+        var body = body
+        if let clientId { body["clientId"] = clientId }
+        let data = try await patchRaw("/api/users/\(target)", body: body)
+        let mutation = try decoder.decode(WireProfileMutation.self, from: data)
+        guard let user = mutation.user else {
+            throw Failure(kind: .server, message: "The profile change was not confirmed for this account.")
+        }
+        return WireProfileReceipt(user: user, revision: mutation.revision, replayed: mutation.replayed)
     }
 
     func validateFeedPage(version: Int?, more: Bool?, next: String?, cursor: String?) throws {

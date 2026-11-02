@@ -283,14 +283,17 @@ struct ProfileView: View {
         do {
             let path = try await api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
             guard acceptsCover(ticket) else { return }
-            let user = try await api.updateProfile(
+            // Section 13 item 9 - the durable receipt carries the profile revision.
+            let receipt = try await api.updateProfileDurable(
                 userId: viewer.id,
                 body: ["coverImage": try PulseAvatarImage.managedPath(path)],
             )
+            let user = receipt.user
             guard acceptsCover(ticket) else { return }
             guard user.id == viewer.id, let current = prefs.viewer else {
                 throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account.")
             }
+            prefs.noteProfileRevision(receipt.revision)
             prefs.setViewer(PulseViewer(id: current.id, name: current.name, username: current.username,
                 color: current.color, avatar: current.avatar, coverImage: user.coverImage))
             PulseHaptics.success()
@@ -308,11 +311,14 @@ struct ProfileView: View {
         guard acceptsCover(ticket), let viewer = prefs.viewer else { return }
         let api = session.api
         do {
-            let user = try await api.updateProfile(userId: viewer.id, body: ["coverImage": ""])
+            // Section 13 item 9 - the durable receipt carries the profile revision.
+            let receipt = try await api.updateProfileDurable(userId: viewer.id, body: ["coverImage": ""])
+            let user = receipt.user
             guard acceptsCover(ticket) else { return }
             guard user.id == viewer.id, let current = prefs.viewer else {
                 throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account.")
             }
+            prefs.noteProfileRevision(receipt.revision)
             prefs.setViewer(PulseViewer(id: current.id, name: current.name, username: current.username,
                 color: current.color, avatar: current.avatar, coverImage: user.coverImage))
             PulseHaptics.success()

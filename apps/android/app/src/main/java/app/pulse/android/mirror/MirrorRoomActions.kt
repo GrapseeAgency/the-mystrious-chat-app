@@ -454,6 +454,12 @@ internal fun MirrorThreadSheet(
     members: List<app.pulse.domain.model.ConversationMember>,
     jumpMessageId: String? = null,
     readingEnabled: Boolean = false,
+    /**
+     * Section 13 item 11 - the room's screen-privacy state; the view-once
+     * lightbox below owns a SEPARATE dialog window and leases it with the SAME
+     * state the room surface uses (view-once media also stays SecureOn).
+     */
+    screenPrivacyOn: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     val threadRepository = remember(repository, viewerId) { repository.boundToCurrentAccount() }
@@ -558,7 +564,11 @@ internal fun MirrorThreadSheet(
             } finally { openingViewOnce = false }
         }
     }
-    viewOnceGrant?.let { app.pulse.feature.chat.ImageLightbox(message = it, onDismiss = { viewOnceGrant = null }) }
+    viewOnceGrant?.let {
+        // Section 13 item 11 - separate dialog window, leased with the room's
+        // screen-privacy state (view-once media additionally stays SecureOn).
+        app.pulse.feature.chat.ImageLightbox(message = it, secure = screenPrivacyOn, onDismiss = { viewOnceGrant = null })
+    }
     LaunchedEffect(currentRoot, cachedReplies, denied, viewOnceGrant?.id) {
         val granted = viewOnceGrant
         if (granted != null && (denied || !threadRootAvailable(currentRoot, root.conversationId, root.id) ||

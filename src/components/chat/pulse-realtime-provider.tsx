@@ -27,6 +27,7 @@ import type {
 import { usePulseSession, getPulseUser } from '@/lib/pulse-store'
 import { haptic, isQuietHoursNow, playIncomingPing, primeSound, pulseSettingsStore } from '@/lib/pulse-settings'
 import { flushPulseOutbox, pulseOutboxStore } from '@/lib/pulse-outbox'
+import { usePrefs } from '@/lib/prefs'
 import { toast } from 'sonner'
 import {
   PulseRealtimeContext,
@@ -681,6 +682,27 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Section 13 item 7: my OTHER device changed settings (privacy toggles,
+    // themes, wallpaper). Converge every open surface NOW - re-pull the
+    // server truth instead of waiting for the next hydrate.
+    const onSettingsChanged = (raw: unknown) => {
+      if (raw === null || typeof raw !== 'object') return
+      const r = raw as Record<string, unknown>
+      if (typeof r.userId !== 'string' || r.userId !== myId) return
+      void usePrefs.getState().refresh(myId)
+    }
+
+    // Section 13 item 7 (profile half): the server now pushes on ANY accepted
+    // profile field change (previously only renames), so open profile
+    // surfaces refresh immediately across devices.
+    const onPrivateFeedsChanged = (raw: unknown) => {
+      if (raw === null || typeof raw !== 'object') return
+      const r = raw as Record<string, unknown>
+      if (typeof r.userId !== 'string' || r.userId !== myId) return
+      queryClient.invalidateQueries({ queryKey: ['user', myId] })
+      queryClient.invalidateQueries({ queryKey: ['user-stats', myId] })
+    }
+
     sock.on('connect', onConnect)
     sock.on('disconnect', onDisconnect)
     sock.on('joined', applySnapshot)
@@ -697,6 +719,8 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     sock.on('message:viewed', onMessageReplaced)
     sock.on('message:read', onMessageRead)
     sock.on('conversation:updated', onConversationUpdated)
+    sock.on('settings:changed', onSettingsChanged)
+    sock.on('private-feeds:changed', onPrivateFeedsChanged)
     sock.onAny(onAnyCall)
 
     // Warm audio during the first gesture so later pings can play unmuted.

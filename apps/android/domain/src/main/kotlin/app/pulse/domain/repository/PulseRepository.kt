@@ -96,6 +96,12 @@ import kotlinx.coroutines.flow.Flow
 /** Live events pushed by the relay - the UDF event side of the repository. */
 sealed interface PulseEvent {
     data object PrivateFeedsChanged : PulseEvent
+    /**
+     * Section 13 item 7 - the viewer's settings blob changed on the server
+     * (this device's patch echoed back, or another device's write). The prefs
+     * flow re-hydrates from the snapshot; surfaces just re-read it.
+     */
+    data class SettingsChanged(val revision: Long?) : PulseEvent
     data class SavedSyncNotice(val message: String) : PulseEvent
     data class SavedChanged(val messageId: String) : PulseEvent
     data class MessageReceived(val conversationId: String, val message: Message) : PulseEvent

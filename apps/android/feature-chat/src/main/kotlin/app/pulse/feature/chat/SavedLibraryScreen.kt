@@ -359,6 +359,8 @@ fun SavedLibraryScreen(
     }
 
     unsaveTarget?.let { target ->
+        // Section 13 item 11 - audited, NOT protected: static unsave copy, the
+        // saved message's content is never rendered in this AlertDialog.
         AlertDialog(
             onDismissRequest = { unsaveTarget = null },
             title = { Text("Remove from saved?") },

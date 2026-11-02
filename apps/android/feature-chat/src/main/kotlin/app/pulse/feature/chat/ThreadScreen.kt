@@ -156,6 +156,13 @@ class ThreadViewModel @Inject constructor(
 
     val failedReplies = repo.observeFailedThreadReplies(conversationId, rootId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Section 13 item 11 - the thread's lightbox dialog rides the room's
+     * personal screen-privacy state (the room-level group flag stays covered
+     * by the room surface's own lease; unknown personal state veils). */
+    val personalScreenPrivacy = repo.observePersonalScreenPrivacy(conversationId)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.domain.model.PersonalScreenPrivacy())
+
     private val recoveryActions = mutableSetOf<String>()
 
     fun recoverReply(clientId: String, discard: Boolean) {
@@ -439,6 +446,10 @@ fun ThreadScreen(
     val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val failedReplies by viewModel.failedReplies.collectAsStateWithLifecycle()
+    // Section 13 item 11 - the lightbox dialog below leases its own window
+    // with the room's personal screen-privacy state (unknown veils).
+    val personalPrivacy by viewModel.personalScreenPrivacy.collectAsStateWithLifecycle()
+    val threadSecure = personalPrivacy.on != false
     var discardConfirm by remember { mutableStateOf<String?>(null) }
     val revealScope = androidx.compose.runtime.rememberCoroutineScope()
     val revealLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -452,6 +463,8 @@ fun ThreadScreen(
     val clipboard = LocalClipboardManager.current
     val clipboardContext = LocalContext.current
     discardConfirm?.let { clientId ->
+        // Section 13 item 11 - audited, NOT protected: this AlertDialog shows
+        // generic copy only (no message content) inside the thread surface.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { discardConfirm = null },
             title = { Text("Discard this failed reply?") },
@@ -822,7 +835,7 @@ fun ThreadScreen(
     }
 
     lightboxTarget?.let { target ->
-        ImageLightbox(message = target, onDismiss = { lightboxTarget = null })
+        ImageLightbox(message = target, secure = threadSecure, onDismiss = { lightboxTarget = null })
     }
 }
 

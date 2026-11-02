@@ -16,6 +16,12 @@ import {
 import { privacyPreferenceEnabled } from '@/lib/privacy-preferences'
 import { STATUS_ICON_IDS } from '@/lib/icon-ids'
 import { requireActionOwner } from '@/lib/wallet-authorization'
+import { clientIdFrom } from '@/lib/section10-contracts'
+import { probeSettingsOp, settleSettingsOp } from '@/lib/settings-contracts'
+
+/** The recognized profile instruction fields (identity for the durable
+ * replay receipt - everything else in the body is ignored noise). */
+const PROFILE_FIELDS = ['name', 'username', 'about', 'color', 'avatar', 'coverImage', 'statusEmoji', 'statusText'] as const
 
 export const dynamic = 'force-dynamic'
 
@@ -30,15 +36,42 @@ export async function GET(_req: Request, { params }: RouteCtx) {
   if (!user) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
   }
-  return NextResponse.json({ user: mapUser(user) })
+  // Section 13 item 9: devices diff their cached profile against this
+  // monotonic revision instead of field-by-field guessing.
+  return NextResponse.json({ user: mapUser(user), revision: user.profileRev })
 }
 
-/** PATCH /api/users/[id] { name?, about?, color? } → { user: AppUser } | 400 | 404 */
+/** PATCH /api/users/[id] { name?, about?, color?, clientId?, intentAt? } → { user, revision } | 400 | 404
+ * Section 13 items 2/7/9: with a clientId the write carries a durable
+ * identity (a lost ACK replays the STORED profile instead of re-guessing),
+ * every accepted write bumps and returns the monotonic profileRev, and ANY
+ * accepted field change is pushed to the owner's other surfaces (not just
+ * renames). Legacy callers keep the immediate-apply behavior. */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
   const denied = await requireActionOwner(req, id, 'profile')
   if (denied) return denied
   const body = await safeJson(req)
+  // Section 13 item 2: durable write identity, probed before any read so a
+  // lost-ACK retry replays the original commit's exact response.
+  const clientIdVerdict = clientIdFrom(body)
+  if (!clientIdVerdict.ok) {
+    return NextResponse.json({ error: 'clientId must be 16-128 url-safe characters.' }, { status: 400 })
+  }
+  const clientId: string | null = clientIdVerdict.clientId
+  if (clientId) {
+    const identity = [id, PROFILE_FIELDS.filter(f => body[f] !== undefined).map(f => [f, body[f]])]
+    const probe = await probeSettingsOp<{ user: ReturnType<typeof mapUser>; revision: number }>(
+      db,
+      { kind: 'profile.patch', clientId, userId: id, identity },
+    )
+    if (probe.status === 'mismatch') {
+      return NextResponse.json({ error: 'This clientId was already used with different profile instructions.', code: 'profile_operation_mismatch' }, { status: 409 })
+    }
+    if (probe.status === 'replay') {
+      return NextResponse.json({ ...probe.result, replayed: true })
+    }
+  }
   // A malformed value is not an instruction to clear a field. In particular,
   // strField(false/object) must not silently erase a photo, handle or bio.
   const nullable = new Set(['username', 'avatar', 'coverImage', 'statusEmoji', 'statusText'])
@@ -59,6 +92,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     statusEmoji?: string | null
     statusText?: string | null
     lastSeenAt?: Date
+    profileRev?: { increment: number }
   } = {}
 
   if (body.name !== undefined) {
@@ -175,16 +209,53 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     data.lastSeenAt = new Date()
   }
 
+  // Section 13 item 9: the revision rides the SAME commit as the fields, so
+  // a reader can never see new fields under an old revision.
+  data.profileRev = { increment: 1 }
+
+  const profileIdentity = [id, PROFILE_FIELDS.filter(f => body[f] !== undefined).map(f => [f, body[f]])]
+  const commit = async (client: typeof db) => {
+    const user = await client.user.update({ where: { id }, data })
+    const revision = user.profileRev
+    if (clientId) {
+      const settled = await settleSettingsOp(client, { kind: 'profile.patch', clientId, userId: id, identity: profileIdentity },
+        { user: mapUser(user), revision })
+      if (settled.replayed) return { user, revision, replayed: true as const }
+      return { user, revision, replayed: false as const }
+    }
+    return { user, revision, replayed: false as const }
+  }
+
   try {
-    const user = await db.user.update({ where: { id }, data })
-    if (data.name !== undefined) await notifySocket('private-feeds:changed', [id], { userId: id })
-    return NextResponse.json({ user: mapUser(user) })
+    const outcome = clientId
+      ? await db.$transaction(tx => commit(tx as unknown as typeof db))
+      : await commit(db)
+    // Section 13 item 7: every accepted profile change (not just renames)
+    // invalidates the owner's other open surfaces immediately.
+    if (Object.keys(data).some(k => k !== 'profileRev' && k !== 'lastSeenAt')) {
+      await notifySocket('private-feeds:changed', [id], { userId: id })
+    }
+    return NextResponse.json({ user: mapUser(outcome.user), revision: outcome.revision, ...(outcome.replayed ? { replayed: true } : {}) })
   } catch (error) {
     // Availability checks are advisory. Two owners can pass the check before
-    // either write commits; the unique index is the final authority.
-    if (data.username && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      return NextResponse.json({ error: `@${data.username} was just taken.`, code: 'username_taken',
-        suggestion: await suggestUsername(data.username) }, { status: 409 })
+    // either write commits; the unique index is the final authority. The
+    // durable receipt can also lose its own create race (concurrent duplicate
+    // with the same clientId) - re-probe answers with the winner's receipt.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const target = JSON.stringify((error as { meta?: { target?: unknown } }).meta?.target ?? '')
+      if (data.username && target.includes('username')) {
+        return NextResponse.json({ error: `@${data.username} was just taken.`, code: 'username_taken',
+          suggestion: await suggestUsername(data.username) }, { status: 409 })
+      }
+      if (clientId && target.includes('clientId')) {
+        const probe = await probeSettingsOp<{ user: ReturnType<typeof mapUser>; revision: number }>(
+          db,
+          { kind: 'profile.patch', clientId, userId: id, identity: profileIdentity },
+        )
+        if (probe.status === 'replay') {
+          return NextResponse.json({ ...probe.result, replayed: true })
+        }
+      }
     }
     throw error
   }

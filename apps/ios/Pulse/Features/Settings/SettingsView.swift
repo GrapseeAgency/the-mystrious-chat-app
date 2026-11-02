@@ -290,7 +290,13 @@ struct SettingsView: View {
         let epoch = session.sessionGeneration
         guard enable else {
             prefs.setAppLockEnabled(false)
-            PulseAppLock.shared.needsLock = false
+            // Section 13 item 5 - even the disable write must prove itself;
+            // a failed write keeps the previous (on) value and says so.
+            if let writeError = prefs.appLockWriteError {
+                session.toasts.show(writeError)
+            } else {
+                PulseAppLock.shared.needsLock = false
+            }
             return
         }
         if let problem = PulseAppLock.availabilityProblem() {
@@ -301,7 +307,13 @@ struct SettingsView: View {
         guard !Task.isCancelled, appLockConfirmation == ticket, session.sessionGeneration == epoch else { return }
         if confirmed {
             prefs.setAppLockEnabled(true)
-            session.toasts.show("App lock is on - Pulse locks when backgrounded.")
+            // Section 13 item 5 - a persistence failure reverts the toggle and
+            // surfaces honestly; the enable toast must not claim victory.
+            if let writeError = prefs.appLockWriteError {
+                session.toasts.show(writeError)
+            } else {
+                session.toasts.show("App lock is on - Pulse locks when backgrounded.")
+            }
         } else {
             session.toasts.show(PulseAppLock.shared.statusMessage ?? "App lock needs Face ID, Touch ID or the device passcode.")
         }

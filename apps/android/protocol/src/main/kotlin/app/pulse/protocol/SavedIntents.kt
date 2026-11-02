@@ -34,6 +34,14 @@ data class SavedOfflineCursorDto(val owner: String, val at: String, val id: Stri
 @Serializable
 data class PrivateFeedsChangedDto(val userId: String)
 
+/**
+ * Section 13 item 7 - S→C `settings:changed` { userId, revision }: the server
+ * pushes it on EVERY accepted settings patch so the owner's other surfaces
+ * re-pull immediately instead of waiting for their next hydrate.
+ */
+@Serializable
+data class SettingsChangedDto(val userId: String = "", val revision: Long? = null)
+
 fun validSavedRevision(value: String): Boolean = value.matches(Regex("0|[1-9][0-9]{0,39}"))
 fun compareSavedRevisions(left: String, right: String): Int {
     require(validSavedRevision(left) && validSavedRevision(right))

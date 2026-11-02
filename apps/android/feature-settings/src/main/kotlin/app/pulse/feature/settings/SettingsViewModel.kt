@@ -337,9 +337,29 @@ class SettingsViewModel @Inject constructor(
      * R10-a - App lock persistence. The caller (PrivacySection) runs the
      * one-shot confirmation BiometricPrompt BEFORE this lands, so a device
      * without biometrics/screen lock never keeps the flag on.
+     *
+     * Section 13 item 5 - a DataStore failure keeps the LAST PERSISTED flag
+     * (the toggle reverts on its own through the store flow) and surfaces the
+     * failure through [appLockWriteError] instead of vanishing into the scope.
      */
+    private val _appLockWriteError = MutableStateFlow<String?>(null)
+    val appLockWriteError: StateFlow<String?> = _appLockWriteError.asStateFlow()
+
     fun setAppLockEnabled(value: Boolean) {
-        viewModelScope.launch { prefs.setAppLockEnabled(value) }
+        viewModelScope.launch {
+            try {
+                prefs.setAppLockEnabled(value)
+                _appLockWriteError.value = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _appLockWriteError.value = error.message ?: "App lock could not be saved"
+            }
+        }
+    }
+
+    fun clearAppLockWriteError() {
+        _appLockWriteError.value = null
     }
 
     /** Quiet-hours math (verbatim web port) evaluated against the CURRENT inputs. */

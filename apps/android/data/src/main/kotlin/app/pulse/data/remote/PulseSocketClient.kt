@@ -99,6 +99,8 @@ class PulseSocketClient(
             val messageIds: List<String> = emptyList(), val readerMembershipId: String? = null, val all: Boolean = false) : Signal
         data class PrivateFeedsChanged(val userId: String) : Signal
         data class SavedChanged(val userId: String, val messageId: String) : Signal
+        /** Section 13 item 7 - the viewer's settings blob changed (own patch echoed, or another device). */
+        data class SettingsChanged(val userId: String, val revision: Long?) : Signal
         data class ConversationUpdated(val conversationId: String) : Signal
         data class Typing(val conversationId: String, val userId: String, val userName: String, val isTyping: Boolean) : Signal
         data class VoiceRoster(val conversationId: String, val roster: List<VoicePeerDto>) : Signal
@@ -290,6 +292,13 @@ class PulseSocketClient(
         }
         sock.on(SocketEvents.PRIVATE_FEEDS_CHANGED) { args ->
             decode<app.pulse.protocol.PrivateFeedsChangedDto>(args)?.let { _signals.tryEmit(Signal.PrivateFeedsChanged(it.userId)) }
+        }
+        // Section 13 item 7 - live settings delivery: every accepted settings
+        // patch (own or another device's) re-pulls the owner's snapshot.
+        sock.on(SocketEvents.SETTINGS_CHANGED) { args ->
+            decode<app.pulse.protocol.SettingsChangedDto>(args)?.let {
+                if (it.userId.isNotBlank()) _signals.tryEmit(Signal.SettingsChanged(it.userId, it.revision))
+            }
         }
         sock.on(SocketEvents.SAVED_CHANGED) { args ->
             decode<app.pulse.protocol.SavedChangedDto>(args)?.let {

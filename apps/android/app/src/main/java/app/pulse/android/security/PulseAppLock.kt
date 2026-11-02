@@ -182,7 +182,19 @@ class PulseAppLock @Inject constructor(
      * faked - this ONLY exists when no authenticator exists to verify with.
      */
     fun disableWithoutCredentials() {
-        scope.launch { runCatching { prefsStore.setAppLockEnabled(false) } }
+        scope.launch {
+            try {
+                prefsStore.setAppLockEnabled(false)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // Section 13 item 5 - the escape hatch must not pretend success:
+                // the flag stays at its persisted value and the gate overlay
+                // shows the honest failure instead of silently lifting.
+                android.util.Log.w("PulseAppLock", "App lock disable did not persist", error)
+                _failureNotice.value = "Couldn't turn App lock off. Try again."
+            }
+        }
     }
 
     companion object {

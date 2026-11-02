@@ -697,9 +697,25 @@ class PulseApi(
             is PulseResult.Failure -> result
         }
 
-    /** PATCH /api/settings { userId, preferences: Partial } → { preferences } (shallow-merged + clamped server-side). */
-    suspend fun updateSettings(userId: String, patch: WirePulsePrefs): PulseResult<SettingsEnvelopeDto> =
-        patch("/api/settings", patch.toPatchJson(userId)) {
+    /**
+     * PATCH /api/settings { userId, preferences } → { preferences }
+     * (shallow-merged + clamped server-side).
+     *
+     * Section 13 item 1 - with the durable-receipt identity the write is a
+     * replayable transaction: [clientId] (16-128 url-safe chars), [intentAtMs]
+     * (patch-level stage moment) and [fieldTimesMs] (per-field stage moments)
+     * serialize into the body ONLY when present, so legacy callers keep the
+     * exact pre-Section-13 body. The response envelope also carries revision,
+     * applied, superseded and replayed when the server supports it.
+     */
+    suspend fun updateSettings(
+        userId: String,
+        patch: WirePulsePrefs,
+        clientId: String? = null,
+        intentAtMs: Long? = null,
+        fieldTimesMs: Map<String, Long> = emptyMap(),
+    ): PulseResult<SettingsEnvelopeDto> =
+        patch("/api/settings", patch.toPatchJson(userId, clientId, intentAtMs, fieldTimesMs)) {
             it.decodeSettingsEnvelope()
         }
 
@@ -1530,10 +1546,24 @@ class PulseApi(
             PulseJson.decodeFromString(UserEnvelopeDto.serializer(), it).user ?: FullUserDto()
         }
 
+    /** Section 13 item 9 - PATCH /api/users/{id} receipt: the updated profile
+     * plus the monotonic profileRev the SAME commit produced (and the durable
+     * `replayed` verdict when the write was a lost-ACK replay). Both new fields
+     * stay null when an old server omits them. */
+    data class ProfilePatchReceipt(val user: FullUserDto, val revision: Long? = null, val replayed: Boolean? = null)
+
+    private fun decodeProfilePatchReceipt(text: String): ProfilePatchReceipt {
+        val root = PulseJson.parseToJsonElement(text) as? JsonObject
+        val user = PulseJson.decodeFromString(UserEnvelopeDto.serializer(), text).user ?: FullUserDto()
+        val revision = (root?.get("revision") as? JsonPrimitive)?.content?.toLongOrNull()
+        val replayed = (root?.get("replayed") as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+        return ProfilePatchReceipt(user, revision, replayed)
+    }
+
     /** PATCH /api/users/{id} - only non-null fields ride the body ('' clears where the wire allows). */
-    suspend fun patchUser(userId: String, body: JsonObject): PulseResult<FullUserDto> =
+    suspend fun patchUser(userId: String, body: JsonObject): PulseResult<ProfilePatchReceipt> =
         patch("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8"), body) {
-            PulseJson.decodeFromString(UserEnvelopeDto.serializer(), it).user ?: FullUserDto()
+            decodeProfilePatchReceipt(it)
         }
 
     /** GET /api/users/{id}/stats → { stats } (messages/reactions/photos/voiceNotes/chats/groups). */

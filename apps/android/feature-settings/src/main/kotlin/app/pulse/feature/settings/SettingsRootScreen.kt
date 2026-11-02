@@ -985,6 +985,16 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
     // R10-a - read ONCE in composable context; the App-lock callback below is
     // a plain (Boolean) -> Unit, so it can't touch LocalContext itself.
     val context = LocalContext.current
+    // Section 13 item 5 - a lock that failed to persist must never show as on:
+    // the toggle reverts through the persisted flow and the failure surfaces
+    // here as an honest toast instead of vanishing into the write scope.
+    val appLockWriteError by viewModel.appLockWriteError.collectAsStateWithLifecycle()
+    LaunchedEffect(appLockWriteError) {
+        appLockWriteError?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            viewModel.clearAppLockWriteError()
+        }
+    }
     SectionScaffold("Privacy & Security", onBack) {
         RowToggle("Last seen & online", "Everyone can see when you were last active. Server-enforced.", prefs.lastSeenVisible == true, viewModel::setLastSeenVisible)
         RowToggle("Read receipts", "Send and request read receipts.", prefs.readReceipts == true, viewModel::setReadReceipts)

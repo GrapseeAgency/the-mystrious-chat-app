@@ -541,10 +541,19 @@ internal fun FileBubble(
  * clamped to the stage so the photo can't be flung off-screen), double-tap
  * resets to 1x, background tap still dismisses - but ONLY at 1x, so a zoom
  * session never ends on a stray tap. The scrim stays.
+ *
+ * Section 13 item 11 - this viewer is a Dialog and therefore owns a SEPARATE
+ * window: [androidx.compose.ui.window.DialogProperties.securePolicy] with
+ * `Inherit` only covers the view-once case (SecureOn), and the activity
+ * window's FLAG_SECURE does not reach a dialog window. [secure] carries the
+ * SAME room screen-privacy state the room surface leases with, and the
+ * dialog window holds its own lease (shared refcount registry) while the
+ * photo is on screen.
  */
 @Composable
 fun ImageLightbox(
     message: Message,
+    secure: Boolean,
     onDismiss: () -> Unit,
 ) {
     val dismiss = androidx.compose.runtime.rememberUpdatedState(onDismiss)
@@ -583,6 +592,9 @@ fun ImageLightbox(
             securePolicy = if (message.viewOnce) androidx.compose.ui.window.SecureFlagPolicy.SecureOn
                 else androidx.compose.ui.window.SecureFlagPolicy.Inherit),
     ) {
+        // Section 13 item 11 - the media viewer's own dialog window is leased
+        // with the room's screen-privacy state (view-once stays SecureOn).
+        app.pulse.ui.security.SecureDialogWindowProtection(secure || message.viewOnce)
         Box(
             Modifier
                 .fillMaxSize()

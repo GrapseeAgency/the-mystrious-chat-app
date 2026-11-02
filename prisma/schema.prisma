@@ -27,6 +27,10 @@ model User {
   // views never disclose to authors (no viewer-list row, no viewCount) - live
   // at disclosure time, not just at view time. Null column = default on.
   storyViewReceipts  Boolean                   @default(true)
+  // Section 13 item 9: monotonic profile revision. Every accepted profile
+  // write increments it inside its commit and returns it, so a device that
+  // timed out can diff its stale copy against the server truth.
+  profileRev         Int                       @default(1)
   sessionTokenHash   String? // sha256 hex of the native session token (spec §3.11 A-1/A-2) — raw token never stored; null = pre-token identity (migration-accepted)
   legacyTokenHashes  String? // JSON array of up to 8 recent previous session-token hashes (R52 grace list) — concurrent device logins must not invalidate each other; the newest hash stays in sessionTokenHash
   // Section 12 item 6: canonical service identity. Machine accounts resolve
@@ -1262,4 +1266,50 @@ model AppConnectionOperation {
   installed   Boolean
 
   @@id([userId, clientId])
+}
+
+// ── Section 13: settings, profile, and local-protection contracts ─────────
+
+/** Section 13 items 1/7 — per-field last-write-wins ledger for the prefs
+ * blob. Each accepted settings field is stamped with the intent time it
+ * carried and the writer that won, so a slower device's older write is
+ * resolved (superseded) instead of silently erasing the newer one, and
+ * every device can see WHO owns each field's current value. */
+model SettingsFieldStamp {
+  userId   String
+  field    String
+  rev      Int      @default(1) // settings revision the winning write produced
+  intentAt DateTime
+  writer   String // winning clientId (or 'legacy' for pre-receipt callers)
+
+  @@id([userId, field])
+}
+
+/** Section 13 item 7 — per-user monotonic settings revision. Every accepted
+ * settings patch bumps it in its own commit; GET and every write ACK carry
+ * it, so devices refresh on strictly-greater revisions instead of polling
+ * blobs for equality. */
+model SettingsRevision {
+  userId    String
+  rev       Int      @default(0)
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@id([userId])
+}
+
+/** Section 13 items 2/9 — durable replay receipt for settings and profile
+ * writes. A request that commits after the client timed out replays its
+ * STORED result under the same clientId; the same identity with different
+ * instructions is a 409, never a divergent second commit. */
+model SettingsOperation {
+  id          String   @id @default(cuid())
+  kind        String // 'settings.patch' | 'profile.patch'
+  clientId    String
+  userId      String
+  requestHash String
+  resultJson  String
+  createdAt   DateTime @default(now())
+
+  @@unique([kind, clientId])
+  @@index([userId, createdAt])
 }

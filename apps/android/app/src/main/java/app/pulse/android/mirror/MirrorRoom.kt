@@ -358,6 +358,13 @@ internal data class MirrorMediaSelection(
 internal fun MirrorRoom(
     onOpenLiveRoom: (app.pulse.feature.voice.VoiceRoomsEngine.RoomKind) -> Unit,
     readingEnabled: Boolean = false,
+    /**
+     * Section 13 item 11 - the SAME room screen-privacy state MirrorRoomSecurity
+     * leases the activity window with; the room's content-bearing dialogs (the
+     * view-once lightbox, the thread sheet's own lightbox) lease their separate
+     * Compose windows with it too.
+     */
+    screenPrivacyOn: Boolean = false,
     title: String,
     color: String?,
     isGroup: Boolean,
@@ -717,7 +724,10 @@ internal fun MirrorRoom(
         if (granted != null && messages.none { it.id == granted.id && !it.isDeleted }) viewOnceGrant = null
     }
     viewOnceGrant?.let { granted ->
-        app.pulse.feature.chat.ImageLightbox(message = granted, onDismiss = { viewOnceGrant = null })
+        // Section 13 item 11 - the lightbox owns a SEPARATE dialog window: it
+        // leases FLAG_SECURE with the room's screen-privacy state (view-once
+        // media additionally stays SecureOn through the lightbox's own policy).
+        app.pulse.feature.chat.ImageLightbox(message = granted, secure = screenPrivacyOn, onDismiss = { viewOnceGrant = null })
     }
     fun voteOnPoll(pollId: String, optionId: String) {
         val owner = repository.viewerId
@@ -2871,6 +2881,9 @@ internal fun MirrorRoom(
                 members = members,
                 jumpMessageId = threadJumpId,
                 readingEnabled = readingEnabled && !roomPanelOpen,
+                // Section 13 item 11 - the thread lightbox dialog leases its own
+                // window with the room's screen-privacy state.
+                screenPrivacyOn = screenPrivacyOn,
                 onDismiss = { threadFor = null; threadJumpId = null },
             )
         }

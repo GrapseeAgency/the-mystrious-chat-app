@@ -2320,12 +2320,15 @@ fun ChatRoomScreen(
     }
 
     lightboxTarget?.let { target ->
-        ImageLightbox(message = target, onDismiss = { lightboxTarget = null })
+        ImageLightbox(message = target, secure = screenPrivacyOn, onDismiss = { lightboxTarget = null })
     }
 
     if (pinsOpen) {
         PinsDialog(
             pins = state.pins,
+            // Section 13 item 11 - pinned rows show message content inside a
+            // dialog window; they ride the same room screen-privacy state.
+            secure = screenPrivacyOn,
             onJump = { pin ->
                 pinsOpen = false
                 viewModel.jumpTo(pin.id)

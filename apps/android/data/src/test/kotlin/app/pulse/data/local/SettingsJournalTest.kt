@@ -97,4 +97,84 @@ class SettingsJournalTest {
             assertEquals(false, db.store.prefs.first().typingVisible)
         } finally { db.close() }
     }
+
+    // ── Section 13 item 1 - the durable receipt contract ──
+
+    @Test fun `superseded receipt adopts the server winner and retires the intent`() = runBlocking {
+        val db = Storage()
+        try {
+            val ticket = db.store.stageSettings(WirePulsePrefs(readReceipts = false, density = "compact")) { true }
+            // This device LOST the last-write-wins comparison for readReceipts;
+            // the response preferences carry the WINNING value for it.
+            val receipt = app.pulse.protocol.SettingsEnvelopeDto(
+                preferences = WirePulsePrefs(readReceipts = true, density = "compact"),
+                revision = 11,
+                applied = listOf("density"),
+                superseded = listOf("readReceipts"),
+            )
+            db.store.acknowledgeSettings(ticket, ticket.patch, receipt.preferences!!, receipt) { true }
+            // The losing local intent ADOPTED server truth and cannot resurface.
+            assertEquals(true, db.store.prefs.first().readReceipts)
+            assertEquals("compact", db.store.prefs.first().density)
+            assertFalse(db.store.hasPendingSettings.first())
+            assertEquals(WirePulsePrefs(), db.store.pendingSettingsPatch())
+            assertEquals(11L, db.store.storedServerRevision())
+            db.reopen()
+            assertEquals(true, db.store.prefs.first().readReceipts)
+            assertFalse(db.store.hasPendingSettings.first())
+            // The retirement is the guarantee: the losing intent never resurfaces
+            // as a pending write (a later authoritative snapshot may of course
+            // carry a newer server value - that is ordinary server truth, and it
+            // arrives through the same replaceFromServer path, not the intent).
+            db.store.replaceFromServer(WirePulsePrefs(readReceipts = false))
+            assertEquals(WirePulsePrefs(), db.store.pendingSettingsPatch())
+            assertEquals(false, db.store.prefs.first().readReceipts)
+        } finally { db.close() }
+    }
+
+    @Test fun `replayed receipt confirms like a fresh apply`() = runBlocking {
+        val db = Storage()
+        try {
+            val ticket = db.store.stageSettings(WirePulsePrefs(typingVisible = false)) { true }
+            val receipt = app.pulse.protocol.SettingsEnvelopeDto(
+                preferences = WirePulsePrefs(typingVisible = false),
+                revision = 3,
+                applied = listOf("typingVisible"),
+                replayed = true,
+            )
+            db.store.acknowledgeSettings(ticket, ticket.patch, receipt.preferences!!, receipt) { true }
+            assertFalse(db.store.hasPendingSettings.first())
+            assertEquals(false, db.store.prefs.first().typingVisible)
+            assertEquals(3L, db.store.storedServerRevision())
+        } finally { db.close() }
+    }
+
+    @Test fun `receipt identity replays the same clientId for the same instructions`() = runBlocking {
+        val db = Storage()
+        try {
+            val ticket = db.store.stageSettings(WirePulsePrefs(typingVisible = false)) { true }
+            val first = db.store.settingsReceiptIdentity(ticket.fields.keys)
+            // The stage minted the durable identity: the SAME clientId and the
+            // stage moment ride the retry (a lost ACK then gets the server's
+            // stored result with replayed=true, never a mismatch 409).
+            assertEquals(ticket.clientId, first.clientId)
+            assertEquals(ticket.stagedAtMs, first.intentAtMs)
+            assertTrue(first.clientId.matches(Regex("[A-Za-z0-9_-]{16,128}")))
+            assertEquals(ticket.fields.keys, first.fieldTimesMs.keys)
+            assertEquals(ticket.stagedAtMs, first.fieldTimesMs.values.single())
+            val again = db.store.settingsReceiptIdentity(ticket.fields.keys)
+            assertEquals(first.clientId, again.clientId)
+            assertEquals(first.intentAtMs, again.intentAtMs)
+            // DIFFERENT instructions mint a FRESH identity, so a reused clientId
+            // can never carry different instructions (mismatch 409 unreachable).
+            val other = db.store.settingsReceiptIdentity(setOf("density"))
+            assertTrue(other.clientId != first.clientId)
+            assertTrue(other.clientId != ticket.clientId)
+            assertTrue(other.fieldTimesMs.keys.single() == "density")
+            // An empty send never touches the stored identity.
+            val emptyOne = db.store.settingsReceiptIdentity(emptySet())
+            val emptyTwo = db.store.settingsReceiptIdentity(emptySet())
+            assertTrue(emptyOne.clientId != emptyTwo.clientId)
+        } finally { db.close() }
+    }
 }

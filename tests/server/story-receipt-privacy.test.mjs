@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
+import { clientIdFrom } from '../../src/lib/section10-contracts.ts'
+import * as settingsContracts from '../../src/lib/settings-contracts.ts'
 const {PrismaClient,Prisma}=createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path,bindings,expression) {
  const text=(await readFile(new URL(`../../${path}`,import.meta.url),'utf8')).replace(/^import[\s\S]*?from ['"][^'"]+['"];?\s*$/gm,'').replace(/^export /gm,'')
@@ -14,7 +16,7 @@ async function load(path,bindings,expression) {
 async function fixture(run) {
  const dir=await mkdtemp(join(tmpdir(),'story-privacy-'));const db=new PrismaClient({datasourceUrl:`file:${join(dir,'test.sqlite')}`})
  try {
-  for(const name of ['User','Conversation','ConversationParticipant','UserBlock','StatusStory','StoryView']) {
+  for(const name of ['User','Conversation','ConversationParticipant','UserBlock','StatusStory','StoryView','SettingsFieldStamp','SettingsRevision','SettingsOperation']) {
    const model=Prisma.dmmf.datamodel.models.find(m=>m.name===name)
    const columns=model.fields.filter(f=>f.kind!=='object'&&!f.isList).map(f=>{
     const type=['Int','Boolean','BigInt'].includes(f.type)?'INTEGER':f.type==='Float'?'REAL':f.type==='DateTime'?'DATETIME':'TEXT'
@@ -24,6 +26,7 @@ async function fixture(run) {
     else if(f.default?.name==='now')def=' DEFAULT CURRENT_TIMESTAMP'
     return `"${f.name}" ${type}${f.isId?' PRIMARY KEY':''}${def}`
    })
+   if(model.primaryKey&&model.primaryKey.fields.length>1)columns.push(`PRIMARY KEY (${model.primaryKey.fields.map(f=>`"${f}"`).join(',')})`)
    await db.$executeRawUnsafe(`CREATE TABLE "${name}" (${columns.join(',')})`)
   }
   await db.$executeRawUnsafe('CREATE UNIQUE INDEX story_view_owner ON StoryView(storyId,userId)')
@@ -34,6 +37,10 @@ async function fixture(run) {
   const prefs=await load('src/lib/privacy-preferences.ts',{},'({privacyPreferenceSnapshot})')
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
   const bindings={db,Prisma,randomUUID,...access,...prefs,requireActionOwner,AVATAR_COLORS:['emerald','rose','amber','violet','teal','orange','pink','cyan'],safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',
+   clientIdFrom,probeSettingsOp:settingsContracts.probeSettingsOp,settleSettingsOp:settingsContracts.settleSettingsOp,
+   bumpSettingsRevision:settingsContracts.bumpSettingsRevision,readSettingsRevision:settingsContracts.readSettingsRevision,
+   readSettingsFieldStamps:settingsContracts.readSettingsFieldStamps,resolveSettingsFields:settingsContracts.resolveSettingsFields,
+   stampSettingsFields:settingsContracts.stampSettingsFields,notifySocket:async()=>{},
    // The disclosure test asserts column truth, not the prefs sanitizer (the
    // sanitizer's own behavior is covered by the settings suite).
    mergePrefs:raw=>({notifPreviews:true,readReceipts:true,lastSeenVisible:true,typingVisible:true,...raw})}

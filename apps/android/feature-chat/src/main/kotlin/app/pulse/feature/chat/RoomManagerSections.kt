@@ -177,6 +177,8 @@ internal fun AutomationsSection(
         )
     }
     deleteTarget?.let { row ->
+        // Section 13 item 11 - audited, NOT protected: this AlertDialog names the
+        // automation trigger only, never message content or attachments.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text("Delete automation?") },
@@ -455,6 +457,8 @@ internal fun WebhooksSection(
         )
     }
     deleteTarget?.let { webhook ->
+        // Section 13 item 11 - audited, NOT protected: webhook management copy
+        // only (the webhook's own name), never room message content.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text("Delete webhook?") },
@@ -470,6 +474,8 @@ internal fun WebhooksSection(
     }
     // Section 12 item 7 - rotate confirms BEFORE the old capability dies.
     rotateTarget?.let { webhook ->
+        // Section 13 item 11 - audited, NOT protected: webhook management copy
+        // only, never room message content.
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { rotateTarget = null },
             title = { Text("Rotate webhook URL?") },

@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
 import { privacyPreferenceEnabled } from '../../src/lib/privacy-preferences.ts'
+import { clientIdFrom } from '../../src/lib/section10-contracts.ts'
+import * as settingsContracts from '../../src/lib/settings-contracts.ts'
 const { PrismaClient, Prisma } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path, bindings, expression) {
   const text = (await readFile(new URL(`../../${path}`, import.meta.url), 'utf8'))
@@ -31,6 +33,7 @@ async function fixture(run, routeDatabase = db => db) {
       db: routeDatabase(db), Prisma, requireActionOwner, NextResponse: { json: Response.json }, privacyPreferenceEnabled,
       safeJson: r => r.json(), strField: v => typeof v === 'string' ? v.trim() : '',
       notifySocket: async (...args) => feedHints.push(args),
+      clientIdFrom, probeSettingsOp: settingsContracts.probeSettingsOp, settleSettingsOp: settingsContracts.settleSettingsOp,
       USER_NAME_MAX: 32, ABOUT_MAX: 140, STATUS_ICON_IDS: ['coffee'],
       normalizeColor: v => v, normalizeUsername: v => /^[a-z0-9_]{3,20}$/.test(v) ? v : null,
       suggestUsername: async v => `${v}_2`, mapUser: u => ({ id: u.id, name: u.name, about: u.about, avatar: u.avatar, coverImage: u.coverImage, statusText: u.statusText }),

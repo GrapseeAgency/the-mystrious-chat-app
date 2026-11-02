@@ -239,38 +239,46 @@ class PulsePrefsLocalStore internal constructor(
         storage.edit { it.remove(whiteboardDraftKey(conversationId)) }
     }
 
-    // R1-W2F - per-conversation themes (F-FX-05)
+    // R1-W2F - per-conversation themes (`chat.convThemes`)
 
     /**
      * Live `chat.convThemes` map, sanitized like the web
      * sanitizeConvThemeMap: unknown wallpaper tokens / tints / junk keys are
      * dropped, the [ConvTheme.MAX_MAP_ENTRIES] budget caps the payload.
      * JSON object key order IS the LRU order (touched entry last).
+     *
+     * Section 13 item 4: the canonical copy now lives INSIDE the staged
+     * settings blob (the web's prefs blob shape); the pre-Section-13
+     * standalone `chat.convThemes` DataStore key stays as a read fallback so
+     * an upgrade keeps already-stored themes until the next staged write
+     * migrates the whole map into the blob.
      */
     val convThemes: Flow<Map<String, ConvTheme>> = storage.observeResilient(initial = emptyMap<String, ConvTheme>()) { p ->
-        sanitizeConvThemes(p[Keys.CONV_THEMES])
+        val blobThemes = PulseWave8Logic.localPrefs(p[Keys.PREFS]).convThemes
+        sanitizeConvThemes(blobThemes) ?: sanitizeConvThemes(p[Keys.CONV_THEMES])
     }
 
     /**
-     * Upsert/remove ONE conversation's theme (null = remove → follows the
-     * global default). LRU semantics: a touched entry moves to the END of the
-     * map; beyond [ConvTheme.MAX_MAP_ENTRIES] the OLDEST entry (map head) is
-     * evicted. Every write re-serializes the whole map - entries are ~70
-     * bytes so the DataStore write stays trivial.
+     * Section 13 item 4 - the settings patch that stages ONE conversation's
+     * theme change. Computes the next LRU map from the current merged state
+     * (blob first, legacy key fallback) and returns it as a carried
+     * `chat.convThemes` field, ready for [stageSettings] + the durable
+     * settings write. Whole-map granularity matches the web's prefs-blob
+     * write; two near-simultaneous theme stages converge through the server's
+     * last-write-wins receipt instead of merging.
      */
-    suspend fun setConvTheme(conversationId: String, theme: ConvTheme?) {
-        storage.edit { p ->
-            val current = LinkedHashMap(sanitizeConvThemes(p[Keys.CONV_THEMES]))
-            current.remove(conversationId)
-            if (theme != null && theme.wallpaper in ConvTheme.WALLPAPERS) {
-                current[conversationId] = theme
-            }
-            while (current.size > ConvTheme.MAX_MAP_ENTRIES) {
-                val eldest = current.keys.firstOrNull() ?: break
-                current.remove(eldest)
-            }
-            p[Keys.CONV_THEMES] = encodeConvThemes(current)
+    internal suspend fun convThemePatch(conversationId: String, theme: ConvTheme?): WirePulsePrefs {
+        if (!CONV_ID_OK.matches(conversationId)) return WirePulsePrefs()
+        val next = LinkedHashMap(convThemes.first())
+        next.remove(conversationId)
+        if (theme != null && theme.wallpaper in ConvTheme.WALLPAPERS) {
+            next[conversationId] = theme
         }
+        while (next.size > ConvTheme.MAX_MAP_ENTRIES) {
+            val eldest = next.keys.firstOrNull() ?: break
+            next.remove(eldest)
+        }
+        return WirePulsePrefs(convThemes = encodeConvThemesObject(next))
     }
 
     /** Web sanitizeConvThemeMap parity - never throws, never stores junk. */
@@ -278,6 +286,12 @@ class PulsePrefsLocalStore internal constructor(
         if (raw.isNullOrBlank()) return emptyMap()
         val obj = runCatching { PulseJson.parseToJsonElement(raw) as? JsonObject }.getOrNull()
             ?: return emptyMap()
+        return sanitizeConvThemes(obj) ?: emptyMap()
+    }
+
+    /** Object overload - null = the blob carried no theme map (not an empty one). */
+    private fun sanitizeConvThemes(obj: JsonObject?): Map<String, ConvTheme>? {
+        if (obj == null) return null
         val out = LinkedHashMap<String, ConvTheme>()
         for ((key, value) in obj) {
             if (out.size >= ConvTheme.MAX_MAP_ENTRIES) break
@@ -295,8 +309,8 @@ class PulsePrefsLocalStore internal constructor(
     }
 
     /** { "<id>": { wallpaper, tint? } } - tint key omitted when null (web shape). */
-    private fun encodeConvThemes(map: Map<String, ConvTheme>): String {
-        val obj = buildJsonObject {
+    private fun encodeConvThemesObject(map: Map<String, ConvTheme>): JsonObject {
+        return buildJsonObject {
             map.forEach { (id, theme) ->
                 put(
                     id,
@@ -307,14 +321,43 @@ class PulsePrefsLocalStore internal constructor(
                 )
             }
         }
-        return PulseJson.encodeToString(JsonObject.serializer(), obj)
     }
 
     private val settingsPendingKey = stringPreferencesKey("settings.pending.fields.v1")
     private val settingsRevisionKey = stringPreferencesKey("settings.intent.revision.v1")
+    /** Section 13 item 1 - per-field stage moments (epoch ms) of the pending intent. */
+    private val settingsStampsKey = stringPreferencesKey("settings.fieldStamps.v1")
+    /** Section 13 item 1 - the durable patch identity for the CURRENT pending set. */
+    private val settingsEnvelopeKey = stringPreferencesKey("settings.intent.envelope.v1")
+    /** Section 13 - the server's monotonic settings revision (last observed receipt). */
+    private val settingsServerRevisionKey = stringPreferencesKey("settings.server.revision.v1")
+
     internal data class SettingsReadTicket(val revision: String?)
     internal suspend fun settingsReadTicket() = SettingsReadTicket(storage.data.first()[settingsRevisionKey])
-    internal data class SettingsTicket(val patch: WirePulsePrefs, val fields: Map<String, String>)
+
+    /** The server's monotonic settings revision as of the last confirmed read/write. */
+    internal suspend fun storedServerRevision(): Long? =
+        storage.data.first()[settingsServerRevisionKey]?.toLongOrNull()
+
+    internal suspend fun storeServerRevision(revision: Long?) {
+        if (revision == null) return
+        storage.edit { p -> p[settingsServerRevisionKey] = revision.toString() }
+    }
+
+    /**
+     * One staged settings write. Beyond the patch and its per-field receipt
+     * tokens it carries the Section 13 durable-receipt identity: a patch-level
+     * clientId, the stage moment, and each field's stage moment (epoch ms).
+     * Legacy callers (and journals persisted before Section 13) leave the new
+     * fields at their defaults - the wire body then omits them.
+     */
+    internal data class SettingsTicket(
+        val patch: WirePulsePrefs,
+        val fields: Map<String, String>,
+        val clientId: String? = null,
+        val stagedAtMs: Long? = null,
+        val fieldStagedAtMs: Map<String, Long> = emptyMap(),
+    )
 
     private fun pendingFields(p: androidx.datastore.preferences.core.Preferences): Map<String, String> {
         val raw = p[settingsPendingKey] ?: return emptyMap()
@@ -329,6 +372,78 @@ class PulsePrefsLocalStore internal constructor(
         if (pending.isEmpty()) p.remove(settingsPendingKey)
         else p[settingsPendingKey] = JsonObject(pending.mapValues { JsonPrimitive(it.value) }).toString()
     }
+
+    // Section 13 item 1 - the pending intent's stage moments and durable patch
+    // identity live in the SAME DataStore transaction as the pending tokens, so
+    // a process restart replays the SAME clientId + intentAt + fieldTimes.
+
+    /** The web's url-safe clientId contract (32 hex chars, 16-128 allowed). */
+    private fun newSettingsClientId(): String = java.util.UUID.randomUUID().toString().replace("-", "")
+
+    private fun fieldStamps(p: androidx.datastore.preferences.core.Preferences): Map<String, Long> {
+        val raw = p[settingsStampsKey] ?: return emptyMap()
+        val obj = PulseJson.parseToJsonElement(raw) as? JsonObject ?: error("Unreadable pending settings")
+        return obj.mapValues { (_, value) ->
+            val ms = value as? JsonPrimitive ?: error("Unreadable pending settings")
+            ms.content.toLongOrNull() ?: error("Unreadable pending settings")
+        }
+    }
+
+    private fun storeStamps(p: androidx.datastore.preferences.core.MutablePreferences, stamps: Map<String, Long>) {
+        if (stamps.isEmpty()) p.remove(settingsStampsKey)
+        else p[settingsStampsKey] = JsonObject(stamps.mapValues { JsonPrimitive(it.value.toString()) }).toString()
+    }
+
+    private data class IntentEnvelope(val clientId: String, val atMs: Long, val fields: Set<String>)
+
+    private val settingsClientIdOk = Regex("[A-Za-z0-9_-]{16,128}")
+
+    private fun intentEnvelope(p: androidx.datastore.preferences.core.Preferences): IntentEnvelope? {
+        val raw = p[settingsEnvelopeKey] ?: return null
+        val obj = PulseJson.parseToJsonElement(raw) as? JsonObject ?: error("Unreadable pending settings")
+        val clientId = (obj["clientId"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: error("Unreadable pending settings")
+        require(clientId.matches(settingsClientIdOk)) { "Unreadable pending settings" }
+        val atMs = (obj["atMs"] as? JsonPrimitive)?.content?.toLongOrNull() ?: error("Unreadable pending settings")
+        val fields = (obj["fields"] as? kotlinx.serialization.json.JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.takeIf { v -> v.isString }?.content }
+            ?: error("Unreadable pending settings")
+        require(fields.isNotEmpty()) { "Unreadable pending settings" }
+        return IntentEnvelope(clientId, atMs, fields.toSet())
+    }
+
+    private fun storeEnvelope(p: androidx.datastore.preferences.core.MutablePreferences, envelope: IntentEnvelope) {
+        p[settingsEnvelopeKey] = buildJsonObject {
+            put("clientId", JsonPrimitive(envelope.clientId))
+            put("atMs", JsonPrimitive(envelope.atMs.toString()))
+            put("fields", kotlinx.serialization.json.JsonArray(envelope.fields.sorted().map { JsonPrimitive(it) }))
+        }.toString()
+    }
+
+    /**
+     * Section 13 item 1 - the durable identity for the fields ABOUT TO BE SENT.
+     * The stored envelope is reused ONLY when it was minted for exactly this
+     * field set (same instructions ⇒ the server answers from its stored result
+     * with `replayed: true`); any other set mints a fresh clientId, so a reused
+     * identity can never carry different instructions (the server's 409
+     * settings_operation_mismatch stays unreachable from honest retries).
+     */
+    internal suspend fun settingsReceiptIdentity(sentFields: Set<String>): SettingsReceiptIdentity {
+        var identity = SettingsReceiptIdentity(newSettingsClientId(), System.currentTimeMillis(), emptyMap())
+        if (sentFields.isEmpty()) return identity
+        storage.edit { p ->
+            val stamps = fieldStamps(p)
+            val stored = intentEnvelope(p)
+            val reuse = stored != null && stored.fields == sentFields
+            val clientId = if (reuse) stored!!.clientId else newSettingsClientId()
+            val atMs = if (reuse) stored!!.atMs else System.currentTimeMillis()
+            if (!reuse) storeEnvelope(p, IntentEnvelope(clientId, atMs, sentFields))
+            identity = SettingsReceiptIdentity(clientId, atMs, sentFields.associateWith { stamps[it] ?: atMs })
+        }
+        return identity
+    }
+
+    internal data class SettingsReceiptIdentity(val clientId: String, val intentAtMs: Long, val fieldTimesMs: Map<String, Long>)
     val hasPendingSettings: Flow<Boolean> = storage.observeResilient(initial = true, unavailable = { true }) { p ->
         // Corruption is not permission to report all settings synchronized.
         runCatching { pendingFields(p).isNotEmpty() }.getOrDefault(true)
@@ -342,43 +457,93 @@ class PulsePrefsLocalStore internal constructor(
         return SettingsTicket(patch, pending)
     }
 
-    /** Persist local intent and per-field receipt identities in ONE transaction. */
+    /** Persist local intent and per-field receipt identities in ONE transaction.
+     * Section 13 item 1: the SAME transaction also records each field's stage
+     * moment and mints the patch-level durable clientId for the (new) pending
+     * set, so a lost-ACK retry replays with identical instructions. */
     internal suspend fun stageSettings(patch: WirePulsePrefs, owns: () -> Boolean): SettingsTicket {
         val fields = patch.settingsFields().keys.associateWith { java.util.UUID.randomUUID().toString() }
         require(fields.isNotEmpty()) { "No settings changes to save" }
+        val stagedAtMs = System.currentTimeMillis()
+        val clientId = newSettingsClientId()
         storage.edit { p ->
             if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
             val pending = pendingFields(p) + fields
+            val stamps = fieldStamps(p).toMutableMap()
+            fields.keys.forEach { stamps[it] = stagedAtMs }
             p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(),
                 PulseWave8Logic.mergePatch(PulseWave8Logic.localPrefs(p[Keys.PREFS]), patch))
             storePending(p, pending)
+            storeStamps(p, stamps)
+            // The instruction set changed, so the durable identity is minted fresh.
+            storeEnvelope(p, IntentEnvelope(clientId, stagedAtMs, pending.keys))
             p[settingsRevisionKey] = java.util.UUID.randomUUID().toString()
         }
-        return SettingsTicket(patch, fields)
+        return SettingsTicket(patch, fields, clientId, stagedAtMs, fields.keys.associateWith { stagedAtMs })
     }
     internal suspend fun currentSettingsPatch(ticket: SettingsTicket): WirePulsePrefs {
         val pending = pendingFields(storage.data.first())
         return ticket.patch.selectSettingsFields(ticket.fields.filter { (key, id) -> pending[key] == id }.keys)
     }
 
-    internal suspend fun acknowledgeSettings(ticket: SettingsTicket, sent: WirePulsePrefs, server: WirePulsePrefs, owns: () -> Boolean) {
+    /**
+     * Confirm a staged settings write against the server's receipt.
+     *
+     * Section 13 item 1: [receipt] (the PATCH response envelope) is optional so
+     * legacy callers keep compiling. Its `superseded` array names the fields
+     * that LOST the last-write-wins comparison against a newer intent from
+     * another device - for those the local optimistic value is REPLACED by the
+     * winning value from the response preferences (the device's own intent must
+     * never resurface), and the pending token retires exactly like an accepted
+     * field. A `replayed: true` receipt confirms like a fresh apply.
+     */
+    internal suspend fun acknowledgeSettings(
+        ticket: SettingsTicket,
+        sent: WirePulsePrefs,
+        server: WirePulsePrefs,
+        receipt: app.pulse.protocol.SettingsEnvelopeDto? = null,
+        owns: () -> Boolean,
+    ) {
         val keys = sent.settingsFields().keys
         check(server.settingsFields().keys.containsAll(keys)) { "The server did not confirm the requested settings fields" }
         storage.edit { p ->
             if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
             val pending = pendingFields(p).toMutableMap()
-            val accepted = keys.filter { pending[it] == ticket.fields[it] }.toSet()
+            // Every field whose token still matches retires on this receipt. For
+            // accepted fields the server re-confirms the stored value; for fields
+            // the receipt lists as superseded, response.preferences instead carries
+            // the WINNING value - merging it here is the adoption that keeps a
+            // losing local intent from resurfacing (locally or on any retry).
+            val retired = keys.filter { pending[it] == ticket.fields[it] }.toSet()
             val current = PulseWave8Logic.localPrefs(p[Keys.PREFS])
             p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(),
-                PulseWave8Logic.mergePatch(current, server.selectSettingsFields(accepted)))
-            accepted.forEach { pending.remove(it) }
+                PulseWave8Logic.mergePatch(current, server.selectSettingsFields(retired)))
+            retired.forEach { pending.remove(it) }
             storePending(p, pending)
-            if (accepted.isNotEmpty()) p[settingsRevisionKey] = java.util.UUID.randomUUID().toString()
+            if (retired.isNotEmpty()) {
+                val stamps = fieldStamps(p).toMutableMap()
+                retired.forEach { stamps.remove(it) }
+                storeStamps(p, stamps)
+                // The pending set changed: a stored patch identity no longer
+                // matches what a retry would send - the next ticket mints fresh.
+                p.remove(settingsEnvelopeKey)
+                p[settingsRevisionKey] = java.util.UUID.randomUUID().toString()
+            }
         }
+        // Server truth for the account as of this receipt (supersede adoption
+        // and `replayed` receipts included). Independent of the retirement above.
+        storeServerRevision(receipt?.revision)
     }
 
-    /** A startup/read snapshot cannot erase local intent awaiting confirmation. */
-    internal suspend fun replaceFromServer(server: WirePulsePrefs, readTicket: SettingsReadTicket? = null, owns: () -> Boolean = { true }) {
+    /** A startup/read snapshot cannot erase local intent awaiting confirmation.
+     * Section 13: [revision] (the GET response's server revision) is stored when
+     * the snapshot applies so later reads can reason about freshness. */
+    internal suspend fun replaceFromServer(
+        server: WirePulsePrefs,
+        readTicket: SettingsReadTicket? = null,
+        owns: () -> Boolean = { true },
+        revision: Long? = null,
+    ) {
         storage.edit { p ->
             if (!owns()) throw kotlinx.coroutines.CancellationException("Settings session ended")
             if (readTicket != null && p[settingsRevisionKey] != readTicket.revision) return@edit
@@ -386,6 +551,7 @@ class PulsePrefsLocalStore internal constructor(
             val current = PulseWave8Logic.localPrefs(p[Keys.PREFS])
             val safe = server.selectSettingsFields(server.settingsFields().keys - pending.keys)
             p[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(), PulseWave8Logic.mergePatch(current, safe))
+            if (revision != null) p[settingsServerRevisionKey] = revision.toString()
         }
     }
 

@@ -130,6 +130,7 @@ exports.Prisma.UserScalarFieldEnum = {
   statusText: 'statusText',
   preferences: 'preferences',
   storyViewReceipts: 'storyViewReceipts',
+  profileRev: 'profileRev',
   sessionTokenHash: 'sessionTokenHash',
   legacyTokenHashes: 'legacyTokenHashes',
   serviceKey: 'serviceKey',
@@ -871,6 +872,30 @@ exports.Prisma.AppConnectionOperationScalarFieldEnum = {
   installed: 'installed'
 };
 
+exports.Prisma.SettingsFieldStampScalarFieldEnum = {
+  userId: 'userId',
+  field: 'field',
+  rev: 'rev',
+  intentAt: 'intentAt',
+  writer: 'writer'
+};
+
+exports.Prisma.SettingsRevisionScalarFieldEnum = {
+  userId: 'userId',
+  rev: 'rev',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SettingsOperationScalarFieldEnum = {
+  id: 'id',
+  kind: 'kind',
+  clientId: 'clientId',
+  userId: 'userId',
+  requestHash: 'requestHash',
+  resultJson: 'resultJson',
+  createdAt: 'createdAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -962,7 +987,10 @@ exports.Prisma.ModelName = {
   RoomListRevision: 'RoomListRevision',
   MarketCreationOperation: 'MarketCreationOperation',
   AppInstallRevision: 'AppInstallRevision',
-  AppConnectionOperation: 'AppConnectionOperation'
+  AppConnectionOperation: 'AppConnectionOperation',
+  SettingsFieldStamp: 'SettingsFieldStamp',
+  SettingsRevision: 'SettingsRevision',
+  SettingsOperation: 'SettingsOperation'
 };
 
 /**

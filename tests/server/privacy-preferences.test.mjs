@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { stripTypeScriptTypes } from 'node:module'
 import { privacyPreferenceEnabled, privacyPreferenceSnapshot } from '../../src/lib/privacy-preferences.ts'
+import { clientIdFrom } from '../../src/lib/section10-contracts.ts'
+import * as settingsContracts from '../../src/lib/settings-contracts.ts'
 import { receiptRecipients } from '../../src/lib/read-receipt.ts'
 
 test('privacy distinguishes known unset defaults from unknown/malformed stored policy',()=>{
@@ -122,9 +124,16 @@ test('settings repair preserves privacy refusals until an explicit boolean opt-i
  const source=await readFile(new URL('../../src/app/api/settings/route.ts',import.meta.url),'utf8')
  let preferences='{broken',writes=0
  const bindings={NextResponse:{json:Response.json},mergePrefs,privacyPreferenceSnapshot,requireActionOwner:async()=>null,
+  clientIdFrom,probeSettingsOp:settingsContracts.probeSettingsOp,settleSettingsOp:settingsContracts.settleSettingsOp,
+  bumpSettingsRevision:settingsContracts.bumpSettingsRevision,readSettingsRevision:settingsContracts.readSettingsRevision,
+  readSettingsFieldStamps:settingsContracts.readSettingsFieldStamps,resolveSettingsFields:settingsContracts.resolveSettingsFields,
+  stampSettingsFields:settingsContracts.stampSettingsFields,notifySocket:async()=>{},
   db:{user:{findUnique:async()=>({preferences}),updateMany:async({where,data})=>{
    if(where.preferences!==preferences)return {count:0};preferences=data.preferences;writes++;return {count:1}
-  }}}}
+  }},
+  settingsFieldStamp:{findMany:async()=>[],upsert:async()=>{}},
+  settingsRevision:{findUnique:async()=>null,upsert:async()=>({rev:1})},
+  settingsOperation:{findUnique:async()=>null,create:async()=>{}}}}
  const {GET,PATCH}=new Function(...Object.keys(bindings),strip(source)+';return {GET,PATCH}')(...Object.values(bindings))
  const get=await GET(new Request('https://settings.test/?userId=owner'))
  assert.equal((await get.json()).preferences.readReceipts,false)

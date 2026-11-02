@@ -342,6 +342,20 @@ public final class PulsePrefs: ObservableObject {
     /// Honest retained-intent notice. Neither an unrelated PATCH nor an old
     /// GET is allowed to claim all settings have been confirmed.
     @Published public private(set) var lastSyncNote: String?
+    /// Section 13 items 1-2 - the per-user monotonic settings revision from
+    /// the last owned GET/confirmed PATCH (nil on a pre-Section-13 relay).
+    @Published public private(set) var settingsRevision: Int64?
+    /// Section 13 item 9 - the monotonic profile revision of the last
+    /// CONFIRMED profile patch (nil until a relay answers with one).
+    @Published public private(set) var profileRevision: Int64?
+    /// Section 13 item 5 - an honest failure note when the local app-lock
+    /// protection flag could not be persisted (read-back mismatch). The gate
+    /// must never arm from a state the device could not prove it stored.
+    @Published public private(set) var appLockWriteError: String?
+    /// Section 13 item 7 - per-room provenance of the personal veil map
+    /// ("intent" = explicit local choice, "migration-cache" = v1 cache row
+    /// upgraded without intent proof, "server" = adopted server snapshot).
+    @Published public private(set) var screenPrivacyOrigins: [String: String] = [:]
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -530,9 +544,38 @@ public final class PulsePrefs: ObservableObject {
     /// R10-b - persist the app-lock toggle. The enable path in SettingsView
     /// only calls this AFTER the LAContext confirmation passed, so a device
     /// that cannot enforce the lock never stores `true`.
+    ///
+    /// Section 13 item 5 - the protection flag is only adopted in memory when
+    /// the persistence is PROVEN (write + read-back match). On a failed or
+    /// unverifiable write the previous persisted value is re-stored, the
+    /// in-memory state reverts to it, and an honest error surfaces: the gate
+    /// must NOT arm when its persisted flag says off.
     public func setAppLockEnabled(_ enabled: Bool) {
+        let previous = defaults.object(forKey: Self.appLockEnabledKey) != nil ? defaults.bool(forKey: Self.appLockEnabledKey) : false
+        guard appLockPersister(enabled, defaults) else {
+            appLockPersister(previous, defaults) // retain the last proven value
+            appLockEnabled = defaults.bool(forKey: Self.appLockEnabledKey)
+            appLockWriteError = "App lock could not be saved on this device. The previous setting is kept."
+            return
+        }
         appLockEnabled = enabled
-        defaults.set(enabled, forKey: Self.appLockEnabledKey)
+        appLockWriteError = nil
+    }
+
+    /// Section 13 item 5 - the persistence seam: write, then verify by reading
+    /// back. Injectable so tests can exercise the failed-write branch without
+    /// a broken disk; production always uses the honest read-back probe.
+    var appLockPersister: (Bool, UserDefaults) -> Bool = { enabled, defaults in
+        defaults.set(enabled, forKey: PulsePrefs.appLockEnabledKey)
+        return defaults.object(forKey: PulsePrefs.appLockEnabledKey) != nil
+            && defaults.bool(forKey: PulsePrefs.appLockEnabledKey) == enabled
+    }
+
+    /// Section 13 item 9 - record the profile revision returned by a
+    /// CONFIRMED patch (or a tolerant read); nil never rolls it back.
+    public func noteProfileRevision(_ revision: Int64?) {
+        guard let revision else { return }
+        profileRevision = revision
     }
 
     // R1-W2B F-FX-05 - per-conversation theme setters
@@ -652,10 +695,15 @@ public final class PulsePrefs: ObservableObject {
             screenPrivacyReadError = nil
             screenPrivacy = entries.mapValues(\.on)
             screenPrivacyPending = Set(entries.filter { $0.value.pending != nil }.keys)
+            // Section 13 item 7 (provenance) - expose each row's origin next
+            // to the pending flags; unknown (pre-provenance in-memory rows)
+            // reads as "migration-cache" honestly.
+            screenPrivacyOrigins = entries.mapValues { $0.origin ?? PulseScreenPrivacyJournal.Entry.migrationCacheOrigin }
         } catch {
             // Empty means unknown, and the room policy keeps the cover engaged.
             screenPrivacy = [:]
             screenPrivacyPending = []
+            screenPrivacyOrigins = [:]
             screenPrivacyReadError = "Saved screen-security choices could not be read. Protection remains on."
         }
     }
@@ -808,10 +856,13 @@ public final class PulsePrefs: ObservableObject {
                 PulseWalletOperations.gatewayKey(api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL)
         }
         do {
-            let server = try await api.settings()
+            // Section 13 item 7 - the envelope carries the per-user monotonic
+            // revision when the relay supports it (nil tolerated forever).
+            let envelope = try await api.settingsRead()
             guard ownsRead(), localPreferenceRevision == revision else { return }
             guard let owner = settingsOwnerKey else { return }
-            try settingsJournal.applySnapshot(server, owner: owner, apply: applyServer)
+            try settingsJournal.applySnapshot(envelope.preferences ?? WirePulsePrefs(), owner: owner, apply: applyServer)
+            if let serverRevision = envelope.revision { settingsRevision = serverRevision }
             notePatchSettled(successful: true, note: nil)
         } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
             guard ownsRead() else { return }
@@ -891,7 +942,12 @@ public final class PulsePrefs: ObservableObject {
         screenPrivacyPending = []
         screenPrivacyNotes = [:]
         screenPrivacyReadError = nil
+        screenPrivacyOrigins = [:]
         screenPrivacyActivation = UUID()
+        // Section 13 items 1+9 - revision provenance is per owner too: the
+        // new owner's first owned GET/PATCH re-stamps it (nil = unknown).
+        settingsRevision = nil
+        profileRevision = nil
         guard let owner else { return }
         if let data = defaults.data(forKey: "pulse.settings.values.v1." + owner),
            let snapshot = try? JSONDecoder().decode(WirePulsePrefs.self, from: data) { applyServer(snapshot) }
@@ -923,11 +979,23 @@ public final class PulsePrefs: ObservableObject {
         guard Self.settingsOwnerKey(for: api.userId, gateway: api.baseURL) == ticket.owner else { throw CancellationError() }
         return try currentSettingsPatch(ticket)
     }
-    func acknowledgeSettings(_ ticket: PulseSettingsTicket, sent: WirePulsePrefs, server: WirePulsePrefs) throws {
+    func acknowledgeSettings(_ ticket: PulseSettingsTicket, sent: WirePulsePrefs, server: WirePulsePrefs,
+                             superseded: Set<String> = [], revision: Int64? = nil) throws {
         guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner else { throw CancellationError() }
-        try settingsJournal.acknowledge(ticket, sent: sent, server: server, apply: applyServer)
+        // Section 13 item 1 - superseded fields adopt server truth inside the
+        // journal (their local intent retires, it must not resurface).
+        try settingsJournal.acknowledge(ticket, sent: sent, server: server, superseded: superseded, apply: applyServer)
+        if let revision { settingsRevision = revision }
         localPreferenceRevision &+= 1 // an older GET must not undo this confirmation
         notePatchSettled(successful: true, note: nil)
+    }
+
+    /// Section 13 item 3 - whether this owner still carries unconfirmed
+    /// settings intent (tolerant: an unreadable journal reports none - the
+    /// honest read-failure note is already surfaced elsewhere).
+    public var pendingSettingsExist: Bool {
+        guard let owner = settingsOwnerKey else { return false }
+        return (try? settingsJournal.hasPending(owner: owner)) ?? false
     }
     public func retryPendingSettings() {
         refreshSettingsOwner()

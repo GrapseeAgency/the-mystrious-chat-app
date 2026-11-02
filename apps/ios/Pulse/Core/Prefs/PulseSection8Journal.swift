@@ -9,7 +9,7 @@ import Foundation
 final class PulseSection8Journal {
     static let shared = PulseSection8Journal()
     struct Intent: Codable, Sendable {
-        let kind: String      // "block" | "unblock" | "report" | "folder-create" | "phrase-create" | "phrase-delete"
+        let kind: String      // "block" | "unblock" | "report" | "folder-create" | "phrase-create" | "phrase-delete" | "profile-patch" (Section 13)
         let clientId: String
         let intentAtMs: Int64
         let targetId: String
@@ -58,6 +58,21 @@ final class PulseSection8Journal {
             "intentAt": ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(intent.intentAtMs) / 1000)),
         ]
         if !intent.targetId.isEmpty { body["userId"] = intent.targetId }
+        return body
+    }
+
+    // MARK: Section 13 item 9 - profile patches
+
+    /// PATCH /api/users/{id} replay body: the ORIGINAL profile field
+    /// instructions + the SAME durable clientId (a replayed write returns the
+    /// stored result with `replayed: true`; a different instruction set under
+    /// the same identity is refused 409 profile_operation_mismatch).
+    func profilePatchBody(_ intent: Intent) -> [String: Any] {
+        var body: [String: Any] = [:]
+        for (key, value) in intent.payload where PulseAPIClient.profilePatchFields.contains(key) {
+            body[key] = value
+        }
+        body["clientId"] = intent.clientId
         return body
     }
 }

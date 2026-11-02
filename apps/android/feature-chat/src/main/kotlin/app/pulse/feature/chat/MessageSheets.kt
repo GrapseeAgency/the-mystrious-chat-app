@@ -208,6 +208,9 @@ internal fun MessageActionSheet(
     /** iOS parity - an already-translated row re-labels the action. */
     alreadyTranslated: Boolean = false,
 ) {
+    // Section 13 item 11 - audited, NOT protected: this ModalBottomSheet renders
+    // action rows only (no message body/attachment), so the room surface's own
+    // lease covers everything it shows.
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Row(
             Modifier.fillMaxWidth().padding(vertical = 10.dp),
@@ -296,6 +299,8 @@ internal fun ForwardSheet(
     var selected by remember { mutableStateOf(emptySet<String>()) }
     val filtered = conversations.filter { it.title.contains(query.trim(), ignoreCase = true) }
 
+    // Section 13 item 11 - audited, NOT protected: a conversation picker only,
+    // the forwarded message's content is never rendered here.
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
@@ -419,6 +424,8 @@ internal fun MessageInfoSheet(
         conversation?.members?.firstOrNull { it.id == id }?.name ?: id
     }
 
+    // Section 13 item 11 - audited, NOT protected: delivery metadata only
+    // (timestamps/reactions/reader names), never the message body or attachment.
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Text(
             "Message info",
@@ -531,14 +538,21 @@ private fun MemberRow(member: ConversationMember, check: Boolean) {
     }
 }
 
-/** All pinned rows of the room - tap to jump-scroll to the pin. */
+/** All pinned rows of the room - tap to jump-scroll to the pin.
+ *
+ * Section 13 item 11 - pinned rows render message content inside a Dialog,
+ * which owns a SEPARATE window the room's activity-window FLAG_SECURE never
+ * covers: [secure] carries the SAME room screen-privacy state the room surface
+ * leases with and the dialog window holds its own lease while open. */
 @Composable
 internal fun PinsDialog(
     pins: List<Message>,
+    secure: Boolean,
     onJump: (Message) -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
+        app.pulse.ui.security.SecureDialogWindowProtection(secure)
         Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -591,7 +605,11 @@ internal fun PinsDialog(
     }
 }
 
-/** Delete confirmation: soft-delete tombstones render "Message deleted". */
+/** Delete confirmation: soft-delete tombstones render "Message deleted".
+ *
+ * Section 13 item 11 - audited, NOT protected: this AlertDialog shows only
+ * generic copy, never message content, so the room surface's existing lease
+ * (when the room's screen privacy is on) is the only one required. */
 @Composable
 internal fun DeleteMessageDialog(
     message: Message,

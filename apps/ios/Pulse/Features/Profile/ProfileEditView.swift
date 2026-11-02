@@ -109,6 +109,9 @@ struct ProfileEditView: View {
     @State private var saving = false
     @State private var notice: String?
 
+    // Section 13 item 8 - durable UNSAVED profile-edit intent (per account).
+    @State private var profileDrafts = PulseProfileDraftJournal(defaults: .standard)
+
     private var viewer: PulseViewer? { prefs.viewer }
 
     var body: some View {
@@ -132,16 +135,21 @@ struct ProfileEditView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { discardDraft(); dismiss() }
                 }
             }
             .onAppear(perform: seedFromViewer)
             .onDisappear(perform: stopOperations)
             .onChange(of: session.sessionGeneration) { _, _ in stopOperations(); dismiss() }
             .onChange(of: prefs.viewer?.id) { _, _ in stopOperations(); dismiss() }
+            // Section 13 item 8 - every edit stages UNSAVED intent against
+            // the owning account before any network round-trip.
+            .onChange(of: name) { _, newValue in stageDraft(.name, value: newValue) }
+            .onChange(of: about) { _, newValue in stageDraft(.about, value: newValue) }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 photoItem = nil
+                stageDraft(.photo, value: "picked") // picked-image marker BEFORE the confirmed save
                 launchOperation { await uploadAvatar(item) }
             }
             .onChange(of: coverItem) { _, item in
@@ -335,6 +343,7 @@ struct ProfileEditView: View {
             set: { newValue in
                 handleState.clashSuggestion = nil
                 handleState.value = OnboardingViewModel.sanitizeHandle(newValue)
+                stageDraft(.username, value: handleState.value)
                 scheduleHandleCheck()
             },
         )
@@ -467,6 +476,7 @@ struct ProfileEditView: View {
                 adopt(user)
                 baselineForm = formSnapshot
                 loaded = true
+                restoreDraft()
                 // Do not roll a locally updated mirror backward when a read was
                 // already in flight. The editor's own baseline stays immutable.
                 if prefs.viewer == viewer { prefs.setViewer(PulseViewer(from: user)) }
@@ -495,6 +505,58 @@ struct ProfileEditView: View {
         handleCheckTask?.cancel(); handleCheckTask = nil
         mutationGate.invalidate()
         avatarUploading = false; coverUploading = false; saving = false
+    }
+
+    // ── Section 13 item 8 - durable draft staging ──────────
+
+    /// formSnapshot slot per draft field (nil = no baseline: the photo draft
+    /// has no server-side counterpart in the form).
+    private static let baselineSlots: [PulseProfileDraftJournal.Field: Int] = [
+        .name: 0, .about: 1, .username: 5]
+
+    private func stageDraft(_ field: PulseProfileDraftJournal.Field, value: String) {
+        // Section 13 item 8 - only USER intent is draft material. SwiftUI
+        // delivers onChange for PROGRAMMATIC writes too, so seeding server
+        // truth on load and the post-save adopt() would otherwise persist
+        // confirmed values as "unsaved" - and an edit brought back to the
+        // baseline is no longer intent at all: its draft row retires.
+        guard loaded, let owner = editorOwner?.userId else { return }
+        if let slot = Self.baselineSlots[field], baselineForm[slot] == value {
+            profileDrafts.clear(owner: owner, fields: [field])
+        } else {
+            profileDrafts.stage(owner: owner, field: field, value: value)
+        }
+    }
+
+    /// The editor opens with the account's UNSAVED intent overlaid on the
+    /// server truth - AFTER the baseline snapshot so staged values read as
+    /// dirty edits, never as confirmed state.
+    private func restoreDraft() {
+        guard let owner = editorOwner else { return }
+        let draft = profileDrafts.draft(owner: owner.userId)
+        if let name = draft.name { self.name = name }
+        if let about = draft.about { self.about = about }
+        if let username = draft.username, username != handleState.value {
+            handleState.value = username
+            scheduleHandleCheck()
+        }
+        if draft.photo != nil, avatarPreview == nil {
+            notice = "A profile photo was chosen but not saved. Pick it again to retry."
+        }
+    }
+
+    /// Confirmed fields leave the draft; an unrelated still-unsaved field
+    /// survives. Only tickets owned by THIS editor can clear anything.
+    private func clearDraft(_ fields: Set<PulseProfileDraftJournal.Field>, owner: ProfileMutationGate.Owner) {
+        guard editorOwner == owner, currentOwner == owner else { return }
+        profileDrafts.clear(owner: owner.userId, fields: fields)
+    }
+
+    /// Explicit discard (the editor's Cancel) - the whole draft for THIS
+    /// account retires; another account's draft is never touched.
+    private func discardDraft() {
+        guard let owner = editorOwner ?? currentOwner else { return }
+        profileDrafts.clear(owner: owner.userId, fields: Set(PulseProfileDraftJournal.Field.allCases))
     }
     private func accepts(_ ticket: ProfileMutationGate.Ticket) -> Bool {
         !Task.isCancelled && mutationGate.accepts(ticket, current: currentOwner)
@@ -571,9 +633,13 @@ struct ProfileEditView: View {
                 path = try PulseAvatarImage.managedPath(receipt)
                 guard accepts(ticket) else { return }
                 guard !path.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+                // Section 13 item 8 - the upload identifier is staged BEFORE
+                // the confirming PATCH so a lost reply keeps the intent.
+                if !cover { stageDraft(.photo, value: path) }
             }
             guard accepts(ticket) else { return }
-            let user = try await api.updateProfile(userId: ticket.owner.userId, body: [cover ? "coverImage" : "avatar": path])
+            let receipt = try await api.updateProfileDurable(userId: ticket.owner.userId, body: [cover ? "coverImage" : "avatar": path])
+            let user = receipt.user
             guard accepts(ticket), let current = prefs.viewer else { return }
             guard user.id == ticket.owner.userId else {
                 throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account. Refresh before retrying.")
@@ -583,8 +649,10 @@ struct ProfileEditView: View {
             prefs.setViewer(PulseViewer(id: current.id, name: current.name, username: current.username,
                 color: current.color, avatar: cover ? current.avatar : user.avatar,
                 coverImage: cover ? user.coverImage : current.coverImage))
+            prefs.noteProfileRevision(receipt.revision)
             avatarPreview = nil
             notice = nil
+            clearDraft([.photo], owner: ticket.owner) // the media save is CONFIRMED
             PulseHaptics.success()
             session.toasts.show(cover ? "Cover photo updated" : "Profile photo updated")
         } catch {
@@ -611,11 +679,13 @@ struct ProfileEditView: View {
         let handle = handleState.value.trimmingCharacters(in: .whitespaces)
         if handleDirty { body["username"] = handle }
         do {
-            let user = try await api.updateProfile(userId: ticket.owner.userId, body: body)
+            let receipt = try await api.updateProfileDurable(userId: ticket.owner.userId, body: body)
+            let user = receipt.user
             guard accepts(ticket), let current = prefs.viewer else { return }
             guard user.id == ticket.owner.userId else {
                 throw PulseAPIClient.Failure(kind: .server, message: "Profile response did not match this account. Refresh before retrying.")
             }
+            prefs.noteProfileRevision(receipt.revision)
             prefs.setViewer(PulseViewer(id: current.id,
                 name: body["name"] == nil ? current.name : user.name,
                 username: body["username"] == nil ? current.username : user.username,
@@ -628,14 +698,24 @@ struct ProfileEditView: View {
             let confirmed = [user.name, user.about ?? "", user.statusEmoji ?? "", user.statusText ?? "", user.color ?? "emerald", user.username ?? ""]
             let keys = ["name", "about", "statusEmoji", "statusText", "color", "username"]
             for index in keys.indices where body[keys[index]] != nil { baselineForm[index] = confirmed[index] }
+            // Section 13 item 8 - exactly the CONFIRMED fields re-sync through
+            // stageDraft: a field whose value was brought back to the (now
+            // confirmed) baseline retires its draft row, while a NEWER edit
+            // typed while the request was in flight stays durably staged
+            // (onChange never fires for it - no change happened since).
             PulseHaptics.success()
             if formSnapshot == submitted {
-                adopt(user)
+                adopt(user) // canonical server values land in the form first
                 session.toasts.show("Profile updated")
                 dismiss()
             } else {
                 notice = "Submitted changes saved. Your newer edits are still here."
             }
+            // The re-sync runs AFTER adopt so a field compares against the
+            // canonical confirmed value, not the pre-save input echo.
+            if body["name"] != nil { stageDraft(.name, value: name) }
+            if body["about"] != nil { stageDraft(.about, value: about) }
+            if body["username"] != nil { stageDraft(.username, value: handleState.value) }
         } catch let failure as PulseAPIClient.Failure where failure.status == 409 {
             guard accepts(ticket) else { return }
             if handleState.value == submitted[5] { handleState.clashSuggestion = failure.suggestion }

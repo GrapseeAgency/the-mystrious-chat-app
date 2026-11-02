@@ -495,6 +495,31 @@ export type AppInstallRevision = $Result.DefaultSelection<Prisma.$AppInstallRevi
  *  * relying on the caller's memory of which way the toggle was headed.
  */
 export type AppConnectionOperation = $Result.DefaultSelection<Prisma.$AppConnectionOperationPayload>
+/**
+ * Model SettingsFieldStamp
+ * * Section 13 items 1/7 — per-field last-write-wins ledger for the prefs
+ *  * blob. Each accepted settings field is stamped with the intent time it
+ *  * carried and the writer that won, so a slower device's older write is
+ *  * resolved (superseded) instead of silently erasing the newer one, and
+ *  * every device can see WHO owns each field's current value.
+ */
+export type SettingsFieldStamp = $Result.DefaultSelection<Prisma.$SettingsFieldStampPayload>
+/**
+ * Model SettingsRevision
+ * * Section 13 item 7 — per-user monotonic settings revision. Every accepted
+ *  * settings patch bumps it in its own commit; GET and every write ACK carry
+ *  * it, so devices refresh on strictly-greater revisions instead of polling
+ *  * blobs for equality.
+ */
+export type SettingsRevision = $Result.DefaultSelection<Prisma.$SettingsRevisionPayload>
+/**
+ * Model SettingsOperation
+ * * Section 13 items 2/9 — durable replay receipt for settings and profile
+ *  * writes. A request that commits after the client timed out replays its
+ *  * STORED result under the same clientId; the same identity with different
+ *  * instructions is a 409, never a divergent second commit.
+ */
+export type SettingsOperation = $Result.DefaultSelection<Prisma.$SettingsOperationPayload>
 
 /**
  * ##  Prisma Client ʲˢ
@@ -1413,6 +1438,36 @@ export class PrismaClient<
     * ```
     */
   get appConnectionOperation(): Prisma.AppConnectionOperationDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.settingsFieldStamp`: Exposes CRUD operations for the **SettingsFieldStamp** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more SettingsFieldStamps
+    * const settingsFieldStamps = await prisma.settingsFieldStamp.findMany()
+    * ```
+    */
+  get settingsFieldStamp(): Prisma.SettingsFieldStampDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.settingsRevision`: Exposes CRUD operations for the **SettingsRevision** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more SettingsRevisions
+    * const settingsRevisions = await prisma.settingsRevision.findMany()
+    * ```
+    */
+  get settingsRevision(): Prisma.SettingsRevisionDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.settingsOperation`: Exposes CRUD operations for the **SettingsOperation** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more SettingsOperations
+    * const settingsOperations = await prisma.settingsOperation.findMany()
+    * ```
+    */
+  get settingsOperation(): Prisma.SettingsOperationDelegate<ExtArgs, ClientOptions>;
 }
 
 export namespace Prisma {
@@ -1933,7 +1988,10 @@ export namespace Prisma {
     RoomListRevision: 'RoomListRevision',
     MarketCreationOperation: 'MarketCreationOperation',
     AppInstallRevision: 'AppInstallRevision',
-    AppConnectionOperation: 'AppConnectionOperation'
+    AppConnectionOperation: 'AppConnectionOperation',
+    SettingsFieldStamp: 'SettingsFieldStamp',
+    SettingsRevision: 'SettingsRevision',
+    SettingsOperation: 'SettingsOperation'
   };
 
   export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1952,7 +2010,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "integrationOperation" | "integrationRevision" | "automationExecution" | "automationNotifyOutbox" | "botPromptLease" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "uploadOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt" | "livePushOutbox" | "livePushReceipt" | "folderCreationOperation" | "userListRevision" | "quickPhraseOperation" | "peerBlockIntent" | "reportOperation" | "eventCreationOperation" | "taskCreationOperation" | "kanbanCardOperation" | "reminderCreationOperation" | "redPacketCreationOperation" | "roomListRevision" | "marketCreationOperation" | "appInstallRevision" | "appConnectionOperation"
+      modelProps: "user" | "accountReport" | "userBlock" | "reminder" | "conversationStreak" | "callLog" | "userVerification" | "userWallet" | "walletLedger" | "hubTask" | "appInstall" | "marketListing" | "logEvent" | "quickPhrase" | "conversation" | "automation" | "webhook" | "integrationOperation" | "integrationRevision" | "automationExecution" | "automationNotifyOutbox" | "botPromptLease" | "whiteboardStroke" | "statusStory" | "storyView" | "conversationParticipant" | "message" | "poll" | "pollOption" | "pollVote" | "savedMessage" | "scheduledMessage" | "messageTranslation" | "linkPreview" | "reaction" | "topic" | "folder" | "folderConversation" | "tournament" | "tournamentPlayer" | "redPacket" | "redPacketGrab" | "gameMatch" | "kanbanCard" | "groupEvent" | "eventRsvp" | "uploadedFile" | "pushToken" | "messageSendOperation" | "whiteboardStrokeOperation" | "walletOperation" | "uploadOperation" | "conversationCreationOperation" | "scheduledCreationOperation" | "readIntentState" | "messageReadObservation" | "readLedgerMigration" | "pushReadStateCapability" | "savedMessageState" | "savedMessageOperation" | "composerOperation" | "threadDraftState" | "scheduledDeliveryNotice" | "scheduledPushReceipt" | "livePushOutbox" | "livePushReceipt" | "folderCreationOperation" | "userListRevision" | "quickPhraseOperation" | "peerBlockIntent" | "reportOperation" | "eventCreationOperation" | "taskCreationOperation" | "kanbanCardOperation" | "reminderCreationOperation" | "redPacketCreationOperation" | "roomListRevision" | "marketCreationOperation" | "appInstallRevision" | "appConnectionOperation" | "settingsFieldStamp" | "settingsRevision" | "settingsOperation"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -7876,6 +7934,228 @@ export namespace Prisma {
           }
         }
       }
+      SettingsFieldStamp: {
+        payload: Prisma.$SettingsFieldStampPayload<ExtArgs>
+        fields: Prisma.SettingsFieldStampFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.SettingsFieldStampFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.SettingsFieldStampFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>
+          }
+          findFirst: {
+            args: Prisma.SettingsFieldStampFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.SettingsFieldStampFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>
+          }
+          findMany: {
+            args: Prisma.SettingsFieldStampFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>[]
+          }
+          create: {
+            args: Prisma.SettingsFieldStampCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>
+          }
+          createMany: {
+            args: Prisma.SettingsFieldStampCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.SettingsFieldStampCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>[]
+          }
+          delete: {
+            args: Prisma.SettingsFieldStampDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>
+          }
+          update: {
+            args: Prisma.SettingsFieldStampUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>
+          }
+          deleteMany: {
+            args: Prisma.SettingsFieldStampDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.SettingsFieldStampUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.SettingsFieldStampUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>[]
+          }
+          upsert: {
+            args: Prisma.SettingsFieldStampUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsFieldStampPayload>
+          }
+          aggregate: {
+            args: Prisma.SettingsFieldStampAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateSettingsFieldStamp>
+          }
+          groupBy: {
+            args: Prisma.SettingsFieldStampGroupByArgs<ExtArgs>
+            result: $Utils.Optional<SettingsFieldStampGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.SettingsFieldStampCountArgs<ExtArgs>
+            result: $Utils.Optional<SettingsFieldStampCountAggregateOutputType> | number
+          }
+        }
+      }
+      SettingsRevision: {
+        payload: Prisma.$SettingsRevisionPayload<ExtArgs>
+        fields: Prisma.SettingsRevisionFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.SettingsRevisionFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.SettingsRevisionFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>
+          }
+          findFirst: {
+            args: Prisma.SettingsRevisionFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.SettingsRevisionFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>
+          }
+          findMany: {
+            args: Prisma.SettingsRevisionFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>[]
+          }
+          create: {
+            args: Prisma.SettingsRevisionCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>
+          }
+          createMany: {
+            args: Prisma.SettingsRevisionCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.SettingsRevisionCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>[]
+          }
+          delete: {
+            args: Prisma.SettingsRevisionDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>
+          }
+          update: {
+            args: Prisma.SettingsRevisionUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>
+          }
+          deleteMany: {
+            args: Prisma.SettingsRevisionDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.SettingsRevisionUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.SettingsRevisionUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>[]
+          }
+          upsert: {
+            args: Prisma.SettingsRevisionUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsRevisionPayload>
+          }
+          aggregate: {
+            args: Prisma.SettingsRevisionAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateSettingsRevision>
+          }
+          groupBy: {
+            args: Prisma.SettingsRevisionGroupByArgs<ExtArgs>
+            result: $Utils.Optional<SettingsRevisionGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.SettingsRevisionCountArgs<ExtArgs>
+            result: $Utils.Optional<SettingsRevisionCountAggregateOutputType> | number
+          }
+        }
+      }
+      SettingsOperation: {
+        payload: Prisma.$SettingsOperationPayload<ExtArgs>
+        fields: Prisma.SettingsOperationFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.SettingsOperationFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.SettingsOperationFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>
+          }
+          findFirst: {
+            args: Prisma.SettingsOperationFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.SettingsOperationFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>
+          }
+          findMany: {
+            args: Prisma.SettingsOperationFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>[]
+          }
+          create: {
+            args: Prisma.SettingsOperationCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>
+          }
+          createMany: {
+            args: Prisma.SettingsOperationCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.SettingsOperationCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>[]
+          }
+          delete: {
+            args: Prisma.SettingsOperationDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>
+          }
+          update: {
+            args: Prisma.SettingsOperationUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>
+          }
+          deleteMany: {
+            args: Prisma.SettingsOperationDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.SettingsOperationUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.SettingsOperationUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>[]
+          }
+          upsert: {
+            args: Prisma.SettingsOperationUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$SettingsOperationPayload>
+          }
+          aggregate: {
+            args: Prisma.SettingsOperationAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateSettingsOperation>
+          }
+          groupBy: {
+            args: Prisma.SettingsOperationGroupByArgs<ExtArgs>
+            result: $Utils.Optional<SettingsOperationGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.SettingsOperationCountArgs<ExtArgs>
+            result: $Utils.Optional<SettingsOperationCountAggregateOutputType> | number
+          }
+        }
+      }
     }
   } & {
     other: {
@@ -8052,6 +8332,9 @@ export namespace Prisma {
     marketCreationOperation?: MarketCreationOperationOmit
     appInstallRevision?: AppInstallRevisionOmit
     appConnectionOperation?: AppConnectionOperationOmit
+    settingsFieldStamp?: SettingsFieldStampOmit
+    settingsRevision?: SettingsRevisionOmit
+    settingsOperation?: SettingsOperationOmit
   }
 
   /* Types for Logging */
@@ -8862,11 +9145,13 @@ export namespace Prisma {
   }
 
   export type UserAvgAggregateOutputType = {
+    profileRev: number | null
     xp: number | null
     xpToday: number | null
   }
 
   export type UserSumAggregateOutputType = {
+    profileRev: number | null
     xp: number | null
     xpToday: number | null
   }
@@ -8883,6 +9168,7 @@ export namespace Prisma {
     statusText: string | null
     preferences: string | null
     storyViewReceipts: boolean | null
+    profileRev: number | null
     sessionTokenHash: string | null
     legacyTokenHashes: string | null
     serviceKey: string | null
@@ -8905,6 +9191,7 @@ export namespace Prisma {
     statusText: string | null
     preferences: string | null
     storyViewReceipts: boolean | null
+    profileRev: number | null
     sessionTokenHash: string | null
     legacyTokenHashes: string | null
     serviceKey: string | null
@@ -8927,6 +9214,7 @@ export namespace Prisma {
     statusText: number
     preferences: number
     storyViewReceipts: number
+    profileRev: number
     sessionTokenHash: number
     legacyTokenHashes: number
     serviceKey: number
@@ -8940,11 +9228,13 @@ export namespace Prisma {
 
 
   export type UserAvgAggregateInputType = {
+    profileRev?: true
     xp?: true
     xpToday?: true
   }
 
   export type UserSumAggregateInputType = {
+    profileRev?: true
     xp?: true
     xpToday?: true
   }
@@ -8961,6 +9251,7 @@ export namespace Prisma {
     statusText?: true
     preferences?: true
     storyViewReceipts?: true
+    profileRev?: true
     sessionTokenHash?: true
     legacyTokenHashes?: true
     serviceKey?: true
@@ -8983,6 +9274,7 @@ export namespace Prisma {
     statusText?: true
     preferences?: true
     storyViewReceipts?: true
+    profileRev?: true
     sessionTokenHash?: true
     legacyTokenHashes?: true
     serviceKey?: true
@@ -9005,6 +9297,7 @@ export namespace Prisma {
     statusText?: true
     preferences?: true
     storyViewReceipts?: true
+    profileRev?: true
     sessionTokenHash?: true
     legacyTokenHashes?: true
     serviceKey?: true
@@ -9114,6 +9407,7 @@ export namespace Prisma {
     statusText: string | null
     preferences: string | null
     storyViewReceipts: boolean
+    profileRev: number
     sessionTokenHash: string | null
     legacyTokenHashes: string | null
     serviceKey: string | null
@@ -9155,6 +9449,7 @@ export namespace Prisma {
     statusText?: boolean
     preferences?: boolean
     storyViewReceipts?: boolean
+    profileRev?: boolean
     sessionTokenHash?: boolean
     legacyTokenHashes?: boolean
     serviceKey?: boolean
@@ -9200,6 +9495,7 @@ export namespace Prisma {
     statusText?: boolean
     preferences?: boolean
     storyViewReceipts?: boolean
+    profileRev?: boolean
     sessionTokenHash?: boolean
     legacyTokenHashes?: boolean
     serviceKey?: boolean
@@ -9222,6 +9518,7 @@ export namespace Prisma {
     statusText?: boolean
     preferences?: boolean
     storyViewReceipts?: boolean
+    profileRev?: boolean
     sessionTokenHash?: boolean
     legacyTokenHashes?: boolean
     serviceKey?: boolean
@@ -9244,6 +9541,7 @@ export namespace Prisma {
     statusText?: boolean
     preferences?: boolean
     storyViewReceipts?: boolean
+    profileRev?: boolean
     sessionTokenHash?: boolean
     legacyTokenHashes?: boolean
     serviceKey?: boolean
@@ -9254,7 +9552,7 @@ export namespace Prisma {
     xpDay?: boolean
   }
 
-  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "coverImage" | "statusEmoji" | "statusText" | "preferences" | "storyViewReceipts" | "sessionTokenHash" | "legacyTokenHashes" | "serviceKey" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
+  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "coverImage" | "statusEmoji" | "statusText" | "preferences" | "storyViewReceipts" | "profileRev" | "sessionTokenHash" | "legacyTokenHashes" | "serviceKey" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
   export type UserInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     appInstalls?: boolean | User$appInstallsArgs<ExtArgs>
     wallet?: boolean | User$walletArgs<ExtArgs>
@@ -9321,6 +9619,7 @@ export namespace Prisma {
       statusText: string | null
       preferences: string | null
       storyViewReceipts: boolean
+      profileRev: number
       sessionTokenHash: string | null
       legacyTokenHashes: string | null
       serviceKey: string | null
@@ -9785,6 +10084,7 @@ export namespace Prisma {
     readonly statusText: FieldRef<"User", 'String'>
     readonly preferences: FieldRef<"User", 'String'>
     readonly storyViewReceipts: FieldRef<"User", 'Boolean'>
+    readonly profileRev: FieldRef<"User", 'Int'>
     readonly sessionTokenHash: FieldRef<"User", 'String'>
     readonly legacyTokenHashes: FieldRef<"User", 'String'>
     readonly serviceKey: FieldRef<"User", 'String'>
@@ -95313,6 +95613,3053 @@ export namespace Prisma {
 
 
   /**
+   * Model SettingsFieldStamp
+   */
+
+  export type AggregateSettingsFieldStamp = {
+    _count: SettingsFieldStampCountAggregateOutputType | null
+    _avg: SettingsFieldStampAvgAggregateOutputType | null
+    _sum: SettingsFieldStampSumAggregateOutputType | null
+    _min: SettingsFieldStampMinAggregateOutputType | null
+    _max: SettingsFieldStampMaxAggregateOutputType | null
+  }
+
+  export type SettingsFieldStampAvgAggregateOutputType = {
+    rev: number | null
+  }
+
+  export type SettingsFieldStampSumAggregateOutputType = {
+    rev: number | null
+  }
+
+  export type SettingsFieldStampMinAggregateOutputType = {
+    userId: string | null
+    field: string | null
+    rev: number | null
+    intentAt: Date | null
+    writer: string | null
+  }
+
+  export type SettingsFieldStampMaxAggregateOutputType = {
+    userId: string | null
+    field: string | null
+    rev: number | null
+    intentAt: Date | null
+    writer: string | null
+  }
+
+  export type SettingsFieldStampCountAggregateOutputType = {
+    userId: number
+    field: number
+    rev: number
+    intentAt: number
+    writer: number
+    _all: number
+  }
+
+
+  export type SettingsFieldStampAvgAggregateInputType = {
+    rev?: true
+  }
+
+  export type SettingsFieldStampSumAggregateInputType = {
+    rev?: true
+  }
+
+  export type SettingsFieldStampMinAggregateInputType = {
+    userId?: true
+    field?: true
+    rev?: true
+    intentAt?: true
+    writer?: true
+  }
+
+  export type SettingsFieldStampMaxAggregateInputType = {
+    userId?: true
+    field?: true
+    rev?: true
+    intentAt?: true
+    writer?: true
+  }
+
+  export type SettingsFieldStampCountAggregateInputType = {
+    userId?: true
+    field?: true
+    rev?: true
+    intentAt?: true
+    writer?: true
+    _all?: true
+  }
+
+  export type SettingsFieldStampAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SettingsFieldStamp to aggregate.
+     */
+    where?: SettingsFieldStampWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsFieldStamps to fetch.
+     */
+    orderBy?: SettingsFieldStampOrderByWithRelationInput | SettingsFieldStampOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: SettingsFieldStampWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsFieldStamps from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsFieldStamps.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned SettingsFieldStamps
+    **/
+    _count?: true | SettingsFieldStampCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: SettingsFieldStampAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: SettingsFieldStampSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: SettingsFieldStampMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: SettingsFieldStampMaxAggregateInputType
+  }
+
+  export type GetSettingsFieldStampAggregateType<T extends SettingsFieldStampAggregateArgs> = {
+        [P in keyof T & keyof AggregateSettingsFieldStamp]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateSettingsFieldStamp[P]>
+      : GetScalarType<T[P], AggregateSettingsFieldStamp[P]>
+  }
+
+
+
+
+  export type SettingsFieldStampGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: SettingsFieldStampWhereInput
+    orderBy?: SettingsFieldStampOrderByWithAggregationInput | SettingsFieldStampOrderByWithAggregationInput[]
+    by: SettingsFieldStampScalarFieldEnum[] | SettingsFieldStampScalarFieldEnum
+    having?: SettingsFieldStampScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: SettingsFieldStampCountAggregateInputType | true
+    _avg?: SettingsFieldStampAvgAggregateInputType
+    _sum?: SettingsFieldStampSumAggregateInputType
+    _min?: SettingsFieldStampMinAggregateInputType
+    _max?: SettingsFieldStampMaxAggregateInputType
+  }
+
+  export type SettingsFieldStampGroupByOutputType = {
+    userId: string
+    field: string
+    rev: number
+    intentAt: Date
+    writer: string
+    _count: SettingsFieldStampCountAggregateOutputType | null
+    _avg: SettingsFieldStampAvgAggregateOutputType | null
+    _sum: SettingsFieldStampSumAggregateOutputType | null
+    _min: SettingsFieldStampMinAggregateOutputType | null
+    _max: SettingsFieldStampMaxAggregateOutputType | null
+  }
+
+  type GetSettingsFieldStampGroupByPayload<T extends SettingsFieldStampGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<SettingsFieldStampGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof SettingsFieldStampGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], SettingsFieldStampGroupByOutputType[P]>
+            : GetScalarType<T[P], SettingsFieldStampGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type SettingsFieldStampSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    field?: boolean
+    rev?: boolean
+    intentAt?: boolean
+    writer?: boolean
+  }, ExtArgs["result"]["settingsFieldStamp"]>
+
+  export type SettingsFieldStampSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    field?: boolean
+    rev?: boolean
+    intentAt?: boolean
+    writer?: boolean
+  }, ExtArgs["result"]["settingsFieldStamp"]>
+
+  export type SettingsFieldStampSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    field?: boolean
+    rev?: boolean
+    intentAt?: boolean
+    writer?: boolean
+  }, ExtArgs["result"]["settingsFieldStamp"]>
+
+  export type SettingsFieldStampSelectScalar = {
+    userId?: boolean
+    field?: boolean
+    rev?: boolean
+    intentAt?: boolean
+    writer?: boolean
+  }
+
+  export type SettingsFieldStampOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "field" | "rev" | "intentAt" | "writer", ExtArgs["result"]["settingsFieldStamp"]>
+
+  export type $SettingsFieldStampPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "SettingsFieldStamp"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      field: string
+      rev: number
+      intentAt: Date
+      writer: string
+    }, ExtArgs["result"]["settingsFieldStamp"]>
+    composites: {}
+  }
+
+  type SettingsFieldStampGetPayload<S extends boolean | null | undefined | SettingsFieldStampDefaultArgs> = $Result.GetResult<Prisma.$SettingsFieldStampPayload, S>
+
+  type SettingsFieldStampCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<SettingsFieldStampFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: SettingsFieldStampCountAggregateInputType | true
+    }
+
+  export interface SettingsFieldStampDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['SettingsFieldStamp'], meta: { name: 'SettingsFieldStamp' } }
+    /**
+     * Find zero or one SettingsFieldStamp that matches the filter.
+     * @param {SettingsFieldStampFindUniqueArgs} args - Arguments to find a SettingsFieldStamp
+     * @example
+     * // Get one SettingsFieldStamp
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends SettingsFieldStampFindUniqueArgs>(args: SelectSubset<T, SettingsFieldStampFindUniqueArgs<ExtArgs>>): Prisma__SettingsFieldStampClient<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one SettingsFieldStamp that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {SettingsFieldStampFindUniqueOrThrowArgs} args - Arguments to find a SettingsFieldStamp
+     * @example
+     * // Get one SettingsFieldStamp
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends SettingsFieldStampFindUniqueOrThrowArgs>(args: SelectSubset<T, SettingsFieldStampFindUniqueOrThrowArgs<ExtArgs>>): Prisma__SettingsFieldStampClient<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SettingsFieldStamp that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsFieldStampFindFirstArgs} args - Arguments to find a SettingsFieldStamp
+     * @example
+     * // Get one SettingsFieldStamp
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends SettingsFieldStampFindFirstArgs>(args?: SelectSubset<T, SettingsFieldStampFindFirstArgs<ExtArgs>>): Prisma__SettingsFieldStampClient<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SettingsFieldStamp that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsFieldStampFindFirstOrThrowArgs} args - Arguments to find a SettingsFieldStamp
+     * @example
+     * // Get one SettingsFieldStamp
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends SettingsFieldStampFindFirstOrThrowArgs>(args?: SelectSubset<T, SettingsFieldStampFindFirstOrThrowArgs<ExtArgs>>): Prisma__SettingsFieldStampClient<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more SettingsFieldStamps that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsFieldStampFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all SettingsFieldStamps
+     * const settingsFieldStamps = await prisma.settingsFieldStamp.findMany()
+     * 
+     * // Get first 10 SettingsFieldStamps
+     * const settingsFieldStamps = await prisma.settingsFieldStamp.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const settingsFieldStampWithUserIdOnly = await prisma.settingsFieldStamp.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends SettingsFieldStampFindManyArgs>(args?: SelectSubset<T, SettingsFieldStampFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a SettingsFieldStamp.
+     * @param {SettingsFieldStampCreateArgs} args - Arguments to create a SettingsFieldStamp.
+     * @example
+     * // Create one SettingsFieldStamp
+     * const SettingsFieldStamp = await prisma.settingsFieldStamp.create({
+     *   data: {
+     *     // ... data to create a SettingsFieldStamp
+     *   }
+     * })
+     * 
+     */
+    create<T extends SettingsFieldStampCreateArgs>(args: SelectSubset<T, SettingsFieldStampCreateArgs<ExtArgs>>): Prisma__SettingsFieldStampClient<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many SettingsFieldStamps.
+     * @param {SettingsFieldStampCreateManyArgs} args - Arguments to create many SettingsFieldStamps.
+     * @example
+     * // Create many SettingsFieldStamps
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends SettingsFieldStampCreateManyArgs>(args?: SelectSubset<T, SettingsFieldStampCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many SettingsFieldStamps and returns the data saved in the database.
+     * @param {SettingsFieldStampCreateManyAndReturnArgs} args - Arguments to create many SettingsFieldStamps.
+     * @example
+     * // Create many SettingsFieldStamps
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many SettingsFieldStamps and only return the `userId`
+     * const settingsFieldStampWithUserIdOnly = await prisma.settingsFieldStamp.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends SettingsFieldStampCreateManyAndReturnArgs>(args?: SelectSubset<T, SettingsFieldStampCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a SettingsFieldStamp.
+     * @param {SettingsFieldStampDeleteArgs} args - Arguments to delete one SettingsFieldStamp.
+     * @example
+     * // Delete one SettingsFieldStamp
+     * const SettingsFieldStamp = await prisma.settingsFieldStamp.delete({
+     *   where: {
+     *     // ... filter to delete one SettingsFieldStamp
+     *   }
+     * })
+     * 
+     */
+    delete<T extends SettingsFieldStampDeleteArgs>(args: SelectSubset<T, SettingsFieldStampDeleteArgs<ExtArgs>>): Prisma__SettingsFieldStampClient<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one SettingsFieldStamp.
+     * @param {SettingsFieldStampUpdateArgs} args - Arguments to update one SettingsFieldStamp.
+     * @example
+     * // Update one SettingsFieldStamp
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends SettingsFieldStampUpdateArgs>(args: SelectSubset<T, SettingsFieldStampUpdateArgs<ExtArgs>>): Prisma__SettingsFieldStampClient<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more SettingsFieldStamps.
+     * @param {SettingsFieldStampDeleteManyArgs} args - Arguments to filter SettingsFieldStamps to delete.
+     * @example
+     * // Delete a few SettingsFieldStamps
+     * const { count } = await prisma.settingsFieldStamp.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends SettingsFieldStampDeleteManyArgs>(args?: SelectSubset<T, SettingsFieldStampDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SettingsFieldStamps.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsFieldStampUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many SettingsFieldStamps
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends SettingsFieldStampUpdateManyArgs>(args: SelectSubset<T, SettingsFieldStampUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SettingsFieldStamps and returns the data updated in the database.
+     * @param {SettingsFieldStampUpdateManyAndReturnArgs} args - Arguments to update many SettingsFieldStamps.
+     * @example
+     * // Update many SettingsFieldStamps
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more SettingsFieldStamps and only return the `userId`
+     * const settingsFieldStampWithUserIdOnly = await prisma.settingsFieldStamp.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends SettingsFieldStampUpdateManyAndReturnArgs>(args: SelectSubset<T, SettingsFieldStampUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one SettingsFieldStamp.
+     * @param {SettingsFieldStampUpsertArgs} args - Arguments to update or create a SettingsFieldStamp.
+     * @example
+     * // Update or create a SettingsFieldStamp
+     * const settingsFieldStamp = await prisma.settingsFieldStamp.upsert({
+     *   create: {
+     *     // ... data to create a SettingsFieldStamp
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the SettingsFieldStamp we want to update
+     *   }
+     * })
+     */
+    upsert<T extends SettingsFieldStampUpsertArgs>(args: SelectSubset<T, SettingsFieldStampUpsertArgs<ExtArgs>>): Prisma__SettingsFieldStampClient<$Result.GetResult<Prisma.$SettingsFieldStampPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of SettingsFieldStamps.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsFieldStampCountArgs} args - Arguments to filter SettingsFieldStamps to count.
+     * @example
+     * // Count the number of SettingsFieldStamps
+     * const count = await prisma.settingsFieldStamp.count({
+     *   where: {
+     *     // ... the filter for the SettingsFieldStamps we want to count
+     *   }
+     * })
+    **/
+    count<T extends SettingsFieldStampCountArgs>(
+      args?: Subset<T, SettingsFieldStampCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], SettingsFieldStampCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a SettingsFieldStamp.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsFieldStampAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends SettingsFieldStampAggregateArgs>(args: Subset<T, SettingsFieldStampAggregateArgs>): Prisma.PrismaPromise<GetSettingsFieldStampAggregateType<T>>
+
+    /**
+     * Group by SettingsFieldStamp.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsFieldStampGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends SettingsFieldStampGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: SettingsFieldStampGroupByArgs['orderBy'] }
+        : { orderBy?: SettingsFieldStampGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, SettingsFieldStampGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetSettingsFieldStampGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the SettingsFieldStamp model
+   */
+  readonly fields: SettingsFieldStampFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for SettingsFieldStamp.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__SettingsFieldStampClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the SettingsFieldStamp model
+   */
+  interface SettingsFieldStampFieldRefs {
+    readonly userId: FieldRef<"SettingsFieldStamp", 'String'>
+    readonly field: FieldRef<"SettingsFieldStamp", 'String'>
+    readonly rev: FieldRef<"SettingsFieldStamp", 'Int'>
+    readonly intentAt: FieldRef<"SettingsFieldStamp", 'DateTime'>
+    readonly writer: FieldRef<"SettingsFieldStamp", 'String'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * SettingsFieldStamp findUnique
+   */
+  export type SettingsFieldStampFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsFieldStamp to fetch.
+     */
+    where: SettingsFieldStampWhereUniqueInput
+  }
+
+  /**
+   * SettingsFieldStamp findUniqueOrThrow
+   */
+  export type SettingsFieldStampFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsFieldStamp to fetch.
+     */
+    where: SettingsFieldStampWhereUniqueInput
+  }
+
+  /**
+   * SettingsFieldStamp findFirst
+   */
+  export type SettingsFieldStampFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsFieldStamp to fetch.
+     */
+    where?: SettingsFieldStampWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsFieldStamps to fetch.
+     */
+    orderBy?: SettingsFieldStampOrderByWithRelationInput | SettingsFieldStampOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for SettingsFieldStamps.
+     */
+    cursor?: SettingsFieldStampWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsFieldStamps from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsFieldStamps.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of SettingsFieldStamps.
+     */
+    distinct?: SettingsFieldStampScalarFieldEnum | SettingsFieldStampScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsFieldStamp findFirstOrThrow
+   */
+  export type SettingsFieldStampFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsFieldStamp to fetch.
+     */
+    where?: SettingsFieldStampWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsFieldStamps to fetch.
+     */
+    orderBy?: SettingsFieldStampOrderByWithRelationInput | SettingsFieldStampOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for SettingsFieldStamps.
+     */
+    cursor?: SettingsFieldStampWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsFieldStamps from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsFieldStamps.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of SettingsFieldStamps.
+     */
+    distinct?: SettingsFieldStampScalarFieldEnum | SettingsFieldStampScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsFieldStamp findMany
+   */
+  export type SettingsFieldStampFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsFieldStamps to fetch.
+     */
+    where?: SettingsFieldStampWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsFieldStamps to fetch.
+     */
+    orderBy?: SettingsFieldStampOrderByWithRelationInput | SettingsFieldStampOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing SettingsFieldStamps.
+     */
+    cursor?: SettingsFieldStampWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsFieldStamps from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsFieldStamps.
+     */
+    skip?: number
+    distinct?: SettingsFieldStampScalarFieldEnum | SettingsFieldStampScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsFieldStamp create
+   */
+  export type SettingsFieldStampCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * The data needed to create a SettingsFieldStamp.
+     */
+    data: XOR<SettingsFieldStampCreateInput, SettingsFieldStampUncheckedCreateInput>
+  }
+
+  /**
+   * SettingsFieldStamp createMany
+   */
+  export type SettingsFieldStampCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many SettingsFieldStamps.
+     */
+    data: SettingsFieldStampCreateManyInput | SettingsFieldStampCreateManyInput[]
+  }
+
+  /**
+   * SettingsFieldStamp createManyAndReturn
+   */
+  export type SettingsFieldStampCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * The data used to create many SettingsFieldStamps.
+     */
+    data: SettingsFieldStampCreateManyInput | SettingsFieldStampCreateManyInput[]
+  }
+
+  /**
+   * SettingsFieldStamp update
+   */
+  export type SettingsFieldStampUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * The data needed to update a SettingsFieldStamp.
+     */
+    data: XOR<SettingsFieldStampUpdateInput, SettingsFieldStampUncheckedUpdateInput>
+    /**
+     * Choose, which SettingsFieldStamp to update.
+     */
+    where: SettingsFieldStampWhereUniqueInput
+  }
+
+  /**
+   * SettingsFieldStamp updateMany
+   */
+  export type SettingsFieldStampUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update SettingsFieldStamps.
+     */
+    data: XOR<SettingsFieldStampUpdateManyMutationInput, SettingsFieldStampUncheckedUpdateManyInput>
+    /**
+     * Filter which SettingsFieldStamps to update
+     */
+    where?: SettingsFieldStampWhereInput
+    /**
+     * Limit how many SettingsFieldStamps to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsFieldStamp updateManyAndReturn
+   */
+  export type SettingsFieldStampUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * The data used to update SettingsFieldStamps.
+     */
+    data: XOR<SettingsFieldStampUpdateManyMutationInput, SettingsFieldStampUncheckedUpdateManyInput>
+    /**
+     * Filter which SettingsFieldStamps to update
+     */
+    where?: SettingsFieldStampWhereInput
+    /**
+     * Limit how many SettingsFieldStamps to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsFieldStamp upsert
+   */
+  export type SettingsFieldStampUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * The filter to search for the SettingsFieldStamp to update in case it exists.
+     */
+    where: SettingsFieldStampWhereUniqueInput
+    /**
+     * In case the SettingsFieldStamp found by the `where` argument doesn't exist, create a new SettingsFieldStamp with this data.
+     */
+    create: XOR<SettingsFieldStampCreateInput, SettingsFieldStampUncheckedCreateInput>
+    /**
+     * In case the SettingsFieldStamp was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<SettingsFieldStampUpdateInput, SettingsFieldStampUncheckedUpdateInput>
+  }
+
+  /**
+   * SettingsFieldStamp delete
+   */
+  export type SettingsFieldStampDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+    /**
+     * Filter which SettingsFieldStamp to delete.
+     */
+    where: SettingsFieldStampWhereUniqueInput
+  }
+
+  /**
+   * SettingsFieldStamp deleteMany
+   */
+  export type SettingsFieldStampDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SettingsFieldStamps to delete
+     */
+    where?: SettingsFieldStampWhereInput
+    /**
+     * Limit how many SettingsFieldStamps to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsFieldStamp without action
+   */
+  export type SettingsFieldStampDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsFieldStamp
+     */
+    select?: SettingsFieldStampSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsFieldStamp
+     */
+    omit?: SettingsFieldStampOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model SettingsRevision
+   */
+
+  export type AggregateSettingsRevision = {
+    _count: SettingsRevisionCountAggregateOutputType | null
+    _avg: SettingsRevisionAvgAggregateOutputType | null
+    _sum: SettingsRevisionSumAggregateOutputType | null
+    _min: SettingsRevisionMinAggregateOutputType | null
+    _max: SettingsRevisionMaxAggregateOutputType | null
+  }
+
+  export type SettingsRevisionAvgAggregateOutputType = {
+    rev: number | null
+  }
+
+  export type SettingsRevisionSumAggregateOutputType = {
+    rev: number | null
+  }
+
+  export type SettingsRevisionMinAggregateOutputType = {
+    userId: string | null
+    rev: number | null
+    updatedAt: Date | null
+  }
+
+  export type SettingsRevisionMaxAggregateOutputType = {
+    userId: string | null
+    rev: number | null
+    updatedAt: Date | null
+  }
+
+  export type SettingsRevisionCountAggregateOutputType = {
+    userId: number
+    rev: number
+    updatedAt: number
+    _all: number
+  }
+
+
+  export type SettingsRevisionAvgAggregateInputType = {
+    rev?: true
+  }
+
+  export type SettingsRevisionSumAggregateInputType = {
+    rev?: true
+  }
+
+  export type SettingsRevisionMinAggregateInputType = {
+    userId?: true
+    rev?: true
+    updatedAt?: true
+  }
+
+  export type SettingsRevisionMaxAggregateInputType = {
+    userId?: true
+    rev?: true
+    updatedAt?: true
+  }
+
+  export type SettingsRevisionCountAggregateInputType = {
+    userId?: true
+    rev?: true
+    updatedAt?: true
+    _all?: true
+  }
+
+  export type SettingsRevisionAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SettingsRevision to aggregate.
+     */
+    where?: SettingsRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsRevisions to fetch.
+     */
+    orderBy?: SettingsRevisionOrderByWithRelationInput | SettingsRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: SettingsRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned SettingsRevisions
+    **/
+    _count?: true | SettingsRevisionCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to average
+    **/
+    _avg?: SettingsRevisionAvgAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to sum
+    **/
+    _sum?: SettingsRevisionSumAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: SettingsRevisionMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: SettingsRevisionMaxAggregateInputType
+  }
+
+  export type GetSettingsRevisionAggregateType<T extends SettingsRevisionAggregateArgs> = {
+        [P in keyof T & keyof AggregateSettingsRevision]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateSettingsRevision[P]>
+      : GetScalarType<T[P], AggregateSettingsRevision[P]>
+  }
+
+
+
+
+  export type SettingsRevisionGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: SettingsRevisionWhereInput
+    orderBy?: SettingsRevisionOrderByWithAggregationInput | SettingsRevisionOrderByWithAggregationInput[]
+    by: SettingsRevisionScalarFieldEnum[] | SettingsRevisionScalarFieldEnum
+    having?: SettingsRevisionScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: SettingsRevisionCountAggregateInputType | true
+    _avg?: SettingsRevisionAvgAggregateInputType
+    _sum?: SettingsRevisionSumAggregateInputType
+    _min?: SettingsRevisionMinAggregateInputType
+    _max?: SettingsRevisionMaxAggregateInputType
+  }
+
+  export type SettingsRevisionGroupByOutputType = {
+    userId: string
+    rev: number
+    updatedAt: Date
+    _count: SettingsRevisionCountAggregateOutputType | null
+    _avg: SettingsRevisionAvgAggregateOutputType | null
+    _sum: SettingsRevisionSumAggregateOutputType | null
+    _min: SettingsRevisionMinAggregateOutputType | null
+    _max: SettingsRevisionMaxAggregateOutputType | null
+  }
+
+  type GetSettingsRevisionGroupByPayload<T extends SettingsRevisionGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<SettingsRevisionGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof SettingsRevisionGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], SettingsRevisionGroupByOutputType[P]>
+            : GetScalarType<T[P], SettingsRevisionGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type SettingsRevisionSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    rev?: boolean
+    updatedAt?: boolean
+  }, ExtArgs["result"]["settingsRevision"]>
+
+  export type SettingsRevisionSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    rev?: boolean
+    updatedAt?: boolean
+  }, ExtArgs["result"]["settingsRevision"]>
+
+  export type SettingsRevisionSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    userId?: boolean
+    rev?: boolean
+    updatedAt?: boolean
+  }, ExtArgs["result"]["settingsRevision"]>
+
+  export type SettingsRevisionSelectScalar = {
+    userId?: boolean
+    rev?: boolean
+    updatedAt?: boolean
+  }
+
+  export type SettingsRevisionOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"userId" | "rev" | "updatedAt", ExtArgs["result"]["settingsRevision"]>
+
+  export type $SettingsRevisionPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "SettingsRevision"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      userId: string
+      rev: number
+      updatedAt: Date
+    }, ExtArgs["result"]["settingsRevision"]>
+    composites: {}
+  }
+
+  type SettingsRevisionGetPayload<S extends boolean | null | undefined | SettingsRevisionDefaultArgs> = $Result.GetResult<Prisma.$SettingsRevisionPayload, S>
+
+  type SettingsRevisionCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<SettingsRevisionFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: SettingsRevisionCountAggregateInputType | true
+    }
+
+  export interface SettingsRevisionDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['SettingsRevision'], meta: { name: 'SettingsRevision' } }
+    /**
+     * Find zero or one SettingsRevision that matches the filter.
+     * @param {SettingsRevisionFindUniqueArgs} args - Arguments to find a SettingsRevision
+     * @example
+     * // Get one SettingsRevision
+     * const settingsRevision = await prisma.settingsRevision.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends SettingsRevisionFindUniqueArgs>(args: SelectSubset<T, SettingsRevisionFindUniqueArgs<ExtArgs>>): Prisma__SettingsRevisionClient<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one SettingsRevision that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {SettingsRevisionFindUniqueOrThrowArgs} args - Arguments to find a SettingsRevision
+     * @example
+     * // Get one SettingsRevision
+     * const settingsRevision = await prisma.settingsRevision.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends SettingsRevisionFindUniqueOrThrowArgs>(args: SelectSubset<T, SettingsRevisionFindUniqueOrThrowArgs<ExtArgs>>): Prisma__SettingsRevisionClient<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SettingsRevision that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsRevisionFindFirstArgs} args - Arguments to find a SettingsRevision
+     * @example
+     * // Get one SettingsRevision
+     * const settingsRevision = await prisma.settingsRevision.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends SettingsRevisionFindFirstArgs>(args?: SelectSubset<T, SettingsRevisionFindFirstArgs<ExtArgs>>): Prisma__SettingsRevisionClient<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SettingsRevision that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsRevisionFindFirstOrThrowArgs} args - Arguments to find a SettingsRevision
+     * @example
+     * // Get one SettingsRevision
+     * const settingsRevision = await prisma.settingsRevision.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends SettingsRevisionFindFirstOrThrowArgs>(args?: SelectSubset<T, SettingsRevisionFindFirstOrThrowArgs<ExtArgs>>): Prisma__SettingsRevisionClient<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more SettingsRevisions that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsRevisionFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all SettingsRevisions
+     * const settingsRevisions = await prisma.settingsRevision.findMany()
+     * 
+     * // Get first 10 SettingsRevisions
+     * const settingsRevisions = await prisma.settingsRevision.findMany({ take: 10 })
+     * 
+     * // Only select the `userId`
+     * const settingsRevisionWithUserIdOnly = await prisma.settingsRevision.findMany({ select: { userId: true } })
+     * 
+     */
+    findMany<T extends SettingsRevisionFindManyArgs>(args?: SelectSubset<T, SettingsRevisionFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a SettingsRevision.
+     * @param {SettingsRevisionCreateArgs} args - Arguments to create a SettingsRevision.
+     * @example
+     * // Create one SettingsRevision
+     * const SettingsRevision = await prisma.settingsRevision.create({
+     *   data: {
+     *     // ... data to create a SettingsRevision
+     *   }
+     * })
+     * 
+     */
+    create<T extends SettingsRevisionCreateArgs>(args: SelectSubset<T, SettingsRevisionCreateArgs<ExtArgs>>): Prisma__SettingsRevisionClient<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many SettingsRevisions.
+     * @param {SettingsRevisionCreateManyArgs} args - Arguments to create many SettingsRevisions.
+     * @example
+     * // Create many SettingsRevisions
+     * const settingsRevision = await prisma.settingsRevision.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends SettingsRevisionCreateManyArgs>(args?: SelectSubset<T, SettingsRevisionCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many SettingsRevisions and returns the data saved in the database.
+     * @param {SettingsRevisionCreateManyAndReturnArgs} args - Arguments to create many SettingsRevisions.
+     * @example
+     * // Create many SettingsRevisions
+     * const settingsRevision = await prisma.settingsRevision.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many SettingsRevisions and only return the `userId`
+     * const settingsRevisionWithUserIdOnly = await prisma.settingsRevision.createManyAndReturn({
+     *   select: { userId: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends SettingsRevisionCreateManyAndReturnArgs>(args?: SelectSubset<T, SettingsRevisionCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a SettingsRevision.
+     * @param {SettingsRevisionDeleteArgs} args - Arguments to delete one SettingsRevision.
+     * @example
+     * // Delete one SettingsRevision
+     * const SettingsRevision = await prisma.settingsRevision.delete({
+     *   where: {
+     *     // ... filter to delete one SettingsRevision
+     *   }
+     * })
+     * 
+     */
+    delete<T extends SettingsRevisionDeleteArgs>(args: SelectSubset<T, SettingsRevisionDeleteArgs<ExtArgs>>): Prisma__SettingsRevisionClient<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one SettingsRevision.
+     * @param {SettingsRevisionUpdateArgs} args - Arguments to update one SettingsRevision.
+     * @example
+     * // Update one SettingsRevision
+     * const settingsRevision = await prisma.settingsRevision.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends SettingsRevisionUpdateArgs>(args: SelectSubset<T, SettingsRevisionUpdateArgs<ExtArgs>>): Prisma__SettingsRevisionClient<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more SettingsRevisions.
+     * @param {SettingsRevisionDeleteManyArgs} args - Arguments to filter SettingsRevisions to delete.
+     * @example
+     * // Delete a few SettingsRevisions
+     * const { count } = await prisma.settingsRevision.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends SettingsRevisionDeleteManyArgs>(args?: SelectSubset<T, SettingsRevisionDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SettingsRevisions.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsRevisionUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many SettingsRevisions
+     * const settingsRevision = await prisma.settingsRevision.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends SettingsRevisionUpdateManyArgs>(args: SelectSubset<T, SettingsRevisionUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SettingsRevisions and returns the data updated in the database.
+     * @param {SettingsRevisionUpdateManyAndReturnArgs} args - Arguments to update many SettingsRevisions.
+     * @example
+     * // Update many SettingsRevisions
+     * const settingsRevision = await prisma.settingsRevision.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more SettingsRevisions and only return the `userId`
+     * const settingsRevisionWithUserIdOnly = await prisma.settingsRevision.updateManyAndReturn({
+     *   select: { userId: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends SettingsRevisionUpdateManyAndReturnArgs>(args: SelectSubset<T, SettingsRevisionUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one SettingsRevision.
+     * @param {SettingsRevisionUpsertArgs} args - Arguments to update or create a SettingsRevision.
+     * @example
+     * // Update or create a SettingsRevision
+     * const settingsRevision = await prisma.settingsRevision.upsert({
+     *   create: {
+     *     // ... data to create a SettingsRevision
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the SettingsRevision we want to update
+     *   }
+     * })
+     */
+    upsert<T extends SettingsRevisionUpsertArgs>(args: SelectSubset<T, SettingsRevisionUpsertArgs<ExtArgs>>): Prisma__SettingsRevisionClient<$Result.GetResult<Prisma.$SettingsRevisionPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of SettingsRevisions.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsRevisionCountArgs} args - Arguments to filter SettingsRevisions to count.
+     * @example
+     * // Count the number of SettingsRevisions
+     * const count = await prisma.settingsRevision.count({
+     *   where: {
+     *     // ... the filter for the SettingsRevisions we want to count
+     *   }
+     * })
+    **/
+    count<T extends SettingsRevisionCountArgs>(
+      args?: Subset<T, SettingsRevisionCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], SettingsRevisionCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a SettingsRevision.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsRevisionAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends SettingsRevisionAggregateArgs>(args: Subset<T, SettingsRevisionAggregateArgs>): Prisma.PrismaPromise<GetSettingsRevisionAggregateType<T>>
+
+    /**
+     * Group by SettingsRevision.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsRevisionGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends SettingsRevisionGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: SettingsRevisionGroupByArgs['orderBy'] }
+        : { orderBy?: SettingsRevisionGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, SettingsRevisionGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetSettingsRevisionGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the SettingsRevision model
+   */
+  readonly fields: SettingsRevisionFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for SettingsRevision.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__SettingsRevisionClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the SettingsRevision model
+   */
+  interface SettingsRevisionFieldRefs {
+    readonly userId: FieldRef<"SettingsRevision", 'String'>
+    readonly rev: FieldRef<"SettingsRevision", 'Int'>
+    readonly updatedAt: FieldRef<"SettingsRevision", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * SettingsRevision findUnique
+   */
+  export type SettingsRevisionFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsRevision to fetch.
+     */
+    where: SettingsRevisionWhereUniqueInput
+  }
+
+  /**
+   * SettingsRevision findUniqueOrThrow
+   */
+  export type SettingsRevisionFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsRevision to fetch.
+     */
+    where: SettingsRevisionWhereUniqueInput
+  }
+
+  /**
+   * SettingsRevision findFirst
+   */
+  export type SettingsRevisionFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsRevision to fetch.
+     */
+    where?: SettingsRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsRevisions to fetch.
+     */
+    orderBy?: SettingsRevisionOrderByWithRelationInput | SettingsRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for SettingsRevisions.
+     */
+    cursor?: SettingsRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of SettingsRevisions.
+     */
+    distinct?: SettingsRevisionScalarFieldEnum | SettingsRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsRevision findFirstOrThrow
+   */
+  export type SettingsRevisionFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsRevision to fetch.
+     */
+    where?: SettingsRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsRevisions to fetch.
+     */
+    orderBy?: SettingsRevisionOrderByWithRelationInput | SettingsRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for SettingsRevisions.
+     */
+    cursor?: SettingsRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsRevisions.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of SettingsRevisions.
+     */
+    distinct?: SettingsRevisionScalarFieldEnum | SettingsRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsRevision findMany
+   */
+  export type SettingsRevisionFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsRevisions to fetch.
+     */
+    where?: SettingsRevisionWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsRevisions to fetch.
+     */
+    orderBy?: SettingsRevisionOrderByWithRelationInput | SettingsRevisionOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing SettingsRevisions.
+     */
+    cursor?: SettingsRevisionWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsRevisions from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsRevisions.
+     */
+    skip?: number
+    distinct?: SettingsRevisionScalarFieldEnum | SettingsRevisionScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsRevision create
+   */
+  export type SettingsRevisionCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * The data needed to create a SettingsRevision.
+     */
+    data: XOR<SettingsRevisionCreateInput, SettingsRevisionUncheckedCreateInput>
+  }
+
+  /**
+   * SettingsRevision createMany
+   */
+  export type SettingsRevisionCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many SettingsRevisions.
+     */
+    data: SettingsRevisionCreateManyInput | SettingsRevisionCreateManyInput[]
+  }
+
+  /**
+   * SettingsRevision createManyAndReturn
+   */
+  export type SettingsRevisionCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * The data used to create many SettingsRevisions.
+     */
+    data: SettingsRevisionCreateManyInput | SettingsRevisionCreateManyInput[]
+  }
+
+  /**
+   * SettingsRevision update
+   */
+  export type SettingsRevisionUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * The data needed to update a SettingsRevision.
+     */
+    data: XOR<SettingsRevisionUpdateInput, SettingsRevisionUncheckedUpdateInput>
+    /**
+     * Choose, which SettingsRevision to update.
+     */
+    where: SettingsRevisionWhereUniqueInput
+  }
+
+  /**
+   * SettingsRevision updateMany
+   */
+  export type SettingsRevisionUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update SettingsRevisions.
+     */
+    data: XOR<SettingsRevisionUpdateManyMutationInput, SettingsRevisionUncheckedUpdateManyInput>
+    /**
+     * Filter which SettingsRevisions to update
+     */
+    where?: SettingsRevisionWhereInput
+    /**
+     * Limit how many SettingsRevisions to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsRevision updateManyAndReturn
+   */
+  export type SettingsRevisionUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * The data used to update SettingsRevisions.
+     */
+    data: XOR<SettingsRevisionUpdateManyMutationInput, SettingsRevisionUncheckedUpdateManyInput>
+    /**
+     * Filter which SettingsRevisions to update
+     */
+    where?: SettingsRevisionWhereInput
+    /**
+     * Limit how many SettingsRevisions to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsRevision upsert
+   */
+  export type SettingsRevisionUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * The filter to search for the SettingsRevision to update in case it exists.
+     */
+    where: SettingsRevisionWhereUniqueInput
+    /**
+     * In case the SettingsRevision found by the `where` argument doesn't exist, create a new SettingsRevision with this data.
+     */
+    create: XOR<SettingsRevisionCreateInput, SettingsRevisionUncheckedCreateInput>
+    /**
+     * In case the SettingsRevision was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<SettingsRevisionUpdateInput, SettingsRevisionUncheckedUpdateInput>
+  }
+
+  /**
+   * SettingsRevision delete
+   */
+  export type SettingsRevisionDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+    /**
+     * Filter which SettingsRevision to delete.
+     */
+    where: SettingsRevisionWhereUniqueInput
+  }
+
+  /**
+   * SettingsRevision deleteMany
+   */
+  export type SettingsRevisionDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SettingsRevisions to delete
+     */
+    where?: SettingsRevisionWhereInput
+    /**
+     * Limit how many SettingsRevisions to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsRevision without action
+   */
+  export type SettingsRevisionDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsRevision
+     */
+    select?: SettingsRevisionSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsRevision
+     */
+    omit?: SettingsRevisionOmit<ExtArgs> | null
+  }
+
+
+  /**
+   * Model SettingsOperation
+   */
+
+  export type AggregateSettingsOperation = {
+    _count: SettingsOperationCountAggregateOutputType | null
+    _min: SettingsOperationMinAggregateOutputType | null
+    _max: SettingsOperationMaxAggregateOutputType | null
+  }
+
+  export type SettingsOperationMinAggregateOutputType = {
+    id: string | null
+    kind: string | null
+    clientId: string | null
+    userId: string | null
+    requestHash: string | null
+    resultJson: string | null
+    createdAt: Date | null
+  }
+
+  export type SettingsOperationMaxAggregateOutputType = {
+    id: string | null
+    kind: string | null
+    clientId: string | null
+    userId: string | null
+    requestHash: string | null
+    resultJson: string | null
+    createdAt: Date | null
+  }
+
+  export type SettingsOperationCountAggregateOutputType = {
+    id: number
+    kind: number
+    clientId: number
+    userId: number
+    requestHash: number
+    resultJson: number
+    createdAt: number
+    _all: number
+  }
+
+
+  export type SettingsOperationMinAggregateInputType = {
+    id?: true
+    kind?: true
+    clientId?: true
+    userId?: true
+    requestHash?: true
+    resultJson?: true
+    createdAt?: true
+  }
+
+  export type SettingsOperationMaxAggregateInputType = {
+    id?: true
+    kind?: true
+    clientId?: true
+    userId?: true
+    requestHash?: true
+    resultJson?: true
+    createdAt?: true
+  }
+
+  export type SettingsOperationCountAggregateInputType = {
+    id?: true
+    kind?: true
+    clientId?: true
+    userId?: true
+    requestHash?: true
+    resultJson?: true
+    createdAt?: true
+    _all?: true
+  }
+
+  export type SettingsOperationAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SettingsOperation to aggregate.
+     */
+    where?: SettingsOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsOperations to fetch.
+     */
+    orderBy?: SettingsOperationOrderByWithRelationInput | SettingsOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: SettingsOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned SettingsOperations
+    **/
+    _count?: true | SettingsOperationCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: SettingsOperationMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: SettingsOperationMaxAggregateInputType
+  }
+
+  export type GetSettingsOperationAggregateType<T extends SettingsOperationAggregateArgs> = {
+        [P in keyof T & keyof AggregateSettingsOperation]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateSettingsOperation[P]>
+      : GetScalarType<T[P], AggregateSettingsOperation[P]>
+  }
+
+
+
+
+  export type SettingsOperationGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: SettingsOperationWhereInput
+    orderBy?: SettingsOperationOrderByWithAggregationInput | SettingsOperationOrderByWithAggregationInput[]
+    by: SettingsOperationScalarFieldEnum[] | SettingsOperationScalarFieldEnum
+    having?: SettingsOperationScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: SettingsOperationCountAggregateInputType | true
+    _min?: SettingsOperationMinAggregateInputType
+    _max?: SettingsOperationMaxAggregateInputType
+  }
+
+  export type SettingsOperationGroupByOutputType = {
+    id: string
+    kind: string
+    clientId: string
+    userId: string
+    requestHash: string
+    resultJson: string
+    createdAt: Date
+    _count: SettingsOperationCountAggregateOutputType | null
+    _min: SettingsOperationMinAggregateOutputType | null
+    _max: SettingsOperationMaxAggregateOutputType | null
+  }
+
+  type GetSettingsOperationGroupByPayload<T extends SettingsOperationGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<SettingsOperationGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof SettingsOperationGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], SettingsOperationGroupByOutputType[P]>
+            : GetScalarType<T[P], SettingsOperationGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type SettingsOperationSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    kind?: boolean
+    clientId?: boolean
+    userId?: boolean
+    requestHash?: boolean
+    resultJson?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["settingsOperation"]>
+
+  export type SettingsOperationSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    kind?: boolean
+    clientId?: boolean
+    userId?: boolean
+    requestHash?: boolean
+    resultJson?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["settingsOperation"]>
+
+  export type SettingsOperationSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    kind?: boolean
+    clientId?: boolean
+    userId?: boolean
+    requestHash?: boolean
+    resultJson?: boolean
+    createdAt?: boolean
+  }, ExtArgs["result"]["settingsOperation"]>
+
+  export type SettingsOperationSelectScalar = {
+    id?: boolean
+    kind?: boolean
+    clientId?: boolean
+    userId?: boolean
+    requestHash?: boolean
+    resultJson?: boolean
+    createdAt?: boolean
+  }
+
+  export type SettingsOperationOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "kind" | "clientId" | "userId" | "requestHash" | "resultJson" | "createdAt", ExtArgs["result"]["settingsOperation"]>
+
+  export type $SettingsOperationPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "SettingsOperation"
+    objects: {}
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      kind: string
+      clientId: string
+      userId: string
+      requestHash: string
+      resultJson: string
+      createdAt: Date
+    }, ExtArgs["result"]["settingsOperation"]>
+    composites: {}
+  }
+
+  type SettingsOperationGetPayload<S extends boolean | null | undefined | SettingsOperationDefaultArgs> = $Result.GetResult<Prisma.$SettingsOperationPayload, S>
+
+  type SettingsOperationCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<SettingsOperationFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: SettingsOperationCountAggregateInputType | true
+    }
+
+  export interface SettingsOperationDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['SettingsOperation'], meta: { name: 'SettingsOperation' } }
+    /**
+     * Find zero or one SettingsOperation that matches the filter.
+     * @param {SettingsOperationFindUniqueArgs} args - Arguments to find a SettingsOperation
+     * @example
+     * // Get one SettingsOperation
+     * const settingsOperation = await prisma.settingsOperation.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends SettingsOperationFindUniqueArgs>(args: SelectSubset<T, SettingsOperationFindUniqueArgs<ExtArgs>>): Prisma__SettingsOperationClient<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one SettingsOperation that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {SettingsOperationFindUniqueOrThrowArgs} args - Arguments to find a SettingsOperation
+     * @example
+     * // Get one SettingsOperation
+     * const settingsOperation = await prisma.settingsOperation.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends SettingsOperationFindUniqueOrThrowArgs>(args: SelectSubset<T, SettingsOperationFindUniqueOrThrowArgs<ExtArgs>>): Prisma__SettingsOperationClient<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SettingsOperation that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsOperationFindFirstArgs} args - Arguments to find a SettingsOperation
+     * @example
+     * // Get one SettingsOperation
+     * const settingsOperation = await prisma.settingsOperation.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends SettingsOperationFindFirstArgs>(args?: SelectSubset<T, SettingsOperationFindFirstArgs<ExtArgs>>): Prisma__SettingsOperationClient<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first SettingsOperation that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsOperationFindFirstOrThrowArgs} args - Arguments to find a SettingsOperation
+     * @example
+     * // Get one SettingsOperation
+     * const settingsOperation = await prisma.settingsOperation.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends SettingsOperationFindFirstOrThrowArgs>(args?: SelectSubset<T, SettingsOperationFindFirstOrThrowArgs<ExtArgs>>): Prisma__SettingsOperationClient<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more SettingsOperations that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsOperationFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all SettingsOperations
+     * const settingsOperations = await prisma.settingsOperation.findMany()
+     * 
+     * // Get first 10 SettingsOperations
+     * const settingsOperations = await prisma.settingsOperation.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const settingsOperationWithIdOnly = await prisma.settingsOperation.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends SettingsOperationFindManyArgs>(args?: SelectSubset<T, SettingsOperationFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a SettingsOperation.
+     * @param {SettingsOperationCreateArgs} args - Arguments to create a SettingsOperation.
+     * @example
+     * // Create one SettingsOperation
+     * const SettingsOperation = await prisma.settingsOperation.create({
+     *   data: {
+     *     // ... data to create a SettingsOperation
+     *   }
+     * })
+     * 
+     */
+    create<T extends SettingsOperationCreateArgs>(args: SelectSubset<T, SettingsOperationCreateArgs<ExtArgs>>): Prisma__SettingsOperationClient<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many SettingsOperations.
+     * @param {SettingsOperationCreateManyArgs} args - Arguments to create many SettingsOperations.
+     * @example
+     * // Create many SettingsOperations
+     * const settingsOperation = await prisma.settingsOperation.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends SettingsOperationCreateManyArgs>(args?: SelectSubset<T, SettingsOperationCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many SettingsOperations and returns the data saved in the database.
+     * @param {SettingsOperationCreateManyAndReturnArgs} args - Arguments to create many SettingsOperations.
+     * @example
+     * // Create many SettingsOperations
+     * const settingsOperation = await prisma.settingsOperation.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many SettingsOperations and only return the `id`
+     * const settingsOperationWithIdOnly = await prisma.settingsOperation.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends SettingsOperationCreateManyAndReturnArgs>(args?: SelectSubset<T, SettingsOperationCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a SettingsOperation.
+     * @param {SettingsOperationDeleteArgs} args - Arguments to delete one SettingsOperation.
+     * @example
+     * // Delete one SettingsOperation
+     * const SettingsOperation = await prisma.settingsOperation.delete({
+     *   where: {
+     *     // ... filter to delete one SettingsOperation
+     *   }
+     * })
+     * 
+     */
+    delete<T extends SettingsOperationDeleteArgs>(args: SelectSubset<T, SettingsOperationDeleteArgs<ExtArgs>>): Prisma__SettingsOperationClient<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one SettingsOperation.
+     * @param {SettingsOperationUpdateArgs} args - Arguments to update one SettingsOperation.
+     * @example
+     * // Update one SettingsOperation
+     * const settingsOperation = await prisma.settingsOperation.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends SettingsOperationUpdateArgs>(args: SelectSubset<T, SettingsOperationUpdateArgs<ExtArgs>>): Prisma__SettingsOperationClient<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more SettingsOperations.
+     * @param {SettingsOperationDeleteManyArgs} args - Arguments to filter SettingsOperations to delete.
+     * @example
+     * // Delete a few SettingsOperations
+     * const { count } = await prisma.settingsOperation.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends SettingsOperationDeleteManyArgs>(args?: SelectSubset<T, SettingsOperationDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SettingsOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsOperationUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many SettingsOperations
+     * const settingsOperation = await prisma.settingsOperation.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends SettingsOperationUpdateManyArgs>(args: SelectSubset<T, SettingsOperationUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more SettingsOperations and returns the data updated in the database.
+     * @param {SettingsOperationUpdateManyAndReturnArgs} args - Arguments to update many SettingsOperations.
+     * @example
+     * // Update many SettingsOperations
+     * const settingsOperation = await prisma.settingsOperation.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more SettingsOperations and only return the `id`
+     * const settingsOperationWithIdOnly = await prisma.settingsOperation.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends SettingsOperationUpdateManyAndReturnArgs>(args: SelectSubset<T, SettingsOperationUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one SettingsOperation.
+     * @param {SettingsOperationUpsertArgs} args - Arguments to update or create a SettingsOperation.
+     * @example
+     * // Update or create a SettingsOperation
+     * const settingsOperation = await prisma.settingsOperation.upsert({
+     *   create: {
+     *     // ... data to create a SettingsOperation
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the SettingsOperation we want to update
+     *   }
+     * })
+     */
+    upsert<T extends SettingsOperationUpsertArgs>(args: SelectSubset<T, SettingsOperationUpsertArgs<ExtArgs>>): Prisma__SettingsOperationClient<$Result.GetResult<Prisma.$SettingsOperationPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of SettingsOperations.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsOperationCountArgs} args - Arguments to filter SettingsOperations to count.
+     * @example
+     * // Count the number of SettingsOperations
+     * const count = await prisma.settingsOperation.count({
+     *   where: {
+     *     // ... the filter for the SettingsOperations we want to count
+     *   }
+     * })
+    **/
+    count<T extends SettingsOperationCountArgs>(
+      args?: Subset<T, SettingsOperationCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], SettingsOperationCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a SettingsOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsOperationAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends SettingsOperationAggregateArgs>(args: Subset<T, SettingsOperationAggregateArgs>): Prisma.PrismaPromise<GetSettingsOperationAggregateType<T>>
+
+    /**
+     * Group by SettingsOperation.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {SettingsOperationGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends SettingsOperationGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: SettingsOperationGroupByArgs['orderBy'] }
+        : { orderBy?: SettingsOperationGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, SettingsOperationGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetSettingsOperationGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the SettingsOperation model
+   */
+  readonly fields: SettingsOperationFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for SettingsOperation.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__SettingsOperationClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the SettingsOperation model
+   */
+  interface SettingsOperationFieldRefs {
+    readonly id: FieldRef<"SettingsOperation", 'String'>
+    readonly kind: FieldRef<"SettingsOperation", 'String'>
+    readonly clientId: FieldRef<"SettingsOperation", 'String'>
+    readonly userId: FieldRef<"SettingsOperation", 'String'>
+    readonly requestHash: FieldRef<"SettingsOperation", 'String'>
+    readonly resultJson: FieldRef<"SettingsOperation", 'String'>
+    readonly createdAt: FieldRef<"SettingsOperation", 'DateTime'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * SettingsOperation findUnique
+   */
+  export type SettingsOperationFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsOperation to fetch.
+     */
+    where: SettingsOperationWhereUniqueInput
+  }
+
+  /**
+   * SettingsOperation findUniqueOrThrow
+   */
+  export type SettingsOperationFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsOperation to fetch.
+     */
+    where: SettingsOperationWhereUniqueInput
+  }
+
+  /**
+   * SettingsOperation findFirst
+   */
+  export type SettingsOperationFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsOperation to fetch.
+     */
+    where?: SettingsOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsOperations to fetch.
+     */
+    orderBy?: SettingsOperationOrderByWithRelationInput | SettingsOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for SettingsOperations.
+     */
+    cursor?: SettingsOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of SettingsOperations.
+     */
+    distinct?: SettingsOperationScalarFieldEnum | SettingsOperationScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsOperation findFirstOrThrow
+   */
+  export type SettingsOperationFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsOperation to fetch.
+     */
+    where?: SettingsOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsOperations to fetch.
+     */
+    orderBy?: SettingsOperationOrderByWithRelationInput | SettingsOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for SettingsOperations.
+     */
+    cursor?: SettingsOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsOperations.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of SettingsOperations.
+     */
+    distinct?: SettingsOperationScalarFieldEnum | SettingsOperationScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsOperation findMany
+   */
+  export type SettingsOperationFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * Filter, which SettingsOperations to fetch.
+     */
+    where?: SettingsOperationWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of SettingsOperations to fetch.
+     */
+    orderBy?: SettingsOperationOrderByWithRelationInput | SettingsOperationOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing SettingsOperations.
+     */
+    cursor?: SettingsOperationWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` SettingsOperations from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` SettingsOperations.
+     */
+    skip?: number
+    distinct?: SettingsOperationScalarFieldEnum | SettingsOperationScalarFieldEnum[]
+  }
+
+  /**
+   * SettingsOperation create
+   */
+  export type SettingsOperationCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to create a SettingsOperation.
+     */
+    data: XOR<SettingsOperationCreateInput, SettingsOperationUncheckedCreateInput>
+  }
+
+  /**
+   * SettingsOperation createMany
+   */
+  export type SettingsOperationCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many SettingsOperations.
+     */
+    data: SettingsOperationCreateManyInput | SettingsOperationCreateManyInput[]
+  }
+
+  /**
+   * SettingsOperation createManyAndReturn
+   */
+  export type SettingsOperationCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * The data used to create many SettingsOperations.
+     */
+    data: SettingsOperationCreateManyInput | SettingsOperationCreateManyInput[]
+  }
+
+  /**
+   * SettingsOperation update
+   */
+  export type SettingsOperationUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * The data needed to update a SettingsOperation.
+     */
+    data: XOR<SettingsOperationUpdateInput, SettingsOperationUncheckedUpdateInput>
+    /**
+     * Choose, which SettingsOperation to update.
+     */
+    where: SettingsOperationWhereUniqueInput
+  }
+
+  /**
+   * SettingsOperation updateMany
+   */
+  export type SettingsOperationUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update SettingsOperations.
+     */
+    data: XOR<SettingsOperationUpdateManyMutationInput, SettingsOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which SettingsOperations to update
+     */
+    where?: SettingsOperationWhereInput
+    /**
+     * Limit how many SettingsOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsOperation updateManyAndReturn
+   */
+  export type SettingsOperationUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * The data used to update SettingsOperations.
+     */
+    data: XOR<SettingsOperationUpdateManyMutationInput, SettingsOperationUncheckedUpdateManyInput>
+    /**
+     * Filter which SettingsOperations to update
+     */
+    where?: SettingsOperationWhereInput
+    /**
+     * Limit how many SettingsOperations to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsOperation upsert
+   */
+  export type SettingsOperationUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * The filter to search for the SettingsOperation to update in case it exists.
+     */
+    where: SettingsOperationWhereUniqueInput
+    /**
+     * In case the SettingsOperation found by the `where` argument doesn't exist, create a new SettingsOperation with this data.
+     */
+    create: XOR<SettingsOperationCreateInput, SettingsOperationUncheckedCreateInput>
+    /**
+     * In case the SettingsOperation was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<SettingsOperationUpdateInput, SettingsOperationUncheckedUpdateInput>
+  }
+
+  /**
+   * SettingsOperation delete
+   */
+  export type SettingsOperationDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+    /**
+     * Filter which SettingsOperation to delete.
+     */
+    where: SettingsOperationWhereUniqueInput
+  }
+
+  /**
+   * SettingsOperation deleteMany
+   */
+  export type SettingsOperationDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which SettingsOperations to delete
+     */
+    where?: SettingsOperationWhereInput
+    /**
+     * Limit how many SettingsOperations to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * SettingsOperation without action
+   */
+  export type SettingsOperationDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the SettingsOperation
+     */
+    select?: SettingsOperationSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the SettingsOperation
+     */
+    omit?: SettingsOperationOmit<ExtArgs> | null
+  }
+
+
+  /**
    * Enums
    */
 
@@ -95335,6 +98682,7 @@ export namespace Prisma {
     statusText: 'statusText',
     preferences: 'preferences',
     storyViewReceipts: 'storyViewReceipts',
+    profileRev: 'profileRev',
     sessionTokenHash: 'sessionTokenHash',
     legacyTokenHashes: 'legacyTokenHashes',
     serviceKey: 'serviceKey',
@@ -96316,6 +99664,39 @@ export namespace Prisma {
   export type AppConnectionOperationScalarFieldEnum = (typeof AppConnectionOperationScalarFieldEnum)[keyof typeof AppConnectionOperationScalarFieldEnum]
 
 
+  export const SettingsFieldStampScalarFieldEnum: {
+    userId: 'userId',
+    field: 'field',
+    rev: 'rev',
+    intentAt: 'intentAt',
+    writer: 'writer'
+  };
+
+  export type SettingsFieldStampScalarFieldEnum = (typeof SettingsFieldStampScalarFieldEnum)[keyof typeof SettingsFieldStampScalarFieldEnum]
+
+
+  export const SettingsRevisionScalarFieldEnum: {
+    userId: 'userId',
+    rev: 'rev',
+    updatedAt: 'updatedAt'
+  };
+
+  export type SettingsRevisionScalarFieldEnum = (typeof SettingsRevisionScalarFieldEnum)[keyof typeof SettingsRevisionScalarFieldEnum]
+
+
+  export const SettingsOperationScalarFieldEnum: {
+    id: 'id',
+    kind: 'kind',
+    clientId: 'clientId',
+    userId: 'userId',
+    requestHash: 'requestHash',
+    resultJson: 'resultJson',
+    createdAt: 'createdAt'
+  };
+
+  export type SettingsOperationScalarFieldEnum = (typeof SettingsOperationScalarFieldEnum)[keyof typeof SettingsOperationScalarFieldEnum]
+
+
   export const SortOrder: {
     asc: 'asc',
     desc: 'desc'
@@ -96352,16 +99733,16 @@ export namespace Prisma {
 
 
   /**
-   * Reference to a field of type 'DateTime'
+   * Reference to a field of type 'Int'
    */
-  export type DateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime'>
+  export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
     
 
 
   /**
-   * Reference to a field of type 'Int'
+   * Reference to a field of type 'DateTime'
    */
-  export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
+  export type DateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DateTime'>
     
 
 
@@ -96404,6 +99785,7 @@ export namespace Prisma {
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
     storyViewReceipts?: BoolFilter<"User"> | boolean
+    profileRev?: IntFilter<"User"> | number
     sessionTokenHash?: StringNullableFilter<"User"> | string | null
     legacyTokenHashes?: StringNullableFilter<"User"> | string | null
     serviceKey?: StringNullableFilter<"User"> | string | null
@@ -96448,6 +99830,7 @@ export namespace Prisma {
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
     storyViewReceipts?: SortOrder
+    profileRev?: SortOrder
     sessionTokenHash?: SortOrderInput | SortOrder
     legacyTokenHashes?: SortOrderInput | SortOrder
     serviceKey?: SortOrderInput | SortOrder
@@ -96496,6 +99879,7 @@ export namespace Prisma {
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
     storyViewReceipts?: BoolFilter<"User"> | boolean
+    profileRev?: IntFilter<"User"> | number
     sessionTokenHash?: StringNullableFilter<"User"> | string | null
     legacyTokenHashes?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
@@ -96539,6 +99923,7 @@ export namespace Prisma {
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
     storyViewReceipts?: SortOrder
+    profileRev?: SortOrder
     sessionTokenHash?: SortOrderInput | SortOrder
     legacyTokenHashes?: SortOrderInput | SortOrder
     serviceKey?: SortOrderInput | SortOrder
@@ -96569,6 +99954,7 @@ export namespace Prisma {
     statusText?: StringNullableWithAggregatesFilter<"User"> | string | null
     preferences?: StringNullableWithAggregatesFilter<"User"> | string | null
     storyViewReceipts?: BoolWithAggregatesFilter<"User"> | boolean
+    profileRev?: IntWithAggregatesFilter<"User"> | number
     sessionTokenHash?: StringNullableWithAggregatesFilter<"User"> | string | null
     legacyTokenHashes?: StringNullableWithAggregatesFilter<"User"> | string | null
     serviceKey?: StringNullableWithAggregatesFilter<"User"> | string | null
@@ -101542,6 +104928,168 @@ export namespace Prisma {
     installed?: BoolWithAggregatesFilter<"AppConnectionOperation"> | boolean
   }
 
+  export type SettingsFieldStampWhereInput = {
+    AND?: SettingsFieldStampWhereInput | SettingsFieldStampWhereInput[]
+    OR?: SettingsFieldStampWhereInput[]
+    NOT?: SettingsFieldStampWhereInput | SettingsFieldStampWhereInput[]
+    userId?: StringFilter<"SettingsFieldStamp"> | string
+    field?: StringFilter<"SettingsFieldStamp"> | string
+    rev?: IntFilter<"SettingsFieldStamp"> | number
+    intentAt?: DateTimeFilter<"SettingsFieldStamp"> | Date | string
+    writer?: StringFilter<"SettingsFieldStamp"> | string
+  }
+
+  export type SettingsFieldStampOrderByWithRelationInput = {
+    userId?: SortOrder
+    field?: SortOrder
+    rev?: SortOrder
+    intentAt?: SortOrder
+    writer?: SortOrder
+  }
+
+  export type SettingsFieldStampWhereUniqueInput = Prisma.AtLeast<{
+    userId_field?: SettingsFieldStampUserIdFieldCompoundUniqueInput
+    AND?: SettingsFieldStampWhereInput | SettingsFieldStampWhereInput[]
+    OR?: SettingsFieldStampWhereInput[]
+    NOT?: SettingsFieldStampWhereInput | SettingsFieldStampWhereInput[]
+    userId?: StringFilter<"SettingsFieldStamp"> | string
+    field?: StringFilter<"SettingsFieldStamp"> | string
+    rev?: IntFilter<"SettingsFieldStamp"> | number
+    intentAt?: DateTimeFilter<"SettingsFieldStamp"> | Date | string
+    writer?: StringFilter<"SettingsFieldStamp"> | string
+  }, "userId_field">
+
+  export type SettingsFieldStampOrderByWithAggregationInput = {
+    userId?: SortOrder
+    field?: SortOrder
+    rev?: SortOrder
+    intentAt?: SortOrder
+    writer?: SortOrder
+    _count?: SettingsFieldStampCountOrderByAggregateInput
+    _avg?: SettingsFieldStampAvgOrderByAggregateInput
+    _max?: SettingsFieldStampMaxOrderByAggregateInput
+    _min?: SettingsFieldStampMinOrderByAggregateInput
+    _sum?: SettingsFieldStampSumOrderByAggregateInput
+  }
+
+  export type SettingsFieldStampScalarWhereWithAggregatesInput = {
+    AND?: SettingsFieldStampScalarWhereWithAggregatesInput | SettingsFieldStampScalarWhereWithAggregatesInput[]
+    OR?: SettingsFieldStampScalarWhereWithAggregatesInput[]
+    NOT?: SettingsFieldStampScalarWhereWithAggregatesInput | SettingsFieldStampScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"SettingsFieldStamp"> | string
+    field?: StringWithAggregatesFilter<"SettingsFieldStamp"> | string
+    rev?: IntWithAggregatesFilter<"SettingsFieldStamp"> | number
+    intentAt?: DateTimeWithAggregatesFilter<"SettingsFieldStamp"> | Date | string
+    writer?: StringWithAggregatesFilter<"SettingsFieldStamp"> | string
+  }
+
+  export type SettingsRevisionWhereInput = {
+    AND?: SettingsRevisionWhereInput | SettingsRevisionWhereInput[]
+    OR?: SettingsRevisionWhereInput[]
+    NOT?: SettingsRevisionWhereInput | SettingsRevisionWhereInput[]
+    userId?: StringFilter<"SettingsRevision"> | string
+    rev?: IntFilter<"SettingsRevision"> | number
+    updatedAt?: DateTimeFilter<"SettingsRevision"> | Date | string
+  }
+
+  export type SettingsRevisionOrderByWithRelationInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+    updatedAt?: SortOrder
+  }
+
+  export type SettingsRevisionWhereUniqueInput = Prisma.AtLeast<{
+    userId?: string
+    AND?: SettingsRevisionWhereInput | SettingsRevisionWhereInput[]
+    OR?: SettingsRevisionWhereInput[]
+    NOT?: SettingsRevisionWhereInput | SettingsRevisionWhereInput[]
+    rev?: IntFilter<"SettingsRevision"> | number
+    updatedAt?: DateTimeFilter<"SettingsRevision"> | Date | string
+  }, "userId">
+
+  export type SettingsRevisionOrderByWithAggregationInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+    updatedAt?: SortOrder
+    _count?: SettingsRevisionCountOrderByAggregateInput
+    _avg?: SettingsRevisionAvgOrderByAggregateInput
+    _max?: SettingsRevisionMaxOrderByAggregateInput
+    _min?: SettingsRevisionMinOrderByAggregateInput
+    _sum?: SettingsRevisionSumOrderByAggregateInput
+  }
+
+  export type SettingsRevisionScalarWhereWithAggregatesInput = {
+    AND?: SettingsRevisionScalarWhereWithAggregatesInput | SettingsRevisionScalarWhereWithAggregatesInput[]
+    OR?: SettingsRevisionScalarWhereWithAggregatesInput[]
+    NOT?: SettingsRevisionScalarWhereWithAggregatesInput | SettingsRevisionScalarWhereWithAggregatesInput[]
+    userId?: StringWithAggregatesFilter<"SettingsRevision"> | string
+    rev?: IntWithAggregatesFilter<"SettingsRevision"> | number
+    updatedAt?: DateTimeWithAggregatesFilter<"SettingsRevision"> | Date | string
+  }
+
+  export type SettingsOperationWhereInput = {
+    AND?: SettingsOperationWhereInput | SettingsOperationWhereInput[]
+    OR?: SettingsOperationWhereInput[]
+    NOT?: SettingsOperationWhereInput | SettingsOperationWhereInput[]
+    id?: StringFilter<"SettingsOperation"> | string
+    kind?: StringFilter<"SettingsOperation"> | string
+    clientId?: StringFilter<"SettingsOperation"> | string
+    userId?: StringFilter<"SettingsOperation"> | string
+    requestHash?: StringFilter<"SettingsOperation"> | string
+    resultJson?: StringFilter<"SettingsOperation"> | string
+    createdAt?: DateTimeFilter<"SettingsOperation"> | Date | string
+  }
+
+  export type SettingsOperationOrderByWithRelationInput = {
+    id?: SortOrder
+    kind?: SortOrder
+    clientId?: SortOrder
+    userId?: SortOrder
+    requestHash?: SortOrder
+    resultJson?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type SettingsOperationWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    kind_clientId?: SettingsOperationKindClientIdCompoundUniqueInput
+    AND?: SettingsOperationWhereInput | SettingsOperationWhereInput[]
+    OR?: SettingsOperationWhereInput[]
+    NOT?: SettingsOperationWhereInput | SettingsOperationWhereInput[]
+    kind?: StringFilter<"SettingsOperation"> | string
+    clientId?: StringFilter<"SettingsOperation"> | string
+    userId?: StringFilter<"SettingsOperation"> | string
+    requestHash?: StringFilter<"SettingsOperation"> | string
+    resultJson?: StringFilter<"SettingsOperation"> | string
+    createdAt?: DateTimeFilter<"SettingsOperation"> | Date | string
+  }, "id" | "kind_clientId">
+
+  export type SettingsOperationOrderByWithAggregationInput = {
+    id?: SortOrder
+    kind?: SortOrder
+    clientId?: SortOrder
+    userId?: SortOrder
+    requestHash?: SortOrder
+    resultJson?: SortOrder
+    createdAt?: SortOrder
+    _count?: SettingsOperationCountOrderByAggregateInput
+    _max?: SettingsOperationMaxOrderByAggregateInput
+    _min?: SettingsOperationMinOrderByAggregateInput
+  }
+
+  export type SettingsOperationScalarWhereWithAggregatesInput = {
+    AND?: SettingsOperationScalarWhereWithAggregatesInput | SettingsOperationScalarWhereWithAggregatesInput[]
+    OR?: SettingsOperationScalarWhereWithAggregatesInput[]
+    NOT?: SettingsOperationScalarWhereWithAggregatesInput | SettingsOperationScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"SettingsOperation"> | string
+    kind?: StringWithAggregatesFilter<"SettingsOperation"> | string
+    clientId?: StringWithAggregatesFilter<"SettingsOperation"> | string
+    userId?: StringWithAggregatesFilter<"SettingsOperation"> | string
+    requestHash?: StringWithAggregatesFilter<"SettingsOperation"> | string
+    resultJson?: StringWithAggregatesFilter<"SettingsOperation"> | string
+    createdAt?: DateTimeWithAggregatesFilter<"SettingsOperation"> | Date | string
+  }
+
   export type UserCreateInput = {
     id?: string
     name: string
@@ -101554,6 +105102,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -101598,6 +105147,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -101642,6 +105192,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -101686,6 +105237,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -101730,6 +105282,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -101752,6 +105305,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -101774,6 +105328,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -106972,6 +110527,174 @@ export namespace Prisma {
     installed?: BoolFieldUpdateOperationsInput | boolean
   }
 
+  export type SettingsFieldStampCreateInput = {
+    userId: string
+    field: string
+    rev?: number
+    intentAt: Date | string
+    writer: string
+  }
+
+  export type SettingsFieldStampUncheckedCreateInput = {
+    userId: string
+    field: string
+    rev?: number
+    intentAt: Date | string
+    writer: string
+  }
+
+  export type SettingsFieldStampUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    field?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+    intentAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    writer?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SettingsFieldStampUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    field?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+    intentAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    writer?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SettingsFieldStampCreateManyInput = {
+    userId: string
+    field: string
+    rev?: number
+    intentAt: Date | string
+    writer: string
+  }
+
+  export type SettingsFieldStampUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    field?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+    intentAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    writer?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SettingsFieldStampUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    field?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+    intentAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    writer?: StringFieldUpdateOperationsInput | string
+  }
+
+  export type SettingsRevisionCreateInput = {
+    userId: string
+    rev?: number
+    updatedAt?: Date | string
+  }
+
+  export type SettingsRevisionUncheckedCreateInput = {
+    userId: string
+    rev?: number
+    updatedAt?: Date | string
+  }
+
+  export type SettingsRevisionUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type SettingsRevisionUncheckedUpdateInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type SettingsRevisionCreateManyInput = {
+    userId: string
+    rev?: number
+    updatedAt?: Date | string
+  }
+
+  export type SettingsRevisionUpdateManyMutationInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type SettingsRevisionUncheckedUpdateManyInput = {
+    userId?: StringFieldUpdateOperationsInput | string
+    rev?: IntFieldUpdateOperationsInput | number
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type SettingsOperationCreateInput = {
+    id?: string
+    kind: string
+    clientId: string
+    userId: string
+    requestHash: string
+    resultJson: string
+    createdAt?: Date | string
+  }
+
+  export type SettingsOperationUncheckedCreateInput = {
+    id?: string
+    kind: string
+    clientId: string
+    userId: string
+    requestHash: string
+    resultJson: string
+    createdAt?: Date | string
+  }
+
+  export type SettingsOperationUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    resultJson?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type SettingsOperationUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    resultJson?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type SettingsOperationCreateManyInput = {
+    id?: string
+    kind: string
+    clientId: string
+    userId: string
+    requestHash: string
+    resultJson: string
+    createdAt?: Date | string
+  }
+
+  export type SettingsOperationUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    resultJson?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
+  export type SettingsOperationUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    kind?: StringFieldUpdateOperationsInput | string
+    clientId?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    requestHash?: StringFieldUpdateOperationsInput | string
+    resultJson?: StringFieldUpdateOperationsInput | string
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+  }
+
   export type StringFilter<$PrismaModel = never> = {
     equals?: string | StringFieldRefInput<$PrismaModel>
     in?: string[]
@@ -107005,17 +110728,6 @@ export namespace Prisma {
     not?: NestedBoolFilter<$PrismaModel> | boolean
   }
 
-  export type DateTimeFilter<$PrismaModel = never> = {
-    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    in?: Date[] | string[]
-    notIn?: Date[] | string[]
-    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    not?: NestedDateTimeFilter<$PrismaModel> | Date | string
-  }
-
   export type IntFilter<$PrismaModel = never> = {
     equals?: number | IntFieldRefInput<$PrismaModel>
     in?: number[]
@@ -107025,6 +110737,17 @@ export namespace Prisma {
     gt?: number | IntFieldRefInput<$PrismaModel>
     gte?: number | IntFieldRefInput<$PrismaModel>
     not?: NestedIntFilter<$PrismaModel> | number
+  }
+
+  export type DateTimeFilter<$PrismaModel = never> = {
+    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    in?: Date[] | string[]
+    notIn?: Date[] | string[]
+    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    not?: NestedDateTimeFilter<$PrismaModel> | Date | string
   }
 
   export type AppInstallListRelationFilter = {
@@ -107229,6 +110952,7 @@ export namespace Prisma {
     statusText?: SortOrder
     preferences?: SortOrder
     storyViewReceipts?: SortOrder
+    profileRev?: SortOrder
     sessionTokenHash?: SortOrder
     legacyTokenHashes?: SortOrder
     serviceKey?: SortOrder
@@ -107240,6 +110964,7 @@ export namespace Prisma {
   }
 
   export type UserAvgOrderByAggregateInput = {
+    profileRev?: SortOrder
     xp?: SortOrder
     xpToday?: SortOrder
   }
@@ -107256,6 +110981,7 @@ export namespace Prisma {
     statusText?: SortOrder
     preferences?: SortOrder
     storyViewReceipts?: SortOrder
+    profileRev?: SortOrder
     sessionTokenHash?: SortOrder
     legacyTokenHashes?: SortOrder
     serviceKey?: SortOrder
@@ -107278,6 +111004,7 @@ export namespace Prisma {
     statusText?: SortOrder
     preferences?: SortOrder
     storyViewReceipts?: SortOrder
+    profileRev?: SortOrder
     sessionTokenHash?: SortOrder
     legacyTokenHashes?: SortOrder
     serviceKey?: SortOrder
@@ -107289,6 +111016,7 @@ export namespace Prisma {
   }
 
   export type UserSumOrderByAggregateInput = {
+    profileRev?: SortOrder
     xp?: SortOrder
     xpToday?: SortOrder
   }
@@ -107335,20 +111063,6 @@ export namespace Prisma {
     _max?: NestedBoolFilter<$PrismaModel>
   }
 
-  export type DateTimeWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    in?: Date[] | string[]
-    notIn?: Date[] | string[]
-    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    not?: NestedDateTimeWithAggregatesFilter<$PrismaModel> | Date | string
-    _count?: NestedIntFilter<$PrismaModel>
-    _min?: NestedDateTimeFilter<$PrismaModel>
-    _max?: NestedDateTimeFilter<$PrismaModel>
-  }
-
   export type IntWithAggregatesFilter<$PrismaModel = never> = {
     equals?: number | IntFieldRefInput<$PrismaModel>
     in?: number[]
@@ -107363,6 +111077,20 @@ export namespace Prisma {
     _sum?: NestedIntFilter<$PrismaModel>
     _min?: NestedIntFilter<$PrismaModel>
     _max?: NestedIntFilter<$PrismaModel>
+  }
+
+  export type DateTimeWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    in?: Date[] | string[]
+    notIn?: Date[] | string[]
+    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    not?: NestedDateTimeWithAggregatesFilter<$PrismaModel> | Date | string
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedDateTimeFilter<$PrismaModel>
+    _max?: NestedDateTimeFilter<$PrismaModel>
   }
 
   export type UserScalarRelationFilter = {
@@ -110488,6 +114216,104 @@ export namespace Prisma {
     installed?: SortOrder
   }
 
+  export type SettingsFieldStampUserIdFieldCompoundUniqueInput = {
+    userId: string
+    field: string
+  }
+
+  export type SettingsFieldStampCountOrderByAggregateInput = {
+    userId?: SortOrder
+    field?: SortOrder
+    rev?: SortOrder
+    intentAt?: SortOrder
+    writer?: SortOrder
+  }
+
+  export type SettingsFieldStampAvgOrderByAggregateInput = {
+    rev?: SortOrder
+  }
+
+  export type SettingsFieldStampMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    field?: SortOrder
+    rev?: SortOrder
+    intentAt?: SortOrder
+    writer?: SortOrder
+  }
+
+  export type SettingsFieldStampMinOrderByAggregateInput = {
+    userId?: SortOrder
+    field?: SortOrder
+    rev?: SortOrder
+    intentAt?: SortOrder
+    writer?: SortOrder
+  }
+
+  export type SettingsFieldStampSumOrderByAggregateInput = {
+    rev?: SortOrder
+  }
+
+  export type SettingsRevisionCountOrderByAggregateInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+    updatedAt?: SortOrder
+  }
+
+  export type SettingsRevisionAvgOrderByAggregateInput = {
+    rev?: SortOrder
+  }
+
+  export type SettingsRevisionMaxOrderByAggregateInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+    updatedAt?: SortOrder
+  }
+
+  export type SettingsRevisionMinOrderByAggregateInput = {
+    userId?: SortOrder
+    rev?: SortOrder
+    updatedAt?: SortOrder
+  }
+
+  export type SettingsRevisionSumOrderByAggregateInput = {
+    rev?: SortOrder
+  }
+
+  export type SettingsOperationKindClientIdCompoundUniqueInput = {
+    kind: string
+    clientId: string
+  }
+
+  export type SettingsOperationCountOrderByAggregateInput = {
+    id?: SortOrder
+    kind?: SortOrder
+    clientId?: SortOrder
+    userId?: SortOrder
+    requestHash?: SortOrder
+    resultJson?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type SettingsOperationMaxOrderByAggregateInput = {
+    id?: SortOrder
+    kind?: SortOrder
+    clientId?: SortOrder
+    userId?: SortOrder
+    requestHash?: SortOrder
+    resultJson?: SortOrder
+    createdAt?: SortOrder
+  }
+
+  export type SettingsOperationMinOrderByAggregateInput = {
+    id?: SortOrder
+    kind?: SortOrder
+    clientId?: SortOrder
+    userId?: SortOrder
+    requestHash?: SortOrder
+    resultJson?: SortOrder
+    createdAt?: SortOrder
+  }
+
   export type AppInstallCreateNestedManyWithoutUserInput = {
     create?: XOR<AppInstallCreateWithoutUserInput, AppInstallUncheckedCreateWithoutUserInput> | AppInstallCreateWithoutUserInput[] | AppInstallUncheckedCreateWithoutUserInput[]
     connectOrCreate?: AppInstallCreateOrConnectWithoutUserInput | AppInstallCreateOrConnectWithoutUserInput[]
@@ -110806,16 +114632,16 @@ export namespace Prisma {
     set?: boolean
   }
 
-  export type DateTimeFieldUpdateOperationsInput = {
-    set?: Date | string
-  }
-
   export type IntFieldUpdateOperationsInput = {
     set?: number
     increment?: number
     decrement?: number
     multiply?: number
     divide?: number
+  }
+
+  export type DateTimeFieldUpdateOperationsInput = {
+    set?: Date | string
   }
 
   export type AppInstallUpdateManyWithoutUserNestedInput = {
@@ -113515,17 +117341,6 @@ export namespace Prisma {
     not?: NestedBoolFilter<$PrismaModel> | boolean
   }
 
-  export type NestedDateTimeFilter<$PrismaModel = never> = {
-    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    in?: Date[] | string[]
-    notIn?: Date[] | string[]
-    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    not?: NestedDateTimeFilter<$PrismaModel> | Date | string
-  }
-
   export type NestedIntFilter<$PrismaModel = never> = {
     equals?: number | IntFieldRefInput<$PrismaModel>
     in?: number[]
@@ -113535,6 +117350,17 @@ export namespace Prisma {
     gt?: number | IntFieldRefInput<$PrismaModel>
     gte?: number | IntFieldRefInput<$PrismaModel>
     not?: NestedIntFilter<$PrismaModel> | number
+  }
+
+  export type NestedDateTimeFilter<$PrismaModel = never> = {
+    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    in?: Date[] | string[]
+    notIn?: Date[] | string[]
+    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    not?: NestedDateTimeFilter<$PrismaModel> | Date | string
   }
 
   export type NestedStringWithAggregatesFilter<$PrismaModel = never> = {
@@ -113590,20 +117416,6 @@ export namespace Prisma {
     _max?: NestedBoolFilter<$PrismaModel>
   }
 
-  export type NestedDateTimeWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    in?: Date[] | string[]
-    notIn?: Date[] | string[]
-    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    not?: NestedDateTimeWithAggregatesFilter<$PrismaModel> | Date | string
-    _count?: NestedIntFilter<$PrismaModel>
-    _min?: NestedDateTimeFilter<$PrismaModel>
-    _max?: NestedDateTimeFilter<$PrismaModel>
-  }
-
   export type NestedIntWithAggregatesFilter<$PrismaModel = never> = {
     equals?: number | IntFieldRefInput<$PrismaModel>
     in?: number[]
@@ -113629,6 +117441,20 @@ export namespace Prisma {
     gt?: number | FloatFieldRefInput<$PrismaModel>
     gte?: number | FloatFieldRefInput<$PrismaModel>
     not?: NestedFloatFilter<$PrismaModel> | number
+  }
+
+  export type NestedDateTimeWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    in?: Date[] | string[]
+    notIn?: Date[] | string[]
+    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    not?: NestedDateTimeWithAggregatesFilter<$PrismaModel> | Date | string
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedDateTimeFilter<$PrismaModel>
+    _max?: NestedDateTimeFilter<$PrismaModel>
   }
 
   export type NestedDateTimeNullableFilter<$PrismaModel = never> = {
@@ -115070,6 +118896,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115113,6 +118940,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115161,6 +118989,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115204,6 +119033,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115263,6 +119093,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115306,6 +119137,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115360,6 +119192,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115403,6 +119236,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115446,6 +119280,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115489,6 +119324,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115537,6 +119373,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115580,6 +119417,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115639,6 +119477,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115682,6 +119521,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115736,6 +119576,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115779,6 +119620,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115822,6 +119664,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115865,6 +119708,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -115924,6 +119768,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -115967,6 +119812,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116010,6 +119856,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116053,6 +119900,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116112,6 +119960,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116155,6 +120004,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116198,6 +120048,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116241,6 +120092,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116300,6 +120152,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116343,6 +120196,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116386,6 +120240,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116429,6 +120284,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116488,6 +120344,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116531,6 +120388,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116574,6 +120432,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116617,6 +120476,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116676,6 +120536,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116719,6 +120580,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116762,6 +120624,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116805,6 +120668,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116864,6 +120728,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116907,6 +120772,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -116950,6 +120816,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -116993,6 +120860,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117052,6 +120920,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117095,6 +120964,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117138,6 +121008,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117181,6 +121052,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117229,6 +121101,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117272,6 +121145,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117331,6 +121205,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117374,6 +121249,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117428,6 +121304,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117471,6 +121348,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117514,6 +121392,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117557,6 +121436,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117616,6 +121496,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117659,6 +121540,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117702,6 +121584,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117745,6 +121628,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -117804,6 +121688,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -117847,6 +121732,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -118666,6 +122552,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -118709,6 +122596,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -118837,6 +122725,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -118880,6 +122769,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -119055,6 +122945,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -119098,6 +122989,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -119178,6 +123070,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -119221,6 +123114,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -119350,6 +123244,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -119393,6 +123288,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -119549,6 +123445,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -119592,6 +123489,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -119749,6 +123647,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -119792,6 +123691,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -120462,6 +124362,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -120505,6 +124406,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -121420,6 +125322,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -121463,6 +125366,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -121609,6 +125513,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -121652,6 +125557,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -122626,6 +126532,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -122669,6 +126576,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -122749,6 +126657,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -122792,6 +126701,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -123243,6 +127153,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -123286,6 +127197,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     storyViewReceipts?: boolean
+    profileRev?: number
     sessionTokenHash?: string | null
     legacyTokenHashes?: string | null
     serviceKey?: string | null
@@ -123378,6 +127290,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null
@@ -123421,6 +127334,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     storyViewReceipts?: BoolFieldUpdateOperationsInput | boolean
+    profileRev?: IntFieldUpdateOperationsInput | number
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
     legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     serviceKey?: NullableStringFieldUpdateOperationsInput | string | null

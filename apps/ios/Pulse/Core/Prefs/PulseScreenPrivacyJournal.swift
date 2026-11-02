@@ -18,6 +18,13 @@ struct PulseScreenPrivacyRead: Sendable {
 @MainActor
 final class PulseScreenPrivacyJournal {
     struct Entry: Codable {
+        /// Section 13 item 7 (provenance) - where this row's value came from.
+        /// Optional so every pre-provenance journal blob keeps decoding.
+        let origin: String?
+        static let intentOrigin = "intent"
+        static let migrationCacheOrigin = "migration-cache"
+        static let serverOrigin = "server"
+
         let on: Bool
         let revision: UUID
         let pending: UUID?
@@ -34,7 +41,10 @@ final class PulseScreenPrivacyJournal {
         guard let raw = defaults.object(forKey: "pulse.settings.veil.v1." + owner) else { return [:] }
         guard let data = raw as? Data else { throw unreadable() }
         let legacy = try JSONDecoder().decode([String: Bool].self, from: data)
-        let migrated = legacy.mapValues { Entry(on: $0, revision: UUID(), pending: nil) }
+        // Section 13 item 7 - migrated rows are stamped "migration-cache":
+        // a v1 cache cannot prove the explicit user intent that produced it,
+        // so it must never be presented as a first-hand local choice.
+        let migrated = legacy.mapValues { Entry(origin: Entry.migrationCacheOrigin, on: $0, revision: UUID(), pending: nil) }
         try save(migrated, owner: owner)
         return migrated
     }
@@ -47,7 +57,8 @@ final class PulseScreenPrivacyJournal {
     func stage(owner: String, room: String, on: Bool) throws -> PulseScreenPrivacyTicket {
         var values = try entries(owner: owner)
         let id = UUID()
-        values[room] = Entry(on: on, revision: id, pending: id)
+        // Section 13 - an explicit local choice is an "intent" row.
+        values[room] = Entry(origin: Entry.intentOrigin, on: on, revision: id, pending: id)
         try save(values, owner: owner)
         return PulseScreenPrivacyTicket(owner: owner, room: room, id: id, on: on)
     }
@@ -62,14 +73,19 @@ final class PulseScreenPrivacyJournal {
         guard on == ticket.on else { throw PulseAPIClient.Failure(kind: .server, message: "Screen security was not confirmed.") }
         var values = try entries(owner: ticket.owner)
         guard values[ticket.room]?.pending == ticket.id else { return }
-        values[ticket.room] = Entry(on: on, revision: UUID(), pending: nil)
+        // Section 13 - the confirmation retires the pending token; the row's
+        // provenance (already "intent" for local writes) is preserved.
+        let previous = values[ticket.room]
+        values[ticket.room] = Entry(origin: previous?.origin ?? Entry.intentOrigin, on: on, revision: UUID(), pending: nil)
         try save(values, owner: ticket.owner)
     }
     func mergeSnapshot(_ read: PulseScreenPrivacyRead, on: Bool) throws {
         var values = try entries(owner: read.owner)
         let entry = values[read.room]
         guard entry?.revision == read.revision, entry?.pending == nil else { return }
-        values[read.room] = Entry(on: on, revision: UUID(), pending: nil)
+        // Section 13 - a value adopted from a server snapshot is provenanced
+        // "server", not "intent" (no local explicit choice produced it here).
+        values[read.room] = Entry(origin: Entry.serverOrigin, on: on, revision: UUID(), pending: nil)
         try save(values, owner: read.owner)
     }
 }

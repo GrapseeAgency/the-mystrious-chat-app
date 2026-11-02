@@ -1052,7 +1052,7 @@ function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unkno
 // ---------------------------------------------------------------------------
 // Internal HTTP relay endpoints (called by Next.js API routes)
 // ---------------------------------------------------------------------------
-const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'message:viewed', 'poll:voted', 'link:preview', 'translation:added', 'conversation:updated', 'saved:changed', 'private-feeds:changed', 'gcall:ring'])
+const NOTIFY_EVENTS = new Set(['message:new', 'message:deleted', 'message:read', 'message:react', 'message:edited', 'message:pinned', 'message:viewed', 'poll:voted', 'link:preview', 'translation:added', 'conversation:updated', 'saved:changed', 'private-feeds:changed', 'settings:changed', 'gcall:ring'])
 
 type NotifyBody = { event?: unknown; recipients?: unknown; payload?: unknown }
 
@@ -1078,6 +1078,13 @@ async function handleNotify(req: IncomingMessage, res: ServerResponse): Promise<
   const recipients = sanitizeRecipients(body.recipients)
   if (event === 'conversation:updated') {
     queueGroupAccessRefresh(asTrimmedString((body.payload as Record<string, unknown> | null)?.conversationId))
+  }
+  if (event === 'settings:changed') {
+    // Section 13 item 7: a privacy toggle must change the relay's own
+    // enforcement (typing gate, presence filter) IMMEDIATELY - not on the
+    // next TTL sweep. Drop the cached flags and re-emit presence now.
+    for (const id of recipients) privacyCache.delete(id)
+    void refreshPresencePrivacy().catch(() => {})
   }
   if (event === 'gcall:ring') {
     const raw = body.payload as Record<string, unknown> | null

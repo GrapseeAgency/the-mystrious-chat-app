@@ -1213,10 +1213,16 @@ public final class PulseSession: ObservableObject {
             do {
                 let patch = try prefs.currentSettingsPatch(ticket, api: client)
                 if patch.settingsKeys.isEmpty { return } // superseded before dispatch
-                let server = try await client.updateSettings(patch: patch)
+                // Section 13 items 1-3 - the durable funnel: the ticket's
+                // replay identity + intent stamps ride the body root. A
+                // retried patch with the SAME identity + instructions returns
+                // the STORED result (replayed: true) and confirms like normal.
+                let receipt = try await client.updateSettingsDurable(patch: patch,
+                    clientId: ticket.clientId, intentAt: ticket.intentAt, fieldTimes: ticket.fieldTimes)
                 guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
                       prefs.viewer?.id == owner else { return }
-                try prefs.acknowledgeSettings(ticket, sent: patch, server: server)
+                try prefs.acknowledgeSettings(ticket, sent: patch, server: receipt.preferences ?? WirePulsePrefs(),
+                    superseded: Set(receipt.superseded ?? []), revision: receipt.revision)
             } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
                 guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
                       prefs.viewer?.id == owner else { return }
@@ -1226,6 +1232,94 @@ public final class PulseSession: ObservableObject {
                 guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
                       prefs.viewer?.id == owner else { return }
                 prefs.notePatchSettled(successful: false, note: "Settings saved on this device were not confirmed by the server. Tap Retry.")
+            }
+        }
+    }
+
+    // Section 13 item 3 - automatic pending-settings flush
+
+    private var settingsFlushTask: Task<Void, Never>?
+    /// Launch + connectivity trigger. The pending intent replays through the
+    /// normal funnel with bounded exponential backoff while the gateway keeps
+    /// failing; the intent STAYS pending and only a real server receipt
+    /// retires it - never a fabricated one.
+    private func flushPendingSettings() {
+        settingsFlushTask?.cancel()
+        guard let owner = viewer?.id, prefs?.viewer?.id == owner else { return }
+        let epoch = generation
+        settingsFlushTask = Task { [weak self] in
+            var attempt = 0
+            while let self, !Task.isCancelled, self.generation == epoch {
+                guard let prefs = self.prefs, prefs.viewer?.id == owner else { return }
+                guard prefs.pendingSettingsExist else { return }
+                prefs.retryPendingSettings()
+                attempt += 1
+                let delay = Self.settingsFlushBackoff(attempt: attempt)
+                do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
+            }
+        }
+    }
+    /// Bounded exponential backoff: 2s → 4s → 8s → 16s → 30s cap. A
+    /// connectivity trigger restarts the ladder from the fast end.
+    nonisolated private static func settingsFlushBackoff(attempt: Int) -> TimeInterval {
+        min(30.0, pow(2.0, Double(max(1, min(attempt, 5)))))
+    }
+
+    // Section 13 item 9 - durable profile replay (launch + reconnect)
+
+    private var profileReplayTask: Task<Void, Never>?
+    private func flushPendingProfilePatches() {
+        profileReplayTask?.cancel()
+        guard let owner = viewer?.id, ready, api.userId == owner else { return }
+        let epoch = generation, client = api
+        profileReplayTask = Task { [weak self] in
+            for intent in PulseSection8Journal.shared.pending(owner: owner) where intent.kind == "profile-patch" {
+                guard let self, !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner else { return }
+                do {
+                    // The SAME clientId + original instructions: a stored
+                    // operation answers replayed: true instead of duplicating.
+                    let mutation = try await client.updateProfileCore(userId: intent.targetId,
+                        body: PulseSection8Journal.shared.profilePatchBody(intent), clientId: intent.clientId)
+                    PulseSection8Journal.shared.confirm(owner: owner, clientId: intent.clientId)
+                    self.prefs?.noteProfileRevision(mutation.revision)
+                } catch let failure as PulseAPIClient.Failure {
+                    let status = failure.status ?? 0
+                    if status != 0, status != 401, status != 429, (400..<500).contains(status) {
+                        // Permanent refusal: drop the intent with the honest
+                        // surfaced error; it is never retried forever.
+                        PulseSection8Journal.shared.confirm(owner: owner, clientId: intent.clientId)
+                        self.toasts.show(failure.message ?? "A saved profile change was refused by the server and will not retry.")
+                    } else {
+                        return // transport/auth/rate: stop this pass, keep pending
+                    }
+                } catch { return }
+            }
+        }
+    }
+
+    // Section 13 item 7 - own-profile live refresh
+
+    private var profileRefreshTask: Task<Void, Never>?
+    /// private-feeds:changed for the viewer's own id: re-fetch the canonical
+    /// profile and adopt it exactly like the editor + boot validation do.
+    /// Mid-edit pushes never touch editor @State; a concurrent refresh
+    /// coalesces through the single task slot.
+    private func refreshOwnProfile() {
+        guard let owner = viewer?.id, ready, profileRefreshTask == nil else { return }
+        let client = api, epoch = generation
+        profileRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.generation == epoch { self.profileRefreshTask = nil } }
+            do {
+                let user = try await client.user(owner)
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner else { return }
+                guard user.id == owner else { return }
+                guard let prefs = self.prefs, prefs.viewer?.id == owner else { return }
+                prefs.setViewer(PulseViewer(from: user))
+                prefs.setViewerProfile(about: user.about ?? "", statusEmoji: user.statusEmoji ?? "", statusText: user.statusText ?? "")
+            } catch {
+                // Honest silence: the next push, reconnect or session start
+                // re-fetches; a failed refresh never rolls the mirror back.
             }
         }
     }
@@ -1270,6 +1364,9 @@ public final class PulseSession: ObservableObject {
         savedSyncObservation?.cancel(); savedSyncObservation = nil; savedSyncStatus = nil
         savedRefreshIds.removeAll(); savedScanAfter = ""; savedFullRefresh = true; savedReplayBusy = false
         notificationRefreshTask?.cancel(); notificationRefreshTask = nil
+        settingsFlushTask?.cancel(); settingsFlushTask = nil
+        profileReplayTask?.cancel(); profileReplayTask = nil
+        profileRefreshTask?.cancel(); profileRefreshTask = nil
         readReplayID = UUID()
         readReplayTask?.cancel()
         readReplayTask = nil
@@ -1440,6 +1537,12 @@ public final class PulseSession: ObservableObject {
         // 4. Wave 8 - pull the server-merged prefs blob (server value wins;
         //    optimistic local values keep working when this fails).
         await prefs?.syncFromServer(api: api, isCurrent: { [weak self] in self?.generation == epoch })
+        guard !Task.isCancelled, generation == epoch else { return }
+        // Section 13 items 3 + 9 - app launch flush: pending settings intent
+        // and profile patches replay the SAME durable identities even when
+        // the relay never comes up (REST-only gateways flush here too).
+        flushPendingSettings()
+        flushPendingProfilePatches()
         guard !Task.isCancelled, generation == epoch else { return }
 
         // 5. Realtime only when a relay base is configured (nil → offline-first,
@@ -1935,6 +2038,10 @@ public final class PulseSession: ObservableObject {
                 // events and not new read authority for the mounted visit.
                 realtimeRefreshTick += 1
                 noteInboxChanged()
+                // Section 13 item 3 - regaining connectivity flushes pending
+                // settings intent (bounded backoff) + profile patches.
+                flushPendingSettings()
+                flushPendingProfilePatches()
                 // Section-5 "Privacy propagation delay": own prefs are pulled
                 // once per session start; a privacy toggle made on another
                 // device must land on reconnect too, not only on cold start.
@@ -1990,7 +2097,27 @@ public final class PulseSession: ObservableObject {
             realtimeRefreshTick += 1
             noteInboxChanged()
         case .privateFeedsChanged(let owner):
+            // Section 13 item 7 - was a no-op guard. The server pushes this on
+            // ANY accepted profile field change: refresh the viewer's own
+            // profile surface (canonical GET /api/users/{id} through the
+            // session client, adopted the same way the editor + identity
+            // validation adopt it).
             guard owner == viewer?.id else { return }
+            refreshOwnProfile()
+        case .settingsChanged(let owner, _):
+            // Section 13 item 7 - the NEW settings push. For the viewer's own
+            // id, re-pull GET /api/settings through the EXISTING read/journal
+            // path (applySnapshot semantics: pending intent is never
+            // overridden by the snapshot).
+            guard owner == viewer?.id else { return }
+            if let prefs {
+                let prefsEpoch = generation
+                let prefsApi = api
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await prefs.syncFromServer(api: prefsApi, isCurrent: { [weak self] in self?.generation == prefsEpoch })
+                }
+            }
         case .savedChanged(let owner, let messageId):
             guard owner == viewer?.id else { return }
             requestSavedSync(ids: [messageId])

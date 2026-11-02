@@ -1118,6 +1118,8 @@ fun GroupInfoScreen(
 
     if (renameOpen) {
         var name by remember { mutableStateOf(conversation?.title ?: "") }
+        // Section 13 item 11 - audited, NOT protected: group management UI
+        // (title/members), never message content or attachments.
         AlertDialog(
             onDismissRequest = { renameOpen = false },
             title = { Text("Rename group") },
@@ -1144,6 +1146,8 @@ fun GroupInfoScreen(
 
     if (addMembersOpen) {
         val picked = remember { mutableStateOf(setOf<String>()) }
+        // Section 13 item 11 - audited, NOT protected: a contact directory picker
+        // (roster metadata only), never room message content.
         AlertDialog(
             onDismissRequest = { addMembersOpen = false },
             title = { Text("Add members") },
@@ -1189,6 +1193,7 @@ fun GroupInfoScreen(
     }
 
     if (leaveConfirmOpen) {
+        // Section 13 item 11 - audited, NOT protected: static leave-group copy.
         AlertDialog(
             onDismissRequest = { leaveConfirmOpen = false },
             title = { Text("Leave group?") },
@@ -1212,6 +1217,8 @@ fun GroupInfoScreen(
     }
 
     kickTarget?.let { member ->
+        // Section 13 item 11 - audited, NOT protected: a member name (roster
+        // metadata), never message content.
         AlertDialog(
             onDismissRequest = { kickTarget = null },
             title = { Text("Remove ${member.name}?") },

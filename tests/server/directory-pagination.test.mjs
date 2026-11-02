@@ -21,7 +21,7 @@ async function fixture(run) {
   const db = new PrismaClient({ datasourceUrl: `file:${join(dir, 'test.sqlite')}` })
   try {
     await db.$executeRawUnsafe(`CREATE TABLE User(id TEXT PRIMARY KEY, name TEXT NOT NULL, username TEXT UNIQUE, about TEXT NOT NULL DEFAULT 'x',
-      color TEXT NOT NULL DEFAULT 'emerald', avatar TEXT, coverImage TEXT, statusEmoji TEXT, statusText TEXT, preferences TEXT, storyViewReceipts INTEGER NOT NULL DEFAULT 1,
+      color TEXT NOT NULL DEFAULT 'emerald', avatar TEXT, coverImage TEXT, statusEmoji TEXT, statusText TEXT, preferences TEXT, storyViewReceipts INTEGER NOT NULL DEFAULT 1, profileRev INTEGER NOT NULL DEFAULT 1,
       sessionTokenHash TEXT, legacyTokenHashes TEXT, serviceKey TEXT, createdAt DATETIME DEFAULT CURRENT_TIMESTAMP, lastSeenAt DATETIME DEFAULT CURRENT_TIMESTAMP, xp INTEGER DEFAULT 0, xpToday INTEGER DEFAULT 0, xpDay TEXT DEFAULT '')`)
     await run(db)
   } finally { await db.$disconnect(); await rm(dir, { recursive: true, force: true }) }
