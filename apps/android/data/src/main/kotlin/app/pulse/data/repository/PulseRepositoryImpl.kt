@@ -91,6 +91,7 @@ import app.pulse.domain.model.User
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.model.UserStats
 import app.pulse.domain.model.Webhook
+import app.pulse.domain.model.IntegrationPage
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.usecase.FlushOutboxUseCase
@@ -211,6 +212,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.intOrNull
@@ -231,6 +233,14 @@ private const val STORY_FEED_PAGE_LIMIT = 60
 private const val STORY_FEED_PAGE_WALK_MAX = 5
 private const val STORY_VIEWERS_PAGE_LIMIT = 100
 private const val STORY_VIEWERS_WALK_MAX = 20
+
+/**
+ * Section 12 - the integration lists page on the server default (a legacy
+ * first page = 100 rows) and the full-list walk caps at 20 page hops so a
+ * pathological conversation cannot loop the cursor forever.
+ */
+private const val INTEGRATION_PAGE_LIMIT = 100
+private const val INTEGRATION_PAGE_WALK_MAX = 20
 
 /**
  * REAL remote-first, Room-cached repository (N3 UI-era surface).
@@ -308,6 +318,10 @@ class PulseRepositoryImpl constructor(
 
     /** Section 8 items 6/7/8/10: durable offline intents (block/report/folder/phrase). */
     private val section8Journal = app.pulse.data.repository.Section8IntentJournal(database)
+
+    /** Section 12 items 2/4/6/7/8: durable integration intents (automation
+     * create/delete, webhook create/rotate/delete). */
+    private val section12Journal = app.pulse.data.repository.Section12IntegrationJournal(database)
 
     /** A permanent refusal can never succeed on retry; transport-class
      * failures (network/auth/rate/server) keep the row for the next flush. */
@@ -431,6 +445,41 @@ class PulseRepositoryImpl constructor(
             }
         }
     }
+
+    /** Section 12 restart flush: replay every pending integration intent with
+     * its ORIGINAL clientId; only a confirmed receipt removes the journal row.
+     * The body comes from the journal's builders so a replay can never drift
+     * from the journaled request. */
+    private suspend fun flushSection12Intents() {
+        val owner = viewerId ?: return
+        for (intent in section12Journal.pending(owner)) {
+            val body = when (intent.kind) {
+                "automation-create" -> section12Journal.toAutomationCreateBody(intent)
+                "automation-delete" -> section12Journal.toAutomationDeleteBody(intent)
+                "webhook-create" -> section12Journal.toWebhookCreateBody(intent)
+                "webhook-delete" -> section12Journal.toWebhookDeleteBody(intent)
+                "webhook-rotate" -> section12Journal.toWebhookRotateBody(intent)
+                else -> return // unknown intent kind: leave it for a newer binary
+            }
+            val receipt = when (intent.kind) {
+                "automation-create" -> api.createAutomation(intent.targetId,
+                    body.textField("userId"), body.textField("trigger"), body.textField("reply"), intent.clientId)
+                "automation-delete" -> api.deleteAutomation(intent.targetId, body.textField("userId"), intent.clientId)
+                "webhook-create" -> api.createWebhook(intent.targetId, body.textField("name"), body.textField("requesterId"), intent.clientId)
+                "webhook-delete" -> api.deleteWebhook(intent.targetId, body.textField("requesterId"), intent.clientId)
+                else -> api.rotateWebhook(intent.targetId, body.textField("requesterId"), intent.clientId)
+            }
+            when (receipt) {
+                is PulseResult.Success -> section12Journal.confirm(owner, intent.clientId)
+                is PulseResult.Failure -> if (receipt.kind in PERMANENT_SECTION8_FAILURES) {
+                    // A permanent refusal can never succeed; retire the row honestly.
+                    section12Journal.confirm(owner, intent.clientId)
+                } else return // transport-class failure: keep the row for the next flush
+            }
+        }
+    }
+
+    private fun JsonObject.textField(name: String): String = (this[name] as JsonPrimitive).content
     private var selfHealJob: Job? = null
 
     override fun stop() {
@@ -3334,11 +3383,50 @@ class PulseRepositoryImpl constructor(
         }
     }
 
+    /** Section 12 item 1 - the full automations list, walked over the keyed
+     * pages (bounded); the server orders createdAt DESC, id DESC. */
     override suspend fun automations(conversationId: String): Result<List<Automation>> =
-        ownedAccountRequest { api.automations(conversationId, it) }.map { page -> page.automations.map { it.toDomain() } }
+        walkIntegrationPages(
+            fetch = { owner, cursor -> api.automations(conversationId, owner, cursor, INTEGRATION_PAGE_LIMIT) },
+            rows = { page -> page.automations.map { it.toDomain() } },
+            pageMeta = { it.page },
+        )
 
-    override suspend fun createAutomation(conversationId: String, trigger: String, reply: String): Result<Automation> =
-        ownedAccountRequest { api.createAutomation(conversationId, it, trigger, reply) }.map { it.automation.toDomain() }
+    /** Section 12 item 1 - ONE keyed page (cursor null = first page, limit 1..200). */
+    override suspend fun automationsPage(conversationId: String, cursor: String?, limit: Int?): Result<IntegrationPage<Automation>> =
+        ownedAccountRequest { api.automations(conversationId, it, cursor, limit) }.map { page ->
+            IntegrationPage(
+                rows = page.automations.map { it.toDomain() },
+                revision = page.revision,
+                nextCursor = page.page?.nextCursor,
+                hasMore = page.page?.hasMore ?: false,
+            )
+        }
+
+    /** Section 12 item 2 - the create identity is journaled BEFORE the wire; a
+     * lost ACK replays the SAME clientId so the server answers the same rule
+     * (replayed=true) instead of duplicating it. */
+    override suspend fun createAutomation(conversationId: String, trigger: String, reply: String): Result<Automation> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val intent = runCatching {
+            section12Journal.enqueue(owner, "automation-create", conversationId,
+                kotlinx.serialization.json.buildJsonObject {
+                    put("userId", owner)
+                    put("trigger", trigger)
+                    put("reply", reply)
+                })
+        }.getOrNull()
+        return when (val r = api.createAutomation(conversationId, owner, trigger, reply, intent?.clientId)) {
+            is PulseResult.Success -> {
+                intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.success(r.value.automation.toDomain())
+            }
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
+        }
+    }
 
     override suspend fun setAutomationEnabled(automationId: String, enabled: Boolean): Result<Automation> =
         ownedAccountRequest { api.patchAutomation(automationId, it, enabled = enabled, trigger = null) }.map { it.automation.toDomain() }
@@ -3346,23 +3434,146 @@ class PulseRepositoryImpl constructor(
     override suspend fun setAutomationTrigger(automationId: String, trigger: String): Result<Automation> =
         ownedAccountRequest { api.patchAutomation(automationId, it, enabled = null, trigger = trigger) }.map { it.automation.toDomain() }
 
-    override suspend fun deleteAutomation(automationId: String): Result<Unit> =
-        ownedAccountRequest { api.deleteAutomation(automationId, it) }.map { Unit }
+    /** Section 12 item 4 - the delete identity is journaled BEFORE the wire; a
+     * lost-ACK retry replays the SAME verdict even though the row is gone. */
+    override suspend fun deleteAutomation(automationId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val intent = runCatching {
+            section12Journal.enqueue(owner, "automation-delete", automationId,
+                kotlinx.serialization.json.buildJsonObject { put("userId", owner) })
+        }.getOrNull()
+        return when (val r = api.deleteAutomation(automationId, owner, intent?.clientId)) {
+            is PulseResult.Success -> {
+                intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
+        }
+    }
 
+    /** Section 12 item 5 - the full webhook list (createdAt ASC), walked over
+     * the keyed pages (bounded). */
     override suspend fun webhooks(conversationId: String): Result<List<Webhook>> =
-        ownedAccountRequest { api.webhooks(conversationId, it) }.map { page -> page.webhooks.map { it.toDomain() } }
+        walkIntegrationPages(
+            fetch = { owner, cursor -> api.webhooks(conversationId, owner, cursor, INTEGRATION_PAGE_LIMIT) },
+            rows = { page -> page.webhooks.map { it.toDomain() } },
+            pageMeta = { it.page },
+        )
 
-    override suspend fun createWebhook(conversationId: String, name: String): Result<Webhook> =
-        ownedAccountRequest { api.createWebhook(conversationId, name, it) }.map { it.toDomain() }
+    /** Section 12 item 5 - ONE keyed page (cursor null = first page, limit 1..200). */
+    override suspend fun webhooksPage(conversationId: String, cursor: String?, limit: Int?): Result<IntegrationPage<Webhook>> =
+        ownedAccountRequest { api.webhooks(conversationId, it, cursor, limit) }.map { page ->
+            IntegrationPage(
+                rows = page.webhooks.map { it.toDomain() },
+                revision = page.revision,
+                nextCursor = page.page?.nextCursor,
+                hasMore = page.page?.hasMore ?: false,
+            )
+        }
 
-    override suspend fun deleteWebhook(token: String): Result<Unit> =
-        ownedAccountRequest { api.deleteWebhook(token, it) }.map { Unit }
+    /** Section 12 item 6 - the create identity is journaled BEFORE the wire. */
+    override suspend fun createWebhook(conversationId: String, name: String): Result<Webhook> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val intent = runCatching {
+            section12Journal.enqueue(owner, "webhook-create", conversationId,
+                kotlinx.serialization.json.buildJsonObject {
+                    put("name", name)
+                    put("requesterId", owner)
+                })
+        }.getOrNull()
+        return when (val r = api.createWebhook(conversationId, name, owner, intent?.clientId)) {
+            is PulseResult.Success -> {
+                intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.success(r.value.toDomain())
+            }
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
+        }
+    }
+
+    /** Section 12 item 7 - the rotation identity is journaled BEFORE the wire;
+     * a lost-ACK retry carries the OLD token and replays the SAME fresh token
+     * (replayed=true) instead of rotating twice. */
+    override suspend fun rotateWebhook(token: String): Result<Webhook> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val intent = runCatching {
+            section12Journal.enqueue(owner, "webhook-rotate", token,
+                kotlinx.serialization.json.buildJsonObject { put("requesterId", owner) })
+        }.getOrNull()
+        return when (val r = api.rotateWebhook(token, owner, intent?.clientId)) {
+            is PulseResult.Success -> {
+                intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.success(r.value.toDomain())
+            }
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
+        }
+    }
+
+    /** Section 12 item 8 - the delete identity is journaled BEFORE the wire. */
+    override suspend fun deleteWebhook(token: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val intent = runCatching {
+            section12Journal.enqueue(owner, "webhook-delete", token,
+                kotlinx.serialization.json.buildJsonObject { put("requesterId", owner) })
+        }.getOrNull()
+        return when (val r = api.deleteWebhook(token, owner, intent?.clientId)) {
+            is PulseResult.Success -> {
+                intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> {
+                if (r.kind in PERMANENT_SECTION8_FAILURES) intent?.let { section12Journal.confirm(owner, it.clientId) }
+                Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
+        }
+    }
 
     override suspend fun aiRecap(conversationId: String): Result<AiRecapDto> =
         when (val r = api.aiRecap(viewerId ?: "", conversationId)) {
             is PulseResult.Success -> Result.success(r.value)
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+
+    /**
+     * Section 12 - bounded full-list walk over the shared keyed pages: fetch a
+     * page, follow nextCursor while hasMore, cap [INTEGRATION_PAGE_WALK_MAX]
+     * hops; the account guard rides every hop like a single request. A legacy
+     * unpaged response (page == null) is the first AND last page.
+     */
+    private suspend fun <W, T> walkIntegrationPages(
+        fetch: suspend (owner: String, cursor: String?) -> PulseResult<W>,
+        rows: (W) -> List<T>,
+        pageMeta: (W) -> app.pulse.protocol.IntegrationPageDto?,
+    ): Result<List<T>> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        var cursor: String? = null
+        val collected = mutableListOf<T>()
+        var pages = 0
+        while (pages < INTEGRATION_PAGE_WALK_MAX) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Account changed")
+            val page = when (val r = fetch(owner, cursor)) {
+                is PulseResult.Success -> r.value
+                is PulseResult.Failure -> return Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            }
+            collected += rows(page)
+            val meta = pageMeta(page)
+            val next = meta?.nextCursor?.takeIf { meta.hasMore }
+            if (next == null) return Result.success(collected)
+            cursor = next
+            pages++
+        }
+        return Result.failure(IllegalStateException("Integration list exceeded the safe page limit. Retry."))
+    }
 
     /** Wire automation row → domain (AutomationDto/Room2Dtos.kt). */
     private fun app.pulse.protocol.AutomationDto.toDomain(): Automation = Automation(
@@ -3386,6 +3597,19 @@ class PulseRepositoryImpl constructor(
         url = url,
         createdAtIso = createdAt,
         createdBy = createdBy,
+        rotatedAtIso = rotatedAt,
+    )
+
+    /** Section 12 - webhook mutation receipt (bare DTO) → domain row. */
+    private fun app.pulse.protocol.WebhookMutationDto.toDomain(): Webhook = Webhook(
+        id = id,
+        name = name,
+        token = token,
+        avatarColor = avatarColor,
+        url = url,
+        createdAtIso = createdAt,
+        createdBy = createdBy,
+        rotatedAtIso = rotatedAt,
     )
 
     override suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<List<String>> = withRoomMutation(conversationId) { owner, _ ->
@@ -3700,6 +3924,7 @@ class PulseRepositoryImpl constructor(
             }
             outboxRetryJournal.restore(checkNotNull(viewerId))
             flushSection8Intents()
+            flushSection12Intents()
             if (dispatchGate.remainingDelayMillis() > 0L) {
                 scheduleSelfHeal()
                 return@serialized FlushReport(pending = pendingOutboxCount())

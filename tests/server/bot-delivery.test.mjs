@@ -8,6 +8,7 @@ import { createRequire,stripTypeScriptTypes } from 'node:module'
 import { createHash } from 'node:crypto'
 import { messageDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { threadRootAvailable } from '../../src/lib/message-visibility.ts'
+import * as contracts from '../../src/lib/integration-contracts.ts'
 const {Prisma,PrismaClient}=createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path,bindings,expression) {
  const text=(await readFile(new URL(`../../${path}`,import.meta.url),'utf8')).replace(/^import[\s\S]*?from ['"][^'"]+['"];?\s*$/gm,'').replace(/^export /gm,'')
@@ -17,7 +18,7 @@ const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r});return
 async function fixture(run) {
  const dir=await mkdtemp(join(tmpdir(),'bot-delivery-'));const db=new PrismaClient({datasourceUrl:`file:${join(dir,'test.sqlite')}`})
  try {
-  for(const name of ['User','Conversation','ConversationParticipant','Message','UserBlock','Poll','PollOption','PollVote','UserWallet']) {
+  for(const name of ['User','Conversation','ConversationParticipant','Message','UserBlock','Poll','PollOption','PollVote','UserWallet','BotPromptLease']) {
    const columns=Prisma.dmmf.datamodel.models.find(m=>m.name===name).fields.filter(f=>f.kind!=='object'&&!f.isList).map(f=>{
     const type=['Int','Boolean','BigInt'].includes(f.type)?'INTEGER':f.type==='Float'?'REAL':f.type==='DateTime'?'DATETIME':'TEXT'
     const def=typeof f.default==='string'?` DEFAULT '${f.default.replaceAll("'","''")}'`:typeof f.default==='number'||typeof f.default==='boolean'?` DEFAULT ${Number(f.default)}`:f.default?.name==='now'?' DEFAULT CURRENT_TIMESTAMP':''
@@ -32,9 +33,9 @@ async function fixture(run) {
   const events=[],typing=[]
   const bindings={db,clipUtf16,MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},createHash,messageDeliveryDecision,threadRootAvailable,mapMessage:r=>r,
    memberIdsOf:async room=>(await db.conversationParticipant.findMany({where:{conversationId:room},orderBy:{userId:'asc'},select:{userId:true}})).map(r=>r.userId),
-   notifySocket:async(...args)=>events.push(args),fetch:async(_,options)=>{typing.push(JSON.parse(options.body));return new Response('{}')},deliverLivePush:async()=>{},console:{error:()=>{}}}
+   notifySocket:async(...args)=>events.push(args),fetch:async(_,options)=>{typing.push(JSON.parse(options.body));return new Response('{}')},deliverLivePush:async()=>{},console:{error:()=>{}},...contracts}
   const delivery=await load('src/lib/bot-delivery.ts',bindings,'({botReplyContext,createBotReply,prepareAiContext})')
-  const deps={...bindings,...delivery}
+  const deps={...bindings,BOT_USERNAME_CANONICAL:contracts.BOT_USERNAME,...delivery}
   const tx=fn=>db.$transaction(fn,{isolationLevel:'Serializable'})
   await run(db,{trigger,events,typing,
    prepare:()=>tx(t=>delivery.prepareAiContext(t,'room','bot',trigger)),

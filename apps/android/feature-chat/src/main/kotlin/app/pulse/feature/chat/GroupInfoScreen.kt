@@ -411,7 +411,7 @@ class GroupInfoViewModel @Inject constructor(
         }
     }
 
-    private fun changeWebhook(token: String? = null, confirmed: () -> Unit = {}, operation: suspend () -> Webhook?) {
+    private fun changeWebhook(token: String? = null, confirmed: () -> Unit = {}, notice: String? = null, operation: suspend () -> Webhook?) {
         if (_webhooks.value.loading || _webhooks.value.loadError != null) return
         if (webhookSnapshotOwner != repo.attachmentSessionKey()) { loadWebhooks(); return }
         val ticket = webhookGate.beginWrite() ?: return
@@ -422,11 +422,15 @@ class GroupInfoViewModel @Inject constructor(
                 val row = operation()
                 currentCoroutineContext().ensureActive()
                 if (!webhookGate.isCurrent(ticket)) return@launch
-                _webhooks.value = _webhooks.value.copy(rows = if (row != null)
-                    _webhooks.value.rows.filterNot { it.id == row.id } + row
-                    else _webhooks.value.rows.filterNot { it.token == token })
+                // Section 12: create appends, delete filters by the (dead)
+                // token, rotation updates the row IN PLACE - the row keeps its
+                // createdAt-ordered slot and gains the fresh token/url/rotatedAt.
+                _webhooks.value = _webhooks.value.copy(rows = if (row != null) {
+                    val rows = _webhooks.value.rows
+                    if (rows.any { it.id == row.id }) rows.map { if (it.id == row.id) row else it } else rows + row
+                } else _webhooks.value.rows.filterNot { it.token == token })
                 confirmed()
-                notify(if (row != null) "Webhook created" else "Webhook deleted")
+                notify(notice ?: if (row != null) "Webhook created" else "Webhook deleted")
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (error: Exception) {
                 if (webhookGate.isCurrent(ticket)) notify(error.message ?: "Could not change the webhook", isError = true)
@@ -449,6 +453,11 @@ class GroupInfoViewModel @Inject constructor(
 
     fun deleteWebhook(token: String) =
         changeWebhook(token = token) { repo.deleteWebhook(token).getOrThrow(); null }
+
+    /** Section 12 item 7 - capability rotation: the server mints a fresh token
+     * and the old ingest URL dies immediately; the row updates in place. */
+    fun rotateWebhook(token: String) =
+        changeWebhook(token = token, notice = "Webhook URL rotated - the old URL is dead") { repo.rotateWebhook(token).getOrThrow() }
 
 
     fun setMyPrivacy(on: Boolean) = writeMyPrivacy(on)
@@ -993,6 +1002,7 @@ fun GroupInfoScreen(
                     state = webhooks,
                     onCreate = viewModel::createWebhook,
                     onDelete = viewModel::deleteWebhook,
+                    onRotate = viewModel::rotateWebhook,
                     onLoad = viewModel::loadWebhooks,
                     onNotice = { text, _ ->
                         scope.launch { snackbar.showSnackbar(text, withDismissAction = false) }

@@ -51,6 +51,11 @@ import app.pulse.core.PulseEndpoints
 import app.pulse.domain.model.Automation
 import app.pulse.domain.model.Webhook
 import app.pulse.ui.PulsePalette
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * R2-A items 6/7 - the room-info manager sections, ports of:
@@ -58,10 +63,13 @@ import app.pulse.ui.PulsePalette
  *    (keyword-triggered auto-replies; list / optimistic toggle / R41 trigger
  *    rename / honest delete / create sheet).
  *  · WebhooksSection    - src/components/chat/group-info-sheet.tsx:503
- *    (Discord-style incoming hooks; list / copy ingest URL / admin create+delete).
+ *    (Discord-style incoming hooks; list / copy ingest URL / admin create+
+ *    delete+Section 12 capability rotation).
  * Both read live server truth through GroupInfoViewModel → /api/automations
- * and /api/webhooks. Members see rows; management actions are admin-gated in
- * the UI exactly like the web (the server enforces it authoritatively).
+ * and /api/webhooks (Section 12: the lists walk the keyed pages server-side
+ * and every mutation carries the durable clientId). Members see rows;
+ * management actions are admin-gated in the UI exactly like the web (the
+ * server enforces it authoritatively).
  */
 
 // AUTOMATIONS
@@ -361,6 +369,8 @@ internal fun WebhooksSection(
     state: GroupInfoViewModel.WebhooksUi,
     onCreate: (name: String, confirmed: () -> Unit) -> Unit,
     onDelete: (token: String) -> Unit,
+    // Section 12 item 7 - capability rotation (fresh token, old URL dies).
+    onRotate: (token: String) -> Unit,
     onLoad: () -> Unit,
     onNotice: (String, Boolean) -> Unit,
 ) {
@@ -370,6 +380,7 @@ internal fun WebhooksSection(
     }
     var createOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Webhook?>(null) }
+    var rotateTarget by remember { mutableStateOf<Webhook?>(null) }
     val clipboard = LocalClipboardManager.current
     val clipboardContext = LocalContext.current
 
@@ -417,6 +428,7 @@ internal fun WebhooksSection(
                                 SensitiveClipboard.copy(clipboardContext, "webhook url", fullUrl)
                                 onNotice("Webhook URL copied", false)
                             },
+                            onRotate = { if (!state.busy && !state.loading) rotateTarget = webhook },
                             onDelete = { if (!state.busy && !state.loading) deleteTarget = webhook },
                         )
                     }
@@ -456,6 +468,21 @@ internal fun WebhooksSection(
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } },
         )
     }
+    // Section 12 item 7 - rotate confirms BEFORE the old capability dies.
+    rotateTarget?.let { webhook ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { rotateTarget = null },
+            title = { Text("Rotate webhook URL?") },
+            text = { Text("“${webhook.name}” gets a fresh URL and the current one stops working immediately.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    rotateTarget = null
+                    onRotate(webhook.token)
+                }) { Text("Rotate") }
+            },
+            dismissButton = { TextButton(onClick = { rotateTarget = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable
@@ -463,6 +490,7 @@ private fun WebhookRow(
     webhook: Webhook,
     isAdmin: Boolean,
     onCopy: () -> Unit,
+    onRotate: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Row(
@@ -490,11 +518,27 @@ private fun WebhookRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // Section 12 item 7 - the rotation receipt is honest truth on the row.
+            webhook.rotatedAtIso?.let { rotated ->
+                val stamp = rotatedStamp(rotated)
+                if (stamp.isNotEmpty()) {
+                    Text(
+                        "Rotated $stamp",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
         IconButton(onClick = onCopy) {
             Icon(PulseIcons.Copy, contentDescription = "Copy webhook URL", modifier = Modifier.size(15.dp))
         }
         if (isAdmin) {
+            IconButton(onClick = onRotate) {
+                Icon(PulseIcons.Refresh, contentDescription = "Rotate webhook URL \"${webhook.name}\"", modifier = Modifier.size(15.dp))
+            }
             IconButton(onClick = onDelete) {
                 Icon(
                     PulseIcons.Trash,
@@ -514,6 +558,20 @@ private fun webhookColor(name: String): Color = when (name.lowercase()) {
     "amber" -> PulsePalette.Amber
     "rose" -> PulsePalette.Rose
     else -> PulsePalette.Emerald
+}
+
+private val ROTATED_TIME_STAMP = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+private val ROTATED_DAY_STAMP = DateTimeFormatter.ofPattern("MMM d", Locale.US)
+
+/** Section 12 - "Rotated <stamp>" label; web formatListStamp truth (en-US). */
+private fun rotatedStamp(iso: String): String {
+    val at = runCatching { Instant.parse(iso).atZone(ZoneId.systemDefault()) }.getOrNull() ?: return ""
+    val now = ZonedDateTime.now()
+    return when (at.toLocalDate()) {
+        now.toLocalDate() -> ROTATED_TIME_STAMP.format(at)
+        now.minusDays(1).toLocalDate() -> "Yesterday"
+        else -> ROTATED_DAY_STAMP.format(at)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

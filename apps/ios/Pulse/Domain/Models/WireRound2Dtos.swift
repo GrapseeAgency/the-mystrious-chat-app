@@ -3,7 +3,14 @@ import Foundation
 // R2-B - web↔native parity wire DTOs (Round 2):
 //   • R39/R41 automations  - GET/POST /api/conversations/[id]/automations,
 //                            PATCH/DELETE /api/automations/[id]
-//   • webhooks             - GET/POST /api/webhooks, DELETE /api/webhooks/[token]
+//   • webhooks             - GET/POST /api/webhooks, PATCH/DELETE
+//                            /api/webhooks/[token]
+//   • Section 12           - the integration rails gain the monotonic room
+//                            revision + shared keyset page verdict on every
+//                            list, durable clientId replay receipts on every
+//                            mutation (replayed), the webhook rotatedAt
+//                            capability stamp and the WireWebhookMutation
+//                            create/rotate/delete receipts.
 //   • R34-b AI recap       - POST /api/ai/recap → { recap, basedOn, cached }
 //   • R42 per-viewer veil  - PATCH /api/conversations/[id]/screen-privacy
 // Mirror of the live route contracts (web src/lib/types.ts AutomationSummary,
@@ -36,23 +43,40 @@ public struct WireAutomation: Codable, Hashable, Sendable, Identifiable {
     public let createdBy: WireAutomationAuthor?
 }
 
-/// GET /api/conversations/{id}/automations?userId= → { automations: [...] }
-/// (createdAt desc, creator included).
-public struct WireAutomationsPage: Codable, Sendable {
-    public let automations: [WireAutomation]?
+/// Section 12 item 2 - the shared keyset page verdict both integration
+/// lists return (`{ nextCursor: String|null, hasMore: Bool }`); the cursor
+/// is the opaque "<epochMs>.<id>" keyset stamp.
+public struct WireIntegrationPage: Codable, Sendable {
+    public var nextCursor: String? = nil
+    public var hasMore: Bool? = nil
 }
 
-/// POST /api/conversations/{id}/automations → 201 { automation } and
-/// PATCH /api/automations/{id} → { automation } (tolerant envelope).
+/// GET /api/conversations/{id}/automations?userId= → { automations: [...] }
+/// (createdAt desc, creator included). Section 12 item 2: the room's
+/// monotonic integration revision (0 = never bumped) and the page verdict
+/// ride along.
+public struct WireAutomationsPage: Codable, Sendable {
+    public let automations: [WireAutomation]?
+    public var revision: Int? = nil
+    public var page: WireIntegrationPage? = nil
+}
+
+/// POST /api/conversations/{id}/automations → 201 { automation, revision,
+/// replayed? } and PATCH /api/automations/{id} → { automation, revision }
+/// (tolerant envelope; replayed is present only when a clientId was sent).
 public struct WireAutomationEnvelope: Codable, Sendable {
     public let automation: WireAutomation?
+    public var revision: Int? = nil
+    public var replayed: Bool? = nil
 }
 
 // MARK: - Webhooks (Discord-style incoming integrations)
 
 /// One incoming webhook row - web WebhookDTO parity (webhooks/route.ts:19-27).
 /// `url` is the RELATIVE ingest path ("/api/webhooks/<token>"); clients pair
-/// it with the gateway origin when copying the shareable URL.
+/// it with the gateway origin when copying the shareable URL. Section 12
+/// item 9: rotatedAt is the ISO instant of the last capability rotation
+/// (null = the original token is still the live one).
 public struct WireWebhook: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let name: String
@@ -61,12 +85,37 @@ public struct WireWebhook: Codable, Hashable, Sendable, Identifiable {
     public let url: String?
     public let createdAt: String?
     public let createdBy: String?
+    public var rotatedAt: String? = nil
 }
 
-/// GET /api/webhooks?conversationId=&requesterId= → { webhooks: [...] }
-/// (createdAt asc).
+/// GET /api/webhooks?conversationId=&requesterId= → { webhooks, revision,
+/// page } (createdAt asc keyset; revision = the room's integration
+/// revision, page = the shared verdict).
 public struct WireWebhooksPage: Codable, Sendable {
     public let webhooks: [WireWebhook]?
+    public var revision: Int? = nil
+    public var page: WireIntegrationPage? = nil
+}
+
+/// Section 12 items 1/9 - the mutation receipts the integration rails
+/// answer with. Create/rotate spread the full capability DTO (+ revision,
+/// replayed), delete answers { ok, deleted, token, ... } with the SAME
+/// verdict on a lost-ACK retry even though the row is gone. Every field
+/// tolerates absence so an older relay never crashes the manager surface;
+/// the client re-derives the honesty gates in validateWebhookMutation.
+public struct WireWebhookMutation: Codable, Sendable {
+    public var id: String? = nil
+    public var name: String? = nil
+    public var token: String? = nil
+    public var avatarColor: String? = nil
+    public var url: String? = nil
+    public var createdAt: String? = nil
+    public var createdBy: String? = nil
+    public var rotatedAt: String? = nil
+    public var revision: Int? = nil
+    public var replayed: Bool? = nil
+    public var ok: Bool? = nil
+    public var deleted: Bool? = nil
 }
 
 // MARK: - AI recap (R34-b)

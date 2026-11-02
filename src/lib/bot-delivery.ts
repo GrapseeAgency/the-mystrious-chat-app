@@ -53,9 +53,17 @@ export async function createBotReply(tx: Prisma.TransactionClient, room: string,
   return message
 }
 
-/** A bounded, scoped transcript. Its fingerprint is compared again before an
- * LLM answer is committed, preventing deleted/expired/edited context from being
- * reintroduced by a late completion. Already-transmitted prompts cannot be recalled. */
+/** A bounded, scoped transcript (Section 12 item 8). Context is capped twice:
+ * at most AI_CONTEXT_ROW_MAX rows AND AI_CONTEXT_CHAR_BUDGET total transcript
+ * characters - the NEWEST rows always win, so oversized rooms cannot push the
+ * trigger out of its own prompt. Its fingerprint is compared again before an
+ * LLM answer is committed, preventing deleted/expired/edited/revised context
+ * from being reintroduced by a late completion (each row's content and
+ * editedAt revision take part in the digest). Already-transmitted prompts
+ * cannot be recalled. */
+export const AI_CONTEXT_ROW_MAX = 40
+export const AI_CONTEXT_CHAR_BUDGET = 6_000
+
 export async function prepareAiContext(tx: Prisma.TransactionClient, room: string, botId: string, trigger: BotTrigger, now = new Date()) {
   const context = await botReplyContext(tx, room, botId, trigger, now)
   if (!context) return null
@@ -69,16 +77,27 @@ export async function prepareAiContext(tx: Prisma.TransactionClient, room: strin
       source.parentId ? { OR: [{ id: source.parentId }, { parentId: source.parentId }] } : { parentId: null },
       { OR: [{ createdAt: { lt: source.createdAt } }, { createdAt: source.createdAt, id: { lte: source.id } }] },
     ],
-  }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 16,
+  }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: AI_CONTEXT_ROW_MAX,
     select: { id: true, content: true, imagePath: true, createdAt: true, editedAt: true, expiresAt: true,
       anon: true, anonAlias: true, sender: { select: { name: true } } },
   })
   const roster = await tx.conversationParticipant.findMany({ where: { conversationId: room },
     orderBy: { userId: 'asc' }, select: { userId: true, joinedAt: true, role: true } })
-  const rows = recent.reverse().map(row => ({ ...row,
+  const rendered = [...recent].reverse().map(row => ({ ...row,
     sender: { name: row.anon ? row.anonAlias || 'Anonymous' : row.sender.name },
   }))
+  // Char budget: keep the newest rows until the next OLDER row would overflow.
+  // rendered is chronological, so the walk trims from the FRONT (oldest first).
+  let total = 0
+  let start = rendered.length
+  for (let i = rendered.length - 1; i >= 0; i -= 1) {
+    const line = `${rendered[i].sender.name}: ${rendered[i].content.trim() ? clipUtf16(rendered[i].content, 500) : rendered[i].imagePath ? '[sent a photo]' : '[attachment]'}`
+    if (total + line.length > AI_CONTEXT_CHAR_BUDGET && i < rendered.length - 1) break
+    total += line.length
+    start = i
+  }
+  const rows = rendered.slice(start)
   const transcript = rows.map(row => `${row.sender.name}: ${row.content.trim() ? clipUtf16(row.content, 500) : row.imagePath ? '[sent a photo]' : '[attachment]'}`).join('\n')
-  return { isGroup: conversation.isGroup, transcript,
+  return { isGroup: conversation.isGroup, transcript, truncated: start > 0,
     fingerprint: createHash('sha256').update(JSON.stringify({ rows, roster, conversation })).digest('hex') }
 }

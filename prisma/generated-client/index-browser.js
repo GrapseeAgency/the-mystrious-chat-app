@@ -132,6 +132,7 @@ exports.Prisma.UserScalarFieldEnum = {
   storyViewReceipts: 'storyViewReceipts',
   sessionTokenHash: 'sessionTokenHash',
   legacyTokenHashes: 'legacyTokenHashes',
+  serviceKey: 'serviceKey',
   createdAt: 'createdAt',
   lastSeenAt: 'lastSeenAt',
   xp: 'xp',
@@ -290,7 +291,8 @@ exports.Prisma.AutomationScalarFieldEnum = {
   enabled: 'enabled',
   hits: 'hits',
   lastFiredAt: 'lastFiredAt',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 };
 
 exports.Prisma.WebhookScalarFieldEnum = {
@@ -300,7 +302,52 @@ exports.Prisma.WebhookScalarFieldEnum = {
   name: 'name',
   avatarColor: 'avatarColor',
   createdBy: 'createdBy',
+  createdAt: 'createdAt',
+  rotatedAt: 'rotatedAt',
+  windowStartedAt: 'windowStartedAt',
+  windowPosts: 'windowPosts'
+};
+
+exports.Prisma.IntegrationOperationScalarFieldEnum = {
+  id: 'id',
+  kind: 'kind',
+  clientId: 'clientId',
+  conversationId: 'conversationId',
+  userId: 'userId',
+  requestHash: 'requestHash',
+  resultId: 'resultId',
+  resultJson: 'resultJson',
   createdAt: 'createdAt'
+};
+
+exports.Prisma.IntegrationRevisionScalarFieldEnum = {
+  conversationId: 'conversationId',
+  rev: 'rev',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.AutomationExecutionScalarFieldEnum = {
+  id: 'id',
+  conversationId: 'conversationId',
+  automationId: 'automationId',
+  sourceId: 'sourceId',
+  messageId: 'messageId',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.AutomationNotifyOutboxScalarFieldEnum = {
+  id: 'id',
+  conversationId: 'conversationId',
+  messageId: 'messageId',
+  state: 'state',
+  attempts: 'attempts',
+  createdAt: 'createdAt',
+  deliveredAt: 'deliveredAt'
+};
+
+exports.Prisma.BotPromptLeaseScalarFieldEnum = {
+  conversationId: 'conversationId',
+  expiresAt: 'expiresAt'
 };
 
 exports.Prisma.WhiteboardStrokeScalarFieldEnum = {
@@ -853,6 +900,11 @@ exports.Prisma.ModelName = {
   Conversation: 'Conversation',
   Automation: 'Automation',
   Webhook: 'Webhook',
+  IntegrationOperation: 'IntegrationOperation',
+  IntegrationRevision: 'IntegrationRevision',
+  AutomationExecution: 'AutomationExecution',
+  AutomationNotifyOutbox: 'AutomationNotifyOutbox',
+  BotPromptLease: 'BotPromptLease',
   WhiteboardStroke: 'WhiteboardStroke',
   StatusStory: 'StatusStory',
   StoryView: 'StoryView',

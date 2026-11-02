@@ -284,6 +284,8 @@ class FlushOutboxUseCaseTest {
         override suspend fun setGroupPhoto(conversationId: String, photoPath: String) = Result.success(Unit)
         override suspend fun automations(conversationId: String) =
             Result.success(emptyList<app.pulse.domain.model.Automation>())
+        override suspend fun automationsPage(conversationId: String, cursor: String?, limit: Int?) =
+            Result.success(app.pulse.domain.model.IntegrationPage<app.pulse.domain.model.Automation>())
         override suspend fun createAutomation(conversationId: String, trigger: String, reply: String) =
             Result.failure<app.pulse.domain.model.Automation>(UnsupportedOperationException())
         override suspend fun setAutomationEnabled(automationId: String, enabled: Boolean) =
@@ -293,6 +295,10 @@ class FlushOutboxUseCaseTest {
         override suspend fun deleteAutomation(automationId: String) = Result.success(Unit)
         override suspend fun webhooks(conversationId: String) =
             Result.success(emptyList<app.pulse.domain.model.Webhook>())
+        override suspend fun webhooksPage(conversationId: String, cursor: String?, limit: Int?) =
+            Result.success(app.pulse.domain.model.IntegrationPage<app.pulse.domain.model.Webhook>())
+        override suspend fun rotateWebhook(token: String) =
+            Result.failure<app.pulse.domain.model.Webhook>(UnsupportedOperationException())
         override suspend fun createWebhook(conversationId: String, name: String) =
             Result.failure<app.pulse.domain.model.Webhook>(UnsupportedOperationException())
         override suspend fun deleteWebhook(token: String) = Result.success(Unit)

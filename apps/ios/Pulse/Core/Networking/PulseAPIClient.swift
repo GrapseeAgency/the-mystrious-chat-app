@@ -2749,25 +2749,49 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireRecapResult.self, from: data)
     }
 
-    /// GET /api/conversations/{id}/automations?userId= → { automations }
-    /// (participant-only; rows createdAt desc, creator chip included).
-    public func automations(conversationId: String) async throws -> [WireAutomation] {
-        let page: WireAutomationsPage = try await get(
-            "/api/conversations/\(q(conversationId))/automations?userId=\(q(userId))",
-        )
-        guard let rows = page.automations, Set(rows.map(\.id)).count == rows.count else { throw Failure(kind: .server, message: "Automation list was not confirmed.") }
-        for row in rows { try validateAutomation(row); guard row.conversationId == conversationId else { throw Failure(kind: .server, message: "Wrong automation room.") } }
-        return rows
+    /// GET /api/conversations/{id}/automations?userId=[&limit=&cursor=] →
+    /// { automations, revision, page } (participant-only; rows createdAt
+    /// desc, creator chip included). Section 12: limit/cursor ride the query
+    /// only when set - the legacy no-params call still opens the first page.
+    public func automations(conversationId: String, limit: Int? = nil, cursor: String? = nil) async throws -> [WireAutomation] {
+        try await automationsPage(conversationId: conversationId, limit: limit, cursor: cursor).automations ?? []
     }
 
-    /// POST /api/conversations/{id}/automations { userId, trigger, reply }
-    /// → 201 { automation } (admin-only; 409 duplicate trigger verbatim).
-    public func createAutomation(conversationId: String, trigger: String, reply: String) async throws -> WireAutomation {
+    /// The full automation page verdict (rows + revision + nextCursor) so a
+    /// caller can walk the bounded page walk past the legacy single-call
+    /// boundary (cursor is the opaque "<epochMs>.<id>" keyset stamp).
+    public func automationsPage(conversationId: String, limit: Int? = nil, cursor: String? = nil) async throws -> WireAutomationsPage {
+        var path = "/api/conversations/\(q(conversationId))/automations?userId=\(q(userId))"
+        if let limit { path += "&limit=\(limit)" }
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireAutomationsPage = try await get(path)
+        guard let rows = page.automations, Set(rows.map(\.id)).count == rows.count else { throw Failure(kind: .server, message: "Automation list was not confirmed.") }
+        for row in rows { try validateAutomation(row); guard row.conversationId == conversationId else { throw Failure(kind: .server, message: "Wrong automation room.") } }
+        return page
+    }
+
+    /// POST /api/conversations/{id}/automations { userId, trigger, reply,
+    /// clientId? } → 201 { automation, revision, replayed? } (admin-only; 409
+    /// duplicate trigger verbatim). Section 12 item 1: the CALLER passes the
+    /// journaled clientId - a lost-ACK retry replays the SAME rule and a
+    /// receipt without the replay flag is refused.
+    public func createAutomation(conversationId: String, trigger: String, reply: String, clientId: String? = nil) async throws -> WireAutomation {
+        var body: [String: Any] = ["userId": userId, "trigger": trigger, "reply": reply]
+        if let clientId { body["clientId"] = clientId }
         let data = try await postRaw(
             "/api/conversations/\(q(conversationId))/automations",
-            body: ["userId": userId, "trigger": trigger, "reply": reply],
+            body: body,
         )
-        let row = try confirmedAutomation(data)
+        let envelope = try decoder.decode(WireAutomationEnvelope.self, from: data)
+        if clientId != nil {
+            guard envelope.replayed != nil, (envelope.revision ?? -1) >= 0 else {
+                throw Failure(kind: .server, message: "Automation replay receipt was not confirmed.")
+            }
+        }
+        guard let row = envelope.automation else {
+            throw Failure(kind: .server, message: "Automation creation was not confirmed.")
+        }
+        try validateAutomation(row)
         guard row.conversationId == conversationId, row.trigger == trigger.trimmingCharacters(in: .whitespacesAndNewlines),
               row.reply == reply.trimmingCharacters(in: .whitespacesAndNewlines), row.enabled == true else {
             throw Failure(kind: .server, message: "Automation creation was not confirmed.")
@@ -2797,41 +2821,91 @@ public struct PulseAPIClient: Sendable {
         return row
     }
 
-    /// DELETE /api/automations/{id} { userId } → { ok } (admin-only).
-    public func deleteAutomation(_ id: String) async throws {
-        let data = try await deleteRaw("/api/automations/\(q(id))", body: ["userId": userId])
+    /// DELETE /api/automations/{id} { userId, clientId? } → { ok, deleted,
+    /// automationId, userId, revision, replayed? } (admin-only). Section 12
+    /// item 1: the journaled clientId replays the SAME verdict even though
+    /// the row is gone. The owner rides the JSON body, so the identity rides
+    /// the body too (the route pairs them).
+    public func deleteAutomation(_ id: String, clientId: String? = nil) async throws {
+        var body: [String: Any] = ["userId": userId]
+        if let clientId { body["clientId"] = clientId }
+        let data = try await deleteRaw("/api/automations/\(q(id))", body: body)
         try confirmedControlDeletion(data, target: id, automation: true)
     }
 
-    /// GET /api/webhooks?conversationId=&requesterId= → { webhooks }
-    /// (admin-only; rows include posting credentials).
-    public func webhooks(conversationId: String) async throws -> [WireWebhook] {
-        let page: WireWebhooksPage = try await get(
-            "/api/webhooks?conversationId=\(q(conversationId))&requesterId=\(q(userId))",
-        )
-        guard let rows = page.webhooks, Set(rows.map(\.id)).count == rows.count else { throw Failure(kind: .server, message: "Webhook list was not confirmed.") }
-        try rows.forEach { try validateWebhook($0) }
-        return rows
+    /// GET /api/webhooks?conversationId=&requesterId=[&limit=&cursor=] →
+    /// { webhooks, revision, page } (admin-only; rows createdAt asc and they
+    /// include posting credentials). Section 12: limit/cursor ride the query
+    /// only when set.
+    public func webhooks(conversationId: String, limit: Int? = nil, cursor: String? = nil) async throws -> [WireWebhook] {
+        try await webhooksPage(conversationId: conversationId, limit: limit, cursor: cursor).webhooks ?? []
     }
 
-    /// POST /api/webhooks { conversationId, name, requesterId } → 201
-    /// bare WebhookDTO (admin-only create; token is server-generated).
-    public func createWebhook(conversationId: String, name: String) async throws -> WireWebhook {
-        let data = try await postRaw(
-            "/api/webhooks",
-            body: ["conversationId": conversationId, "name": name, "requesterId": userId],
-        )
+    /// The full webhook page verdict (rows + revision + nextCursor) so a
+    /// caller can walk the bounded page walk (createdAt asc keyset).
+    public func webhooksPage(conversationId: String, limit: Int? = nil, cursor: String? = nil) async throws -> WireWebhooksPage {
+        var path = "/api/webhooks?conversationId=\(q(conversationId))&requesterId=\(q(userId))"
+        if let limit { path += "&limit=\(limit)" }
+        if let cursor { path += "&cursor=\(q(cursor))" }
+        let page: WireWebhooksPage = try await get(path)
+        guard let rows = page.webhooks, Set(rows.map(\.id)).count == rows.count else { throw Failure(kind: .server, message: "Webhook list was not confirmed.") }
+        try rows.forEach { try validateWebhook($0) }
+        return page
+    }
+
+    /// POST /api/webhooks { conversationId, name, requesterId, clientId? } →
+    /// 201 WebhookDTO + replayed? (admin-only create; token is
+    /// server-generated). Section 12 item 1: the CALLER passes the journaled
+    /// clientId - a lost-ACK retry replays the SAME token.
+    public func createWebhook(conversationId: String, name: String, clientId: String? = nil) async throws -> WireWebhook {
+        var body: [String: Any] = ["conversationId": conversationId, "name": name, "requesterId": userId]
+        if let clientId { body["clientId"] = clientId }
+        let data = try await postRaw("/api/webhooks", body: body)
         let row = try decoder.decode(WireWebhook.self, from: data)
         try validateWebhook(row)
         guard row.name == name.trimmingCharacters(in: .whitespacesAndNewlines), row.createdBy == userId else {
             throw Failure(kind: .server, message: "Webhook creation was not confirmed.")
         }
+        if clientId != nil {
+            // A receipt without the replay flag is refused when identity was
+            // sent - the token must be provably durable.
+            guard try decoder.decode(WireWebhookMutation.self, from: data).replayed != nil else {
+                throw Failure(kind: .server, message: "Webhook replay receipt was not confirmed.")
+            }
+        }
         return row
     }
 
-    /// DELETE /api/webhooks/{token}?requesterId= → { ok } (admin-only).
-    public func deleteWebhook(token: String) async throws {
-        let data = try await deleteRaw("/api/webhooks/\(q(token))?requesterId=\(q(userId))", body: ["requesterId": userId])
+    /// PATCH /api/webhooks/{token} { requesterId, clientId? } - Section 12
+    /// item 9 CAPABILITY ROTATION: the server mints a fresh token, stamps
+    /// rotatedAt, and the old ingest URL 404s from that instant. A lost-ACK
+    /// retry carrying the OLD token replays the SAME fresh token
+    /// (replayed:true). The receipt parses as WireWebhookMutation.
+    public func rotateWebhook(token: String, requesterId: String, clientId: String? = nil) async throws -> WireWebhookMutation {
+        guard !requesterId.isEmpty, requesterId == userId else {
+            throw Failure(kind: .validation, message: "The webhook owner changed. Reopen group info.")
+        }
+        var body: [String: Any] = ["requesterId": requesterId]
+        if let clientId { body["clientId"] = clientId }
+        let data = try await patchRaw("/api/webhooks/\(q(token))", body: body)
+        let mutation = try decoder.decode(WireWebhookMutation.self, from: data)
+        try validateWebhookMutation(mutation)
+        if clientId != nil {
+            guard mutation.replayed != nil else {
+                throw Failure(kind: .server, message: "Webhook rotation receipt was not confirmed.")
+            }
+        }
+        return mutation
+    }
+
+    /// DELETE /api/webhooks/{token}?requesterId=[&clientId=] → { ok, deleted,
+    /// token, userId, revision, replayed? } (admin-only). The requester rides
+    /// the query, so the journaled clientId MUST ride the query too (the
+    /// route reads the body only when the query is bare) - Section 12 item 1.
+    public func deleteWebhook(token: String, clientId: String? = nil) async throws {
+        var path = "/api/webhooks/\(q(token))?requesterId=\(q(userId))"
+        if let clientId { path += "&clientId=\(q(clientId))" }
+        let data = try await deleteRaw(path, body: ["requesterId": userId])
         try confirmedControlDeletion(data, target: token, automation: false)
     }
 
@@ -2851,6 +2925,13 @@ public struct PulseAPIClient: Sendable {
     private func validateWebhook(_ row: WireWebhook) throws {
         guard !row.id.isEmpty, !row.name.isEmpty, !row.token.isEmpty, row.createdBy?.isEmpty == false,
               row.url == "/api/webhooks/\(row.token)" else { throw Failure(kind: .server, message: "Invalid webhook response.") }
+    }
+    /// Section 12 - the create/rotate receipt must carry the capability
+    /// intact: a non-empty token + the matching relative ingest URL.
+    private func validateWebhookMutation(_ row: WireWebhookMutation) throws {
+        guard let token = row.token, !token.isEmpty, row.url == "/api/webhooks/\(token)" else {
+            throw Failure(kind: .server, message: "Invalid webhook mutation response.")
+        }
     }
     private func confirmedControlDeletion(_ data: Data, target: String, automation: Bool) throws {
         struct Receipt: Decodable { let ok: Bool; let deleted: Bool; let userId: String; let automationId: String?; let token: String? }

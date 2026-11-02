@@ -46,8 +46,13 @@ public final class StoriesSessionModel: ObservableObject {
             flags.loadedOnce = true
         }
         // Section 9 items 1/4/5/9 - restore-time flush of the durable story
-        // journal (publish replays, view marks, delete tombstones).
-        Task { [weak self] in await self?.flushStoryIntents() }
+        // journal (publish replays, view marks, delete tombstones). Section 12:
+        // the integration intents ride the same session start (automations +
+        // webhook creates/deletes/rotates replay their SAME clientId).
+        Task { [weak self] in
+            await self?.flushStoryIntents()
+            await self?.flushIntegrationIntents()
+        }
     }
 
     /// Replays every pending story intent with its ORIGINAL identity. A
@@ -175,6 +180,71 @@ public final class StoriesSessionModel: ObservableObject {
                       where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
                     journal.confirm(owner: owner, clientId: intent.clientId) // permanent refusal
                 } catch { break } // transport-class: keep for the next flush
+            default: break
+            }
+        }
+    }
+
+    /// Section 12 items 1/9 - restore-time flush of the durable integration
+    /// journal (session start = integration start): a lost-ACK create/delete/
+    /// rotate replays the SAME clientId, so the server answers the stored
+    /// rule/capability/verdict instead of duplicating. Transport-class
+    /// failures keep the row for the next flush; permanent refusals retire
+    /// honestly.
+    public func flushIntegrationIntents() async {
+        guard session.viewer != nil, session.sessionGeneration == ownerEpoch else { return }
+        let journal = PulseSection12Journal.shared
+        let owner = session.api.userId
+        for intent in journal.pending(owner: owner) {
+            switch intent.kind {
+            case "automation-create":
+                do {
+                    _ = try await session.api.createAutomation(conversationId: intent.targetId,
+                        trigger: intent.payload["trigger"] ?? "",
+                        reply: intent.payload["reply"] ?? "",
+                        clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure
+                      where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                    journal.confirm(owner: owner, clientId: intent.clientId) // permanent refusal
+                } catch { break } // transport-class: keep for the next flush
+            case "automation-delete":
+                do {
+                    try await session.api.deleteAutomation(intent.targetId, clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure
+                      where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch { break }
+            case "webhook-create":
+                do {
+                    _ = try await session.api.createWebhook(conversationId: intent.targetId,
+                        name: intent.payload["name"] ?? "",
+                        clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure
+                      where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                    journal.confirm(owner: owner, clientId: intent.clientId) // permanent refusal
+                } catch { break }
+            case "webhook-delete":
+                do {
+                    try await session.api.deleteWebhook(token: intent.targetId, clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure
+                      where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                    journal.confirm(owner: owner, clientId: intent.clientId) // already gone: retire honestly
+                } catch { break }
+            case "webhook-rotate":
+                do {
+                    // The replay rides the OLD token (intentAt targetId) - the
+                    // server answers the SAME fresh capability.
+                    _ = try await session.api.rotateWebhook(token: intent.targetId, requesterId: owner,
+                        clientId: intent.clientId)
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch let failure as PulseAPIClient.Failure
+                      where failure.kind == .validation || failure.kind == .notFound || failure.kind == .forbidden {
+                    journal.confirm(owner: owner, clientId: intent.clientId)
+                } catch { break }
             default: break
             }
         }

@@ -5,7 +5,7 @@ import path from 'node:path'
 import { requireActionActor, requireActionOwner } from '@/lib/wallet-authorization'
 import { db } from '@/lib/db'
 import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
-import { createAutomationReply } from '@/lib/automation-delivery'
+import { createAutomationReply, markAutomationNotifyDelivered } from '@/lib/automation-delivery'
 import { threadRootAvailable } from '@/lib/message-visibility'
 import { decodeMessageSyncCursor, encodeMessageSyncCursor, readMessageSyncPage, readMessagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
 import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
@@ -804,7 +804,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
 }
 
 /** Best effort after the human send has committed. A notification failure
- * cannot undo a committed automation or prevent its hit from being counted. */
+ * cannot undo a committed automation or prevent its hit from being counted.
+ * The execution commit already wrote an AutomationNotifyOutbox debt (item 4):
+ * a successful inline relay SETTLES it here; a failed one stays pending for
+ * the dispatch ticker. */
 async function maybeAutomationReply(conversationId: string, sourceId: string, content: string): Promise<void> {
   try {
     const created = await db.$transaction(
@@ -812,11 +815,16 @@ async function maybeAutomationReply(conversationId: string, sourceId: string, co
       { isolationLevel: 'Serializable' },
     )
     if (!created) return
-    const recipients = await memberIdsOf(conversationId)
-    await notifySocket('message:new', recipients, {
-      type: 'message:new', message: mapMessage(created), recipientIds: recipients,
-      conversationId, native: nativeBlockFromPayload(created.payload),
-    })
+    try {
+      const recipients = await memberIdsOf(conversationId)
+      await notifySocket('message:new', recipients, {
+        type: 'message:new', message: mapMessage(created), recipientIds: recipients,
+        conversationId, native: nativeBlockFromPayload(created.payload),
+      })
+      await markAutomationNotifyDelivered(db, created.id)
+    } catch (error) {
+      console.error('[automations] inline relay failed - outbox retains the debt:', error instanceof Error ? error.message : error)
+    }
     // Machine producers get the SAME remote push path as human sends (the
     // planner re-reads current mute/block/membership/preview privacy).
     void deliverLivePush(db, created.id)

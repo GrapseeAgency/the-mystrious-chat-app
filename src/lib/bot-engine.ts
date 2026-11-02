@@ -10,14 +10,17 @@ import { clipUtf16 } from '@/lib/text-limits'
 import { db } from '@/lib/db'
 import { deliverLivePush } from './live-push-outbox.ts'
 import { botReplyContext, createBotReply, type BotTrigger, type BotReply } from '@/lib/bot-delivery'
+import { canonicalBotId, BOT_USERNAME as BOT_USERNAME_CANONICAL } from '@/lib/integration-contracts.ts'
 import {
   mapMessage,
   memberIdsOf,
   notifySocket,
 } from '@/lib/serializers'
 
-/** The bot's real @handle - a User row with this username must be a participant. */
-export const BOT_USERNAME = 'pulseai'
+/** The bot's real @handle - THE canonical machine account (serviceKey
+ * 'pulse.bot', Section 12 item 6) must be a participant. The handle stays
+ * 'pulseai'; identity resolution itself never depends on the mutable name. */
+const BOT_HANDLE = BOT_USERNAME_CANONICAL
 
 /** Deterministic payload marker on bot-authored messages (kind stays "text"). */
 const BOT_PAYLOAD = JSON.stringify({ bot: true })
@@ -76,8 +79,8 @@ const EIGHT_BALL_ANSWERS = [
 
 // Trigger parsing 
 
-const MENTION_RE = new RegExp(`@${BOT_USERNAME}(?![a-z0-9_])`, 'i')
-const HANDLE_PREFIX_RE = new RegExp(`^${BOT_USERNAME}\\s*[,:!]\\s*`, 'i')
+const MENTION_RE = new RegExp(`@${BOT_HANDLE}(?![a-z0-9_])`, 'i')
+const HANDLE_PREFIX_RE = new RegExp(`^${BOT_HANDLE}\\s*[,:!]\\s*`, 'i')
 const COMMAND_RE = /^([a-z0-9_]+)(?:[\s,:]+([\s\S]*))?$/
 
 interface Trigger {
@@ -374,9 +377,12 @@ export async function maybeBotReply(
     if (trigger.cmd === null && !trigger.viaHandle) return
     if (!claimOnce(userMessage.id)) return
 
-    // The bot must be a real participant of THIS conversation.
-    const botMember = await db.conversationParticipant.findFirst({
-      where: { conversationId, user: { username: BOT_USERNAME } },
+    // The canonical machine account must be a real participant of THIS
+    // conversation (item 6: resolved by stable serviceKey, never by name).
+    const canonicalId = await canonicalBotId(db)
+    if (!canonicalId) return
+    const botMember = await db.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId: canonicalId, conversationId } },
       select: { userId: true, role: true },
     })
     if (!botMember) return

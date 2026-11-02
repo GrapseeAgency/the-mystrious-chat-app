@@ -9,6 +9,8 @@ import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/sess
 import { roomControl } from '../../src/lib/room-control.ts'
 import { messageDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { threadRootAvailable } from '../../src/lib/message-visibility.ts'
+import * as contracts from '../../src/lib/integration-contracts.ts'
+import * as section10 from '../../src/lib/section10-contracts.ts'
 const {PrismaClient,Prisma}=createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path, bindings, expression) {
  const text=(await readFile(new URL(`../../${path}`,import.meta.url),'utf8')).replace(/^import[\s\S]*?from ['"][^'"]+['"];?\s*$/gm,'').replace(/^export /gm,'')
@@ -17,7 +19,7 @@ async function load(path, bindings, expression) {
 async function fixture(run) {
  const dir=await mkdtemp(join(tmpdir(),'room-controls-'));const db=new PrismaClient({datasourceUrl:`file:${join(dir,'test.sqlite')}`})
  try {
-  for(const name of ['User','Conversation','ConversationParticipant','Automation','Webhook','Message','UserBlock']) {
+  for(const name of ['User','Conversation','ConversationParticipant','Automation','Webhook','Message','UserBlock','IntegrationOperation','IntegrationRevision','AutomationExecution','AutomationNotifyOutbox','BotPromptLease']) {
    const columns=Prisma.dmmf.datamodel.models.find(m=>m.name===name).fields.filter(f=>f.kind!=='object'&&!f.isList).map(f=>{
     const type=['Int','Boolean','BigInt'].includes(f.type)?'INTEGER':f.type==='Float'?'REAL':f.type==='DateTime'?'DATETIME':'TEXT'
     let def=''
@@ -39,13 +41,14 @@ async function fixture(run) {
   await db.webhook.create({data:{id:'hook',conversationId:'room',name:'Build bot',token:'synthetic-hook',createdBy:'me'}})
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
   const events=[],bindings={db,clipUtf16,messageDeliveryDecision,roomControl,requireActionOwner,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',mapAutomation:r=>r,
-  deliverLivePush:async()=>{},
-   AVATAR_COLORS:['#F2A65A'],MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},mapMessage:r=>r,memberIdsOf:async()=>['me','member'],notifySocket:async(...args)=>events.push(args)}
+  deliverLivePush:async()=>{},markAutomationNotifyDelivered:async()=>{},randomUUID:()=>('r'.repeat(8)+'0123456789abcdef01234567'),
+   AVATAR_COLORS:['#F2A65A'],MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},mapMessage:r=>r,memberIdsOf:async()=>['me','member'],notifySocket:async(...args)=>events.push(args),
+   ...contracts,...section10}
   const {createAutomationReply,triggerMatches}=await load('src/lib/automation-delivery.ts',{...bindings,messageDeliveryDecision,threadRootAvailable},'({createAutomationReply,triggerMatches})')
   const a=await load('src/app/api/conversations/[id]/automations/route.ts',bindings,'({GET,POST})')
   const single=await load('src/app/api/automations/[id]/route.ts',bindings,'({PATCH,DELETE})')
   const w=await load('src/app/api/webhooks/route.ts',bindings,'({GET,POST})')
-  const token=await load('src/app/api/webhooks/[token]/route.ts',bindings,'({POST,DELETE})')
+  const token=await load('src/app/api/webhooks/[token]/route.ts',bindings,'({POST,PATCH,DELETE})')
   await run(db,{a,single,w,token,events,triggerMatches,fire:(content='Hello',now=new Date())=>db.$transaction(tx=>createAutomationReply(tx,'room','source',content,now),{isolationLevel:'Serializable'}), makeReply:(overrides={})=>load('src/app/api/conversations/[id]/messages/route.ts',{...bindings,createAutomationReply,nativeBlockFromPayload:()=>null,console:{error:()=>{}},...overrides},'maybeAutomationReply'),makeIngest:(d,overrides={})=>load('src/app/api/webhooks/[token]/route.ts',{...bindings,db:d,...overrides},'POST')})
  }finally{await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
@@ -86,8 +89,8 @@ test('exact deletion receipts and failed writes preserve unrelated controls',()=
  await db.$executeRawUnsafe("CREATE TRIGGER refuse_control BEFORE DELETE ON Automation BEGIN SELECT RAISE(ABORT,'synthetic failure'); END")
  await assert.rejects(h.single.DELETE(req('DELETE'),ctx('rule')));assert.equal(await db.automation.count(),1)
  await db.$executeRawUnsafe('DROP TRIGGER refuse_control')
- assert.deepEqual(await(await h.single.DELETE(req('DELETE'),ctx('rule'))).json(),{ok:true,deleted:true,automationId:'rule',userId:'me'})
- assert.deepEqual(await(await h.token.DELETE(req('DELETE'),ctx())).json(),{ok:true,deleted:true,token:'synthetic-hook',userId:'me'})
+ assert.deepEqual(await(await h.single.DELETE(req('DELETE'),ctx('rule'))).json(),{ok:true,deleted:true,automationId:'rule',userId:'me',revision:1})
+ assert.deepEqual(await(await h.token.DELETE(req('DELETE'),ctx())).json(),{ok:true,deleted:true,token:'synthetic-hook',userId:'me',revision:2})
  assert.equal(await db.conversation.count(),1)
 }))
 test('public capability ingest rechecks revocation before writing and notifies its represented sender',()=>fixture(async(db,h)=>{
@@ -159,7 +162,10 @@ test('thread automations remain in their thread and expire no later than its roo
  await db.conversation.update({where:{id:'room'},data:{ttlSeconds:60}})
  const message=await h.fire('Hello',now)
  assert.equal(message.parentId,'root');assert.equal(message.topicId,'topic');assert.equal(message.expiresAt.toISOString(),deadline.toISOString())
- const reply=await h.makeReply();await reply('room','source','Hello')
+ // The first fire already spent (rule, source) exactly-once (item 3); the
+ // relay leg needs its own source message.
+ await db.message.create({data:{id:'source2',conversationId:'room',senderId:'member',content:'Hello',kind:'text',parentId:'root',topicId:'topic'}})
+ const reply=await h.makeReply();await reply('room','source2','Hello')
  assert.deepEqual(h.events[0][1],['me','member'])
 }))
 test('Unicode keyword boundaries do not fire inside Bengali or combining-mark words',()=>fixture(async(db,h)=>{

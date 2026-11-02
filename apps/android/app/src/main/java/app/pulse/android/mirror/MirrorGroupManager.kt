@@ -6,8 +6,9 @@ package app.pulse.android.mirror
 //   - hero gradient card (initials avatar, member/admin counts, announcements
 //     badge + explainer for broadcast rooms),
 //   - action tiles (admin Add member / Rename, always Leave group),
-//   - Webhooks section (list + copy URL + admin create/delete on the real
-//     /api/webhooks contract, honest loading/error/empty states),
+//   - Webhooks section (list + copy URL + admin create/delete + the Section 12
+//     capability rotation on the real /api/webhooks contract, honest
+//     loading/error/empty states),
 //   - Leaderboard section (top-3 preview + full drawer with XP bars and
 //     per-row mini-stats, 20s refresh while open),
 //   - Tournament section (season list + running/finished pills + launcher for
@@ -716,6 +717,8 @@ private fun MgrWebhooksSection(
     var loadError by remember { mutableStateOf(false) }
     var createOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Webhook?>(null) }
+    // Section 12 item 7 - capability rotation (fresh token, old URL dies).
+    var rotateTarget by remember { mutableStateOf<Webhook?>(null) }
     var pending by remember { mutableStateOf(false) }
     var revision by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
@@ -794,8 +797,16 @@ private fun MgrWebhooksSection(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            // Section 12 item 7 - the rotation receipt is honest
+                            // truth on the row (fresh token + rotatedAt stamp).
+                            val stamp = buildString {
+                                append("/api/webhooks/${webhook.token}")
+                                append(" · added ${mgrStamp(webhook.createdAtIso)}")
+                                val rotated = mgrStamp(webhook.rotatedAtIso)
+                                if (rotated.isNotEmpty()) append(" · rotated $rotated")
+                            }
                             Text(
-                                "/api/webhooks/${webhook.token} · added ${mgrStamp(webhook.createdAtIso)}".trimEnd(),
+                                stamp,
                                 color = MirrorArt.Faint,
                                 fontSize = 11.sp,
                                 maxLines = 1,
@@ -819,7 +830,10 @@ private fun MgrWebhooksSection(
                             MirrorLucideIcon("LCopy", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
                         }
                         if (isAdmin) {
-                            MgrIconButton("Delete ${webhook.name}", onClick = { deleteTarget = webhook }) {
+                            MgrIconButton("Rotate ${webhook.name} webhook URL", onClick = { if (!pending) rotateTarget = webhook }) {
+                                MirrorLucideIcon("LRefreshCw", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
+                            }
+                            MgrIconButton("Delete ${webhook.name}", onClick = { if (!pending) deleteTarget = webhook }) {
                                 MirrorLucideIcon("LTrash2", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
                             }
                         }
@@ -887,6 +901,40 @@ private fun MgrWebhooksSection(
                                 deleteTarget = null
                             },
                             onFailure = { e -> onNote(e.message ?: "Could not delete the webhook") },
+                        )
+                    } finally { pending = false }
+                }
+            },
+        )
+    }
+    // Section 12 item 7 - rotate confirms BEFORE the old capability dies; the
+    // row updates IN PLACE (fresh token/url, rotatedAt stamp, same slot).
+    rotateTarget?.let { target ->
+        MgrConfirmModal(
+            title = "Rotate \"${target.name}\"?",
+            body = "It gets a fresh URL and the current one stops working immediately.",
+            confirmLabel = "Rotate",
+            destructive = false,
+            pending = pending,
+            onClose = { if (!pending) rotateTarget = null },
+            onConfirm = rotate@ {
+                if (pending) return@rotate
+                revision += 1
+                val epoch = repository.attachmentSessionKey()
+                pending = true
+                scope.launch {
+                    try {
+                        val result = mgrRepositoryResult { repository.rotateWebhook(target.token) }
+                        if (epoch != repository.attachmentSessionKey()) return@launch
+                        result.fold(
+                            onSuccess = { rotated ->
+                                revision += 1
+                                webhooks = webhooks.orEmpty().map { if (it.id == rotated.id) rotated else it }
+                                loadError = false
+                                onNote("Webhook URL rotated - the old one is dead")
+                                rotateTarget = null
+                            },
+                            onFailure = { e -> onNote(e.message ?: "Could not rotate the webhook") },
                         )
                     } finally { pending = false }
                 }

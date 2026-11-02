@@ -678,7 +678,8 @@ data class Automation(
 /**
  * One Discord-style incoming webhook (web `WebhookItem`). `url` is the
  * RELATIVE ingest path from the wire (`/api/webhooks/{token}`) - surfaces
- * pair it with the configured server origin for copy/share.
+ * pair it with the configured server origin for copy/share. Section 12 item 7:
+ * [rotatedAtIso] is stamped when the capability was last rotated (null = never).
  */
 data class Webhook(
     val id: String,
@@ -688,4 +689,18 @@ data class Webhook(
     val url: String,
     val createdAtIso: String? = null,
     val createdBy: String = "",
+    val rotatedAtIso: String? = null,
+)
+
+/**
+ * Section 12 - one server page of an integration list plus its revision/paging
+ * envelope ({ revision, page:{nextCursor,hasMore} }). `revision == 0` means the
+ * server never bumped the list; [nextCursor] is the opaque continuation and
+ * only non-null while [hasMore].
+ */
+data class IntegrationPage<T>(
+    val rows: List<T> = emptyList(),
+    val revision: Int = 0,
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
 )

@@ -1,15 +1,34 @@
 // /api/conversations/[id]/automations - R39 keyword auto-replies.
-// GET  ?userId= (participant-only) → { automations: AutomationSummary[] }
-//      rows ordered createdAt desc, creator {id,name,color,avatar} included.
-// POST { userId, trigger, reply } - conversation ADMINS only (mirrors the
-//      webhook/members admin gating). Validation: trigger 2-40 chars after
-//      trim, reply 1-500 chars; same trigger (case-insensitive) in the same
-//      conversation → 409.
+// GET  ?userId=&limit=&cursor= (participant-only) →
+//      { automations: AutomationSummary[], revision, page: { nextCursor, hasMore } }
+//      (createdAt, id) DESC keyset; without cursor the first `limit` rows
+//      come back (default 100 = the per-room cap, so legacy single-call
+//      clients still see a full legal list). `revision` is the conversation's
+//      monotonic integration revision (Section 12 item 2).
+// POST { userId, trigger, reply, clientId? } - conversation ADMINS only.
+//      Validation: trigger 2-40 chars after trim, reply 1-500 chars;
+//      same trigger (case-insensitive) in the same conversation → 409.
+//      With clientId the create carries a durable operation identity: a
+//      lost-ACK retry replays the SAME rule (replayed:true) and a reused
+//      clientId with different instructions is a 409 (Section 12 item 1).
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { roomControl } from '@/lib/room-control'
 import { mapAutomation, safeJson, strField } from '@/lib/serializers'
+import {
+  AUTOMATIONS_PER_ROOM_MAX,
+  bumpIntegrationRevision,
+  probeIntegrationOp,
+  settleIntegrationOp,
+} from '@/lib/integration-contracts.ts'
+import {
+  clientIdFrom,
+  decodeKeysetCursor,
+  keysetBefore,
+  pageLimit,
+  pageVerdict,
+} from '@/lib/section10-contracts.ts'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,20 +39,31 @@ interface RouteCtx {
 const AUTOMATION_TRIGGER_MIN = 2
 const AUTOMATION_TRIGGER_MAX = 40
 const AUTOMATION_REPLY_MAX = 500
+const AUTOMATION_PAGE_DEFAULT = 100
+const AUTOMATION_PAGE_MAX = 200
 
 const AUTOMATION_INCLUDE = {
   createdBy: { select: { id: true, name: true, color: true, avatar: true } },
 } as const
 
-/** GET - participant-only listing of this conversation's automation rules. */
+/** GET - participant-only keyset page of this conversation's automation rules. */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
 
-  const userId = new URL(req.url).searchParams.get('userId')?.trim() ?? ''
+  const url = new URL(req.url)
+  const userId = url.searchParams.get('userId')?.trim() ?? ''
   const refusal = await requireActionOwner(req, userId, 'automation')
   if (refusal) return refusal
   if (!userId) {
     return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
+  }
+  const limit = pageLimit(url.searchParams.get('limit'), AUTOMATION_PAGE_MAX)
+  if (!limit.ok) {
+    return NextResponse.json({ error: `limit must be an integer 1-${AUTOMATION_PAGE_MAX}.` }, { status: 400 })
+  }
+  const cursor = decodeKeysetCursor(url.searchParams.get('cursor'))
+  if (!cursor.ok) {
+    return NextResponse.json({ error: 'cursor must be a `<epochMs>.<id>` keyset cursor.' }, { status: 400 })
   }
 
   return roomControl(db, async tx => {
@@ -53,18 +83,29 @@ export async function GET(req: Request, { params }: RouteCtx) {
       )
     }
 
+    const cap = limit.limit ?? AUTOMATION_PAGE_DEFAULT
     const rows = await tx.automation.findMany({
-      where: { conversationId: id },
-      orderBy: { createdAt: 'desc' },
+      where: { conversationId: id, ...(cursor.absent ? {} : keysetBefore(cursor.atMs, cursor.id)) },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: cap + 1,
       include: AUTOMATION_INCLUDE,
     })
-    return NextResponse.json({ automations: rows.map(mapAutomation) })
+    const verdict = pageVerdict(rows, cap, row => ({ atMs: row.createdAt.getTime(), id: row.id }))
+    const revision = await tx.integrationRevision.findUnique({
+      where: { conversationId: id }, select: { rev: true },
+    })
+    return NextResponse.json({
+      automations: verdict.rows.map(mapAutomation),
+      revision: revision?.rev ?? 0,
+      page: { nextCursor: verdict.nextCursor, hasMore: verdict.hasMore },
+    })
   })
 }
 
 /**
  * POST - create an automation rule. Admin-only (403 otherwise, honest error),
- * duplicate triggers (case-insensitive, per conversation) → 409.
+ * duplicate triggers (case-insensitive, per conversation) → 409, per-room
+ * rule cap → 409. With clientId: durable create receipt (item 1).
  */
 export async function POST(req: Request, { params }: RouteCtx) {
   const { id } = await params
@@ -75,6 +116,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (refusal) return refusal
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  }
+  const clientId = clientIdFrom(body)
+  if (!clientId.ok) {
+    return NextResponse.json({ error: 'clientId must be 16-128 url-safe characters.' }, { status: 400 })
   }
   const trigger = strField(body.trigger)
   if (trigger.length < AUTOMATION_TRIGGER_MIN || trigger.length > AUTOMATION_TRIGGER_MAX) {
@@ -116,6 +161,32 @@ export async function POST(req: Request, { params }: RouteCtx) {
       )
     }
 
+    // Lost-ACK replay FIRST: a retried create must replay its stored rule
+    // even though the trigger dedupe below would now refuse it as a duplicate.
+    if (clientId.clientId) {
+      const args = { kind: 'automation.create' as const, clientId: clientId.clientId, conversationId: id, userId, identity: [id, userId, trigger, reply] }
+      const probe = await probeIntegrationOp<{ automation: ReturnType<typeof mapAutomation> }>(tx, args)
+      if (probe.status === 'mismatch') {
+        return NextResponse.json(
+          { error: 'clientId already used for a different integration operation.' },
+          { status: 409 },
+        )
+      }
+      if (probe.status === 'replay') {
+        return NextResponse.json({ ...probe.result, replayed: true }, { status: 201 })
+      }
+    }
+
+    // Item 5: bounded rule scans start at admission - a room past the cap
+    // cannot grow its evaluation cost further.
+    const ruleCount = await tx.automation.count({ where: { conversationId: id } })
+    if (ruleCount >= AUTOMATIONS_PER_ROOM_MAX) {
+      return NextResponse.json(
+        { error: `This conversation already holds the maximum of ${AUTOMATIONS_PER_ROOM_MAX} automations.` },
+        { status: 409 },
+      )
+    }
+
     // Dedupe: same trigger (case-insensitive) already exists in THIS conversation.
     // SQLite has no case-insensitive collation here, so normalize in Node.
     const existing = await tx.automation.findMany({
@@ -133,6 +204,17 @@ export async function POST(req: Request, { params }: RouteCtx) {
       data: { conversationId: id, trigger, reply, createdById: userId },
       include: AUTOMATION_INCLUDE,
     })
-    return NextResponse.json({ automation: mapAutomation(created) }, { status: 201 })
+    const revision = await bumpIntegrationRevision(tx, id)
+    const payload = { automation: mapAutomation(created), revision }
+    if (clientId.clientId) {
+      const settled = await settleIntegrationOp(
+        tx,
+        { kind: 'automation.create', clientId: clientId.clientId, conversationId: id, userId, identity: [id, userId, trigger, reply] },
+        created.id,
+        payload,
+      )
+      return NextResponse.json({ ...settled.result, replayed: settled.replayed }, { status: 201 })
+    }
+    return NextResponse.json(payload, { status: 201 })
   })
 }

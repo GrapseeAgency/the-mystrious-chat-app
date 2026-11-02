@@ -6,10 +6,15 @@ import UIKit
 //   • AutomationsSection - keyword auto-reply rules: rows + confirmed
 //     enable/disable + honest delete + R41 trigger rename + create sheet.
 //   • WebhooksSection - Discord-style incoming hooks: rows + copy ingest
-//     URL + admin delete + create sheet.
+//     URL + admin delete + Section 12 item 9 rotate (confirm dialog →
+//     fresh capability; the row shows "Rotated <date>") + create sheet.
 // Data rides the REAL routes (GET/POST /api/conversations/[id]/automations,
 // PATCH/DELETE /api/automations/[id], GET/POST /api/webhooks,
-// DELETE /api/webhooks/[token]) through PulseAPIClient - no mocks.
+// PATCH/DELETE /api/webhooks/[token]) through PulseAPIClient - no mocks.
+// Section 12: every mutation identity is journaled in
+// PulseSection12Journal BEFORE the wire (a lost ACK replays the SAME
+// clientId on the session-start flush) and the lists walk the bounded
+// keyset page walk (hasMore + nextCursor, 20-iteration ceiling).
 // Mounted inside GroupInfoView (the iOS room-info surface, web
 // room-info-page.tsx:1335 parity).
 
@@ -253,7 +258,23 @@ struct AutomationsSection: View {
         let ticket = revision, life = lifetime, epoch = session.sessionGeneration, api = session.api
         phase = .loading
         do {
-            let fresh = try await api.automations(conversationId: conversationId)
+            // Section 12 - bounded page walk: fetch, then chase the opaque
+            // "<epochMs>.<id>" keyset cursor while the gateway says hasMore
+            // (the 20-iteration ceiling keeps a misbehaving relay honest).
+            var fresh: [WireAutomation] = []
+            var cursor: String? = nil
+            var iterations = 0
+            repeat {
+                guard active, life == lifetime, ticket == revision, !Task.isCancelled else { return }
+                let page = try await api.automationsPage(conversationId: conversationId, limit: 100, cursor: cursor)
+                fresh += page.automations ?? []
+                if page.hasMore == true, let next = page.page?.nextCursor, !next.isEmpty {
+                    cursor = next
+                } else {
+                    cursor = nil
+                }
+                iterations += 1
+            } while cursor != nil && iterations < 20
             guard active, life == lifetime, epoch == session.sessionGeneration, ticket == revision, !Task.isCancelled else { return }
             rows = fresh; phase = .ready
         } catch {
@@ -295,9 +316,32 @@ struct AutomationsSection: View {
     }
 
     private func delete(_ row: WireAutomation) {
-        change(removed: row.id, notice: "Automation deleted") { api in
-            try await api.deleteAutomation(row.id)
-            return nil
+        // Section 12 item 1 - the deletion identity is journaled BEFORE the
+        // wire; the row leaves the journal ONLY on the confirmed verdict, so
+        // a lost ACK replays the SAME verdict on the next launch flush.
+        guard active, isAdmin, !writing, deletingIds.isEmpty else { return }
+        let journal = PulseSection12Journal.shared
+        let owner = session.api.userId
+        let intent = journal.enqueue(owner: owner, kind: "automation-delete", targetId: row.id)
+        writing = true; revision += 1
+        deletingIds.insert(row.id)
+        let life = lifetime, epoch = session.sessionGeneration, api = session.api
+        Task {
+            defer { if life == lifetime { writing = false; deletingIds = [] } }
+            do {
+                try await api.deleteAutomation(row.id, clientId: intent.clientId)
+                journal.confirm(owner: owner, clientId: intent.clientId)
+                guard active, life == lifetime, epoch == session.sessionGeneration, !Task.isCancelled else { return }
+                revision += 1
+                rows.removeAll { $0.id == row.id }
+                phase = .ready
+                session.toasts.show("Automation deleted")
+            } catch {
+                // Failure is not a receipt: the intent stays pending for the
+                // next launch flush (which replays the SAME clientId).
+                guard active, life == lifetime, epoch == session.sessionGeneration, !Task.isCancelled else { return }
+                session.toasts.show(RoomViewModel.describe(error))
+            }
         }
     }
 
@@ -434,6 +478,13 @@ private struct AutomationsCreateSheet: View {
         let epoch = session.sessionGeneration
         let api = session.api
         let life = lifetime
+        // Section 12 item 1 - the rule identity is journaled BEFORE the wire;
+        // a lost ACK replays the SAME clientId and the server answers the
+        // SAME rule (never a duplicate).
+        let journal = PulseSection12Journal.shared
+        let owner = api.userId
+        let intent = journal.enqueue(owner: owner, kind: "automation-create", targetId: conversationId,
+            payload: ["trigger": trimmedTrigger, "reply": trimmedReply])
         creating = true
         Task {
             defer { creating = false }
@@ -442,7 +493,9 @@ private struct AutomationsCreateSheet: View {
                     conversationId: conversationId,
                     trigger: trimmedTrigger,
                     reply: trimmedReply,
+                    clientId: intent.clientId,
                 )
+                journal.confirm(owner: owner, clientId: intent.clientId)
                 guard active, life == lifetime, !Task.isCancelled, epoch == session.sessionGeneration else { return }
                 onCreated(fresh)
                 PulseHaptics.success()
@@ -474,6 +527,9 @@ struct WebhooksSection: View {
     @State private var rows: [WireWebhook] = []
     @State private var createOpen = false
     @State private var deletingIds: Set<String> = []
+    // Section 12 item 9 - the rotation affordance: confirm-then-rotate.
+    @State private var rotateTarget: WireWebhook?
+    @State private var rotatingIds: Set<String> = []
 
     var body: some View {
         Section {
@@ -548,9 +604,20 @@ struct WebhooksSection: View {
                 phase = .ready
             }
         }
+        .confirmationDialog(
+            rotateTarget.map { Text("Rotate \($0.name) URL?") } ?? Text("Rotate webhook URL?"),
+            isPresented: Binding(get: { rotateTarget != nil }, set: { if !$0 { rotateTarget = nil } }),
+            titleVisibility: .visible,
+            presenting: rotateTarget,
+        ) { webhook in
+            Button("Rotate URL", role: .destructive) { rotate(webhook) }
+            Button("Cancel", role: .cancel) {}
+        } message: { webhook in
+            Text("A fresh URL replaces \(webhook.name)'s current one. The old link stops working immediately - services using it must be updated.")
+        }
         .task(id: "\(session.sessionGeneration)|\(conversationId)|\(isAdmin)") {
             active = true; lifetime = UUID(); revision += 1
-            rows = []; createOpen = false; deletingIds = []
+            rows = []; createOpen = false; deletingIds = []; rotateTarget = nil; rotatingIds = []
             if isAdmin { await load() }
         }
         .onDisappear { active = false; lifetime = UUID(); revision += 1 }
@@ -565,7 +632,7 @@ struct WebhooksSection: View {
                 Text(webhook.name)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text("/api/webhooks/\(webhook.token) · added \(PulseFormat.listStamp(webhook.createdAt))")
+                Text(metaLine(webhook))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -581,6 +648,22 @@ struct WebhooksSection: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Copy \(webhook.name) webhook URL")
             if isAdmin {
+                // Section 12 item 9 - mint a fresh capability URL.
+                Button {
+                    PulseHaptics.tap()
+                    rotateTarget = webhook
+                } label: {
+                    if rotatingIds.contains(webhook.id) {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(!rotatingIds.isEmpty || !deletingIds.isEmpty)
+                .accessibilityLabel("Rotate \(webhook.name) webhook URL")
                 Button {
                     delete(webhook)
                 } label: {
@@ -598,6 +681,18 @@ struct WebhooksSection: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    /// "/api/webhooks/<token> · added <stamp> · Rotated <stamp>" - the
+    /// rotation stamp shows only once the capability has been rotated
+    /// (Section 12 item 9).
+    private func metaLine(_ webhook: WireWebhook) -> String {
+        var line = "/api/webhooks/\(webhook.token) · added \(PulseFormat.listStamp(webhook.createdAt))"
+        if let rotatedAt = webhook.rotatedAt {
+            let stamp = PulseFormat.listStamp(rotatedAt)
+            if !stamp.isEmpty { line += " · Rotated \(stamp)" }
+        }
+        return line
     }
 
     /// The shareable ingest URL - the gateway origin + the relative path the
@@ -621,7 +716,23 @@ struct WebhooksSection: View {
         let api = session.api
         phase = .loading
         do {
-            let fresh = try await api.webhooks(conversationId: conversationId)
+            // Section 12 - bounded page walk: fetch, then chase the opaque
+            // "<epochMs>.<id>" keyset cursor while the gateway says hasMore
+            // (the 20-iteration ceiling keeps a misbehaving relay honest).
+            var fresh: [WireWebhook] = []
+            var cursor: String? = nil
+            var iterations = 0
+            repeat {
+                guard active, life == lifetime, ticket == revision, !Task.isCancelled else { return }
+                let page = try await api.webhooksPage(conversationId: conversationId, limit: 100, cursor: cursor)
+                fresh += page.webhooks ?? []
+                if page.hasMore == true, let next = page.page?.nextCursor, !next.isEmpty {
+                    cursor = next
+                } else {
+                    cursor = nil
+                }
+                iterations += 1
+            } while cursor != nil && iterations < 20
             guard active, life == lifetime, !Task.isCancelled, epoch == session.sessionGeneration, ticket == revision else { return }
             rows = fresh
             phase = .ready
@@ -634,6 +745,11 @@ struct WebhooksSection: View {
 
     private func delete(_ webhook: WireWebhook) {
         guard active, isAdmin, deletingIds.isEmpty else { return }
+        // Section 12 item 1 - the deletion identity is journaled BEFORE the
+        // wire; a lost ACK replays the SAME verdict on the next launch flush.
+        let journal = PulseSection12Journal.shared
+        let owner = session.api.userId
+        let intent = journal.enqueue(owner: owner, kind: "webhook-delete", targetId: webhook.token)
         revision += 1
         let life = lifetime
         let epoch = session.sessionGeneration
@@ -642,11 +758,47 @@ struct WebhooksSection: View {
         Task {
             defer { if life == lifetime { deletingIds.remove(webhook.token) } }
             do {
-                try await api.deleteWebhook(token: webhook.token)
+                try await api.deleteWebhook(token: webhook.token, clientId: intent.clientId)
+                journal.confirm(owner: owner, clientId: intent.clientId)
                 guard active, life == lifetime, !Task.isCancelled, epoch == session.sessionGeneration else { return }
                 revision += 1
                 rows.removeAll { $0.id == webhook.id }
                 session.toasts.show("Webhook deleted")
+            } catch {
+                // Failure is not a receipt: the intent stays pending for the
+                // next launch flush (which replays the SAME clientId).
+                guard active, life == lifetime, !Task.isCancelled, epoch == session.sessionGeneration else { return }
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
+    }
+
+    /// Section 12 item 9 - the confirm dialog funnels here: the rotation
+    /// identity is journaled BEFORE the wire (targetId = the OLD token the
+    /// replay must ride), then the row swaps for the FRESH capability the
+    /// receipt carries. A lost ACK replays the SAME fresh token on the next
+    /// launch flush; the copy affordance then copies the new URL.
+    private func rotate(_ webhook: WireWebhook) {
+        guard active, isAdmin, rotatingIds.isEmpty, deletingIds.isEmpty else { return }
+        let journal = PulseSection12Journal.shared
+        let owner = session.api.userId
+        let intent = journal.enqueue(owner: owner, kind: "webhook-rotate", targetId: webhook.token)
+        revision += 1
+        let life = lifetime
+        let epoch = session.sessionGeneration
+        let api = session.api
+        rotatingIds.insert(webhook.id)
+        Task {
+            defer { if life == lifetime { rotatingIds.remove(webhook.id) } }
+            do {
+                let mutation = try await api.rotateWebhook(token: webhook.token, requesterId: owner, clientId: intent.clientId)
+                journal.confirm(owner: owner, clientId: intent.clientId)
+                guard active, life == lifetime, !Task.isCancelled, epoch == session.sessionGeneration else { return }
+                revision += 1
+                if let index = rows.firstIndex(where: { $0.id == webhook.id }) {
+                    rows[index] = WireWebhook(mutation: mutation, fallback: webhook)
+                }
+                session.toasts.show("Webhook URL rotated - the old link no longer works")
             } catch {
                 guard active, life == lifetime, !Task.isCancelled, epoch == session.sessionGeneration else { return }
                 session.toasts.show(RoomViewModel.describe(error))
@@ -724,11 +876,19 @@ private struct WebhookCreateSheet: View {
         let epoch = session.sessionGeneration
         let api = session.api
         let life = lifetime
+        // Section 12 item 1 - the capability identity is journaled BEFORE the
+        // wire; a lost ACK replays the SAME clientId and the server answers
+        // the SAME token instead of minting a second credential.
+        let journal = PulseSection12Journal.shared
+        let owner = api.userId
+        let intent = journal.enqueue(owner: owner, kind: "webhook-create", targetId: conversationId,
+            payload: ["name": trimmedName])
         creating = true
         Task {
             defer { creating = false }
             do {
-                let fresh = try await api.createWebhook(conversationId: conversationId, name: trimmedName)
+                let fresh = try await api.createWebhook(conversationId: conversationId, name: trimmedName, clientId: intent.clientId)
+                journal.confirm(owner: owner, clientId: intent.clientId)
                 guard active, life == lifetime, !Task.isCancelled, epoch == session.sessionGeneration else { return }
                 onCreated(fresh)
                 PulseHaptics.success()
@@ -752,6 +912,24 @@ extension WireAutomation {
             id: id, conversationId: conversationId, trigger: trigger, reply: reply,
             enabled: value, hits: hits, lastFiredAt: lastFiredAt, createdAt: createdAt,
             createdBy: createdBy,
+        )
+    }
+}
+
+extension WireWebhook {
+    /// Section 12 item 9 - the rotation receipt replaces the capability in
+    /// place: same row identity, fresh token/URL, rotatedAt stamped. The old
+    /// row fills any field an older relay omits from the receipt.
+    init(mutation: WireWebhookMutation, fallback: WireWebhook) {
+        self.init(
+            id: mutation.id ?? fallback.id,
+            name: mutation.name ?? fallback.name,
+            token: mutation.token ?? fallback.token,
+            avatarColor: mutation.avatarColor ?? fallback.avatarColor,
+            url: mutation.url ?? fallback.url,
+            createdAt: mutation.createdAt ?? fallback.createdAt,
+            createdBy: mutation.createdBy ?? fallback.createdBy,
+            rotatedAt: mutation.rotatedAt ?? fallback.rotatedAt,
         )
     }
 }

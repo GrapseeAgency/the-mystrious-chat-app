@@ -4,14 +4,24 @@
 //        is renamable after create - same validation as create (2-40 chars
 //        trimmed, case-insensitive per-conversation dedupe EXCLUDING this rule
 //        → 409). 400 nothing to update / bad types · 403 non-admin · 404
-//        unknown rule.
-// DELETE ?userId= (or JSON body) - admin-only, removes the rule.
+//        unknown rule. Every accepted mutation bumps the room's integration
+//        revision (Section 12 item 2).
+// DELETE ?userId= (or JSON body) - admin-only, removes the rule. With
+//        clientId: durable delete receipt - a lost-ACK retry replays the SAME
+//        verdict even though the row is gone; a reused clientId with a
+//        different target is a 409 (Section 12 item 1).
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { roomControl } from '@/lib/room-control'
 import type { Prisma } from '../../../../../prisma/generated-client'
 import { mapAutomation, safeJson, strField } from '@/lib/serializers'
+import {
+  bumpIntegrationRevision,
+  probeIntegrationOp,
+  settleIntegrationOp,
+} from '@/lib/integration-contracts.ts'
+import { clientIdFrom, clientIdFromQuery } from '@/lib/section10-contracts.ts'
 
 export const dynamic = 'force-dynamic'
 
@@ -135,30 +145,74 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       },
       include: { createdBy: { select: { id: true, name: true, color: true, avatar: true } } },
     })
-    return NextResponse.json({ automation: mapAutomation(updated) })
+    const revision = await bumpIntegrationRevision(tx, gate.automation.conversationId)
+    return NextResponse.json({ automation: mapAutomation(updated), revision })
   })
 }
 
-/** DELETE - remove the rule (idempotent 404 when already gone). */
+/** DELETE - remove the rule. Durable delete receipt with clientId (item 1). */
 export async function DELETE(req: Request, { params }: RouteCtx) {
   const { id } = await params
 
   let userId = new URL(req.url).searchParams.get('userId')?.trim() ?? ''
+  let clientId: { ok: true; clientId: string | null } = { ok: true, clientId: null }
   if (!userId) {
     const body = await safeJson(req)
     userId = strField(body.userId)
+    clientId = clientIdFrom(body)
+  } else {
+    clientId = clientIdFromQuery(new URL(req.url).searchParams.get('clientId'))
   }
   const refusal = await requireActionOwner(req, userId, 'automation')
   if (refusal) return refusal
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  if (!clientId.ok) {
+    return NextResponse.json({ error: 'clientId must be 16-128 url-safe characters.' }, { status: 400 })
+  }
 
   return roomControl(db, async tx => {
+    // Delete-replay FIRST: after a successful delete the row is gone, so the
+    // replay probe cannot rely on it. The stored op carries the conversation
+    // the requester must still administrate.
+    if (clientId.clientId) {
+      const probe = await probeIntegrationOp<Record<string, unknown>>(tx, {
+        kind: 'automation.delete', clientId: clientId.clientId, conversationId: '', userId, identity: [id],
+      })
+      if (probe.status === 'mismatch') {
+        return NextResponse.json(
+          { error: 'clientId already used for a different integration operation.' },
+          { status: 409 },
+        )
+      }
+      if (probe.status === 'replay') {
+        const participant = await tx.conversationParticipant.findUnique({
+          where: { userId_conversationId: { userId, conversationId: probe.conversationId } },
+          select: { role: true },
+        })
+        if (!participant || participant.role !== 'admin') {
+          return NextResponse.json({ error: 'Only admins can manage automations.' }, { status: 403 })
+        }
+        return NextResponse.json({ ...probe.result, replayed: true })
+      }
+    }
+
     const gate = await requireAdmin(userId, id, tx)
     if ('error' in gate) return gate.error
 
     await tx.automation.delete({ where: { id } })
-    return NextResponse.json({ ok: true, deleted: true, automationId: id, userId })
+    const revision = await bumpIntegrationRevision(tx, gate.automation.conversationId)
+    const payload = { ok: true, deleted: true, automationId: id, userId, revision }
+    if (clientId.clientId) {
+      const settled = await settleIntegrationOp(
+        tx,
+        { kind: 'automation.delete', clientId: clientId.clientId, conversationId: gate.automation.conversationId, userId, identity: [id] },
+        null,
+        payload,
+      )
+      return NextResponse.json({ ...settled.result, replayed: settled.replayed })
+    }
+    return NextResponse.json(payload)
   })
 }

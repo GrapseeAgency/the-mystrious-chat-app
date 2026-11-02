@@ -39,6 +39,7 @@ import app.pulse.domain.model.User
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.model.UserStats
 import app.pulse.domain.model.Webhook
+import app.pulse.domain.model.IntegrationPage
 import app.pulse.protocol.AiRecapDto
 import app.pulse.protocol.PulseVoiceUser
 import app.pulse.protocol.AppCommunityDto
@@ -722,10 +723,16 @@ interface PulseRepository {
     /** PATCH /api/conversations/{id} { photo } - admin-only; photo is an uploaded "/api/uploads/<file>" path. */
     suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit>
 
-    /** GET /api/conversations/{id}/automations?userId= - the room's keyword auto-reply rules. */
+    /** GET /api/conversations/{id}/automations?userId= - the room's keyword auto-reply rules,
+     * walked to completion over the Section 12 keyed pages (bounded). */
     suspend fun automations(conversationId: String): Result<List<Automation>>
 
-    /** POST /api/conversations/{id}/automations { trigger, reply } - admin-only. */
+    /** Section 12 item 1 - one keyed page of automations (createdAt DESC, id DESC);
+     * `cursor` null = first page, `limit` 1..200. */
+    suspend fun automationsPage(conversationId: String, cursor: String? = null, limit: Int? = null): Result<IntegrationPage<Automation>>
+
+    /** POST /api/conversations/{id}/automations { trigger, reply } - admin-only,
+     * journaled under a durable clientId (Section 12 item 2). */
     suspend fun createAutomation(conversationId: String, trigger: String, reply: String): Result<Automation>
 
     /** PATCH /api/automations/{id} { enabled } - admin-only optimistic toggle. */
@@ -734,16 +741,26 @@ interface PulseRepository {
     /** PATCH /api/automations/{id} { trigger } - R41 rename-in-place (admin-only). */
     suspend fun setAutomationTrigger(automationId: String, trigger: String): Result<Automation>
 
-    /** DELETE /api/automations/{id} { userId } - admin-only remove. */
+    /** DELETE /api/automations/{id} { userId } - admin-only remove, journaled identity (Section 12 item 4). */
     suspend fun deleteAutomation(automationId: String): Result<Unit>
 
-    /** GET /api/webhooks?conversationId=&requesterId= - Discord-style incoming hooks. */
+    /** GET /api/webhooks?conversationId=&requesterId= - Discord-style incoming hooks,
+     * walked to completion over the Section 12 keyed pages (bounded). */
     suspend fun webhooks(conversationId: String): Result<List<Webhook>>
 
-    /** POST /api/webhooks { conversationId, name, requesterId } - admin-only. */
+    /** Section 12 item 5 - one keyed page of webhooks (createdAt ASC);
+     * `cursor` null = first page, `limit` 1..200. */
+    suspend fun webhooksPage(conversationId: String, cursor: String? = null, limit: Int? = null): Result<IntegrationPage<Webhook>>
+
+    /** POST /api/webhooks { conversationId, name, requesterId } - admin-only, journaled identity (Section 12 item 6). */
     suspend fun createWebhook(conversationId: String, name: String): Result<Webhook>
 
-    /** DELETE /api/webhooks/{token}?requesterId= - admin-only. */
+    /** Section 12 item 7 - PATCH /api/webhooks/{token} - CAPABILITY ROTATION:
+     * mints a fresh token (the old ingest URL dies immediately) and stamps
+     * rotatedAt; journaled so a lost-ACK retry replays the SAME fresh token. */
+    suspend fun rotateWebhook(token: String): Result<Webhook>
+
+    /** DELETE /api/webhooks/{token}?requesterId= - admin-only, journaled identity (Section 12 item 8). */
     suspend fun deleteWebhook(token: String): Result<Unit>
 
     /**

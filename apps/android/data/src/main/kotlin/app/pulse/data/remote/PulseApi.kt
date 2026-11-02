@@ -99,6 +99,7 @@ import app.pulse.protocol.ScreenPrivacyAckDto
 import app.pulse.protocol.SubscribeAckDto
 import app.pulse.protocol.ThreadPageDto
 import app.pulse.protocol.WebhookDto
+import app.pulse.protocol.WebhookMutationDto
 import app.pulse.protocol.WebhooksPageDto
 import app.pulse.protocol.TopicDto
 import app.pulse.protocol.TopicsPageDto
@@ -3016,12 +3017,20 @@ class PulseApi(
         }
 
     // R2-A round-2 parity (automations · webhooks · AI recap · per-viewer privacy)
+    // Section 12 widened the two lists onto the paged envelope (limit/cursor,
+    // revision, page) and put every mutation on the durable clientId identity
+    // (create/delete/rotate), including the webhook capability rotation.
 
-    /** GET /api/conversations/{id}/automations?userId= - participant-only rows. */
-    suspend fun automations(conversationId: String, userId: String): PulseResult<AutomationsPageDto> =
-        get(
-            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
-                "/automations?userId=" + java.net.URLEncoder.encode(userId, "UTF-8"),
+    /** GET /api/conversations/{id}/automations?userId=&limit=&cursor= -
+     * participant-only rows, createdAt DESC, id DESC; `limit` is 1..200 and
+     * `cursor` ("epochMs.id") is the opaque continuation. Both are omitted
+     * for the legacy first-page call. */
+    suspend fun automations(conversationId: String, userId: String, cursor: String? = null, limit: Int? = null): PulseResult<AutomationsPageDto> {
+        var query = "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")
+        if (limit != null) query += "&limit=" + limit.coerceIn(1, 200)
+        if (!cursor.isNullOrBlank()) query += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get(
+            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/automations$query",
         ) {
             val root = PulseJson.parseToJsonElement(it) as? JsonObject ?: error("Automation list is missing.")
             require(root["automations"] is JsonArray) { "Automation list was not confirmed." }
@@ -3031,76 +3040,120 @@ class PulseApi(
             PulseJson.decodeFromString(AutomationsPageDto.serializer(), it).also { page ->
                 require(page.automations.map { it.id }.distinct().size == page.automations.size)
                 page.automations.forEach { row -> requireAutomation(row); require(row.conversationId == conversationId) }
+                // hasMore implies a continuation (scheduled-list walk contract).
+                page.page?.let { pageMeta ->
+                    require((pageMeta.nextCursor != null) == pageMeta.hasMore) { "Automation cursor must match hasMore." }
+                }
             }
         }
+    }
 
-    /** POST /api/conversations/{id}/automations { userId, trigger, reply } - admin-only → 201 { automation }. */
-    suspend fun createAutomation(conversationId: String, userId: String, trigger: String, reply: String): PulseResult<AutomationEnvelopeDto> =
+    /** POST /api/conversations/{id}/automations { userId, trigger, reply, clientId? }
+     * - admin-only → 201 { automation, revision, replayed? }; with the Section 12
+     * journaled clientId a lost-ACK retry replays the SAME rule. */
+    suspend fun createAutomation(conversationId: String, userId: String, trigger: String, reply: String, clientId: String? = null): PulseResult<AutomationEnvelopeDto> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/automations",
-            jsonOf("userId" to userId, "trigger" to trigger, "reply" to reply),
+            jsonOf("userId" to userId, "trigger" to trigger, "reply" to reply, "clientId" to clientId),
         ) {
             confirmedAutomation(it).also { receipt ->
                 val row = receipt.automation
                 require(row.conversationId == conversationId && row.trigger == trigger.trim() && row.reply == reply.trim() && row.enabled) { "Automation creation was not confirmed." }
+                confirmedReplayReceipt(it, clientId)
             }
         }
 
-    /** PATCH /api/automations/{id} { userId, enabled?/trigger? } - admin-only → { automation }. */
-    suspend fun patchAutomation(automationId: String, userId: String, enabled: Boolean?, trigger: String?): PulseResult<AutomationEnvelopeDto> =
+    /** PATCH /api/automations/{id} { userId, enabled?/trigger?/reply? } - admin-only → { automation, revision }. */
+    suspend fun patchAutomation(automationId: String, userId: String, enabled: Boolean?, trigger: String?, reply: String? = null): PulseResult<AutomationEnvelopeDto> =
         patch(
             "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
             buildJsonObject {
                 put("userId", userId)
                 if (enabled != null) put("enabled", enabled)
                 if (trigger != null) put("trigger", trigger)
+                if (reply != null) put("reply", reply)
             },
         ) {
             confirmedAutomation(it).also { receipt ->
                 val row = receipt.automation
-                require(row.id == automationId && (enabled == null || row.enabled == enabled) && (trigger == null || row.trigger == trigger.trim())) { "Automation changes were not confirmed." }
+                require(row.id == automationId && (enabled == null || row.enabled == enabled) && (trigger == null || row.trigger == trigger.trim()) &&
+                    (reply == null || row.reply == reply.trim())) { "Automation changes were not confirmed." }
             }
         }
 
-    /** DELETE /api/automations/{id} { userId } - admin-only → { ok: true }. */
-    suspend fun deleteAutomation(automationId: String, userId: String): PulseResult<OkDto> =
+    /** DELETE /api/automations/{id} { userId, clientId? } - admin-only →
+     * { ok, deleted, automationId, userId, revision, replayed? }; the lost-ACK
+     * retry with the same clientId replays the SAME verdict even though the
+     * row is gone. */
+    suspend fun deleteAutomation(automationId: String, userId: String, clientId: String? = null): PulseResult<OkDto> =
         deleteWithJson(
             "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
-            jsonOf("userId" to userId),
-        ) { confirmedControlDeletion(it, userId, "automationId", automationId) }
-
-    /** GET /api/webhooks?conversationId=&requesterId= → { webhooks[] } - admins only; contains posting credentials. */
-    suspend fun webhooks(conversationId: String, requesterId: String): PulseResult<WebhooksPageDto> =
-        get(
-            "/api/webhooks?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
-                "&requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
+            jsonOf("userId" to userId, "clientId" to clientId),
         ) {
+            confirmedControlDeletion(it, userId, "automationId", automationId).also { confirmedReplayReceipt(it, clientId) }
+        }
+
+    /** GET /api/webhooks?conversationId=&requesterId=&limit=&cursor= - admins
+     * only; contains posting credentials. Order: createdAt ASC; paging follows
+     * the shared keyed envelope (legacy call = first page). */
+    suspend fun webhooks(conversationId: String, requesterId: String, cursor: String? = null, limit: Int? = null): PulseResult<WebhooksPageDto> {
+        var query = "?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+            "&requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")
+        if (limit != null) query += "&limit=" + limit.coerceIn(1, 200)
+        if (!cursor.isNullOrBlank()) query += "&cursor=" + java.net.URLEncoder.encode(cursor, "UTF-8")
+        return get("/api/webhooks$query") {
             val root = PulseJson.parseToJsonElement(it) as? JsonObject
             require(root?.get("webhooks") is JsonArray) { "Webhook list was not confirmed." }
             PulseJson.decodeFromString(WebhooksPageDto.serializer(), it).also { page ->
                 page.webhooks.forEach { row -> requireWebhook(row) }
                 require(page.webhooks.map { it.id }.distinct().size == page.webhooks.size)
+                page.page?.let { pageMeta ->
+                    require((pageMeta.nextCursor != null) == pageMeta.hasMore) { "Webhook cursor must match hasMore." }
+                }
             }
         }
+    }
 
-    /** POST /api/webhooks { conversationId, name, requesterId } - admin-only → 201 WebhookDTO. */
-    suspend fun createWebhook(conversationId: String, name: String, requesterId: String): PulseResult<WebhookDto> =
+    /** POST /api/webhooks { conversationId, name, requesterId, clientId? } -
+     * admin-only → 201 WebhookDTO + replayed? (bare DTO, no envelope). */
+    suspend fun createWebhook(conversationId: String, name: String, requesterId: String, clientId: String? = null): PulseResult<WebhookMutationDto> =
         post(
             "/api/webhooks",
-            jsonOf("conversationId" to conversationId, "name" to name, "requesterId" to requesterId),
+            jsonOf("conversationId" to conversationId, "name" to name, "requesterId" to requesterId, "clientId" to clientId),
         ) {
-            PulseJson.decodeFromString(WebhookDto.serializer(), it).also { row ->
-                requireWebhook(row)
+            PulseJson.decodeFromString(WebhookMutationDto.serializer(), it).also { row ->
+                requireWebhookMutation(row)
                 require(row.name == name.trim() && row.createdBy == requesterId) { "Webhook creation was not confirmed." }
+                confirmedReplayReceipt(it, clientId)
             }
         }
 
-    /** DELETE /api/webhooks/{token}?requesterId= - admin-only → { ok: true }. */
-    suspend fun deleteWebhook(token: String, requesterId: String): PulseResult<OkDto> =
-        deleteAt(
-            "/api/webhooks/" + java.net.URLEncoder.encode(token, "UTF-8") +
-                "?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
-        ) { confirmedControlDeletion(it, requesterId, "token", token) }
+    /** Section 12 item 7 - PATCH /api/webhooks/{token} { requesterId, clientId? }
+     * - CAPABILITY ROTATION: the server mints a fresh token and the old ingest
+     * URL dies immediately (404). A lost-ACK retry carries the OLD token and
+     * replays the SAME fresh token (replayed=true). */
+    suspend fun rotateWebhook(token: String, requesterId: String, clientId: String? = null): PulseResult<WebhookMutationDto> =
+        patch(
+            "/api/webhooks/" + java.net.URLEncoder.encode(token, "UTF-8"),
+            jsonOf("requesterId" to requesterId, "clientId" to clientId),
+        ) {
+            PulseJson.decodeFromString(WebhookMutationDto.serializer(), it).also { row ->
+                requireWebhookMutation(row)
+                require(row.token != token) { "Webhook rotation was not confirmed." }
+                confirmedReplayReceipt(it, clientId)
+            }
+        }
+
+    /** DELETE /api/webhooks/{token} { requesterId, clientId? } - admin-only →
+     * { ok, deleted, token, userId, revision, replayed? }; the lost-ACK retry
+     * replays the SAME verdict even though the row is gone. */
+    suspend fun deleteWebhook(token: String, requesterId: String, clientId: String? = null): PulseResult<OkDto> =
+        deleteWithJson(
+            "/api/webhooks/" + java.net.URLEncoder.encode(token, "UTF-8"),
+            jsonOf("requesterId" to requesterId, "clientId" to clientId),
+        ) {
+            confirmedControlDeletion(it, requesterId, "token", token).also { confirmedReplayReceipt(it, clientId) }
+        }
 
     private fun requireAutomation(row: app.pulse.protocol.AutomationDto) {
         require(row.id.isNotBlank() && row.conversationId.isNotBlank() && row.trigger.length in 2..40 && row.reply.length in 1..500 && row.hits >= 0) {
@@ -3117,6 +3170,26 @@ class PulseApi(
             "Invalid webhook response."
         }
     }
+
+    /** Section 12 - create/rotate receipts carry the whole webhook row (bare
+     * DTO); the ingest URL always pairs with the (possibly fresh) token. */
+    private fun requireWebhookMutation(row: WebhookMutationDto) {
+        require(row.id.isNotBlank() && row.name.isNotBlank() && row.token.isNotBlank() && row.createdBy.isNotBlank() && row.url == "/api/webhooks/${row.token}") {
+            "Invalid webhook response."
+        }
+    }
+
+    /** Section 12 - a journaled clientId obliges the receipt to carry the
+     * replay flag (false on first delivery, true on a lost-ACK retry); a
+     * missing flag means the server did not honour the identity. */
+    private fun confirmedReplayReceipt(text: String, clientId: String?) {
+        if (clientId == null) return
+        val root = PulseJson.parseToJsonElement(text) as? JsonObject
+        require(root?.get("replayed") in listOf(JsonPrimitive(true), JsonPrimitive(false))) {
+            "The mutation receipt was not confirmed; keep the same retry identity."
+        }
+    }
+
     private fun confirmedControlDeletion(text: String, owner: String, field: String, target: String): OkDto {
         val root = PulseJson.parseToJsonElement(text) as? JsonObject ?: error("Deletion receipt is missing.")
         require(root["ok"]?.toString() == "true" && root["deleted"]?.toString() == "true" &&

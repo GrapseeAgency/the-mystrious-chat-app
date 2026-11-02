@@ -29,6 +29,9 @@ model User {
   storyViewReceipts  Boolean                   @default(true)
   sessionTokenHash   String? // sha256 hex of the native session token (spec §3.11 A-1/A-2) — raw token never stored; null = pre-token identity (migration-accepted)
   legacyTokenHashes  String? // JSON array of up to 8 recent previous session-token hashes (R52 grace list) — concurrent device logins must not invalidate each other; the newest hash stays in sessionTokenHash
+  // Section 12 item 6: canonical service identity. Machine accounts resolve
+  // through this stable key instead of mutable display names or handles.
+  serviceKey         String?                   @unique // 'pulse.bot' is THE machine author; null = human account
   createdAt          DateTime                  @default(now())
   lastSeenAt         DateTime                  @default(now())
   appInstalls        AppInstall[]
@@ -333,6 +336,7 @@ model Automation {
   hits           Int          @default(0) // lifetime fire count
   lastFiredAt    DateTime?
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   createdBy      User         @relation("AutomationCreator", fields: [createdById], references: [id], onDelete: Cascade)
 
@@ -351,8 +355,78 @@ model Webhook {
   avatarColor    String       @default("emerald")
   createdBy      String
   createdAt      DateTime     @default(now())
+  // Section 12 item 9: capability rotation + durable per-token rate window.
+  rotatedAt      DateTime?
+  windowStartedAt DateTime?
+  windowPosts    Int          @default(0)
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 }
+
+// Section 12 item 1: one durable create/delete operation identity per
+// integration mutation. A lost ACK replays the STORED result (replayed:true);
+// the same clientId against different identity params is refused (409).
+model IntegrationOperation {
+  id             String   @id @default(cuid())
+  kind           String // 'automation.create' | 'automation.delete' | 'automation.update' | 'webhook.create' | 'webhook.delete' | 'webhook.rotate'
+  clientId       String
+  conversationId String
+  userId         String
+  requestHash    String // sha256 over the identity params - replay guard
+  resultId       String?
+  resultJson     String
+  createdAt      DateTime @default(now())
+
+  @@unique([kind, clientId])
+  @@index([conversationId, createdAt])
+}
+
+// Section 12 item 2: monotonic per-conversation management revision. Every
+// automation/webhook mutation bumps it in the same transaction, so list
+// consumers refresh on change instead of polling rows.
+model IntegrationRevision {
+  conversationId String   @id
+  rev            Int      @default(1)
+  updatedAt      DateTime @default(now()) @updatedAt
+}
+
+// Section 12 item 3: durable exactly-once automation execution. The UNIQUE
+// (automationId, sourceId) pair makes one rule fire at most once per source
+// message, across process restarts and concurrent evaluations.
+model AutomationExecution {
+  id             String   @id @default(cuid())
+  conversationId String
+  automationId   String
+  sourceId       String
+  messageId      String
+  createdAt      DateTime @default(now())
+
+  @@unique([automationId, sourceId])
+  @@index([conversationId, createdAt])
+}
+
+// Section 12 item 4: a committed automation execution owes every member a
+// notification. The outbox row is written in the SAME transaction as the
+// execution receipt; the dispatch ticker drains it with current policy.
+model AutomationNotifyOutbox {
+  id             String    @id @default(cuid())
+  conversationId String
+  messageId      String
+  state          String    @default("pending") // pending | delivered
+  attempts       Int       @default(0)
+  createdAt      DateTime  @default(now())
+  deliveredAt    DateTime?
+
+  @@index([state, createdAt])
+}
+
+// Section 12 item 5: durable bot-prompt admission lease. One in-flight LLM
+// evaluation per conversation across ALL server instances; expired leases
+// are re-claimable, so a crashed evaluation cannot wedge the room.
+model BotPromptLease {
+  conversationId String   @id
+  expiresAt      DateTime
+}
+
 
 /**
  * Collaborative whiteboard — every stroke is a persisted polyline so the
