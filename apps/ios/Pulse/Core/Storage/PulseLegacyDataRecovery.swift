@@ -118,7 +118,9 @@ extension PulseStore {
 
     private static func scanLegacy(at path: URL, owner: String) -> PulseLegacyDataRecovery.Scan {
         var scan = PulseLegacyDataRecovery.Scan()
-        guard let queue = try? DatabaseQueue(path: path.path, configuration: Configuration(readonly: true)) else {
+        var configuration = Configuration()
+        configuration.readonly = true
+        guard let queue = try? DatabaseQueue(path: path.path, configuration: configuration) else {
             scan.conversations = nil
             return scan
         }
@@ -150,7 +152,7 @@ extension PulseStore {
                     scan.foreignConversation = true
                     continue
                 }
-                let members = Set(summary.members.map(\.id))
+                let members = Set(summary.members.map { $0.id })
                 memberIdsByConversation[id] = members
                 if !members.contains(owner) { scan.foreignConversation = true }
             }
@@ -188,8 +190,8 @@ extension PulseStore {
         try Self.buildMigrator().migrate(try DatabaseQueue(path: temp.path))
 
         return try withLegacyAttached(copyAt: temp) { db in
+            var counts: [String: Int] = [:]
             try db.inSavepoint {
-                var counts: [String: Int] = [:]
                 for table in ["conversation", "message", "draft"] {
                     let cols = try Self.commonColumns(db, table: table)
                     guard !cols.isEmpty else { throw NSError(domain: "PulseLegacy", code: 1, userInfo: [NSLocalizedDescriptionKey: "no importable columns for \(table)"]) }
@@ -197,8 +199,9 @@ extension PulseStore {
                     try db.execute(sql: "INSERT OR IGNORE INTO `\(table)` (\(list)) SELECT \(list) FROM legacy_src.`\(table)`")
                     counts[table] = Int.fetchOne(db, sql: "SELECT changes()") ?? 0
                 }
-                return counts
+                return .commit
             }
+            return counts
         }
     }
 
