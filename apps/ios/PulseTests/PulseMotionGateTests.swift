@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import Pulse
 
 /// Section 15 item 10 - the reduce-motion gate that every gated animation
