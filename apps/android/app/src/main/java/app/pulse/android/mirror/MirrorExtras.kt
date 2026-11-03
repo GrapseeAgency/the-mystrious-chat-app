@@ -945,32 +945,53 @@ internal fun MirrorSheet(
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Section 15 reduced-motion: honor the OS-level "remove animations"
+    // (Settings.Global.ANIMATOR_DURATION_SCALE == 0, the same probe the settings
+    // surfaces already display) - the sheet enters/leaves without springs, the
+    // scrim snaps, but the dismissal CONTRACT (onDismiss fires) is unchanged.
+    val reducedMotion = androidx.compose.runtime.remember {
+        android.provider.Settings.Global.getFloat(
+            context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        ) == 0f
+    }
     // enter/exit progress 0..1 driven by spring physics (web AnimatePresence)
     val progress = remember { androidx.compose.animation.core.Animatable(0f) }
     var leaving by remember { androidx.compose.runtime.mutableStateOf(false) }
     var dragPx by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
-        progress.animateTo(
-            1f,
-            androidx.compose.animation.core.spring(
-                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
-                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-            ),
-        )
+        if (reducedMotion) {
+            progress.snapTo(1f)
+        } else {
+            progress.animateTo(
+                1f,
+                androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                ),
+            )
+        }
     }
     LaunchedEffect(leaving) {
         if (leaving) {
-            progress.animateTo(
-                0f,
-                androidx.compose.animation.core.tween(170, easing = androidx.compose.animation.core.FastOutLinearInEasing),
-            )
-            onDismiss()
+            if (reducedMotion) {
+                progress.snapTo(0f)
+                onDismiss()
+            } else {
+                progress.animateTo(
+                    0f,
+                    androidx.compose.animation.core.tween(170, easing = androidx.compose.animation.core.FastOutLinearInEasing),
+                )
+                onDismiss()
+            }
         }
     }
     androidx.activity.compose.BackHandler { leaving = true }
     val scrimAlpha = androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (leaving) 0f else 0.4f,
-        animationSpec = androidx.compose.animation.core.tween(170),
+        animationSpec = if (reducedMotion) androidx.compose.animation.core.snap() else androidx.compose.animation.core.tween(170),
         label = "sheetScrim",
     )
     val panelTranslation = with(density) { (1f - progress.value) * 220.dp.toPx() + dragPx }
@@ -1024,7 +1045,9 @@ internal fun MirrorSheet(
                         .clickable(onClick = { leaving = true }),
                     contentAlignment = Alignment.Center,
                 ) {
-                    MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
+                    // Section 15 accessibility: every sheet's close control is a
+                    // labeled icon-only button for TalkBack.
+                    MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(18.dp), description = "Close")
                 }
             }
             Spacer(Modifier.height(12.dp))

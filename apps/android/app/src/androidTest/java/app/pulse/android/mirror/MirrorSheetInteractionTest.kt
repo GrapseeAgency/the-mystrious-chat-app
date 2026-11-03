@@ -37,7 +37,14 @@ class MirrorSheetInteractionTest {
         compose.onNodeWithTag("blank-panel").performTouchInput { click() }
         compose.runOnIdle { assertEquals(0, dismissals) }
         compose.onRoot().performTouchInput { click(Offset(center.x, 20f)) }
-        compose.waitForIdle()
+        // The scrim dismissal completes only after the 170ms exit tween inside the
+        // sheet's LaunchedEffect. A single idle pass can observe the UI "idle" in
+        // the window before the exit Animatable registers its first frame callback
+        // (runner load widens that window - CI strikes: Oct 26 api-30 run 40247380437
+        // and Oct 30 api-34 run 41075181324, both expected:<1> but was:<0>), so the
+        // dismissal is awaited bounded. A genuinely broken scrim still fails by
+        // timeout instead of passing on a lost race.
+        compose.waitUntil(5000) { dismissals >= 1 }
         compose.runOnIdle { assertEquals(1, dismissals) }
     }
 
@@ -46,7 +53,12 @@ class MirrorSheetInteractionTest {
         compose.setContent { MirrorSheet("Draft", onDismiss = { dismissals++ }) { Text("Keep this draft") } }
         compose.waitForIdle()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        compose.waitForIdle()
+        // Same race as the scrim case: BackHandler only sets leaving=true and the
+        // onDismiss lands after the exit tween finishes, so a bounded wait replaces
+        // the single idle pass. A genuinely broken back path (sheet ignoring system
+        // back, or the underlying screen going down instead) still times out and
+        // fails with dismissals observed at 0.
+        compose.waitUntil(5000) { dismissals >= 1 }
         compose.runOnIdle { assertEquals(1, dismissals) }
     }
 }

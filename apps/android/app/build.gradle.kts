@@ -50,10 +50,31 @@ android {
             // The committed distribution keystore (GS-distribution model): every
             // build - sandbox, CI, future waves - signs identically, so the
             // LiveUpdater can overwrite-install without an uninstall.
-            storeFile = rootProject.file("keystores/pulse-release.keystore")
-            storePassword = "pulse-live-update"
-            keyAlias = "pulse"
-            keyPassword = "pulse-live-update"
+            //
+            // Section 16 item 7 - signing exposure: the committed key is PUBLIC
+            // by construction (it lives in the repo), so a production release
+            // must sign with a PROTECTED key supplied out-of-band instead.
+            // Authorized builds override every slot through environment
+            // variables (PULSE_KEYSTORE_FILE, PULSE_KEYSTORE_PASSWORD,
+            // PULSE_KEY_ALIAS, PULSE_KEY_PASSWORD) or gradle properties with
+            // the same names; with no override the committed distribution
+            // keystore remains the default so CI and the LiveUpdater keep
+            // working and upgrade continuity is never silently broken.
+            // Rotation procedure: docs/SIGNING-AND-ROTATION.md.
+            storeFile = rootProject.file(
+                (providers.environmentVariable("PULSE_KEYSTORE_FILE").orNull
+                    ?: project.findProperty("pulseKeystoreFile") as String?)
+                    ?: "keystores/pulse-release.keystore",
+            )
+            storePassword = providers.environmentVariable("PULSE_KEYSTORE_PASSWORD").orNull
+                ?: (project.findProperty("pulseKeystorePassword") as String?)
+                ?: "pulse-live-update"
+            keyAlias = providers.environmentVariable("PULSE_KEY_ALIAS").orNull
+                ?: (project.findProperty("pulseKeyAlias") as String?)
+                ?: "pulse"
+            keyPassword = providers.environmentVariable("PULSE_KEY_PASSWORD").orNull
+                ?: (project.findProperty("pulseKeyPassword") as String?)
+                ?: "pulse-live-update"
             // ALL signing schemes, explicitly. AGP defaults skimp on the v1 JAR
             // signature for modern minSdks, and some ROM installers reject such
             // APKs with "There was a problem parsing the package" - the exact

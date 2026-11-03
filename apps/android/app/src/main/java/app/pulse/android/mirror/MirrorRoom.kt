@@ -1628,7 +1628,7 @@ internal fun MirrorRoom(
                             .clickable(onClick = onBack),
                         contentAlignment = Alignment.Center,
                     ) {
-                        MirrorLucideIcon("LChevronLeft", tint = MirrorArt.TextSoft, modifier = Modifier.size(24.dp))
+                        MirrorLucideIcon("LChevronLeft", tint = MirrorArt.TextSoft, modifier = Modifier.size(24.dp), description = "Back")
                     }
                     // ONE tap target: 40dp avatar + title + subtitle - room info
                     Row(
@@ -1699,9 +1699,9 @@ internal fun MirrorRoom(
                         }
                     }
                     // EXACTLY three bare icons: video, audio, kebab (44dp ghosts, size-5)
-                    MirrorRoomHeaderIcon("LVideo") { onCall(true) }
-                    MirrorRoomHeaderIcon("LPhone") { onCall(false) }
-                    MirrorRoomHeaderIcon("LKebab") { menuOpen = !menuOpen }
+                    MirrorRoomHeaderIcon("LVideo", "Video call") { onCall(true) }
+                    MirrorRoomHeaderIcon("LPhone", "Voice call") { onCall(false) }
+                    MirrorRoomHeaderIcon("LKebab", "Room menu") { menuOpen = !menuOpen }
                 }
                 Box(
                     Modifier
@@ -2166,7 +2166,7 @@ internal fun MirrorRoom(
                                 .mirrorPressClick(onClick = { cancelRecording() }),
                             contentAlignment = Alignment.Center,
                         ) {
-                            MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
+                            MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(18.dp), description = "Cancel recording")
                         }
                         val radar = rememberInfiniteTransition(label = "radar")
                         val radarAlpha by radar.animateFloat(
@@ -2198,7 +2198,7 @@ internal fun MirrorRoom(
                             .mirrorPressClick(onClick = { sendRecording() }),
                         contentAlignment = Alignment.Center,
                     ) {
-                        MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
+                        MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp), description = "Send voice note")
                     }
                 }
             } else
@@ -2279,7 +2279,7 @@ internal fun MirrorRoom(
                                 .clickable { trayOpen = !trayOpen },
                             contentAlignment = Alignment.Center,
                         ) {
-                            MirrorLucideIcon("LPaperclip", tint = if (trayOpen) MirrorArt.Text else MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                            MirrorLucideIcon("LPaperclip", tint = if (trayOpen) MirrorArt.Text else MirrorArt.Dim, modifier = Modifier.size(20.dp), description = "Attach")
                         }
                         Box(Modifier.weight(1f).padding(bottom = 8.dp)) {
                             if (draftValue.text.isBlank()) {
@@ -2326,7 +2326,7 @@ internal fun MirrorRoom(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            MirrorLucideIcon("LCamera", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                            MirrorLucideIcon("LCamera", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp), description = "Photo")
                         }
                     }
                     // art-fab: 44dp DARK GLASS always - plus (opens the tray) becomes
@@ -2357,11 +2357,11 @@ internal fun MirrorRoom(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (sending || voiceBusy || uploadingImage || preparingAttachment) {
-                            MirrorLucideIcon("LLoaderCircle", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
+                            MirrorLucideIcon("LLoaderCircle", tint = MirrorArt.Text, modifier = Modifier.size(20.dp), description = "Sending")
                         } else if (hasText) {
-                            MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
+                            MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp), description = "Send")
                         } else {
-                            MirrorLucideIcon("LPlus", tint = MirrorArt.Text, modifier = Modifier.size(22.dp))
+                            MirrorLucideIcon("LPlus", tint = MirrorArt.Text, modifier = Modifier.size(22.dp), description = "More")
                         }
                     }
                 }
@@ -3566,7 +3566,7 @@ internal fun MirrorRoomStamp(iso: String): String =
     runCatching { ROOM_STAMP.format(Instant.parse(iso)) }.getOrDefault("")
 
 @Composable
-private fun MirrorRoomHeaderIcon(glyph: String, onClick: () -> Unit = {}) {
+private fun MirrorRoomHeaderIcon(glyph: String, description: String, onClick: () -> Unit = {}) {
     Box(
         Modifier
             .size(44.dp)
@@ -3574,7 +3574,7 @@ private fun MirrorRoomHeaderIcon(glyph: String, onClick: () -> Unit = {}) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        MirrorLucideIcon(glyph, tint = MirrorArt.TextSoft, modifier = Modifier.size(20.dp))
+        MirrorLucideIcon(glyph, tint = MirrorArt.TextSoft, modifier = Modifier.size(20.dp), description = description)
     }
 }
 

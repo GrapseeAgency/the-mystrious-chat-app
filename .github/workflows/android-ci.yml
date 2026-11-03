@@ -128,8 +128,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # Section 15 item 6: the lowest-supported acceptance leg. minSdk is 21,
+      # but x86_64 google_apis emulator images only exist down to API 28, so
+      # 28 IS the floor CI can actually boot and execute the suite on.
       matrix:
-        api-level: [30, 34]
+        api-level: [28, 30, 34]
     name: instrumented (api ${{ matrix.api-level }})
     defaults:
       run:

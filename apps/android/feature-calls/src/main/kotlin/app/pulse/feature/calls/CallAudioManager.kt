@@ -33,16 +33,14 @@ class CallAudioManager(context: Context) {
         val ticket = UUID.randomUUID()
         focusEpoch = ticket
         val listener = AudioManager.OnAudioFocusChangeListener { change ->
-            if (change == AudioManager.AUDIOFOCUS_LOSS ||
-                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
-                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+            if (callFocusPolicyFor(change) == CallFocusPolicy.END_CALL) {
                 // Privacy-first policy: end, never silently resume a microphone.
                 // The listener reports whether the loss was TRANSIENT so the
                 // engine can spare a still-RINGING call from its own stack's
                 // ringback churn (the telecom mirror registers the call and
                 // the system's phone ring steals focus for a moment - the
                 // call was killing ITSELF within ~120ms of dialing).
-                val transient = change != AudioManager.AUDIOFOCUS_LOSS
+                val transient = focusLossIsTransient(change)
                 main.post { if (active && focusEpoch == ticket) onFocusLost?.invoke(transient) }
             }
         }
@@ -103,16 +101,21 @@ class CallAudioManager(context: Context) {
     fun setSpeakerOn(on: Boolean): Boolean {
         if (!active) return false
         return runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val type = communicationRouteType(on, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
-                val target = am.availableCommunicationDevices.firstOrNull { it.type == type }
-                if (target != null) am.setCommunicationDevice(target)
-                else if (!on) { am.clearCommunicationDevice(); !isSpeakerOn() }
-                else false
-            } else {
-                @Suppress("DEPRECATION")
-                am.isSpeakerphoneOn = on
-                true
+            val type = communicationRouteType(on, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
+            val target = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                am.availableCommunicationDevices.firstOrNull { it.type == type } else null
+            when (callSpeakerRouteStep(Build.VERSION.SDK_INT, on, target != null)) {
+                CallRouteStep.SET_COMMUNICATION_DEVICE -> am.setCommunicationDevice(target)
+                CallRouteStep.CLEAR_COMMUNICATION_DEVICE -> {
+                    am.clearCommunicationDevice()
+                    !isSpeakerOn()
+                }
+                CallRouteStep.LEGACY_SPEAKER_TOGGLE -> {
+                    @Suppress("DEPRECATION")
+                    am.isSpeakerphoneOn = on
+                    true
+                }
+                CallRouteStep.REFUSE -> false
             }
         }.getOrDefault(false)
     }

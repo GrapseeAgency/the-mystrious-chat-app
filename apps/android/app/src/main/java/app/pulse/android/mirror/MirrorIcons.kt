@@ -79,14 +79,24 @@ internal object MirrorIcons {
             .build()
 }
 
-/** Phosphor glyph (duotone / fill / line) tinted and sized by the caller. */
+/**
+ * Phosphor glyph (duotone / fill / line) tinted and sized by the caller.
+ * Section 15 accessibility: `description` is the TalkBack label for
+ * INTERACTIVE icon-only controls; it stays null for decorative glyphs so
+ * they are correctly skipped by screen readers. Default null keeps all 300+
+ * existing call sites compiling (decorative until proven actionable).
+ */
 @Composable
-internal fun MirrorPhosphorIcon(name: String, tint: Color, modifier: Modifier = Modifier) {
+internal fun MirrorPhosphorIcon(name: String, tint: Color, modifier: Modifier = Modifier, description: String? = null) {
     val vector = remember(name, tint) { MirrorIcons.phosphorVector(name, tint) }
-    Icon(painter = rememberVectorPainter(vector), contentDescription = null, modifier = modifier, tint = Color.Unspecified)
+    Icon(painter = rememberVectorPainter(vector), contentDescription = description, modifier = modifier, tint = Color.Unspecified)
 }
 
-/** Lucide stroke glyph tinted and sized by the caller. */
+/**
+ * Lucide stroke glyph tinted and sized by the caller.
+ * Section 15 accessibility: same contract - `description` labels actionable
+ * icon-only buttons for TalkBack; decorative icons pass nothing.
+ */
 @Composable
 internal fun MirrorLucideIcon(
     name: String,
@@ -94,7 +104,8 @@ internal fun MirrorLucideIcon(
     modifier: Modifier = Modifier,
     strokeWidth: Float = 2f,
     filled: Boolean = false,
+    description: String? = null,
 ) {
     val vector = remember(name, tint, strokeWidth, filled) { MirrorIcons.lucideVector(name, tint, strokeWidth, filled) }
-    Icon(painter = rememberVectorPainter(vector), contentDescription = null, modifier = modifier, tint = Color.Unspecified)
+    Icon(painter = rememberVectorPainter(vector), contentDescription = description, modifier = modifier, tint = Color.Unspecified)
 }
