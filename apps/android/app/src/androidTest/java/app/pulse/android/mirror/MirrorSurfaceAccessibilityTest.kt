@@ -1,10 +1,11 @@
 package app.pulse.android.mirror
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -55,7 +56,7 @@ class MirrorSurfaceAccessibilityTest {
     @Test
     fun decorativeIconsCarryNoScreenReaderLabel() {
         compose.setContent {
-            MirrorLucideIcon("LX", tint = MirrorArt.Text, modifier = androidx.compose.ui.Modifier.size(20.dp))
+            MirrorLucideIcon("LX", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
         }
         compose.waitForIdle()
         // null contentDescription means the glyph is invisible to TalkBack -

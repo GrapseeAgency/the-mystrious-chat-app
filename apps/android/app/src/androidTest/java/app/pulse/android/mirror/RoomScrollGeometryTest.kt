@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -65,8 +66,9 @@ class RoomScrollGeometryTest {
     fun prependingHistoryKeepsTheFirstVisibleMessageIdAndPixelOffset() {
         val entries = mutableStateListOf(*ids(30, 30).toTypedArray())
         val listState = mount(entries)
-        // park mid-list on a known row
-        compose.runOnUiThread { listState.scrollToItem(11, 17) }
+        // park mid-list on a known row (scrollToItem is a suspend call - it
+        // completes the scroll, not just requests it)
+        runBlocking { listState.scrollToItem(11, 17) }
         compose.waitForIdle()
         val anchorIndex = listState.firstVisibleItemIndex
         val anchorOffset = listState.firstVisibleItemScrollOffset
@@ -95,7 +97,7 @@ class RoomScrollGeometryTest {
     fun aTailArrivalWhileScrolledAwayDoesNotMoveTheViewport() {
         val entries = mutableStateListOf(*ids(30, 30).toTypedArray())
         val listState = mount(entries)
-        compose.runOnUiThread { listState.scrollToItem(6) }
+        runBlocking { listState.scrollToItem(6) }
         compose.waitForIdle()
         val indexBefore = listState.firstVisibleItemIndex
         val offsetBefore = listState.firstVisibleItemScrollOffset
@@ -123,14 +125,14 @@ class RoomScrollGeometryTest {
     fun anExactJumpLandsThroughTheHeaderCompensationTheRoomUses() {
         val entries = mutableStateListOf(*ids(30, 30).toTypedArray())
         val listState = mount(entries)
-        compose.runOnUiThread { listState.scrollToItem(0) }
+        runBlocking { listState.scrollToItem(0) }
         compose.waitForIdle()
         // MirrorRoom resolves the entry list index and compensates the header
         // slot with +1 (MirrorRoom.kt animateScrollToItem(idx + 1)); the exact
         // landing is what this pins (scrollToItem is the deterministic twin
         // of the app's animated jump for test purposes)
         val targetEntryIndex = 20
-        compose.runOnUiThread { listState.scrollToItem(targetEntryIndex + 1) }
+        runBlocking { listState.scrollToItem(targetEntryIndex + 1) }
         compose.waitForIdle()
         val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }
         assertTrue(
@@ -146,9 +148,10 @@ class RoomScrollGeometryTest {
     @Test
     fun processRestorationKeepsIndexAndOffsetThroughTheListStateSaver() {
         val state = LazyListState(11, 40)
+        val saver = LazyListState.Saver
         val scope = SaverScope { true }
-        val saved = scope.run { LazyListState.Saver.save(state) }
-        val restored = saved?.let { scope.run { LazyListState.Saver.restore(it) } }
+        val saved = with(scope) { saver.save(state) }
+        val restored = saved?.let { saver.restore(it) }
         assertTrue("the saver produced a restorable bundle", restored != null)
         assertEquals(11, restored!!.firstVisibleItemIndex)
         assertEquals(40, restored.firstVisibleItemScrollOffset)
