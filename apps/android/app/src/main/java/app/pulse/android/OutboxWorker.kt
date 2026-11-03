@@ -52,11 +52,11 @@ class OutboxWorker(
                 override fun boundViewerId(): String? = repo.boundToCurrentAccount().viewerId
                 override fun invalidateReadProjections(room: String) =
                     repo.boundToCurrentAccount().invalidateReadProjections(room)
-                override suspend fun flushSavedIntents(): Result<Int> = repo.boundToCurrentAccount().flushSavedIntents()
-                override suspend fun flushComposerIntents(): Result<Int> = repo.boundToCurrentAccount().flushComposerIntents()
+                override suspend fun flushSavedIntents(): kotlin.Result<Int> = repo.boundToCurrentAccount().flushSavedIntents()
+                override suspend fun flushComposerIntents(): kotlin.Result<Int> = repo.boundToCurrentAccount().flushComposerIntents()
                 override suspend fun flushOutbox(): app.pulse.domain.model.FlushReport = repo.boundToCurrentAccount().flushOutbox()
-                override suspend fun flushReadReceipts(): Result<Int> = repo.boundToCurrentAccount().flushReadReceipts()
-                override suspend fun refreshConversations(): Result<Unit> = repo.boundToCurrentAccount().refreshConversations()
+                override suspend fun flushReadReceipts(): kotlin.Result<Int> = repo.boundToCurrentAccount().flushReadReceipts()
+                override suspend fun refreshConversations(): kotlin.Result<Unit> = repo.boundToCurrentAccount().refreshConversations()
                 override suspend fun reconcileNotifications(stillOwner: suspend () -> Boolean): Boolean =
                     app.pulse.android.push.PulseMessageNotifications.reconcile(
                         applicationContext, repo.boundToCurrentAccount(),

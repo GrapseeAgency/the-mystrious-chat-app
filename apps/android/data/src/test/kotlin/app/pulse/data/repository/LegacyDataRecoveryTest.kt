@@ -82,7 +82,7 @@ class LegacyDataRecoveryTest {
     }
 
     @Test
-    fun `only owner-proven queue rows may be adopted; the rest are skipped and retained`() {
+    fun `only owner-proven queue rows may be adopted - the rest are skipped and retained`() {
         val verdict = LegacyDataRecovery().verdict(
             "viewer-a",
             FakeScan(outbox = 4, outboxProven = 1),

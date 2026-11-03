@@ -332,7 +332,7 @@ public final class PulseStore: Sendable {
         ("v12", { db in
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_quote_source ON message(replyToId)")
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_thread_parent ON message(parentId)")
-            try Self.repairCachedQuotes(db: db, changedId: nil)
+            try PulseStore.repairCachedQuotes(db: db, changedId: nil)
         }),
         ("v13", { db in
             // Old decoding stored malformed non-null expiry as SQL NULL.
@@ -351,7 +351,7 @@ public final class PulseStore: Sendable {
                 }
                 after = lastID
             }
-            try Self.repairCachedQuotes(db: db, changedId: nil)
+            try PulseStore.repairCachedQuotes(db: db, changedId: nil)
         }),
         ("v14", { db in
             try db.alter(table: "topics") { t in t.add(column: "unreadCount", .integer) }
@@ -812,7 +812,7 @@ public final class PulseStore: Sendable {
                 "expiresAtEpoch": PulseRemediationLogic.expiryEpoch(m.expiresAt),
             ],
         )
-        try Self.repairCachedQuotes(db: db, changedId: m.id)
+        try PulseStore.repairCachedQuotes(db: db, changedId: m.id)
         return try Self.projectCachedQuotes([m], db: db).first ?? m
     }
 
