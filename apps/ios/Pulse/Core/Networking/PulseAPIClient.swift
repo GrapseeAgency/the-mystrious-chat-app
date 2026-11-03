@@ -1025,6 +1025,12 @@ public struct PulseAPIClient: Sendable {
         guard let user = mutation.user else {
             throw Failure(kind: .server, message: "The profile change was not confirmed for this account.")
         }
+        // Section 13 item 9 - an identity-bearing send that the server
+        // confirmed IS the retirement of the journaled intent ("a 2xx
+        // receipt is the ONLY retirement" as one wire-layer invariant).
+        // updateProfileDurable and the session flush re-confirm afterwards;
+        // confirm is an idempotent removal by clientId.
+        if let clientId { await PulseSection8Journal.shared.confirm(owner: userId, clientId: clientId) }
         return WireProfileReceipt(user: user, revision: mutation.revision, replayed: mutation.replayed)
     }
 

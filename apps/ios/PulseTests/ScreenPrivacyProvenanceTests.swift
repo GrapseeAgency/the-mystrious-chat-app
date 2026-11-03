@@ -62,14 +62,19 @@ final class ScreenPrivacyProvenanceTests: XCTestCase {
     func testOldV2BlobWithoutOriginDecodesAndReadsAsMigrationCacheHonesty() throws {
         let (journal, defaults) = freshJournal()
         let owner = "me"
+        // Prefs scopes every per-owner surface by the ACCOUNT+GATEWAY owner
+        // key, not the raw viewer id - the prefs half of this test seeds the
+        // blob under the exact key the owner refresh will read.
+        let ownerKey = try XCTUnwrap(PulsePrefs.settingsOwnerKey(for: owner, gateway: PulseEndpoints.gatewayURL))
         // A pre-provenance v2 blob: Entry JSON without the origin key.
         let legacyEntry: [String: Any] = ["on": false, "revision": UUID().uuidString, "pending": UUID().uuidString]
-        defaults.set(try JSONSerialization.data(withJSONObject: ["room": legacyEntry]),
-            forKey: "pulse.settings.veil.v2." + owner)
+        let legacyBlob = try JSONSerialization.data(withJSONObject: ["room": legacyEntry])
+        defaults.set(legacyBlob, forKey: "pulse.settings.veil.v2." + owner)
         let entries = try journal.entries(owner: owner)
         XCTAssertEqual(entries["room"]?.on, false)
         XCTAssertNil(entries["room"]?.origin, "old blobs decode with nil origin (tolerant)")
         // The prefs-level exposure maps unknown provenance honestly.
+        defaults.set(legacyBlob, forKey: "pulse.settings.veil.v2." + ownerKey)
         let prefs = PulsePrefs(defaults: defaults)
         prefs.setViewer(PulseViewer(id: owner, name: "Me"))
         XCTAssertEqual(prefs.screenPrivacyOrigins["room"], "migration-cache")

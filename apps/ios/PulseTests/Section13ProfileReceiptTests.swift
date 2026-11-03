@@ -16,7 +16,19 @@ final class Section13ProfileReceiptTests: XCTestCase {
         override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "s13p.test" }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func startLoading() {
-            if let data = request.httpBody, let text = String(data: data, encoding: .utf8) {
+            // URLSession hands the body to a URLProtocol as a STREAM, not
+            // httpBody - the same reader every established test stub uses.
+            var data = request.httpBody ?? Data()
+            if data.isEmpty, let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 1024)
+                while true {
+                    let count = stream.read(&buffer, maxLength: 1024)
+                    if count <= 0 { break }
+                    data.append(contentsOf: buffer.prefix(count))
+                }
+            }
+            if let text = String(data: data, encoding: .utf8) {
                 Self.bodies.append(text)
             }
             Self.calls += 1

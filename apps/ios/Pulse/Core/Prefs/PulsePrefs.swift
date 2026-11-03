@@ -912,7 +912,9 @@ public final class PulsePrefs: ObservableObject {
     }
 
     private var settingsJournal: PulseSettingsJournal { PulseSettingsJournal(defaults: defaults) }
-    private static func settingsOwnerKey(for id: String?, gateway: URL) -> String? {
+    /// Internal so test fixtures can seed legacy per-owner blobs under the
+    /// EXACT key the owner refresh will read (Section 13 provenance tests).
+    static func settingsOwnerKey(for id: String?, gateway: URL) -> String? {
         guard let id, !id.isEmpty,
               let data = try? JSONEncoder().encode([PulseWalletOperations.gatewayKey(gateway), id]) else { return nil }
         return data.base64EncodedString()

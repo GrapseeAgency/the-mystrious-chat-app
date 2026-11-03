@@ -141,16 +141,24 @@ final class PulseSettingsJournal {
         // intent must never resurface on the next retry or restore.
         let lost = Set(sent.settingsKeys).intersection(superseded)
             .filter { pending[$0]?.id == ticket.fields[$0] }
-        apply(server.selectingSettings(lost))
-        for field in lost { pending.removeValue(forKey: field) }
         guard sent.settingsKeys.subtracting(superseded).isSubset(of: server.settingsKeys) else {
+            // The confirmation failed, but the adoption still lands: the lost
+            // fields' server truth is authoritative even now. An EMPTY lost
+            // set applies NOTHING - an unrelated failed reply must not touch
+            // a single field (SettingsWriteOrderingTests contract).
+            if !lost.isEmpty { apply(server.selectingSettings(lost)) }
             throw PulseAPIClient.Failure(kind: .server, message: "The server did not confirm the requested settings fields.")
         }
         let accepted = Set(sent.settingsKeys.filter { !superseded.contains($0) && pending[$0]?.id == ticket.fields[$0] })
-        // Apply confirmed fields before retiring intent. An unrelated full reply
-        // cannot rewrite privacy/appearance fields this request never touched.
-        apply(server.selectingSettings(accepted))
-        for field in accepted { pending.removeValue(forKey: field) }
+        // ONE apply carrying the adopted AND the confirmed fields: callers
+        // may assign the delivered struct wholesale, so a second partial
+        // apply would erase the adoption (a merge-style caller re-receives
+        // the same values, which is a no-op). An unrelated full reply still
+        // cannot rewrite fields this request never touched - and a reply
+        // that owns NOTHING delivers nothing at all.
+        let confirmed = lost.union(accepted)
+        if !confirmed.isEmpty { apply(server.selectingSettings(confirmed)) }
+        for field in confirmed { pending.removeValue(forKey: field) }
         try write(pending, owner: ticket.owner)
     }
     func applySnapshot(_ server: WirePulsePrefs, owner: String, apply: (WirePulsePrefs) -> Void) throws {
