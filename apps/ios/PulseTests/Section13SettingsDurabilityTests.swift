@@ -52,7 +52,7 @@ final class Section13SettingsDurabilityTests: XCTestCase {
     func testStageMintsDurableIdentityAndPerFieldStamps() throws {
         let (journal, _) = freshJournal("s13-durability-" + UUID().uuidString)
         let before = Date()
-        let ticket = try journal.stage(WirePulsePrefs(readReceipts: false, density: "compact"), owner: "me")
+        let ticket = try journal.stage(WirePulsePrefs(density: "compact", readReceipts: false), owner: "me")
         XCTAssertEqual(ticket.clientId?.count, 32, "the replay identity is 128 bits of hex")
         XCTAssertFalse(ticket.clientId?.contains("-") ?? true, "URL-safe: no dashes")
         XCTAssertNotNil(ticket.intentAt)
@@ -122,13 +122,13 @@ final class Section13SettingsDurabilityTests: XCTestCase {
 
     func testSupersededFieldsAdoptServerTruthAndNeverResurface() throws {
         let (journal, _) = freshJournal("s13-durability-" + UUID().uuidString)
-        let ticket = try journal.stage(WirePulsePrefs(readReceipts: false, density: "compact"), owner: "me")
+        let ticket = try journal.stage(WirePulsePrefs(density: "compact", readReceipts: false), owner: "me")
         // The server applied density but readReceipts LOST the LWW race
         // against another device's newer intent: preferences carries the
         // winning value (true) and superseded names the field.
         var applied = WirePulsePrefs()
         try journal.acknowledge(ticket, sent: ticket.patch,
-            server: WirePulsePrefs(readReceipts: true, density: "compact"),
+            server: WirePulsePrefs(density: "compact", readReceipts: true),
             superseded: ["readReceipts"]) { applied = $0 }
         XCTAssertEqual(applied.density, "compact", "the applied field confirms normally")
         XCTAssertEqual(applied.readReceipts, true, "the server's winning value is ADOPTED")
