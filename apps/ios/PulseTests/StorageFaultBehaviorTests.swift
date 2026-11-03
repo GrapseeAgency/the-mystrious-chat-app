@@ -18,7 +18,7 @@ final class StorageFaultBehaviorTests: XCTestCase {
     }
 
     override func tearDown() {
-        suite.removePersistentDomain(forSuiteName: suiteName)
+        suite.removePersistentDomain(forName: suiteName)
         suite = nil
         super.tearDown()
     }
@@ -26,9 +26,9 @@ final class StorageFaultBehaviorTests: XCTestCase {
     func testACorruptSection8JournalReadsEmptyAndIsNeverDeletedByTheRead() {
         let journal = PulseSection8Journal(defaults: suite)
         let key = "pulse.section8.pending.v1.owner-a"
-        suite.setData(Data("{not json".utf8), forKey: key)
+        suite.set(Data("{not json".utf8), forKey: key)
 
-        XCTAssertEqual(journal.pending(owner: "owner-a"), [])
+        XCTAssertEqual(journal.pending(owner: "owner-a").map(\.clientId), [])
 
         // the raw corrupt value is STILL THERE - not traded away by any read
         XCTAssertEqual(suite.data(forKey: key), Data("{not json".utf8))
@@ -63,9 +63,9 @@ final class StorageFaultBehaviorTests: XCTestCase {
     func testACorruptSection12JournalReadsEmptyAndIsRetained() {
         let journal = PulseSection12Journal(defaults: suite)
         let key = "section12-intent:v1|owner-a"
-        suite.setData(Data("garbage".utf8), forKey: key)
+        suite.set(Data("garbage".utf8), forKey: key)
 
-        XCTAssertEqual(journal.pending(owner: "owner-a"), [])
+        XCTAssertEqual(journal.pending(owner: "owner-a").map(\.clientId), [])
         XCTAssertEqual(suite.data(forKey: key), Data("garbage".utf8))
     }
 
@@ -81,7 +81,7 @@ final class StorageFaultBehaviorTests: XCTestCase {
     func testACorruptProfileDraftReadsEmptyAndIsRetained() {
         let journal = PulseProfileDraftJournal(defaults: suite)
         let key = "pulse.profile.draft.v1.owner-a"
-        suite.setData(Data("garbage".utf8), forKey: key)
+        suite.set(Data("garbage".utf8), forKey: key)
 
         // unreadable draft reads as empty (nothing staged) and the raw value
         // is retained for recovery

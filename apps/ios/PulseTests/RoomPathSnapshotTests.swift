@@ -15,7 +15,7 @@ final class RoomPathSnapshotTests: XCTestCase {
     }
 
     override func tearDown() {
-        suite.removePersistentDomain(forSuiteName: suiteName)
+        suite.removePersistentDomain(forName: suiteName)
         suite = nil
         super.tearDown()
     }
@@ -56,7 +56,7 @@ final class RoomPathSnapshotTests: XCTestCase {
 
     func testACorruptedSnapshotReadsEmptyAndIsRetainedForRecovery() {
         let key = RoomPathSnapshot.key(owner: "owner-a")
-        suite.setData(Data("totally not json".utf8), forKey: key)
+        suite.set(Data("totally not json".utf8), forKey: key)
         XCTAssertEqual(RoomPathSnapshot.read(owner: "owner-a", defaults: suite), [])
         // the corrupt raw value was NOT discarded by the read
         XCTAssertEqual(suite.data(forKey: key), Data("totally not json".utf8))
