@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 /** One database and preferences store per verified account/gateway namespace. */
 @Singleton
@@ -31,9 +32,13 @@ class AccountRepositories @Inject constructor(
     // an in-flight transaction. Room/Datastore handles are reused on return.
     private val databases = mutableMapOf<String, PulseDatabase>()
     private val preferences = mutableMapOf<String, PulsePrefsLocalStore>()
-    private data class Binding(val key: String?, val token: String?, val alive: AtomicBoolean, val repo: PulseRepository)
+    private data class Binding(val key: String?, val token: String?, val alive: AtomicBoolean, val repo: PulseRepository, val db: PulseDatabase)
     private var binding = create(null, "")
     private val router = AccountRepositoryRouter(binding.repo, ::start, ::stop)
+    // Section 14 item 10 - legacy recovery runs on IO, out of the bootstrap
+    // path; its verdict is stamped in the account's own journal so restarts
+    // never re-decide (or re-import) an unchanged legacy file.
+    private val recoveryScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
     val repository: PulseRepository get() = router.repository
 
     private fun database(key: String?): PulseDatabase {
@@ -86,7 +91,7 @@ class AccountRepositories @Inject constructor(
             db.attachmentConsumptionDao(), db.recordingJournalDao(),
             socket, prefs, tokens, context, reminders,
             owner?.let { app.pulse.domain.notify.ReminderOwner(it, origin) })
-        return Binding(key, token, alive, repo)
+        return Binding(key, token, alive, repo, db)
     }
 
     private fun start(owner: String): PulseRepository {
@@ -99,6 +104,14 @@ class AccountRepositories @Inject constructor(
         retire()
         binding = create(owner, origin)
         binding.repo.start(owner)
+        // Section 14 item 10 - a legacy pre-account pulse.db may be adopted
+        // ONLY through the ownership-proofing gate; every refusal retains it.
+        if (key != null) {
+            val target = binding
+            recoveryScope.launch {
+                kotlinx.coroutines.runCatching { LegacyDataRecovery.recover(context, target.db, owner) }
+            }
+        }
         return binding.repo
     }
 

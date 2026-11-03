@@ -95,6 +95,9 @@ struct ChatsView: View {
 
     @StateObject private var viewModel = ChatsViewModel()
     @State private var path: [RoomRoute] = []
+    // Section 14 item 1 - the one-shot back-stack restoration for this
+    // composition (resets with the view identity on account switch).
+    @State private var pathRestorationConsumed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     // Wave 4 - full-screen stories surfaces (rail is the entry point).
@@ -113,6 +116,8 @@ struct ChatsView: View {
         NavigationStack(path: Binding(get: { path }, set: { next in
             if next.count != path.count { session.noteRoomNavigationIntent() }
             path = next
+            // Section 14 item 1 - the back-stack persists as IDs only.
+            persistPathSnapshot(next)
         })) {
             ZStack(alignment: .top) {
                 // PULSE EMBER (EMB-I): the warm sunset ground sits under the
@@ -213,9 +218,15 @@ struct ChatsView: View {
         }
         .onAppear { viewModel.start(session: session, prefs: prefs) }
         .onDisappear { viewModel.cancelSelfOpening(); viewModel.stop() }
+
         .onChange(of: session.sessionGeneration) { _, _ in
             viewModel.cancelSelfOpening()
             viewModel.searchTextChanged(viewModel.query, session: session)
+        }
+        // Section 14 item 1 - process-death restoration: once summaries are
+        // loaded the saved ID back-stack rebuilds with FRESH models.
+        .onChange(of: viewModel.summaries, initial: true) { _, _ in
+            restorePathSnapshotIfNeeded()
         }
         .onChange(of: session.ready) { _, ready in
             if ready { viewModel.searchTextChanged(viewModel.query, session: session) }
@@ -243,6 +254,40 @@ struct ChatsView: View {
             session.consumePendingOpenRoom()
             session.consumePendingJumpMessageId()
             openRoom(conv, jumpMessageId: jump)
+        }
+    }
+
+
+    // MARK: Section 14 item 1 - durable ID-only back-stack
+
+    private func persistPathSnapshot(_ next: [RoomRoute]) {
+        guard let owner = PulsePrefs.settingsOwnerKey(for: prefs.viewer?.id, gateway: PulseEndpoints.gatewayURL) else { return }
+        RoomPathSnapshot.write(
+            next.map { RoomPathEntry(roomId: $0.conversation.id, jumpMessageId: $0.jumpMessageId) },
+            owner: owner,
+            defaults: .standard,
+        )
+    }
+
+    private func restorePathSnapshotIfNeeded() {
+        guard !pathRestorationConsumed, let viewer = prefs.viewer, path.isEmpty else { return }
+        pathRestorationConsumed = true
+        let owner = PulsePrefs.settingsOwnerKey(for: viewer.id, gateway: PulseEndpoints.gatewayURL) ?? viewer.id
+        let saved = RoomPathSnapshot.read(owner: owner, defaults: .standard)
+        guard !saved.isEmpty else { return }
+        let byId = Dictionary(uniqueKeysWithValues: viewModel.summaries.map { ($0.id, $0) })
+        let rebuilt = RoomPathSnapshot.restore(
+            saved: saved,
+            snapshotOwner: viewer.id,
+            currentOwner: viewer.id,
+            loadedRoomIds: Set(byId.keys),
+        ).compactMap { entry -> RoomRoute? in
+            guard let summary = byId[entry.roomId] else { return nil }
+            return RoomRoute(conversation: summary, jumpMessageId: entry.jumpMessageId)
+        }
+        if !rebuilt.isEmpty {
+            path = rebuilt
+            session.noteRoomNavigationIntent()
         }
     }
 

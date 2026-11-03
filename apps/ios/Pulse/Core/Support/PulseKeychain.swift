@@ -73,6 +73,66 @@ public final class PulseKeychain: @unchecked Sendable {
         return envelope.viewer
     }
 
+    // MARK: Section 14 item 8 - typed reads
+
+    /// Raw item read: absent vs present. Any SecItem status other than
+    /// success is reported as absent WITHOUT deleting anything (the item
+    /// cannot be absent AND failing; recovery data is never touched by a read).
+    public enum RawRead {
+        case absent
+        case present(Data)
+    }
+
+    public func loadRaw(account: String) -> RawRead {
+        queue.sync {
+            guard let data = Self.loadItem(account: account) else { return .absent }
+            return .present(data)
+        }
+    }
+
+    /// The token with an explicit verdict: `.unreadable` means bytes exist
+    /// that are not a UTF-8 token - the item is PRESERVED and surfaced, never
+    /// silently treated as "token-less operation".
+    public enum TokenRead {
+        case absent
+        case readable(String)
+        case unreadable(Data)
+    }
+
+    public func loadSessionTokenDetailed() -> TokenRead {
+        switch loadRaw(account: Self.sessionTokenAccount) {
+        case .absent:
+            return .absent
+        case .present(let data):
+            guard let token = String(data: data, encoding: .utf8), !token.isEmpty else {
+                return .unreadable(data)
+            }
+            return .readable(token)
+        }
+    }
+
+    /// The mirrored identity with an explicit verdict: `.unreadable` keeps
+    /// the bytes and reports them; the old loadViewer() stays for callers
+    /// that accept the absent-equivalent fallback.
+    public enum ViewerRead {
+        case absent
+        case viewer(PulseViewer)
+        case unreadable(Data)
+    }
+
+    public func loadViewerDetailed() -> ViewerRead {
+        guard let data = load(account: Self.identityAccount) else { return .absent }
+        struct IdentityEnvelope: Codable {
+            let viewer: PulseViewer?
+            let token: String?
+        }
+        guard let envelope = try? JSONDecoder().decode(IdentityEnvelope.self, from: data) else {
+            return .unreadable(data)
+        }
+        guard let viewer = envelope.viewer else { return .unreadable(data) }
+        return .viewer(viewer)
+    }
+
     // session token (Wave 8)
 
     /// Persists the raw session token (64 hex chars from the create/login

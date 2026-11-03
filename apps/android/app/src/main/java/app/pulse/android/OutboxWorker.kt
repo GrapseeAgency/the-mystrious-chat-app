@@ -35,43 +35,37 @@ class OutboxWorker(
         val graph = EntryPointAccessors.fromApplication(applicationContext, OutboxWorkerEntryPoint::class.java)
         return try {
             val prefs = graph.prefs()
-            val owner = prefs.viewerId.first() ?: return Result.success()
-            val recipient = inputData.getString("recipientUserId")
-            if (recipient != null && recipient != owner) return Result.success()
-            val base = prefs.serverBase.first()
-            if (!base.isNullOrBlank()) app.pulse.core.PulseEndpoints.applyBase(base)
-            else graph.endpoints().applyPersisted()
-            val token = graph.tokens().load() ?: return Result.retry()
-            if (prefs.viewerId.first() != owner || graph.tokens().cached != token) return Result.retry()
             val repo = graph.pulseRepository()
-            if (!repo.startBackgroundIfIdle(owner)) return Result.retry()
-            val target = repo.boundToCurrentAccount()
-            if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) return Result.retry()
-            // A slow upload must not postpone the open thread's canonical refresh.
-            inputData.getString("readStateRoom")?.takeIf { it.isNotBlank() && it.length <= 128 }
-                ?.let(target::invalidateReadProjections)
-            val complete = app.pulse.domain.sync.flushBackgroundQueues(
-                messages = { kotlinx.coroutines.coroutineScope {
-                    val bookmarks = async { target.flushSavedIntents().getOrThrow() == 0 }
-                    val composer = async { target.flushComposerIntents().getOrThrow() == 0 }
-                    val messages = async { target.flushOutbox().pending == 0 }
-                    bookmarks.await() && messages.await() && composer.await()
-                } },
-                readState = {
-                    val pendingReads = target.flushReadReceipts().getOrThrow()
-                    // No count from a push is trusted. Replay, then fetch the
-                    // canonical inbox and exact alert proofs while media sends run.
-                    target.refreshConversations().getOrThrow()
-                    if (prefs.viewerId.first() != owner || target.viewerId != owner || graph.tokens().cached != token) false
-                    else {
-                        val notifications = app.pulse.android.push.PulseMessageNotifications.reconcile(applicationContext, target) {
-                            prefs.viewerId.first() == owner && graph.tokens().cached == token && repo.viewerId == owner
-                        }
-                        pendingReads == 0 && notifications
-                    }
-                },
-            )
-            if (complete) Result.success() else Result.retry()
+            // Section 14 item 5 - the cold-worker contract lives in
+            // OutboxColdFlush (JVM-testable, fault-injectable); this shell
+            // only adapts the @EntryPoint graph and maps the verdict.
+            val verdict = OutboxColdFlush(object : OutboxColdFlush.Deps {
+                override suspend fun viewerId(): String? = prefs.viewerId.first()
+                override suspend fun serverBase(): String? = prefs.serverBase.first()
+                override fun recipientUserId(): String? = inputData.getString("recipientUserId")
+                override fun readStateRoom(): String? = inputData.getString("readStateRoom")
+                override suspend fun loadToken(): String? = graph.tokens().load()
+                override fun cachedToken(): String? = graph.tokens().cached
+                override suspend fun applyPersistedBase() { graph.endpoints().applyPersisted() }
+                override fun applyBase(base: String) = app.pulse.core.PulseEndpoints.applyBase(base)
+                override suspend fun startBackgroundIfIdle(owner: String): Boolean = repo.startBackgroundIfIdle(owner)
+                override fun boundViewerId(): String? = repo.boundToCurrentAccount().viewerId
+                override fun invalidateReadProjections(room: String) =
+                    repo.boundToCurrentAccount().invalidateReadProjections(room)
+                override suspend fun flushSavedIntents(): Result<Int> = repo.boundToCurrentAccount().flushSavedIntents()
+                override suspend fun flushComposerIntents(): Result<Int> = repo.boundToCurrentAccount().flushComposerIntents()
+                override suspend fun flushOutbox(): app.pulse.domain.model.FlushReport = repo.boundToCurrentAccount().flushOutbox()
+                override suspend fun flushReadReceipts(): Result<Int> = repo.boundToCurrentAccount().flushReadReceipts()
+                override suspend fun refreshConversations(): Result<Unit> = repo.boundToCurrentAccount().refreshConversations()
+                override suspend fun reconcileNotifications(stillOwner: suspend () -> Boolean): Boolean =
+                    app.pulse.android.push.PulseMessageNotifications.reconcile(
+                        applicationContext, repo.boundToCurrentAccount(),
+                    ) { stillOwner() }
+            }).run()
+            when (verdict) {
+                OutboxColdFlush.Verdict.Success -> Result.success()
+                OutboxColdFlush.Verdict.Retry -> Result.retry()
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

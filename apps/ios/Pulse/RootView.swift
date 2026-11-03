@@ -228,7 +228,22 @@ struct RootView: View {
         // (delegate) AND calls-history row taps land here and follow the
         // exact pulse://room path (fetch detail → Chats tab → open room).
         .onDisappear { session.setShellReadObscured(true); cancelLinkedRoom() }
-        .onChange(of: session.sessionGeneration) { _, _ in cancelLinkedRoom() }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            cancelLinkedRoom()
+            // Section 14 item 4 - every ROOT presentation retires with the
+            // session that presented it. The tab panels already rebuild under
+            // .id(session.sessionGeneration); these root-level sheets are not
+            // owned by any panel, so the generation change dismisses them here.
+            // Nothing of the previous account survives into the new shell.
+            newChatOpen = false
+            settingsOpen = false
+            storiesOpen = false
+            callsOpen = false
+            savedLibraryOpen = false
+            pendingInvite = nil
+            shareInEntry = nil
+            pendingLoginName = nil
+        }
         .onChange(of: shellObscuresReading, initial: true) { _, presented in
             session.setShellReadObscured(presented)
             if presented { session.noteRoomNavigationIntent(); cancelLinkedRoom() }

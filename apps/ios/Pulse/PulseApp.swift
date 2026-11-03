@@ -69,15 +69,21 @@ struct PulseApp: App {
     // BGAppRefreshTask plumbing (static - no view graph here)
 
     /// Chains the next refresh and flushes the outbox through the live engine.
+    /// Section 14 item 6 - the contract lives in PulseBackgroundOutboxCoordinator
+    /// (unit-tested: schedule-first chaining, expiration-cancel, suspended
+    /// execution keeps entries pending); this adapter only maps BGTask.
+    static let backgroundOutboxCoordinator = PulseBackgroundOutboxCoordinator()
+
     static func handleOutboxTask(_ task: BGTask) {
-        scheduleOutboxRefresh()
-        let work = Task { @MainActor in
-            let succeeded = await Self.flushBackgroundOutbox()
-            task.setTaskCompleted(success: succeeded && !Task.isCancelled)
-        }
-        task.expirationHandler = {
-            work.cancel()
-        }
+        backgroundOutboxCoordinator.handle(
+            taskIdentifier: task.identifier,
+            setCompleted: { success in task.setTaskCompleted(success: success) },
+            installExpiration: { expiration in task.expirationHandler = expiration },
+            deps: PulseBackgroundOutboxCoordinator.Deps(
+                schedule: { Self.scheduleOutboxRefresh() },
+                flush: { await Self.flushBackgroundOutbox() },
+            ),
+        )
     }
 
     @MainActor

@@ -340,6 +340,22 @@ internal data class MirrorMediaSelection(
 
     fun withViewOnce(enabled: Boolean): MirrorMediaSelection =
         if (submitted != null || draft.kind != "image") this else copy(draft = draft.copy(viewOnce = enabled))
+
+    companion object {
+        /**
+         * Section 14 item 2 - the external-intent return contract, extracted so
+         * picker/permission results are provably dropped when they return
+         * into a different account session than the one that launched them.
+         * `live` is the surface liveness (room actions still mounted).
+         */
+        fun stillOwned(
+            selection: MirrorMediaSelection?,
+            sessionKey: String?,
+            live: Boolean,
+            currentSessionKey: String?,
+        ): Boolean = live && selection != null && sessionKey != null &&
+            selection.sessionKey == sessionKey && currentSessionKey == sessionKey
+    }
 }
 
 /**
@@ -1425,8 +1441,9 @@ internal fun MirrorRoom(
     // Mounted room media uses the same bounded preparation and private-file
     // journal as the other native entry points. Picker intent owns the account,
     // topic, reply and anonymity; callback time must not choose a new owner.
-    fun ownsMedia(selection: MirrorMediaSelection): Boolean = roomActionsLive.get() &&
-        selection.sessionKey == mediaSession && repository.attachmentSessionKey() == selection.sessionKey
+    fun ownsMedia(selection: MirrorMediaSelection): Boolean = MirrorMediaSelection.stillOwned(
+        selection, mediaSession, roomActionsLive.get(), repository.attachmentSessionKey(),
+    )
     fun newMediaSelection(kind: String): MirrorMediaSelection? {
         if (uploadingImage || preparingAttachment || pendingPhoto != null || pendingDocument != null || captionFor != null) return null
         if (broadcastLocked || editing != null || recording || voiceBusy) {

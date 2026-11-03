@@ -34,3 +34,22 @@ class MirrorMediaSelectionTest {
         assertEquals(12L, frozen.draftRevision)
     }
 }
+
+    // ── Section 14 item 2 - external-intent return ownership ────────
+
+    @Test fun aPickerResultReturningIntoItsOwnSessionAndLiveRoomIsAccepted() {
+        val selection = MirrorMediaSelection(AttachmentDraft("selection-id-0003", "room", "image", "bytes"), "session-1")
+        assertTrue(MirrorMediaSelection.stillOwned(selection, "session-1", live = true, currentSessionKey = "session-1"))
+    }
+
+    @Test fun aPickerResultReturningAfterAnAccountSwitchIsDropped() {
+        val selection = MirrorMediaSelection(AttachmentDraft("selection-id-0004", "room", "file", "bytes", fileName = "a.pdf", fileSize = 1), "session-1")
+        assertFalse(MirrorMediaSelection.stillOwned(selection, "session-1", live = true, currentSessionKey = "session-2"))
+        assertFalse(MirrorMediaSelection.stillOwned(selection, null, live = true, currentSessionKey = null))
+    }
+
+    @Test fun aPickerResultReturningAfterItsRoomClosedIsDropped() {
+        val selection = MirrorMediaSelection(AttachmentDraft("selection-id-0005", "room", "image", "bytes"), "session-1")
+        assertFalse(MirrorMediaSelection.stillOwned(selection, "session-1", live = false, currentSessionKey = "session-1"))
+        assertFalse(MirrorMediaSelection.stillOwned(null, "session-1", live = true, currentSessionKey = "session-1"))
+    }

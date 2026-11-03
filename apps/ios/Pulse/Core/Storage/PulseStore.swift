@@ -46,7 +46,10 @@ public final class PulseStore: Sendable {
     }
 
     let composerRetryAdmission = PulseComposerRetryAdmission()
-    private let dbQueue: DatabaseQueue
+    // Section 14 item 10 - internal (not private) so the legacy-recovery
+    // extension in PulseLegacyDataRecovery.swift can drive the same queue
+    // (ATTACH/import/verdict stamp stay inside the account connection).
+    let dbQueue: DatabaseQueue
     private let draftCheckpoints: PulseDraftCheckpointJournal
     private let savedSnapshotVersions = MessageSnapshotVersions()
     private let messageSnapshotVersions = MessageSnapshotVersions()
@@ -141,9 +144,11 @@ public final class PulseStore: Sendable {
         return consumed.count
     }
 
-    private var migrator: DatabaseMigrator {
-        var m = DatabaseMigrator()
-        m.registerMigration("v1") { db in
+    /// Section 14 item 7 - the ORDERED migration list (names stay contiguous
+    /// v1...vN; every build appends). Exposed so acceptance tests can seed a
+    /// database at ANY historical version and upgrade it to head.
+    public static let migrations: [(name: String, run: (Database) throws -> Void)] = [
+        ("v1", { db in
             try db.create(table: "conversation") { t in
                 t.column("id", .text).primaryKey()
                 t.column("kind", .text).notNull()
@@ -167,8 +172,8 @@ public final class PulseStore: Sendable {
                 t.column("pinnedAt", .text)
             }
             // FTS5 mirror arrives with the offline-search wave (web parity).
-        }
-        m.registerMigration("v2") { db in
+        }),
+        ("v2", { db in
             // Queued sends - web pulse-outbox.ts parity (MAX_QUEUE 50).
             try db.create(table: "outbox") { t in
                 t.column("id", .integer).primaryKey(autoincrement: true)
@@ -186,8 +191,8 @@ public final class PulseStore: Sendable {
                 t.column("text", .text).notNull()
                 t.column("updatedAt", .text).notNull()
             }
-        }
-        m.registerMigration("v3") { db in
+        }),
+        ("v3", { db in
             // W1-DATA-B - additive ALTERs only (spec §3): threads, media,
             // edit/delete tombstones, grouped reactions, sender color.
             try db.alter(table: "message") { t in
@@ -203,8 +208,8 @@ public final class PulseStore: Sendable {
                 t.add(column: "reactionsJson", .text).notNull().defaults(to: "[]")
                 t.add(column: "senderColor", .text)
             }
-        }
-        m.registerMigration("v4") { db in
+        }),
+        ("v4", { db in
             // W2-DATA-B - additive ALTERs only (spec §2.2): view-once burn
             // stamp, voice-transcript cache, poll + link-preview JSON cards,
             // topic filing. pollJson/linkPreviewJson are nullable (nil = no
@@ -235,8 +240,8 @@ public final class PulseStore: Sendable {
                 t.column("savedAt", .text).notNull()
             }
             try db.create(indexOn: "savedMessages", columns: ["conversationId"])
-        }
-        m.registerMigration("v5") { db in
+        }),
+        ("v5", { db in
             // W3-b - Wave 3 call history cache. Peer identity is denormalized
             // (the server resolves the OTHER party per viewer; the cache must
             // render offline exactly what GET /api/calls renders online).
@@ -265,8 +270,8 @@ public final class PulseStore: Sendable {
                 t.column("attempts", .integer).notNull().defaults(to: 0)
                 t.column("createdAt", .text).notNull()
             }
-        }
-        m.registerMigration("v6") { db in
+        }),
+        ("v6", { db in
             // W4 - stories snapshot cache. One canonical JSON blob per key
             // ("stories:<viewerId>"), mirroring Android's Room v8 story_cache:
             // the tray renders instantly on cold start and offline, and the
@@ -277,8 +282,8 @@ public final class PulseStore: Sendable {
                 t.column("groupsJson", .text).notNull()
                 t.column("updatedAt", .integer).notNull()
             }
-        }
-        m.registerMigration("v7") { db in
+        }),
+        ("v7", { db in
             // W7 - collaboration & hub snapshot cache (storyCache precedent:
             // one canonical JSON blob per key) + the raw rich-object carrier
             // payload column on messages. Non-destructive additive only.
@@ -290,8 +295,8 @@ public final class PulseStore: Sendable {
             try db.alter(table: "message") { t in
                 t.add(column: "payloadJson", .text)
             }
-        }
-        m.registerMigration("v8") { db in
+        }),
+        ("v8", { db in
             // R1-W2B - additive ALTERs only:
             //   • outbox.payloadJson - the queued FORWARD envelope (D28:
             //     F-MS-10 "queued if offline"; carries kind + stored media
@@ -305,11 +310,11 @@ public final class PulseStore: Sendable {
             try db.alter(table: "message") { t in
                 t.add(column: "translationsJson", .text)
             }
-        }
-        m.registerMigration("v9") { db in
+        }),
+        ("v9", { db in
             try db.alter(table: "outbox") { t in t.add(column: "failureReason", .text) }
-        }
-        m.registerMigration("v10") { db in
+        }),
+        ("v10", { db in
             try db.alter(table: "message") { t in
                 t.add(column: "wireJson", .text)
                 t.add(column: "expiresAtEpoch", .double)
@@ -319,17 +324,17 @@ public final class PulseStore: Sendable {
             // operations and drafts; confirmed history reloads from the server.
             try db.execute(sql: "DELETE FROM message WHERE substr(id, 1, 6) != 'local_'")
             try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL")
-        }
-        m.registerMigration("v11") { db in
+        }),
+        ("v11", { db in
             try db.alter(table: "conversation") { t in t.add(column: "wireJson", .text) }
             try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL, unreadCount = 0")
-        }
-        m.registerMigration("v12") { db in
+        }),
+        ("v12", { db in
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_quote_source ON message(replyToId)")
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_thread_parent ON message(parentId)")
             try Self.repairCachedQuotes(db: db, changedId: nil)
-        }
-        m.registerMigration("v13") { db in
+        }),
+        ("v13", { db in
             // Old decoding stored malformed non-null expiry as SQL NULL.
             // Rebuild only those ambiguous rows from their retained envelope.
             var after = ""
@@ -347,14 +352,14 @@ public final class PulseStore: Sendable {
                 after = lastID
             }
             try Self.repairCachedQuotes(db: db, changedId: nil)
-        }
-        m.registerMigration("v14") { db in
+        }),
+        ("v14", { db in
             try db.alter(table: "topics") { t in t.add(column: "unreadCount", .integer) }
-        }
-        m.registerMigration("v15") { db in
+        }),
+        ("v15", { db in
             try db.alter(table: "topics") { t in t.add(column: "readStateJson", .text) }
-        }
-        m.registerMigration("v16") { db in
+        }),
+        ("v16", { db in
             // R42 - unsent staged attachment selections (rehydration after
             // process death), durable consumption receipts, and the
             // active-recording journal (interrupted-recording reconstruction).
@@ -393,8 +398,25 @@ public final class PulseStore: Sendable {
                 t.column("stoppedAt", .double)
                 t.column("cancelledAt", .double)
             }
+        }),
+    ]
+
+    /// The migrator for a database that may sit at ANY historical version.
+    /// `through` builds a PREFIX of the ordered list (tests seed historical
+    /// databases with it); production passes nil = head. There is NO
+    /// eraseDatabaseOnSchemaChange anywhere - an unmet migration throws.
+    public static func buildMigrator(through maxVersion: Int? = nil) -> DatabaseMigrator {
+        var m = DatabaseMigrator()
+        let limit = max(0, min(maxVersion ?? migrations.count, migrations.count))
+        for migration in migrations.prefix(limit) {
+            m.registerMigration(migration.name) { db in
+                try migration.run(db)
+            }
         }
         return m
+    }
+
+    private var migrator: DatabaseMigrator { Self.buildMigrator() }
     }
 
     // stories cache (Wave 4)

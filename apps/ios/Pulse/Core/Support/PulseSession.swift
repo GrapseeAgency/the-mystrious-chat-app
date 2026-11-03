@@ -1507,7 +1507,24 @@ public final class PulseSession: ObservableObject {
         guard !Task.isCancelled, generation == epoch, self.viewer?.id == viewer.id else { return }
 
         // 2. Rebind the API client - the override may have moved the gateway.
-        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: PulseKeychain.shared.loadSessionToken())
+        //    Section 14 item 8 - an UNREADABLE stored credential fails closed
+        //    with an honest error (identity handed back to onboarding so an
+        //    explicit re-login is the recovery path); it never silently
+        //    degrades to token-less operation. The corrupt item itself is
+        //    never deleted by a read - only the explicit re-login rewrites it.
+        let tokenRead = PulseKeychain.shared.loadSessionTokenDetailed()
+        let bootstrapToken: String?
+        switch tokenRead {
+        case .readable(let token):
+            bootstrapToken = token
+        case .absent:
+            bootstrapToken = nil
+        case .unreadable:
+            startupError = "Stored session credential could not be read. Log in again."
+            prefs?.setViewer(nil)
+            return
+        }
+        api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: bootstrapToken)
 
         do {
             store = try PulseStore.openAccount(gateway: PulseEndpoints.gatewayURL.absoluteString, viewerId: viewer.id)
@@ -1516,6 +1533,10 @@ public final class PulseSession: ObservableObject {
             startupError = "Local storage could not be opened. Free some device storage and retry."
             return
         }
+        // Section 14 item 10 - the legacy pulse.sqlite gate: adopt only what
+        // is provably this account's (member-proofed), refuse + retain
+        // everything else, stamp the verdict so restarts never re-decide.
+        _ = store?.legacyRecovery(viewerId: viewer.id)
         startOutbox()
         startCalls(viewer: viewer)
         startStories(viewer: viewer)
@@ -1996,7 +2017,11 @@ public final class PulseSession: ObservableObject {
     /// page fetches (nil-safe).
     public func requestOpenUser(_ userId: String, name: String?) {
         pendingUserDelivery = UUID()
-        pendingUserRoute = UserRoute(userId: userId, name: name ?? "Profile")
+        // Section 14 item 3 - this IS a navigation intent (same rule as
+        // requestLinkedRoom), and the generation travels WITH the route so a
+        // stale delivery can never displace a newer user choice.
+        noteRoomNavigationIntent()
+        pendingUserRoute = UserRoute(userId: userId, name: name ?? "Profile", navGeneration: roomNavigationGeneration)
     }
 
     @discardableResult

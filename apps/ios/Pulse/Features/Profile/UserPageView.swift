@@ -8,10 +8,22 @@ import SwiftUI
 public struct UserRoute: Hashable {
     public let userId: String
     public let name: String
+    /// Section 14 item 3 - the navigation generation captured when this
+    /// route was REQUESTED. A newer navigation choice after that must yield
+    /// the delivery. Defaulted so every existing constructor call site and
+    /// test keeps compiling unchanged.
+    public var navGeneration: UUID? = nil
 
-    public init(userId: String, name: String) {
+    public init(userId: String, name: String, navGeneration: UUID? = nil) {
         self.userId = userId
         self.name = name
+        self.navGeneration = navGeneration
+    }
+
+    /// True when no NEWER navigation intent displaced this route while it
+    /// was in flight (the pure yield contract, unit-tested).
+    public func shouldDeliver(currentGeneration: UUID?) -> Bool {
+        navGeneration == nil || navGeneration == currentGeneration
     }
 }
 

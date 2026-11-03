@@ -19,16 +19,30 @@ final class PulseSection8Journal {
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
+    /// Section 14 item 9 - write faults are observable. A failed journal
+    /// write keeps every PREVIOUS row (nothing is traded away); the flag
+    /// lets surfaces report "not saved yet, will retry" honestly instead of
+    /// assuming durability.
+    private(set) var lastWriteFailed = false
+
     private func key(_ owner: String) -> String { "pulse.section8.pending.v1." + owner }
 
+    /// Tolerant read: an unreadable payload reads as empty AND IS RETAINED
+    /// (a read never deletes - recovery stays possible).
     private func read(_ owner: String) -> [Intent] {
         guard let data = defaults.data(forKey: key(owner)) else { return [] }
         return (try? JSONDecoder().decode([Intent].self, from: data)) ?? []
     }
 
-    private func write(_ owner: String, _ intents: [Intent]) {
-        guard let data = try? JSONEncoder().encode(intents) else { return }
+    @discardableResult
+    private func write(_ owner: String, _ intents: [Intent]) -> Bool {
+        guard let data = try? JSONEncoder().encode(intents) else {
+            lastWriteFailed = true
+            return false
+        }
         defaults.set(data, forKey: key(owner))
+        lastWriteFailed = false
+        return true
     }
 
     func enqueue(owner: String, kind: String, targetId: String, payload: [String: String] = [:]) -> Intent {

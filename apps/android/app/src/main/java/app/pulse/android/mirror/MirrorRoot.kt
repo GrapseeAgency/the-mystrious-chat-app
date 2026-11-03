@@ -87,10 +87,6 @@ import kotlinx.coroutines.launch
  */
 internal enum class MirrorTab { Chats, Hub, Contacts, Profile }
 
-private data class MirrorRoomOpenRequest(val id: String, val ticket: Long, val jumpId: String?,
-    val tab: MirrorTab, val previousRoomId: String?, val ownerId: String?, val api: PulseRepository,
-    val personal: Boolean = false, val ownerEpoch: String? = api.attachmentSessionKey())
-
 /** One typer in flight - the relay's typing event with a 4s expiry stamp. */
 private data class MirrorTyper(val conversationId: String, val userId: String, val userName: String, val expiresAt: Long)
 
@@ -154,6 +150,15 @@ internal fun MirrorRoot(
     // and pulse://room/<id>?jump=<mid> deep links all open the room ANCHORED
     // at one message (web jumpToMessage parity).
     var pendingJump by remember(viewerId) { mutableStateOf<MirrorRoomJump?>(null) }
+
+    // Section 14 item 1 - the back-stack survives process death as IDs only
+    // (never model objects) together with the owner that opened them. A
+    // restore re-resolves through the CURRENT account binding, so a stale
+    // model or a foreign owner can never come back with the composition.
+    var savedOpenRoomId by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedJumpMessageId by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedNavOwner by rememberSaveable { mutableStateOf<String?>(null) }
+    var restorationSettled by rememberSaveable { mutableStateOf(false) }
 
     // R76 - launcher tab shortcuts switch tabs cold or warm, then self-consume.
     LaunchedEffect(tabRequest) {
@@ -407,6 +412,33 @@ internal fun MirrorRoot(
         onConsumePendingRoom()
         onConsumePendingJumpMessage()
     }
+    // Section 14 item 1 - the one-shot process-death restore. Declared BEFORE
+    // the sync effect below so the saved slots are settled (consumed or
+    // dropped) before anything overwrites them. Only the CURRENT owner's
+    // saved nav ever re-opens; a deep link, an in-flight request or an open
+    // room always wins (item 3 - newer intent yields nothing to the past).
+    LaunchedEffect(viewerId) {
+        if (restorationSettled) return@LaunchedEffect
+        if (viewerId.isNullOrBlank()) return@LaunchedEffect
+        restorationSettled = true
+        val nav = RoomNavRestoration.restore(
+            savedOpenRoomId?.let { SavedRoomNav(it, savedJumpMessageId, savedNavOwner) },
+            viewerId, openRoom?.id, roomOpenRequest != null,
+        )
+        val jump = savedJumpMessageId
+        savedOpenRoomId = null
+        savedJumpMessageId = null
+        savedNavOwner = null
+        if (nav != null) openById(nav, jump)
+    }
+    LaunchedEffect(openRoom?.id, pendingJump, viewerId) {
+        if (!restorationSettled) return@LaunchedEffect
+        if (roomOpenRequest != null) return@LaunchedEffect
+        val nav = RoomNavRestoration.capture(openRoom?.id, viewerId, pendingJump?.conversationId, pendingJump?.messageId)
+        savedOpenRoomId = nav?.roomId
+        savedJumpMessageId = nav?.jumpId
+        savedNavOwner = nav?.navOwner
+    }
     LaunchedEffect(roomOpenRequest, closingRoomId) {
         val closing = closingRoomId ?: return@LaunchedEffect
         if (roomOpenRequest == null) {
@@ -436,8 +468,7 @@ internal fun MirrorRoot(
                 app.pulse.domain.sync.resolvePersonalConversation(requireNotNull(owner), request.id, cached, api::createSelfChat, api::createDm)
             } else app.pulse.domain.sync.resolveConversationForOpen(request.id, cached, api::conversationDetail)
             currentCoroutineContext().ensureActive()
-            if (roomOpenRequest == request && ownsOwner() && tab == request.tab &&
-                openRoom?.id == request.previousRoomId) {
+            if (request.stillCurrent(roomOpenRequest, viewerId, repository, tab, openRoom?.id)) {
                 pendingJump = request.jumpId?.let { MirrorRoomJump(conversation.id, it) }
                 if (request.previousRoomId != conversation.id) roomVisitSequence = request.ticket
                 openRoom = conversation

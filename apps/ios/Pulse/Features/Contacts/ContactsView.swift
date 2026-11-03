@@ -89,6 +89,9 @@ struct ContactsView: View {
             .onReceive(session.$pendingUserRoute) { route in
                 guard let route else { return }
                 session.consumePendingUserRoute()
+                // Section 14 item 3 - a user-route requested before a NEWER
+                // navigation choice yields: never displace the newer intent.
+                guard route.shouldDeliver(currentGeneration: session.roomNavigationGeneration) else { return }
                 session.noteRoomNavigationIntent()
                 viewModel.cancelOpening()
                 path.append(route)

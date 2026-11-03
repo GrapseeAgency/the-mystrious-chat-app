@@ -30,6 +30,11 @@ final class PulseProfileDraftJournal {
     init(defaults: UserDefaults) { self.defaults = defaults }
     private func key(_ owner: String) -> String { "pulse.profile.draft.v1." + owner }
 
+    /// Section 14 item 9 - a failed draft write keeps the PREVIOUS draft
+    /// (nothing is discarded); the flag makes the fault observable.
+    private(set) var lastWriteFailed = false
+
+    /// Tolerant read: an unreadable draft reads as empty AND IS RETAINED.
     private func read(_ owner: String) -> Draft {
         guard let data = defaults.data(forKey: key(owner)),
               let draft = try? JSONDecoder().decode(Draft.self, from: data) else { return Draft() }
@@ -37,8 +42,13 @@ final class PulseProfileDraftJournal {
     }
     private func write(_ draft: Draft, owner: String) {
         let allEmpty = [draft.name, draft.about, draft.username, draft.photo].allSatisfy { $0?.isEmpty ?? true }
-        if allEmpty { defaults.removeObject(forKey: key(owner)) }
-        else if let data = try? JSONEncoder().encode(draft) { defaults.set(data, forKey: key(owner)) }
+        if allEmpty { defaults.removeObject(forKey: key(owner)); lastWriteFailed = false }
+        else if let data = try? JSONEncoder().encode(draft) {
+            defaults.set(data, forKey: key(owner))
+            lastWriteFailed = false
+        } else {
+            lastWriteFailed = true
+        }
     }
 
     /// Stage one field of UNSAVED intent. An empty value clears the field

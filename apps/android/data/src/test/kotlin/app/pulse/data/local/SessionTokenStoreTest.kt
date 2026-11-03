@@ -142,4 +142,30 @@ class SessionTokenStoreTest {
         assertNull(store.cached)
         assertTrue(persistence.backing.isEmpty())
     }
+
+    // ── Section 14 item 8 - invalid-key retention scenarios ─────────
+
+    @Test
+    fun `a second load after invalidation stays fail-closed with the evidence retained`() = runTest {
+        val persistence = FakePersistence()
+        persistence.write("enc:" + TOKEN_64.reversed())
+        val store = SessionTokenStore(persistence, FakeCipher(broken = true))
+        assertTrue(runCatching { store.load() }.isFailure)
+        // the retry contract: invalidation never downgrades to anonymous
+        assertTrue(runCatching { store.load() }.isFailure)
+        assertTrue(store.invalidated.value)
+        assertEquals(listOf("enc:" + TOKEN_64.reversed()), persistence.backing)
+    }
+
+    @Test
+    fun `an unknown at-rest format reads as absent without invalidating`() = runTest {
+        val persistence = FakePersistence()
+        persistence.write("totally-foreign-format")
+        val store = SessionTokenStore(persistence, FakeCipher())
+        assertNull(store.load())
+        assertNull(store.cached)
+        assertFalse(store.invalidated.value)
+        // nothing was discarded to "recover" the read
+        assertEquals(listOf("totally-foreign-format"), persistence.backing)
+    }
 }
