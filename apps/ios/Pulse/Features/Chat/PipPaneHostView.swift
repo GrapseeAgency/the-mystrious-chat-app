@@ -153,6 +153,9 @@ struct PipPaneHostView: View {
                         .frame(width: PipGeometry.stackPill, height: PipGeometry.stackPill)
                         .background(Circle().fill(PulseTheme.emerald))
                 }
+                // Section 15 accessibility: the minimized-panes restore pill
+                // is an icon-only button - VoiceOver needs its label.
+                .accessibilityLabel("Restore minimized chats")
             }
             ForEach(pills, id: \.conversationId) { pane in
                 PipPanePill(

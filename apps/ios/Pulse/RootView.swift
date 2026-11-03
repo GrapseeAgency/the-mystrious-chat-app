@@ -920,8 +920,10 @@ private struct CapsuleDock: View {
         }
         .buttonStyle(.plain)
         .rotationEffect(.degrees(wobbling == target ? wobbleAngle : 0))
-        .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isActive)
-        .animation(.spring(response: 0.25, dampingFraction: 0.6), value: badge)
+        // Section 15 reduced-motion: the tab-active/badge springs are gated -
+        // state still lands, nothing bounces.
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.5), value: isActive)
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.6), value: badge)
     }
 
     // ── compose - the 56pt ember FAB right of the pill ──────
@@ -1044,10 +1046,12 @@ private struct InviteLinkTarget: Identifiable {
 
 /// Dock press feedback - scale .88 spring on every dock button.
 private struct DockPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.88 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            // Section 15 reduced-motion: press state still applies, the bounce does not.
+            .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
 

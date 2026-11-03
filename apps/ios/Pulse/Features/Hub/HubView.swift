@@ -910,15 +910,20 @@ private struct HubTasksSheet: View {
                                 .lineLimit(1)
                             Spacer()
                             if col != "todo" {
+                                // Section 15 accessibility: the glyph-only move/delete controls
+                                // carry VoiceOver labels.
                                 Button { vm.moveTask(task, to: col == "doing" ? "todo" : "doing") } label: { Text("‹") }
                                     .buttonStyle(.borderless)
+                                    .accessibilityLabel(col == "done" ? "Move back to doing" : "Move back to todo")
                             }
                             if col != "done" {
                                 Button { vm.moveTask(task, to: col == "todo" ? "doing" : "done") } label: { Text("›") }
                                     .buttonStyle(.borderless)
+                                    .accessibilityLabel(col == "todo" ? "Move to doing" : "Mark done")
                             }
                             Button { vm.deleteTask(task) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                                 .buttonStyle(.borderless)
+                                .accessibilityLabel("Delete task")
                         }
                     }
                 }

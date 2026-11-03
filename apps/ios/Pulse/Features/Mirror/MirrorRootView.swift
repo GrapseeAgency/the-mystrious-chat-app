@@ -1695,7 +1695,7 @@ struct MirrorRoomView: View {
                     if trayOpen {
                         Color.clear
                             .contentShape(Rectangle())
-                            .onTapGesture { withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { trayOpen = false } }
+                            .onTapGesture { withAnimation(.pulse(.pulseSnappy, reduceMotion: reduceMotion)) { trayOpen = false } }
                     }
                 }
             }
@@ -1753,7 +1753,7 @@ struct MirrorRoomView: View {
                         // paperclip: toggles the tray - the active state wears
                         // white/10 + the text tint (web paperclip language)
                         Button {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { trayOpen.toggle() }
+                            withAnimation(.pulse(.pulseSnappy, reduceMotion: reduceMotion)) { trayOpen.toggle() }
                         } label: {
                             Image(systemName: "paperclip").font(.system(size: 17))
                                 .foregroundColor(trayOpen ? MirrorArt.text : MirrorArt.dim)
@@ -1788,7 +1788,7 @@ struct MirrorRoomView: View {
                         if hasSendPayload {
                             send()
                         } else {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { trayOpen.toggle() }
+                            withAnimation(.pulse(.pulseSnappy, reduceMotion: reduceMotion)) { trayOpen.toggle() }
                         }
                     } label: {
                         Image(systemName: hasSendPayload ? "paperplane.fill" : "plus")
@@ -2108,7 +2108,7 @@ struct MirrorRoomView: View {
     // MARK: R102 - tray actions (every tile a real send)
 
     private func closeTray() {
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+        withAnimation(.pulse(.pulseSnappy, reduceMotion: reduceMotion)) {
             trayOpen = false
             trayEffectsOpen = false
         }

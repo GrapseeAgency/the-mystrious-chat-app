@@ -307,7 +307,9 @@ struct FloatingTopDock: View {
         }
         .buttonStyle(PulseButtonStyle())
         .rotationEffect(.degrees(wobbling == item.tab ? wobbleAngle : 0))
-        .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isActive)
+        // Section 15 reduced-motion: the tab-active spring is gated (the wobble
+        // above already runs behind its own reduce-motion guard).
+        .animation(context.reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.5), value: isActive)
         .accessibilityLabel(item.label)
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }

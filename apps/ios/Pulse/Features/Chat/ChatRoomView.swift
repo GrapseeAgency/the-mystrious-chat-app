@@ -340,6 +340,13 @@ private struct RoomContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @State private var composerFocused = false
+    // Section 15 item 7 - main-river prepend preservation (ThreadView's
+    // anchored-scroll contract ported to the river): scrollPosition + a
+    // scrollTargetLayout give the LazyVStack stable-identity anchoring, and
+    // the captured pre-load anchor is restored when a history page lands.
+    @State private var riverScrollPosition: String? = nil
+    @State private var riverPrependAnchor: String? = nil
+    @State private var riverPrependRevision = 0
 
     // Wave 1 surfaces - threads, forward, info, pins, lightbox, QuickLook,
     // room search, and the media attach flow (photo picker + document).
@@ -1668,9 +1675,14 @@ private struct RoomContent: View {
                                     value: PulseRoomViewport(tail: geometry.frame(in: .named("room-viewport"))))
                             })
                     }
+                    // Section 15 item 7: identity anchoring for prepends (the
+                    // ThreadView contract) - rows already carry stable ids via
+                    // ForEach(id: \.element.id).
+                    .scrollTargetLayout()
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                 }
+                .scrollPosition(id: $riverScrollPosition)
                 .coordinateSpace(name: "room-viewport")
                 .onPreferenceChange(PulseRoomViewportKey.self) { layout in
                     viewModel.updateReadViewport(
@@ -1700,6 +1712,22 @@ private struct RoomContent: View {
                 }
                 .onAppear {
                     proxy.scrollTo("tail", anchor: .bottom)
+                }
+                // Section 15 item 7: capture the pre-load top row when a history
+                // fetch starts (any trigger), then re-anchor to it once the
+                // merged page lands - the reader keeps reading the same row.
+                .onChange(of: viewModel.loadingOlder) { _, loading in
+                    if loading {
+                        riverPrependAnchor = viewModel.messages.first?.id
+                    } else if let anchor = riverPrependAnchor, anchor != viewModel.messages.first?.id {
+                        riverPrependRevision += 1
+                    }
+                }
+                .task(id: riverPrependRevision) {
+                    guard let id = riverPrependAnchor, riverPrependRevision > 0 else { return }
+                    await Task.yield() // let the merged rows enter the layout
+                    guard !Task.isCancelled else { return }
+                    proxy.scrollTo(id, anchor: .top)
                 }
                 // R26 - Telegram-style jump-to-latest pill (web chat-room
                 // :4527-4568 parity): armed on off-screen arrivals, badge shows
@@ -2941,7 +2969,7 @@ struct BubbleView: View {
                     PulseHaptics.tap()
                     onSwipeReply?()
                 }
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
                     swipeX = 0
                 }
             }

@@ -424,9 +424,11 @@ struct CallActionButton: View {
 
 /// Call-button press feedback (scale 0.9 spring, web whileTap parity).
 struct CallPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.9 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+            // Section 15 reduced-motion: press state still applies, the bounce does not.
+            .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
