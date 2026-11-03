@@ -1539,6 +1539,8 @@ struct MirrorRoomView: View {
     @State private var didInitialScroll = false
     @State private var readRevision = 0
     @Environment(\.scenePhase) private var scenePhase
+    // Section 15 reduced-motion: the tray's spring dismissals gate through it.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var roomOperations = PulseRoomOperations()
     @State private var refreshRevision = 0
     @State private var loadError: String?

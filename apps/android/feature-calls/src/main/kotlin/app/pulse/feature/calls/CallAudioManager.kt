@@ -105,7 +105,7 @@ class CallAudioManager(context: Context) {
             val target = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 am.availableCommunicationDevices.firstOrNull { it.type == type } else null
             when (callSpeakerRouteStep(Build.VERSION.SDK_INT, on, target != null)) {
-                CallRouteStep.SET_COMMUNICATION_DEVICE -> am.setCommunicationDevice(target)
+                CallRouteStep.SET_COMMUNICATION_DEVICE -> target != null && am.setCommunicationDevice(target)
                 CallRouteStep.CLEAR_COMMUNICATION_DEVICE -> {
                     am.clearCommunicationDevice()
                     !isSpeakerOn()
