@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import Pulse
 
 /// Section 14 item 10 - the legacy unowned data gate: pure verdict contract
