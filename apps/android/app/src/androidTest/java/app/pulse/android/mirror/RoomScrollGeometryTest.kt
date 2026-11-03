@@ -149,7 +149,11 @@ class RoomScrollGeometryTest {
     fun processRestorationKeepsIndexAndOffsetThroughTheListStateSaver() {
         val state = LazyListState(11, 40)
         val saver = LazyListState.Saver
-        val scope = SaverScope { true }
+        // SaverScope is a plain interface in this Compose version - no SAM
+        // conversion, so the test scope is an object expression.
+        val scope = object : SaverScope {
+            override fun canBeSaved(value: Any): Boolean = true
+        }
         val saved = with(scope) { saver.save(state) }
         val restored = saved?.let { saver.restore(it) }
         assertTrue("the saver produced a restorable bundle", restored != null)
