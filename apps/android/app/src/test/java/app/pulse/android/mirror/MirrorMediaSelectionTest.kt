@@ -33,7 +33,6 @@ class MirrorMediaSelectionTest {
         assertEquals(5L, frozen.submitted?.fileSize)
         assertEquals(12L, frozen.draftRevision)
     }
-}
 
     // ── Section 14 item 2 - external-intent return ownership ────────
 
@@ -53,3 +52,4 @@ class MirrorMediaSelectionTest {
         assertFalse(MirrorMediaSelection.stillOwned(selection, "session-1", live = false, currentSessionKey = "session-1"))
         assertFalse(MirrorMediaSelection.stillOwned(null, "session-1", live = true, currentSessionKey = "session-1"))
     }
+}

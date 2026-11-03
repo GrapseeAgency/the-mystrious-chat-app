@@ -34,7 +34,7 @@ final class PulseBackgroundOutboxCoordinator: @unchecked Sendable {
     func handle(
         taskIdentifier: String,
         setCompleted: @escaping (Bool) -> Void,
-        installExpiration: @escaping (() -> Void) -> Void,
+        installExpiration: @escaping (@escaping () -> Void) -> Void,
         deps: Deps,
     ) {
         // Chain the next refresh FIRST: even if this pass expires early the

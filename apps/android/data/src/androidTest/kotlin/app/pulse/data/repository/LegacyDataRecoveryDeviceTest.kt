@@ -240,9 +240,9 @@ class LegacyDataRecoveryDeviceTest {
         // file EMPTY - what is impossible either way is a third account's
         // rows coming back through a corrupt-file recovery.
         if (outcome.isFailure) {
-            assertTrue(before.contentEquals(corrupt.readBytes()), "a refused open must not rewrite the file")
+            assertTrue("a refused open must not rewrite the file", before.contentEquals(corrupt.readBytes()))
         } else {
-            assertTrue(outcome.getOrThrow().isEmpty(), "a recreated corrupt store must be empty")
+            assertTrue("a recreated corrupt store must be empty", outcome.getOrThrow().isEmpty())
         }
         listOf("", "-wal", "-shm").forEach { File(corrupt.path + it).delete() }
     }
