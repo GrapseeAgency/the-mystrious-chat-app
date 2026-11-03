@@ -109,7 +109,7 @@ class AccountRepositories @Inject constructor(
         if (key != null) {
             val target = binding
             recoveryScope.launch {
-                kotlinx.coroutines.runCatching { LegacyDataRecovery.recover(context, target.db, owner) }
+                runCatching { LegacyDataRecovery.recover(context, target.db, owner) }
             }
         }
         return binding.repo

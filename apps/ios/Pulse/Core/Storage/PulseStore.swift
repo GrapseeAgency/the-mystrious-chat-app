@@ -417,7 +417,6 @@ public final class PulseStore: Sendable {
     }
 
     private var migrator: DatabaseMigrator { Self.buildMigrator() }
-    }
 
     // stories cache (Wave 4)
     public func saveStoryCache(key: String, groupsJson: String, updatedAt: Int64) throws {

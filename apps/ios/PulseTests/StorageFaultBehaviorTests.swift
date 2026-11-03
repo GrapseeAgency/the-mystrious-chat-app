@@ -31,7 +31,7 @@ final class StorageFaultBehaviorTests: XCTestCase {
         XCTAssertEqual(journal.pending(owner: "owner-a"), [])
 
         // the raw corrupt value is STILL THERE - not traded away by any read
-        XCTAssertEqual(suite.data(forKey: key), Data("{not json".utf8"))
+        XCTAssertEqual(suite.data(forKey: key), Data("{not json".utf8))
     }
 
     func testSection8JournalWriteRetainsEveryPreviousRowByContract() {

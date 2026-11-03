@@ -256,7 +256,7 @@ class LegacyDataRecovery {
                 sqlite.execSQL("ATTACH DATABASE '${temp.path}' AS legacy_src")
                 try {
                     fun columns(side: String, table: String): List<String> =
-                        sqlite.rawQuery("PRAGMA $side(`$table`)", null).use { cursor ->
+                        sqlite.query("PRAGMA $side(`$table`)").use { cursor ->
                             buildList {
                                 while (cursor.moveToNext()) add(cursor.getString(1))
                             }
@@ -276,7 +276,7 @@ class LegacyDataRecovery {
                             if (cols.isEmpty()) throw IllegalStateException("no importable columns for $table")
                             val list = cols.joinToString(",")
                             sqlite.execSQL("INSERT OR IGNORE INTO `$table` ($list) SELECT $list FROM legacy_src.`$table`")
-                            counts[table] = sqlite.rawQuery("SELECT changes()", null).use { it.moveToFirst(); it.getLong(0) }
+                            counts[table] = sqlite.query("SELECT changes()").use { it.moveToFirst(); it.getLong(0) }
                         }
                         val outboxCols = common("outbox")
                         if (outboxCols.isNotEmpty()) {
@@ -287,7 +287,7 @@ class LegacyDataRecovery {
                                     "WHERE m.id = 'local_' || o.clientId AND m.authorId = ?)",
                                 arrayOf(owner),
                             )
-                            counts["outbox"] = sqlite.rawQuery("SELECT changes()", null).use { it.moveToFirst(); it.getLong(0) }
+                            counts["outbox"] = sqlite.query("SELECT changes()").use { it.moveToFirst(); it.getLong(0) }
                         }
                         sqlite.setTransactionSuccessful()
                     } finally {

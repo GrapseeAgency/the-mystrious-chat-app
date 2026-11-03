@@ -118,7 +118,7 @@ class LegacyDataRecoveryDeviceTest {
 
     private fun targetCount(table: String, where: String = "1=1"): Long =
         target.openHelper.readableDatabase
-            .rawQuery("SELECT COUNT(*) FROM `$table` WHERE $where", null).use { it.moveToFirst(); it.getLong(0) }
+            .query("SELECT COUNT(*) FROM `$table` WHERE $where").use { it.moveToFirst(); it.getLong(0) }
 
     @Test
     fun aProvableLegacyCacheIsAdoptedIntoTheCurrentAccountAndTheOriginalIsRetained() {
@@ -174,11 +174,11 @@ class LegacyDataRecoveryDeviceTest {
 
         val first = kotlinx.coroutines.runBlocking { LegacyDataRecovery.recover(context, target, "viewer-a") }
         val stampAfterFirst = target.openHelper.readableDatabase
-            .rawQuery("SELECT json FROM wave7_cache WHERE `key` = 'legacy-recovery:v1'", null).use { it.moveToFirst(); it.getString(0) }
+            .query("SELECT json FROM wave7_cache WHERE `key` = 'legacy-recovery:v1'").use { it.moveToFirst(); it.getString(0) }
 
         val second = kotlinx.coroutines.runBlocking { LegacyDataRecovery.recover(context, target, "viewer-a") }
         val stampAfterSecond = target.openHelper.readableDatabase
-            .rawQuery("SELECT json FROM wave7_cache WHERE `key` = 'legacy-recovery:v1'", null).use { it.moveToFirst(); it.getString(0) }
+            .query("SELECT json FROM wave7_cache WHERE `key` = 'legacy-recovery:v1'").use { it.moveToFirst(); it.getString(0) }
 
         assertTrue(first is LegacyDataRecovery.Verdict.Adopt)
         assertTrue(second is LegacyDataRecovery.Verdict.Adopt)
