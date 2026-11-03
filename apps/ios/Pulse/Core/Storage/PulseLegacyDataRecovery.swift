@@ -137,7 +137,7 @@ extension PulseStore {
             scan.outbox = tables.contains("outbox") ? try queue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM outbox") ?? 0 } : 0
             scan.drafts = tables.contains("draft") ? try queue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM draft") ?? 0 } : 0
             let conversationColumns = try queue.read { db in
-                try Set(String.fetchAll(db, sql: "PRAGMA table_info(conversation)"))
+                try Set(Self.columnNames(db, table: "conversation"))
             }
             guard let total = scan.conversations, total > 0, conversationColumns.contains("wireJson") else { return scan }
             scan.memberProof = true
@@ -222,10 +222,30 @@ extension PulseStore {
         }
     }
 
+    /// Real column NAMES of a table on the local schema. `PRAGMA table_info`
+    /// rows carry (cid, name, type, ...); naive `String.fetchAll` over the
+    /// pragma output yields the cid column ("0","1","2",...) which can never
+    /// contain a column name - so the name column must be read explicitly.
+    private static func columnNames(_ db: Database, table: String) throws -> [String] {
+        try Row.fetchAll(db, sql: "PRAGMA table_info(`\(table)`)")
+            .compactMap { (row: Row) -> String? in
+                let name: String? = row["name"]
+                return name
+            }
+    }
+
+    /// Column names of a table on the ATTACHed legacy schema (same row shape).
+    private static func attachedColumnNames(_ db: Database, table: String) throws -> [String] {
+        try Row.fetchAll(db, sql: "PRAGMA legacy_src.table_info(`\(table)`)")
+            .compactMap { (row: Row) -> String? in
+                let name: String? = row["name"]
+                return name
+            }
+    }
+
     private static func commonColumns(_ db: Database, table: String) throws -> [String] {
-        let target = try Set(String.fetchAll(db, sql: "PRAGMA table_info(`\(table)`)"))
-        let source = try Set(String.fetchAll(db, sql: "PRAGMA legacy_src.table_info(`\(table)`)"))
-        let sourceOrder = try String.fetchAll(db, sql: "PRAGMA legacy_src.table_info(`\(table)`)")
+        let target = try Set(columnNames(db, table: table))
+        let sourceOrder = try attachedColumnNames(db, table: table)
         return sourceOrder.filter { target.contains($0) }
     }
 

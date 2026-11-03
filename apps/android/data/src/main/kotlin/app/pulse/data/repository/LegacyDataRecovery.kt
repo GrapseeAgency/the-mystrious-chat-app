@@ -207,8 +207,8 @@ class LegacyDataRecovery {
             override fun hasForeignConversation(owner: String): Boolean? = readOpen(file) { db ->
                 if (!exists(db, "conversations") || !column(db, "conversations", "memberIdsCsv")) null
                 else db.rawQuery(
-                    "SELECT 1 FROM conversations WHERE instr(','||memberIdsCsv||',', ',$owner,') = 0 LIMIT 1",
-                    null,
+                    "SELECT 1 FROM conversations WHERE instr(','||memberIdsCsv||',', ','||?||',') = 0 LIMIT 1",
+                    arrayOf(owner),
                 ).use { it.moveToFirst() }
             } ?: null
 
@@ -240,66 +240,112 @@ class LegacyDataRecovery {
         }
 
         /**
-         * Copies the legacy file to a throwaway temp, ATTACHes the COPY to the
-         * account database and INSERT OR IGNOREs the provably-ownable rows
-         * (conversations/messages/drafts wholesale; outbox only proven rows)
-         * inside ONE transaction. Column lists are the INTERSECTION of both
-         * schemas, so an older legacy schema imports with its newer target
-         * columns at defaults; any structural surprise throws and the caller
-         * refuses with the file retained.
+         * Copies the legacy file to a throwaway temp and reads the
+         * provably-ownable rows from the COPY through the COPY'S OWN read-only
+         * handle, then INSERT OR IGNOREs them into the account database as
+         * parameterized binds inside ONE transaction.
+         *
+         * The account connection is never asked to ATTACH foreign schema
+         * state: an ATTACH/DETACH roundtrip on the account handle poisons
+         * later statement preparation on some API levels (observed on API 30:
+         * "no such table" for the account's own tables after the detach).
+         * Column lists are the INTERSECTION of both schemas, so an older
+         * legacy schema imports with its newer target columns at defaults;
+         * any structural surprise throws and the caller refuses with the
+         * file retained.
          */
         private fun importProvenRows(legacy: File, db: PulseDatabase, owner: String): Map<String, Long> {
             val temp = File.createTempFile("legacy-copy", ".db", legacy.parentFile)
             try {
                 legacy.copyTo(temp, overwrite = true)
-                val sqlite = db.openHelper.writableDatabase
-                sqlite.execSQL("ATTACH DATABASE '${temp.path}' AS legacy_src")
+                val src = SQLiteDatabase.openDatabase(temp.path, null, SQLiteDatabase.OPEN_READONLY)
                 try {
-                    fun columns(side: String, table: String): List<String> =
-                        sqlite.query("PRAGMA $side(`$table`)").use { cursor ->
-                            buildList {
-                                while (cursor.moveToNext()) add(cursor.getString(1))
-                            }
-                        }
-
-                    fun common(table: String): List<String> {
-                        val target = columns("table_info", table)
-                        val source = columns("legacy_src.table_info", table)
-                        return source.filter { it in target }
-                    }
-
+                    val sqlite = db.openHelper.writableDatabase
                     val counts = mutableMapOf<String, Long>()
                     sqlite.beginTransaction()
                     try {
                         for (table in listOf("conversations", "messages", "draft")) {
-                            val cols = common(table)
-                            if (cols.isEmpty()) throw IllegalStateException("no importable columns for $table")
-                            val list = cols.joinToString(",")
-                            sqlite.execSQL("INSERT OR IGNORE INTO `$table` ($list) SELECT $list FROM legacy_src.`$table`")
-                            counts[table] = sqlite.query("SELECT changes()").use { it.moveToFirst(); it.getLong(0) }
+                            counts[table] = copyTable(src, sqlite, table)
                         }
-                        val outboxCols = common("outbox")
-                        if (outboxCols.isNotEmpty()) {
-                            val list = outboxCols.joinToString(",")
-                            sqlite.execSQL(
-                                "INSERT OR IGNORE INTO `outbox` ($list) SELECT $list FROM legacy_src.`outbox` o " +
-                                    "WHERE EXISTS (SELECT 1 FROM legacy_src.`messages` m " +
-                                    "WHERE m.id = 'local_' || o.clientId AND m.authorId = ?)",
-                                arrayOf(owner),
-                            )
-                            counts["outbox"] = sqlite.query("SELECT changes()").use { it.moveToFirst(); it.getLong(0) }
-                        }
+                        counts["outbox"] = copyProvenOutbox(src, sqlite, owner)
                         sqlite.setTransactionSuccessful()
                     } finally {
                         sqlite.endTransaction()
                     }
                     return counts
                 } finally {
-                    sqlite.execSQL("DETACH DATABASE legacy_src")
+                    src.close()
                 }
             } finally {
                 temp.delete()
             }
+        }
+
+        /** Column NAMES of `table` on the handle's OWN schema (cid is column 0; name is column 1). */
+        private fun columnNames(handle: SQLiteDatabase, table: String): List<String> =
+            handle.rawQuery("PRAGMA table_info(`$table`)", null).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(cursor.getString(1))
+                }
+            }
+
+        /** Column NAMES of `table` on the account schema (no attached databases involved). */
+        private fun targetColumnNames(sqlite: androidx.sqlite.db.SupportSQLiteDatabase, table: String): List<String> =
+            sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(cursor.getString(1))
+                }
+            }
+
+        /** Preserves the legacy row's storage class so binds land with the right affinity. */
+        private fun bindValue(cursor: Cursor, index: Int): Any? = when (cursor.getType(index)) {
+            Cursor.FIELD_TYPE_NULL -> null
+            Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(index)
+            Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(index)
+            Cursor.FIELD_TYPE_BLOB -> cursor.getBlob(index)
+            else -> cursor.getString(index)
+        }
+
+        /** Exact inserted-row count: changes() distinguishes INSERT OR IGNORE skips from real inserts. */
+        private fun insertAndCount(sqlite: androidx.sqlite.db.SupportSQLiteDatabase, sql: String, row: Array<Any?>): Long {
+            sqlite.execSQL(sql, row)
+            return sqlite.query("SELECT changes()").use { it.moveToFirst(); it.getLong(0) }
+        }
+
+        private fun copyTable(src: SQLiteDatabase, sqlite: androidx.sqlite.db.SupportSQLiteDatabase, table: String): Long {
+            val cols = columnNames(src, table).filter { it in targetColumnNames(sqlite, table).toSet() }
+            if (cols.isEmpty()) throw IllegalStateException("no importable columns for $table")
+            val list = cols.joinToString(",")
+            val sql = "INSERT OR IGNORE INTO `$table` ($list) VALUES (${cols.joinToString(",") { "?" }})"
+            var inserted = 0L
+            src.rawQuery("SELECT $list FROM `$table`", null).use { cursor ->
+                val row = arrayOfNulls<Any?>(cols.size)
+                while (cursor.moveToNext()) {
+                    for (i in cols.indices) row[i] = bindValue(cursor, i)
+                    inserted += insertAndCount(sqlite, sql, row)
+                }
+            }
+            return inserted
+        }
+
+        private fun copyProvenOutbox(src: SQLiteDatabase, sqlite: androidx.sqlite.db.SupportSQLiteDatabase, owner: String): Long {
+            val cols = columnNames(src, "outbox").filter { it in targetColumnNames(sqlite, "outbox").toSet() }
+            if (cols.isEmpty()) return 0L
+            val list = cols.joinToString(",")
+            val sql = "INSERT OR IGNORE INTO `outbox` ($list) VALUES (${cols.joinToString(",") { "?" }})"
+            var inserted = 0L
+            src.rawQuery(
+                "SELECT $list FROM `outbox` o WHERE EXISTS (SELECT 1 FROM `messages` m " +
+                    "WHERE m.id = 'local_' || o.clientId AND m.authorId = ?)",
+                arrayOf(owner),
+            ).use { cursor ->
+                val row = arrayOfNulls<Any?>(cols.size)
+                while (cursor.moveToNext()) {
+                    for (i in cols.indices) row[i] = bindValue(cursor, i)
+                    inserted += insertAndCount(sqlite, sql, row)
+                }
+            }
+            return inserted
         }
     }
 }
