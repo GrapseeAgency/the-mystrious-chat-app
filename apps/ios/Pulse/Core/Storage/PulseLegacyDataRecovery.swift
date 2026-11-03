@@ -197,7 +197,7 @@ extension PulseStore {
                     guard !cols.isEmpty else { throw NSError(domain: "PulseLegacy", code: 1, userInfo: [NSLocalizedDescriptionKey: "no importable columns for \(table)"]) }
                     let list = cols.joined(separator: ",")
                     try db.execute(sql: "INSERT OR IGNORE INTO `\(table)` (\(list)) SELECT \(list) FROM legacy_src.`\(table)`")
-                    counts[table] = Int.fetchOne(db, sql: "SELECT changes()") ?? 0
+                    counts[table] = try Int.fetchOne(db, sql: "SELECT changes()") ?? 0
                 }
                 return .commit
             }

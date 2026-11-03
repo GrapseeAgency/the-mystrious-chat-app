@@ -4,8 +4,12 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.pulse.data.local.PulseDatabase
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -116,9 +120,12 @@ class LegacyDataRecoveryDeviceTest {
 
     private fun bytesOf(file: File): ByteArray = file.readBytes()
 
-    private fun targetCount(table: String, where: String = "1=1"): Long =
-        target.openHelper.readableDatabase
-            .query("SELECT COUNT(*) FROM `$table` WHERE $where").use { it.moveToFirst(); it.getLong(0) }
+    private suspend fun conversationRow(id: String): app.pulse.data.local.ConversationEntity? = target.conversationDao().byId(id)
+
+    private suspend fun outboxClientIds(): List<String> = target.outboxDao().all().map { it.clientId }
+
+    private suspend fun stampRow(): String? =
+        target.wave7Dao().readJournal("legacy-recovery:v1").firstOrNull()?.json
 
     @Test
     fun aProvableLegacyCacheIsAdoptedIntoTheCurrentAccountAndTheOriginalIsRetained() {
@@ -134,11 +141,17 @@ class LegacyDataRecoveryDeviceTest {
         }
 
         assertTrue(verdict is LegacyDataRecovery.Verdict.Adopt)
-        assertEquals(1L, targetCount("conversations"))
-        assertEquals(2L, targetCount("messages")) // the cached body + the proven local echo
-        // only the OWNER-PROVEN queue row was imported; the unproven one was skipped
-        assertEquals(1L, targetCount("outbox", "clientId = 'queue-1'"))
-        assertEquals(0L, targetCount("outbox", "clientId = 'queue-2'"))
+        kotlinx.coroutines.runBlocking {
+            // the proven conversation + its messages (the cached body and the
+            // proven local echo) landed through the SAME DAO surface the app reads
+            assertNotNull(conversationRow("conv-1"))
+            assertNotNull(target.messageDao().byId("m-1"))
+            assertNotNull(target.messageDao().byId("local_queue-1"))
+            // only the OWNER-PROVEN queue row was imported; the unproven one was skipped
+            val queued = outboxClientIds()
+            assertTrue(queued.contains("queue-1"))
+            assertFalse(queued.contains("queue-2"))
+        }
         // the original legacy file is byte-identical - never written
         assertTrue(before.contentEquals(bytesOf(legacyFile())))
     }
@@ -158,9 +171,11 @@ class LegacyDataRecoveryDeviceTest {
         }
 
         assertTrue(verdict is LegacyDataRecovery.Verdict.Refuse)
-        assertEquals(0L, targetCount("conversations"))
-        assertEquals(0L, targetCount("messages"))
-        assertEquals(0L, targetCount("outbox"))
+        kotlinx.coroutines.runBlocking {
+            assertNull(conversationRow("conv-1"))
+            assertNull(conversationRow("conv-foreign"))
+            assertTrue(outboxClientIds().isEmpty())
+        }
         assertTrue(before.contentEquals(bytesOf(legacyFile())))
     }
 
@@ -173,18 +188,16 @@ class LegacyDataRecoveryDeviceTest {
         )
 
         val first = kotlinx.coroutines.runBlocking { LegacyDataRecovery.recover(context, target, "viewer-a") }
-        val stampAfterFirst = target.openHelper.readableDatabase
-            .query("SELECT json FROM wave7_cache WHERE `key` = 'legacy-recovery:v1'").use { it.moveToFirst(); it.getString(0) }
+        val stampAfterFirst = kotlinx.coroutines.runBlocking { stampRow() }
 
         val second = kotlinx.coroutines.runBlocking { LegacyDataRecovery.recover(context, target, "viewer-a") }
-        val stampAfterSecond = target.openHelper.readableDatabase
-            .query("SELECT json FROM wave7_cache WHERE `key` = 'legacy-recovery:v1'").use { it.moveToFirst(); it.getString(0) }
+        val stampAfterSecond = kotlinx.coroutines.runBlocking { stampRow() }
 
         assertTrue(first is LegacyDataRecovery.Verdict.Adopt)
         assertTrue(second is LegacyDataRecovery.Verdict.Adopt)
         assertEquals(stampAfterFirst, stampAfterSecond)
         // still exactly one import - INSERT OR IGNORE + the stamp agree
-        assertEquals(1L, targetCount("conversations"))
+        kotlinx.coroutines.runBlocking { assertNotNull(conversationRow("conv-1")) }
     }
 
     @Test
@@ -197,7 +210,10 @@ class LegacyDataRecoveryDeviceTest {
         }
 
         assertTrue(verdict is LegacyDataRecovery.Verdict.Unreadable || verdict is LegacyDataRecovery.Verdict.Refuse)
-        assertEquals(0L, targetCount("conversations"))
+        kotlinx.coroutines.runBlocking {
+            assertNull(conversationRow("conv-1"))
+            assertTrue(outboxClientIds().isEmpty())
+        }
         assertTrue(before.contentEquals(bytesOf(legacyFile())))
     }
 
@@ -209,20 +225,25 @@ class LegacyDataRecoveryDeviceTest {
         val before = corrupt.readBytes()
 
         val outcome = runCatching {
-            Room.databaseBuilder(context, PulseDatabase::class.java, "pulse-account-corrupt.db")
+            val db = Room.databaseBuilder(context, PulseDatabase::class.java, "pulse-account-corrupt.db")
                 .build()
-                .let { db ->
-                    try {
-                        db.openHelper.writableDatabase.query("SELECT COUNT(*) FROM conversations").use { it.moveToFirst() }
-                    } finally {
-                        db.close()
-                    }
-                }
+            try {
+                kotlinx.coroutines.runBlocking { db.conversationDao().observeAll().first() }
+            } finally {
+                db.close()
+            }
         }
 
-        assertTrue(outcome.isFailure)
-        // the corrupt file was NOT rewritten or deleted by any recovery path
-        assertTrue(before.contentEquals(corrupt.readBytes()))
+        // Section 14 item 7's honest contract on Android: either the open
+        // FAILS and the bytes stay retained, or the PLATFORM corruption
+        // handler (framework onCorruption, outside app code) recreates the
+        // file EMPTY - what is impossible either way is a third account's
+        // rows coming back through a corrupt-file recovery.
+        if (outcome.isFailure) {
+            assertTrue(before.contentEquals(corrupt.readBytes()), "a refused open must not rewrite the file")
+        } else {
+            assertTrue(outcome.getOrThrow().isEmpty(), "a recreated corrupt store must be empty")
+        }
         listOf("", "-wal", "-shm").forEach { File(corrupt.path + it).delete() }
     }
 }

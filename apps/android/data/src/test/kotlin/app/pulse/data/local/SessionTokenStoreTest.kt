@@ -158,13 +158,17 @@ class SessionTokenStoreTest {
     }
 
     @Test
-    fun `an unknown at-rest format reads as absent without invalidating`() = runTest {
+    fun `an unknown at-rest format fails closed with the evidence retained`() = runTest {
         val persistence = FakePersistence()
         persistence.write("totally-foreign-format")
         val store = SessionTokenStore(persistence, FakeCipher())
-        assertNull(store.load())
+        // the store-level contract: ANY undecryptable at-rest value (wrong
+        // key, foreign legacy format, torn write) is fail-closed - never an
+        // anonymous downgrade, never a discarded credential
+        val failure = runCatching { store.load() }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
         assertNull(store.cached)
-        assertFalse(store.invalidated.value)
+        assertTrue(store.invalidated.value)
         // nothing was discarded to "recover" the read
         assertEquals(listOf("totally-foreign-format"), persistence.backing)
     }
