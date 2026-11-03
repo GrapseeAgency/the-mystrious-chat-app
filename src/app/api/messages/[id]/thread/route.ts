@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { readThreadSnapshot, ThreadReadError } from '@/lib/message-visibility'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   mapMessage,
   MESSAGE_FULL_INCLUDE,
@@ -26,6 +27,11 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
   }
+  // Section 16 endpoint-authorization: thread CONTENT reads are owner-bound
+  // like the newer thread-page route; the userId query is no longer a
+  // self-declared hall pass for room content.
+  const denied = await requireActionOwner(req, userId, 'thread read')
+  if (denied) return denied
 
   try {
     const page = await readThreadSnapshot(db, id, userId,

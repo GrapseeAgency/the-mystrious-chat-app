@@ -22,6 +22,7 @@ import {
 import { toast } from 'sonner'
 import type { AppUser } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
+import { ensureSessionCredential, storeSessionToken } from '@/lib/session-token-client'
 import {
   AVATAR_GRADIENTS,
   PULSE_COLORS,
@@ -78,7 +79,7 @@ function sanitizeHandleInput(value: string): string {
 }
 
 type CreateOutcome =
-  | { ok: true; user: AppUser }
+  | { ok: true; user: AppUser; token: string | null }
   | { ok: false; status: number; code: string | null; message: string; suggestion: string | null }
 
 /**
@@ -99,8 +100,13 @@ async function createUserRequest(payload: {
     })
     const body: unknown = await res.json().catch(() => null)
     if (res.ok) {
-      const user = (body as { user?: AppUser } | null)?.user
-      if (user) return { ok: true, user }
+      const rec = body as { user?: AppUser; token?: unknown } | null
+      const user = rec?.user
+      if (user) {
+        // Section 16: creation mints the credential; web now adopts it like the natives.
+        const token = typeof rec?.token === 'string' && rec.token.length > 0 ? rec.token : null
+        return { ok: true, user, token }
+      }
       return {
         ok: false,
         status: res.status,
@@ -166,8 +172,11 @@ export function OnboardingScreen() {
         setName(prefill.slice(0, NAME_MAX))
         if (!deepLinkHandled.current) {
           deepLinkHandled.current = true
-          void lookupUser(prefill.slice(0, NAME_MAX)).then((user) => {
+          void lookupUser(prefill.slice(0, NAME_MAX)).then(async (user) => {
             if (user) {
+              // Section 16: reuse this browser's stored credential when present,
+              // mint (one rotation into the R52 grace list) only when absent.
+              await ensureSessionCredential(user)
               setUser(user)
               toast.success(`Welcome back, ${user.name}!`)
             }
@@ -217,6 +226,8 @@ export function OnboardingScreen() {
     },
     onSuccess: (outcome) => {
       if (outcome.ok) {
+        // Section 16: creation already minted the credential; adopt it now.
+        if (outcome.token) storeSessionToken(outcome.user.id, outcome.token)
         setUser(outcome.user)
         toast.success(`Welcome to Pulse, ${outcome.user.name}!`)
         return
@@ -244,6 +255,9 @@ export function OnboardingScreen() {
     mutationFn: async () => {
       const user = await lookupUser(name.trim())
       if (!user) throw new Error('No Pulse account with that name.')
+      // Section 16: sign-in awaits the credential so the shell's first
+      // authenticated query already carries the Bearer.
+      await ensureSessionCredential(user)
       return user
     },
     onSuccess: (user) => {

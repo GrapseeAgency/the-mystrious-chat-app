@@ -6,6 +6,7 @@ import path from 'node:path'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { DOC_MAX_BYTES, UPLOADS_DIR, UPLOAD_MIME, strField } from '@/lib/serializers'
+import { requireActionActor } from '@/lib/wallet-authorization'
 
 import { readUploadBody, decodeUploadBase64, UploadInputError } from '@/lib/upload-input'
 import { uploadOperation, replayUploadOperation, commitUploadOperation, UploadOperationError } from '@/lib/upload-operation'
@@ -55,6 +56,13 @@ let activeUploads = 0
 const privateHeaders = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }
 
 export async function POST(req: Request) {
+  // Section 16 endpoint-authorization: upload storage is a protected
+  // capability - anonymous byte storage is no longer part of the migration
+  // window (natives attach the session bearer on every request family;
+  // the web apiJson callers now do too). GET /api/uploads/[file] keeps its
+  // separate headerless media-access decision for <img> consumers.
+  const actor = await requireActionActor(req, 'upload')
+  if (actor instanceof Response) return actor
   // Bound concurrent JSON/base64/blob allocations in this server process.
   if (activeUploads >= 2) return NextResponse.json({ error: 'Uploads are busy. Retry shortly.' },
     { status: 429, headers: { ...privateHeaders, 'Retry-After': '2' } })

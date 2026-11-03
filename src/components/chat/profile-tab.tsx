@@ -50,6 +50,7 @@ import {
 import { toast } from 'sonner'
 import type { AppUser, SavedItem, UserStats } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
+import { clearSessionToken } from '@/lib/session-token-client'
 import {
   AVATAR_GRADIENTS,
   PULSE_COLORS,
@@ -555,6 +556,9 @@ function ProfileEditor({
     } catch {
       /* private mode - flag is best-effort */
     }
+    // Section 16: sign-out drops the stored credential - a later sign-in for
+    // the same identity mints fresh (one rotation into the R52 grace list).
+    clearSessionToken(me.id)
     usePulseSession.getState().clear()
     window.location.reload()
   }

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mutateMessage, MessageMutationError } from '@/lib/message-mutation'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   mapMessage,
   memberIdsOf,
@@ -22,6 +23,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const body = await safeJson(req)
   const userId = strField(body.userId)
   if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  // Section 16 endpoint-authorization: consuming a view-once attachment is
+  // owner-bound - a view-once receipt must never be mintable anonymously.
+  const denied = await requireActionOwner(req, userId, 'view-once consumption')
+  if (denied) return denied
   try {
     const result = await mutateMessage(db, id, userId, { kind: 'view' }, (tx, messageId) =>
       tx.message.findUniqueOrThrow({ where: { id: messageId }, include: MESSAGE_FULL_INCLUDE }))

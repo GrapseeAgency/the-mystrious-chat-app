@@ -28,7 +28,12 @@ async function fixture(run, overrides = {}) {
       console:{error:()=>{}}, ...overrides,
       // R44: the route's per-request access gate - these contract tests run
       // headerless, so the migration-window 'open' decision is the honest stub.
-      mediaAccessDecision: async () => ({ kind: 'open' }) }
+      mediaAccessDecision: async () => ({ kind: 'open' }),
+      // Section 16: the route now binds upload POSTs to a session actor exactly
+      // like its web/native callers supply; this storage-contract suite stubs
+      // the validator permissive (the real 401/403 authority matrix lives in
+      // section16-endpoint-authorization.test.mjs against the real validator).
+      requireActionActor: async () => ({ userId: 'contract-uploader' }) }
     const post = await load('src/app/api/uploads/route.ts',bindings,'POST')
     const get = await load('src/app/api/uploads/[file]/route.ts',bindings,'GET')
     await run({db,post,get,dir})

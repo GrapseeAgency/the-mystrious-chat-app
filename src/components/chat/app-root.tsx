@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { MessageCircleHeart } from 'lucide-react'
 import type { AppUser } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
+import { ensureSessionCredential } from '@/lib/session-token-client'
 import { ApiError, apiJson } from '@/lib/pulse-utils'
 import { Providers } from '@/components/chat/providers'
 import { UiThemeAttr } from '@/components/chat/ui-theme-attr'
@@ -119,6 +120,10 @@ function useDemoAutoSignIn(enabled: boolean) {
         if (!res.ok) throw new Error(`demo lookup ${res.status}`)
         const data = (await res.json()) as { user?: AppUser }
         if (!data.user?.id) throw new Error('demo identity missing')
+        // Section 16: the silent demo sign-in awaits its credential (reuses
+        // the stored one; mints one rotation only when this browser has none)
+        // so the shell's first authenticated query already carries the Bearer.
+        await ensureSessionCredential(data.user)
         setUser(data.user)
         toast.success(`Demo sign-in - ${DEMO_IDENTITY}`, { description: 'You can switch identity from Profile.' })
       } catch {
@@ -158,7 +163,12 @@ function BootGate() {
     queryFn: async ({ queryKey }): Promise<AppUser> => {
       const [, id] = queryKey as [string, string]
       const res = await apiJson<UsersResponse>(`/api/users/${encodeURIComponent(id)}`)
-      return res.user
+      const me = res.user
+      // Section 16: a rehydrated session that predates web token adoption (or
+      // whose browser storage was cleared) mints exactly once here, before the
+      // shell mounts. Failure is honest - the 401s speak on hardened routes.
+      await ensureSessionCredential(me)
+      return me
     },
     enabled: hydrated && !!user,
     retry: false,

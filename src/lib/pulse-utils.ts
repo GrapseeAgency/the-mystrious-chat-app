@@ -92,11 +92,39 @@ function errorMessageFromBody(body: unknown, fallback: string): string {
   return fallback
 }
 
+/**
+ * Section 16 (Wave 8 §3.11 phase 2) web credential adoption: shared apiJson
+ * callers now supply `Authorization: Bearer <token>` exactly like the native
+ * HTTP clients do on every request. The token source is INJECTED via a
+ * resolver instead of a direct localStorage read so this module stays
+ * import-safe server-side and unit-testable with a stub; pulse-store
+ * registers the live resolver (active user -> stored web token).
+ */
+type AuthTokenResolver = () => string | null
+let authTokenResolver: AuthTokenResolver | null = null
+
+export function setAuthTokenResolver(resolver: AuthTokenResolver | null): void {
+  authTokenResolver = resolver
+}
+
+function currentAuthToken(): string | null {
+  try {
+    return authTokenResolver?.() ?? null
+  } catch {
+    return null
+  }
+}
+
 /** JSON fetch against the Next API routes; throws ApiError with status. */
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = currentAuthToken()
   const res = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
     cache: 'no-store',
   })
   let body: unknown = null

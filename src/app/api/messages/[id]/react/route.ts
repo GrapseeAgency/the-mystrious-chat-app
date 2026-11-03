@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mutateMessage, MessageMutationError } from '@/lib/message-mutation'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   mapMessage,
   memberIdsOf,
@@ -27,6 +28,11 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!(REACTION_EMOJIS as readonly string[]).includes(emoji)) {
     return NextResponse.json({ error: 'Unsupported reaction.' }, { status: 400 })
   }
+  // Section 16 endpoint-authorization: reaction toggles are owner-bound -
+  // the newer react-state route already is; the legacy sibling no longer
+  // trails it in authority.
+  const denied = await requireActionOwner(req, userId, 'reaction toggle')
+  if (denied) return denied
   try {
     const result = await mutateMessage(db, id, userId, { kind: 'react', emoji }, (tx, messageId) =>
       tx.message.findUniqueOrThrow({ where: { id: messageId }, include: MESSAGE_FULL_INCLUDE }))

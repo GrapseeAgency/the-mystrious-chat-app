@@ -25,6 +25,7 @@ import type {
   TypingEvent,
 } from '@/lib/types'
 import { usePulseSession, getPulseUser } from '@/lib/pulse-store'
+import { readStoredToken } from '@/lib/session-token-client'
 import { haptic, isQuietHoursNow, playIncomingPing, primeSound, pulseSettingsStore } from '@/lib/pulse-settings'
 import { flushPulseOutbox, pulseOutboxStore } from '@/lib/pulse-outbox'
 import { usePrefs } from '@/lib/prefs'
@@ -535,7 +536,11 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
 
     const onConnect = () => {
       setIsConnected(true)
-      sock.emit('join', { userId: myId })
+      // Section 16: the relay accepts headerless joins during the migration
+      // window, but a PRESENT token must be valid - only send what we actually
+      // stored, and never an invented one.
+      const token = readStoredToken(myId)
+      sock.emit('join', { userId: myId, ...(token ? { token } : {}) })
     }
 
     const onDisconnect = () => {
