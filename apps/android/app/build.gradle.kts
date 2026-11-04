@@ -10,8 +10,8 @@ plugins {
 // Release channel plumbing - CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
 // R76: the native-only wave - the WebView artboard shell is deleted, the
 // mirror boots on EVERY build (applicationId app.pulse.chat included).
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 54
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.25.0.0.5"
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 55
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.25.0.0.6"
 
 android {
     namespace = "app.pulse.android"
