@@ -1,15 +1,15 @@
 {
-  "versionCode": 49,
-  "versionName": "0.24.0.0.3",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.3/Pulse-v0.24.0.0.3.apk",
+  "versionCode": 55,
+  "versionName": "0.25.0.0.6",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.25.0.0.6/Pulse-v0.25.0.0.6.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "921aa30df88b67cb49368eef8283178f7d94626267b15c1d822be1cd78c89fe5",
-  "notes": "R76 - native-only: the WebView artboard shell is deleted and the native Kotlin mirror boots on EVERY build (app.pulse.chat included); the Hub app detail page is a FULL page (Overview / Community / Connectors over the real install + community + wallet routes, related rail, founder state, installer roster); Spotlight message hits, home search hits and pulse://room?jump= links jump-to-message with the flash; user/invite deep links, share-in and shortcut actions all land on the mirror; PulseShell + the classic docks deleted. Version 0.24.0.0.3, versionCode 49.",
+  "sha256": "da283358e37bd52d25864f98fbe159801b70fdbcf608126ed44ab9f719b509de",
+  "notes": "The real-device audit build - every CI-proven repair of sections 1-16 as of the R67 receipt chain: the MirrorSheet back-dismissal flake root-caused (bounded waits on both dismissal assertions) with the api 28/30/34 instrumented matrix all green, scroll-geometry anchor preservation (prepend anchor id+offset, away-tail no-follow, header-compensated exact jump, restore rebuild), TalkBack labels on every actionable icon-only control, RTL + 2x font-scale contracts, reduce-motion gating across every spring site on both platforms, CallAudioRoutes earpiece/speaker/focus-loss kernels, the API 28 acceptance leg, iOS main-river prepend anchoring + motion gating, web session-credential adoption with owner-bound endpoint authorization closure (legacy react/viewed/thread/uploads tightened), real-serializer search/saved/mentions coverage, paired-device server-contract acceptance, and the self-host runbook (deploy/) for pointing the app at your own backend. Device gates (real APNs/FCM delivery, Bluetooth/wired audio, CallKit/Telecom, physical paired-device runs) remain the audit's job - this build is built for exactly that audit. Version 0.25.0.0.6, versionCode 55.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-06T08:55:00Z",
-  "apkSize": 26224575,
-  "version": "0.24.0.0.3",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.3/Pulse-v0.24.0.0.3.apk"
+  "updatedAt": "2026-11-04T15:45:00Z",
+  "apkSize": 27152464,
+  "version": "0.25.0.0.6",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.25.0.0.6/Pulse-v0.25.0.0.6.apk"
 }
