@@ -41,7 +41,9 @@ export async function relayGroupCallRing(
     let lastError: unknown = null
     for (let attempt = 1; attempt <= RING_ATTEMPTS; attempt++) {
       try {
-        const response = await fetcher('http://localhost:3003/notify', {
+        // PULSE_RELAY_BASE retargets split-host deployments; default literal is the drift-guarded single-host default.
+        const RELAY_BASE = process.env.PULSE_RELAY_BASE?.replace(/\/+$/, '') || 'http://localhost:3003'
+        const response = await fetcher(`${RELAY_BASE}/notify`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'x-pulse-key': secret },
           body: JSON.stringify({ event: 'gcall:ring', recipients, payload }), signal: AbortSignal.timeout(2500),
         })

@@ -1,0 +1,29 @@
+# Pulse compose gateway - the same single-origin contract as the repo's root
+# Caddyfile (which fronts localhost): /socket.io/* rides the relay, everything
+# else rides the web app, so a phone only ever points at ONE base URL.
+#
+# Compose network names (web / relay) replace the root file's localhost:3000 /
+# localhost:3003. The XTransformPort scheme is intentionally NOT included
+# here: that query scheme exists for the development sandbox's single external
+# port; a self-hosted deployment exposes this gateway directly.
+
+:81 {
+        @socketio path /socket.io/*
+        handle @socketio {
+                reverse_proxy relay:3003 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
+
+        handle {
+                reverse_proxy web:3000 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
+}

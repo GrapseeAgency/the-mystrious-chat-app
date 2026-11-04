@@ -1,0 +1,74 @@
+# Pulse self-host - one command, full stack, phone-ready.
+#
+#   cd deploy && docker compose up --build -d
+#
+# Then point the Android app's onboarding "Server" field at:
+#
+#   http://<this-host>:81
+#
+# (the app accepts plain http - android:usesCleartextTraffic="true" - so LAN
+# testing works without TLS; put your own TLS terminator in front for the
+# public internet).
+#
+# Services:
+#   web    - Next.js standalone (API + UI) on :3000
+#   relay  - socket.io relay on :3003 (calls, live events, typing)
+#   caddy  - the single-origin gateway on :81 (same contract as the
+#            development sandbox: /socket.io/* -> relay, rest -> web)
+#
+# HONEST LIMITS: no CI workflow and no sandbox step executes this compose
+# stack (the sandbox has no Docker daemon). The stack mirrors the
+# sandbox-verified topology exactly; the bare-metal runbook in README.md is
+# the executed-and-verified path.
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: pulse-selfhost
+    command: ["web"]
+    environment:
+      DATABASE_URL: file:/data/custom.db
+      # Next -> relay hops (notify/typing/gcall/online) retarget to the compose network.
+      PULSE_RELAY_BASE: http://relay:3003
+      # Internal service key shared with the relay (change it).
+      CRON_SECRET: ${PULSE_CRON_SECRET:-change-me}
+      # Relay -> Next internal base.
+      PULSE_ORIGIN: http://web:3000
+      HOSTNAME: 0.0.0.0
+    volumes:
+      - pulse-data:/data
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  relay:
+    image: pulse-selfhost
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["relay"]
+    environment:
+      PULSE_SOCKET_PORT: "3003"
+      PULSE_ORIGIN: http://web:3000
+      CRON_SECRET: ${PULSE_CRON_SECRET:-change-me}
+    expose:
+      - "3003"
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "81:81"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - web
+      - relay
+    restart: unless-stopped
+
+volumes:
+  pulse-data:

@@ -1,0 +1,18 @@
+# Shrink the compose build context to what the image actually needs
+# (web build + relay + demo db seed). Native apps, tests, and docs are not
+# part of the image. deploy/ stays (entrypoint.sh is copied from it).
+.git
+.github
+.next
+node_modules
+apps
+tests
+docs
+agent-ctx
+.zscripts
+mini-services-dist
+download
+.env
+dev.log
+server.log
+worklog.md

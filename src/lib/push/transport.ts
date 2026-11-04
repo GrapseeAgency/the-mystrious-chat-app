@@ -52,7 +52,10 @@ export interface PushPayload {
   callerName?: string
 }
 
-const SOCKET_URL = 'http://localhost:3003'
+// Deploy override: PULSE_RELAY_BASE retargets every Next->relay hop for
+// split-host deployments (docker compose service name, remote relay); the
+// default literal stays the drift-guarded sandbox/VPS single-host default.
+const SOCKET_URL = process.env.PULSE_RELAY_BASE?.replace(/\/+$/, '') || 'http://localhost:3003'
 
 // Web Push (VAPID) - live in this deployment 
 

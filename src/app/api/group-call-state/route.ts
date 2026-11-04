@@ -6,7 +6,8 @@ import { requireActionOwner } from '@/lib/wallet-authorization'
 import { canJoinConversationCall, readGroupCallProbe } from '@/lib/group-call-access'
 
 export const dynamic = 'force-dynamic'
-const SOCKET_URL = 'http://localhost:3003'
+// PULSE_RELAY_BASE retargets split-host deployments; default literal is the drift-guarded single-host default.
+const SOCKET_URL = process.env.PULSE_RELAY_BASE?.replace(/\/+$/, '') || 'http://localhost:3003'
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } })
 
 export async function GET(req: Request) {

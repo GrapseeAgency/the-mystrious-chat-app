@@ -58,7 +58,9 @@ async function emitBotTyping(
   const secret = process.env.CRON_SECRET
   if (!secret) return
   try {
-    await fetch('http://localhost:3003/typing', {
+    // PULSE_RELAY_BASE retargets split-host deployments; default literal is the drift-guarded single-host default.
+    const RELAY_BASE = process.env.PULSE_RELAY_BASE?.replace(/\/+$/, '') || 'http://localhost:3003'
+    await fetch(`${RELAY_BASE}/typing`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-pulse-key': secret },
       body: JSON.stringify({

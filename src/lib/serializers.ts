@@ -616,7 +616,8 @@ export function normalizeInviteCode(value: unknown): string {
 
 // Socket relay (best-effort - never fails the API call) 
 
-const SOCKET_URL = 'http://localhost:3003'
+// PULSE_RELAY_BASE retargets split-host deployments; default literal is the drift-guarded single-host default.
+const SOCKET_URL = process.env.PULSE_RELAY_BASE?.replace(/\/+$/, '') || 'http://localhost:3003'
 
 export type PulseSocketEvent =
   | 'message:new'

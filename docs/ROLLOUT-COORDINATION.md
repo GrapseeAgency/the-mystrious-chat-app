@@ -4,6 +4,14 @@ Section 16 item 5 (OPEN — coordinated backend/relay/client rollout) and item 6
 (production migration/deployment proof) record what must ship as ONE unit and
 what this repository can and cannot prove.
 
+> Self-host runbook: [`deploy/README.md`](../deploy/README.md) — Path A
+> (bare metal, the exact stack the development sandbox verified live: web
+> `bun run dev` :3000 + relay :3003 + Caddy gateway :81) and Path B (Docker
+> compose packaging the same topology; declarative-only, never executed —
+> no Docker daemon in the sandbox, no container CI). `PULSE_RELAY_BASE` /
+> `PULSE_ORIGIN` retarget the cross-service hops for split hosts; the
+> defaults stay the drift-guarded single-host literals.
+
 ## The units that deploy together
 
 The relay (`mini-services/pulse-socket`) and the Next backend are not
