@@ -2882,9 +2882,12 @@ struct MirrorRoomSheetView: View {
     @State private var previewNow = Date()
 
     var body: some View {
-        MirrorPanel(title: panelTitle) {
-            switch sheet {
-            case .info:
+        // R104 - one chrome per sheet: every case owns its MirrorPanel. The
+        // old outer wrapper stacked a second identical panel around each
+        // R102 builder (double title bar, double X, double background).
+        switch sheet {
+        case .info:
+            MirrorPanel(title: row.isGroup ? "Group info" : "Chat info") {
                 MirrorPanelScroll {
                     ForEach(memberRows, id: \.id) { member in
                         MirrorPanelUserRow(
@@ -2897,7 +2900,9 @@ struct MirrorRoomSheetView: View {
                         )
                     }
                 }
-            case .search:
+            }
+        case .search:
+            MirrorPanel(title: "Search in conversation") {
                 MirrorPanelSearch(query: $query)
                 MirrorPanelScroll {
                     let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -2916,7 +2921,9 @@ struct MirrorRoomSheetView: View {
                         .padding(.horizontal, 8).padding(.vertical, 6)
                     }
                 }
-            case .pinned:
+            }
+        case .pinned:
+            MirrorPanel(title: "Pinned messages") {
                 MirrorPanelScroll {
                     if let pinError {
                         Button(pinError + " Retry") { Task { await loadPins() } }
@@ -2949,41 +2956,45 @@ struct MirrorRoomSheetView: View {
                             .padding(.horizontal, 8).padding(.vertical, 6)
                         }
                     } else if pinError == nil {
-                        MirrorPanelHint("Loading pins…")
+                        MirrorPanelHint("Loading pins\u{2026}")
                     }
                 }
                 .task { await loadPins() }
-            // R102 - the tray surfaces
-            case .poll:
-                if schedulingSupported {
-                    MirrorPollBuilder(session: session, row: row, onSent: onSent)
-                } else {
+            }
+        // R102 - the tray surfaces (self-chromed builders)
+        case .poll:
+            if schedulingSupported {
+                MirrorPollBuilder(session: session, row: row, onSent: onSent)
+            } else {
+                MirrorPanel(title: "New poll") {
                     MirrorPanelHint("This poll composer sends a named poll. Turn off anonymous mode and effects first; your draft is unchanged.")
                 }
-            case .schedule:
-                if schedulingSupported {
-                    MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent,
-                        captureDraft: captureScheduledDraft, onScheduled: onScheduled)
-                } else {
+            }
+        case .schedule:
+            if schedulingSupported {
+                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent,
+                    captureDraft: captureScheduledDraft, onScheduled: onScheduled)
+            } else {
+                MirrorPanel(title: "Schedule a message") {
                     MirrorPanelHint("Scheduling supports plain named messages only. Turn off anonymous mode and effects first; your draft is unchanged.")
                 }
-            case .phrases:
-                MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
-            case .sticker:
-                MirrorStickerBuilder(session: session, row: row, onCreated: onCreated)
-            case .events:
-                MirrorEventsBuilder(session: session, row: row, onSent: onSent)
-            case .kanban:
-                MirrorKanbanBuilder(session: session, row: row, onSent: onSent)
-            case .tournament:
-                MirrorTournamentBuilder(session: session, row: row, onSent: onSent, onCreated: onCreated)
-            case .location:
-                MirrorLocationBuilder(session: session, row: row, onCreated: onCreated)
-            case .whiteboard:
-                MirrorWhiteboardBoardView(session: session, row: row)
-            case .redpacket:
-                MirrorRedPacketComposerView(session: session, row: row, onCreated: onCreated)
             }
+        case .phrases:
+            MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
+        case .sticker:
+            MirrorStickerBuilder(session: session, row: row, onCreated: onCreated)
+        case .events:
+            MirrorEventsBuilder(session: session, row: row, onSent: onSent)
+        case .kanban:
+            MirrorKanbanBuilder(session: session, row: row, onSent: onSent)
+        case .tournament:
+            MirrorTournamentBuilder(session: session, row: row, onSent: onSent, onCreated: onCreated)
+        case .location:
+            MirrorLocationBuilder(session: session, row: row, onCreated: onCreated)
+        case .whiteboard:
+            MirrorWhiteboardBoardView(session: session, row: row)
+        case .redpacket:
+            MirrorRedPacketComposerView(session: session, row: row, onCreated: onCreated)
         }
         .onReceive(session.messageVisibilityClock) { now in
             previewNow = now
@@ -3039,23 +3050,6 @@ struct MirrorRoomSheetView: View {
         }
     }
 
-    private var panelTitle: String {
-        switch sheet {
-        case .info: return row.isGroup ? "Group info" : "Chat info"
-        case .search: return "Search in conversation"
-        case .pinned: return "Pinned messages"
-        case .poll: return "New poll"
-        case .schedule: return "Schedule a message"
-        case .phrases: return "Quick phrases"
-        case .sticker: return "Stickers"
-        case .events: return "New event"
-        case .kanban: return "Kanban card"
-        case .tournament: return "New tournament"
-        case .location: return "Share location"
-        case .whiteboard: return "Whiteboard"
-        case .redpacket: return "Red packet"
-        }
-    }
 }
 
 // MARK: R102 - tray shared atoms + real surfaces
@@ -3854,6 +3848,8 @@ private struct MirrorWhiteboardBoardView: View {
     }
 
     var body: some View {
+        // R104 - self-chromed like every sibling builder: one panel, one X.
+        MirrorPanel(title: "Whiteboard") {
         VStack(alignment: .leading, spacing: 0) {
             // status dot row (web 663-671): rose offline, amber otherwise
             HStack(spacing: 6) {
@@ -4015,6 +4011,7 @@ private struct MirrorWhiteboardBoardView: View {
             guard confirmClear else { return }
             do { try await Task.sleep(nanoseconds: 2_600_000_000) } catch { return }
             if confirmClear { confirmClear = false }
+        }
         }
     }
 }
