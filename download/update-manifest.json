@@ -1,15 +1,15 @@
 {
-  "versionCode": 55,
-  "versionName": "0.25.0.0.6",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.25.0.0.6/Pulse-v0.25.0.0.6.apk",
+  "versionCode": 56,
+  "versionName": "0.25.0.0.7",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.25.0.0.7/Pulse-v0.25.0.0.7.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "da283358e37bd52d25864f98fbe159801b70fdbcf608126ed44ab9f719b509de",
-  "notes": "The real-device audit build - every CI-proven repair of sections 1-16 as of the R67 receipt chain: the MirrorSheet back-dismissal flake root-caused (bounded waits on both dismissal assertions) with the api 28/30/34 instrumented matrix all green, scroll-geometry anchor preservation (prepend anchor id+offset, away-tail no-follow, header-compensated exact jump, restore rebuild), TalkBack labels on every actionable icon-only control, RTL + 2x font-scale contracts, reduce-motion gating across every spring site on both platforms, CallAudioRoutes earpiece/speaker/focus-loss kernels, the API 28 acceptance leg, iOS main-river prepend anchoring + motion gating, web session-credential adoption with owner-bound endpoint authorization closure (legacy react/viewed/thread/uploads tightened), real-serializer search/saved/mentions coverage, paired-device server-contract acceptance, and the self-host runbook (deploy/) for pointing the app at your own backend. Device gates (real APNs/FCM delivery, Bluetooth/wired audio, CallKit/Telecom, physical paired-device runs) remain the audit's job - this build is built for exactly that audit. Version 0.25.0.0.6, versionCode 55.",
+  "sha256": "cd380af147153adc582cf14c1c8aa619bf16ebdea7895f7c1015fcb18da27d7e",
+  "notes": "The R105 device-audit build - the iOS artboard mirror becomes REACHABLE at last: Settings > Appearance 'Artboard preview' mounts the R59-R104 mirror surfaces (artboard home rails, room trays, one-chrome sheets, the four R103 tiles: whiteboard, red packet composer, Stage/Space voice-room joins) and the mirror's own Profile > Settings > 'Exit artboard preview' row always takes you back to the full app - nobody gets trapped in the preview. The Android mirror already boots on every build (R76+ native-only wave). This build carries every CI-proven repair of sections 1-16 through the R104 receipt chain (sheet-back flake fix, scroll-geometry anchors, TalkBack labels, RTL + 2x font-scale, reduce-motion gating both platforms, CallAudioRoutes kernels, web session-credential adoption + endpoint authorization closure, the R103 parity trio and the R104 one-chrome-per-sheet fix). Device gates (real APNs/FCM delivery, Bluetooth/wired audio, CallKit/Telecom, physical paired-device runs, and now the artboard preview's visual acceptance on a real screen) remain the audit's job - this build is built for exactly that audit. Version 0.25.0.0.7, versionCode 56.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-11-04T15:45:00Z",
-  "apkSize": 27152464,
-  "version": "0.25.0.0.6",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.25.0.0.6/Pulse-v0.25.0.0.6.apk"
+  "updatedAt": "2026-11-05T12:40:00Z",
+  "apkSize": 27160258,
+  "version": "0.25.0.0.7",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.25.0.0.7/Pulse-v0.25.0.0.7.apk"
 }
