@@ -5913,6 +5913,28 @@ Stage Summary:
 - Remote main = 4c2f9c85, CI green first push, web untouched, no build/tag/release until the user says.
 - Next candidates (honest): device pass of the four new tiles behind the mirror-audit flag; the mirror-sheet double-panel pattern (R102 siblings render MirrorPanel inside MirrorPanel) could be flattened in a styling pass; hub/spotlight parity debt if the user's audit turns there next.
 
+---
+Task ID: R104
+Agent: orchestrator (Z.ai main session)
+Task: the standing full-app audit order continues. This round: a first-hand styling audit of the mirror sheet stack surfaced a real chrome defect on every R102 tray sheet - ship the fix, CI green, no web changes.
+
+Work Log:
+- DEFECT (first-hand): MirrorRoomSheetView wrapped its whole switch in MirrorPanel(title: panelTitle) AND every R102 builder rendered its OWN MirrorPanel with the same title (verified per builder: MirrorPollBuilder 'New poll', MirrorScheduleBuilder 'Schedule a message', MirrorPhrasesBuilder 'Quick phrases', MirrorStickerBuilder 'Stickers', MirrorEventsBuilder 'New event', MirrorKanbanBuilder 'Kanban card', MirrorTournamentBuilder 'New tournament', MirrorLocationBuilder 'Share location') - every tray sheet therefore showed TWO identical title bars, TWO X buttons, double padding/hairline/rounded-24 backgrounds. The R103 red packet composer inherited the same shape (own MirrorPanel('Red packet') inside the wrapper). Only info/search/pinned and the R103 whiteboard (content-only by design) rendered single-chrome under the wrapper.
+- FIX (commit 77a0f8ed): the switch sits bare and every case owns its chrome - info/search/pinned wrap their own MirrorPanel with their exact titles ('Group info'/'Chat info', 'Search in conversation', 'Pinned messages'), the two scheduling-guard fallbacks (poll/schedule) get their own panel + verbatim hint instead of a bare hint floating without chrome, every builder's own panel becomes THE single chrome, the whiteboard board is self-chromed (MirrorPanel 'Whiteboard' inside its own body, sibling-consistent), the dead room panelTitle property is removed. The home sheet view (MirrorHomeSheetView) verified first-hand: its contents are bare inside its single panel - it NEVER had the defect and is untouched.
+- CI ROUND 1 (first-hand from run 41958458706's job log): build failed with 'MirrorRootView.swift:2999:10: error: instance member onReceive cannot be used on type View' - a bare switch is a STATEMENT, not an expression, so the shared onReceive/onChange/onDisappear chain had nothing to chain on. Fixed in c938ca08: the switch rides a Group (ViewBuilder buildEither handles the per-case types) and the shared modifiers chain on the group.
+- FINAL CI VERDICTS (first-hand, GitHub Actions API): Pulse iOS CI SUCCESS on c938ca08 (run 41959390964, build-test + sequenced unsigned archive), Pulse iOS composer regressions SUCCESS on c938ca08 (run 41959391106). Both workflows also ran the 77a0f8ed push and failed there (runs 41958458706/41958458734) - that failure is the documented compile round above. Web/Android workflows untouched (iOS-only change; Android did not re-trigger).
+- GATES: web src/ ZERO diff; Kotlin ZERO diff; brace gate 1/1 BALANCED at every push; zero literal emoji glyphs in the diff; lint clean; db/custom.db never staged; no build, no tag, no release (user order); PAT inline only.
+- LIVE STACK: web 3000 / pulse-socket 3003 / pulse-keeper 3004 all 200 at receipt time.
+
+HONEST LIMITS:
+- The single-chrome result is CI-proven at compile+test level; the visual claim (one title bar, one X per sheet) is first-hand from the code structure, not from a rendered screenshot - the sandbox has no iOS simulator, so the look stays device-acceptance like every mirror surface.
+- The R102 era shipped with the double panel through many green CIs - green CI never proved the look; this is exactly the class of defect the user's audit order exists to catch (decorations must match the web, one drawer chrome per sheet like the web's Drawer).
+
+Stage Summary:
+- Every mirror room sheet now renders one chrome: one title, one X, one background - the web drawer shape.
+- Remote main = c938ca08 + this receipt, both iOS workflows green, web untouched.
+- Next candidates (honest): the same one-chrome audit pass over the kebab/overlay stack if the user wants it next; device pass of the four R103 tiles behind the mirror-audit flag.
+
 ## R42 - Section 4: Attachments, recording, import, and sharing
 
 - SCOPE: the 12-item section-4 checklist (8 coding items + 4 VERIFY items deferred to device acceptance per the standing rule). Backend + Kotlin + Swift; web frontend untouched (git diff --stat -- src/components src/app/page.tsx empty).
