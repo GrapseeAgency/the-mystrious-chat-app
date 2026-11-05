@@ -1657,6 +1657,8 @@ struct MirrorRoomView: View {
                                     viewerId: session.viewer?.id ?? "",
                                     bubbleMax: bubbleMax,
                                     mediaBaseURL: session.api.baseURL,
+                                    api: session.api,
+                                    onToast: { session.toasts.show($0) },
                                     onToggleReaction: { emoji in react(message.id, emoji) }
                                 )
                                 .padding(.top, head ? 10 : 2)
@@ -2116,6 +2118,24 @@ struct MirrorRoomView: View {
         }
     }
 
+    // R103 - the Stage/Space tiles join the session-owned voice rooms (the
+    // web dispatches STAGE_OPEN_EVENT/SPACE_OPEN_EVENT; the Android mirror
+    // calls onOpenLiveRoom(RoomKind)). joinStage/joinSpace own the entire
+    // lifecycle (audio seat, hand protocol, optimistic positions) and the
+    // root-level VoiceRoomsSurfaceHost presents the surface above every tab
+    // (VR-1: membership survives chat navigation).
+    private func openLiveRoom(kind: VoiceRoomSessionModel.Surface) {
+        guard let rooms = session.voiceRooms else {
+            session.toasts.show("Live rooms are still starting up - try again in a moment.")
+            return
+        }
+        switch kind {
+        case .stage: rooms.joinStage(conversationId: row.id)
+        case .space: rooms.joinSpace(conversationId: row.id)
+        default: break
+        }
+    }
+
     private func armedPill(icon: String, label: String, tint: Color, wash: Color, onClear: @escaping () -> Void) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon).font(.system(size: 11, weight: .bold))
@@ -2177,10 +2197,12 @@ struct MirrorRoomView: View {
         .padding(.bottom, 12)
     }
 
-    // Web tile set 1:1 (trayGroups 2581-2830). Whiteboard / Red packet /
-    // Stage / Space have NO iOS mirror surface yet - they render exactly
-    // like the web's own disabled tiles (opacity-40, untappable) instead of
-    // pretending. Every other tile wires a real send or a real surface.
+    // Web tile set 1:1 (trayGroups 2581-2830). R103 closes the last four
+    // tiles: Whiteboard and Red packet open real mirror sheets on the live
+    // APIs, Stage and Space join the session-owned voice rooms (the web
+    // dispatches STAGE_OPEN_EVENT/SPACE_OPEN_EVENT; the root-level
+    // VoiceRoomsSurfaceHost presents the live surface above every tab).
+    // Every tile wires a real send or a real surface.
     private var createTiles: [MirrorTrayTileSpec] {
         [
             MirrorTrayTileSpec(icon: "doc", label: "Document", help: "Share a PDF, TXT, CSV or ZIP", tone: MirrorTrayTone.orange) {
@@ -2199,8 +2221,14 @@ struct MirrorRoomView: View {
                 closeTray()
                 activeSheet = .schedule
             },
-            MirrorTrayTileSpec(icon: "scribble", label: "Whiteboard", help: "Sketch together on one canvas", tone: MirrorTrayTone.amber, disabled: true) {},
-            MirrorTrayTileSpec(icon: "gift", label: "Red packet", help: "Wrap coins as a gift", tone: MirrorTrayTone.rose, disabled: true) {},
+            MirrorTrayTileSpec(icon: "scribble", label: "Whiteboard", help: "Sketch together on one canvas", tone: MirrorTrayTone.amber) {
+                closeTray()
+                activeSheet = .whiteboard
+            },
+            MirrorTrayTileSpec(icon: "gift", label: "Red packet", help: "Wrap coins as a gift", tone: MirrorTrayTone.rose) {
+                closeTray()
+                activeSheet = .redpacket
+            },
         ]
     }
 
@@ -2210,8 +2238,14 @@ struct MirrorRoomView: View {
                 closeTray()
                 activeSheet = .events
             },
-            MirrorTrayTileSpec(icon: "waveform", label: "Stage", help: "Live audio stage for the room", tone: MirrorTrayTone.orange, disabled: true) {},
-            MirrorTrayTileSpec(icon: "map", label: "Space", help: "Hang out in a spatial room", tone: MirrorTrayTone.amber, disabled: true) {},
+            MirrorTrayTileSpec(icon: "waveform", label: "Stage", help: "Live audio stage for the room", tone: MirrorTrayTone.orange) {
+                closeTray()
+                openLiveRoom(kind: .stage)
+            },
+            MirrorTrayTileSpec(icon: "map", label: "Space", help: "Hang out in a spatial room", tone: MirrorTrayTone.amber) {
+                closeTray()
+                openLiveRoom(kind: .space)
+            },
             MirrorTrayTileSpec(icon: "gamecontroller", label: "Game", help: "Start tic-tac-toe here", tone: MirrorTrayTone.violet) {
                 closeTray()
                 startGame()
@@ -2568,6 +2602,10 @@ struct MirrorBubble: View {
     let viewerId: String
     let bubbleMax: CGFloat
     let mediaBaseURL: URL
+    // R103 - the red packet card fetches/grabs through the live API and
+    // reports grab failures through the room's toast channel.
+    let api: PulseAPIClient
+    let onToast: (String) -> Void
     let onToggleReaction: (String) -> Void
 
     private var receiptStatus: String {
@@ -2614,6 +2652,18 @@ struct MirrorBubble: View {
                         .font(.system(size: 13)).italic().foregroundColor(MirrorArt.faint)
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, style: StrokeStyle(lineWidth: 1, dash: [6, 4])))
+                } else if message.kind == "redpacket", let packet = PulseWave7Logic.redPacketPayload(message.payload) {
+                    // R103 - a red packet renders as the web's own gradient
+                    // card (redpacket-bubble.tsx), never wrapped in a chat
+                    // bubble. Deleted packets keep the tombstone above.
+                    MirrorRedPacketBubble(
+                        packet: packet,
+                        mine: message.senderId == viewerId,
+                        senderName: message.sender?.name ?? "",
+                        viewerId: viewerId,
+                        api: api,
+                        onToast: onToast
+                    )
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         // R54-c: sender name INSIDE the incoming group bubble
@@ -2746,6 +2796,8 @@ enum MirrorRoomSheet: String, Identifiable {
     case info, search, pinned
     // R102 - real tray surfaces (every one a live API send)
     case poll, schedule, phrases, sticker, events, kanban, tournament, location
+    // R103 - whiteboard + red packet boards/packets on the live wire
+    case whiteboard, redpacket
     var id: String { rawValue }
 }
 
@@ -2927,6 +2979,10 @@ struct MirrorRoomSheetView: View {
                 MirrorTournamentBuilder(session: session, row: row, onSent: onSent, onCreated: onCreated)
             case .location:
                 MirrorLocationBuilder(session: session, row: row, onCreated: onCreated)
+            case .whiteboard:
+                MirrorWhiteboardBoardView(session: session, row: row)
+            case .redpacket:
+                MirrorRedPacketComposerView(session: session, row: row, onCreated: onCreated)
             }
         }
         .onReceive(session.messageVisibilityClock) { now in
@@ -2996,6 +3052,8 @@ struct MirrorRoomSheetView: View {
         case .kanban: return "Kanban card"
         case .tournament: return "New tournament"
         case .location: return "Share location"
+        case .whiteboard: return "Whiteboard"
+        case .redpacket: return "Red packet"
         }
     }
 }
@@ -3739,5 +3797,677 @@ private final class MirrorLocationOnce: NSObject, ObservableObject, CLLocationMa
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         denied = true
+    }
+}
+
+// MARK: R103 - Whiteboard surface (whiteboard-sheet.tsx 643-849 truth)
+
+/// The web whiteboard drawer on the mirror chassis: amber icon chip +
+/// status-dot header, dot-grid canvas (web 22px radial grid at
+/// rgba(255,255,255,0.09)), the web stroke palette and widths
+/// (2/5/10), Undo and the two-tap Clear (2.6s auto-reset, rose
+/// confirm). The domain session (PulseWhiteboardSession) owns sync,
+/// durable drafts, command acks and the poll loop - this view only
+/// draws and gestures.
+private struct MirrorWhiteboardBoardView: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var board: PulseWhiteboardSession
+    // Web STROKE_COLORS (whiteboard-sheet.tsx:60) - 'emerald' is the ember
+    // #c9762b exactly like the web's own palette entry.
+    private let colors: [(String, String)] = [
+        ("#c9762b", "Emerald"), ("#f43f5e", "Rose"), ("#f59e0b", "Amber"),
+        ("#8b5cf6", "Violet"), ("#06b6d4", "Cyan"), ("#f4f4f5", "Chalk white"),
+    ]
+    private let widths: [Double] = [2, 5, 10] // web STROKE_WIDTHS
+    @State private var color = "#c9762b"
+    @State private var width = 5.0
+    @State private var confirmClear = false
+    @State private var live: [[Double]] = []
+
+    init(session: PulseSession, row: MirrorViewModel.MirrorRow) {
+        self.session = session
+        self.row = row
+        let api = session.api
+        let conversationId = row.id
+        _board = StateObject(wrappedValue: PulseWhiteboardSession(
+            conversationId: conversationId,
+            viewerId: api.userId,
+            load: { try await api.whiteboard(conversationId: conversationId, since: nil) },
+            post: { try await api.postWhiteboardStrokes(conversationId: conversationId, strokes: $0) },
+            undo: {
+                let result = try await api.undoWhiteboardStroke(conversationId: conversationId)
+                guard result.success == true else { throw URLError(.badServerResponse) }
+            },
+            clear: { try await api.clearWhiteboard(conversationId: conversationId) }
+        ))
+    }
+
+    private var strokeCount: Int { board.remote.count + board.pending.count + (live.isEmpty ? 0 : 1) }
+
+    /// Web status line (whiteboard-sheet.tsx:629-633).
+    private var statusLine: String {
+        if board.error != nil { return "Reconnecting\u{2026}" }
+        if !board.ready { return "Syncing\u{2026}" }
+        return "\(strokeCount) \(strokeCount == 1 ? "stroke" : "strokes") \u{00b7} live"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // status dot row (web 663-671): rose offline, amber otherwise
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(board.error != nil ? MirrorArt.red : MirrorTrayTone.amber)
+                    .frame(width: 6, height: 6)
+                Text(statusLine).font(.system(size: 11, weight: .medium)).foregroundColor(MirrorArt.dim)
+                Spacer(minLength: 0)
+                if let error = board.error, !error.isEmpty {
+                    Text(error).font(.system(size: 10, weight: .medium)).foregroundColor(MirrorArt.faint)
+                        .lineLimit(1).frame(maxWidth: 160, alignment: .trailing)
+                }
+            }
+            .padding(.bottom, 10)
+            // canvas (web 688-728): dot-grid backdrop + normalized strokes
+            GeometryReader { geo in
+                let canvasSize = geo.size
+                ZStack {
+                    MirrorWhiteboardCanvas(
+                        remote: board.remote,
+                        pending: board.pending,
+                        live: live,
+                        liveColor: color,
+                        liveWidth: width
+                    )
+                    if strokeCount == 0 {
+                        // web 710-722 empty hint
+                        VStack(spacing: 10) {
+                            Image(systemName: "pencil.line")
+                                .font(.system(size: 20))
+                                .foregroundColor(MirrorArt.faint)
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.05))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                            Text("The board is empty - draw something, everyone in this chat sees it live.")
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundColor(MirrorArt.faint)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 240)
+                        }
+                        .allowsHitTesting(false)
+                    }
+                    if !board.ready {
+                        Text(board.error == nil ? "Loading the board\u{2026}" : "Offline - strokes you draw are saved locally")
+                            .font(.system(size: 12, weight: .medium)).foregroundColor(MirrorArt.faint)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(MirrorArt.bg)
+                            .clipShape(Capsule())
+                            .allowsHitTesting(false)
+                    }
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard board.ready, !board.busy else { return }
+                            let nx = Double(min(max(value.location.x, 0), canvasSize.width)) / Double(max(canvasSize.width, 1))
+                            let ny = Double(min(max(value.location.y, 0), canvasSize.height)) / Double(max(canvasSize.height, 1))
+                            guard live.count < 500 else { return } // web POINTS_MAX_PER_STROKE
+                            if let last = live.last,
+                               abs(last[0] - nx) < 0.002, abs(last[1] - ny) < 0.002 { return }
+                            live.append([nx, ny])
+                        }
+                        .onEnded { _ in
+                            guard board.ready, !board.busy else { live = []; return }
+                            board.draw(color: color, width: width, points: live)
+                            live = []
+                        }
+                )
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 340)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .background(MirrorArt.bg)
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+            // toolbar (web 731-818)
+            VStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    // color radiogroup (web 735-756)
+                    ForEach(colors, id: \.0) { entry in
+                        Button {
+                            color = entry.0
+                        } label: {
+                            Circle().fill(Color(hex: entry.0))
+                                .frame(width: 20, height: 20)
+                                .overlay(Circle().strokeBorder(color == entry.0 ? MirrorArt.text : Color.clear, lineWidth: 2))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(entry.1)
+                    }
+                    Rectangle().fill(Color.white.opacity(0.1)).frame(width: 1, height: 28)
+                    // width radiogroup (web 760-781): dots sized by width
+                    ForEach(widths, id: \.self) { w in
+                        Button {
+                            width = w
+                        } label: {
+                            Circle().fill(MirrorArt.text)
+                                .frame(width: CGFloat(w) * 1.2 + 2, height: CGFloat(w) * 1.2 + 2)
+                                .frame(width: 36, height: 36)
+                                .background(width == w ? Color.white.opacity(0.1) : Color.clear)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Stroke width \(Int(w))")
+                    }
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 8) {
+                    // Undo (web 793-799)
+                    Button {
+                        PulseHaptics.tap()
+                        board.undoMine()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.uturn.backward").font(.system(size: 13, weight: .bold))
+                            Text("Undo").font(.system(size: 13, weight: .bold))
+                        }
+                        .foregroundColor(MirrorArt.text)
+                        .frame(maxWidth: .infinity).frame(height: 44)
+                        .background(Color.white.opacity(0.05))
+                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!board.ready || board.busy || !board.pending.isEmpty)
+                    .opacity(!board.ready || board.busy || !board.pending.isEmpty ? 0.4 : 1)
+                    .accessibilityLabel("Undo my last stroke")
+                    // Clear (web 801-813): two-tap confirm, rose while armed
+                    Button {
+                        PulseHaptics.tap()
+                        if confirmClear {
+                            confirmClear = false
+                            board.clearBoard()
+                        } else {
+                            confirmClear = true
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "eraser").font(.system(size: 13, weight: .bold))
+                            Text(confirmClear ? "Tap again" : "Clear board").font(.system(size: 13, weight: .bold))
+                        }
+                        .foregroundColor(confirmClear ? .white : MirrorArt.red)
+                        .frame(maxWidth: .infinity).frame(height: 44)
+                        .background(confirmClear ? MirrorArt.red : Color.white.opacity(0.05))
+                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(confirmClear ? Color.clear : MirrorArt.hairline, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!board.ready || board.busy)
+                    .opacity(!board.ready || board.busy ? 0.4 : 1)
+                    .accessibilityLabel(confirmClear ? "Tap again to clear the whole board" : "Clear board for everyone")
+                }
+            }
+            .padding(.top, 12)
+        }
+        .task { await board.run() }
+        .onDisappear { board.stop() }
+        // web 596: the 2.6s confirm auto-reset
+        .task(id: confirmClear) {
+            guard confirmClear else { return }
+            do { try await Task.sleep(nanoseconds: 2_600_000_000) } catch { return }
+            if confirmClear { confirmClear = false }
+        }
+    }
+}
+
+/// One shared Canvas: dot-grid backdrop (web 693-694: 22px radial grid)
+/// plus remote + pending + live strokes, all normalized 0..1.
+private struct MirrorWhiteboardCanvas: View {
+    let remote: [WireWhiteboardStroke]
+    let pending: [WireWhiteboardStrokePost]
+    let live: [[Double]]
+    let liveColor: String
+    let liveWidth: Double
+
+    var body: some View {
+        Canvas { context, size in
+            // dot grid (web 693-694)
+            let dotColor = Color.white.opacity(0.09)
+            var x: CGFloat = 11
+            while x < size.width {
+                var y: CGFloat = 11
+                while y < size.height {
+                    context.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 1.2, height: 1.2)), with: .color(dotColor))
+                    y += 22
+                }
+                x += 22
+            }
+            func draw(_ points: [[Double]]?, color: String?, width: Double?) {
+                guard let points, points.count >= 2 else { return }
+                var path = Path()
+                guard let first = points.first else { return }
+                path.move(to: CGPoint(x: first[0] * size.width, y: first[1] * size.height))
+                for pair in points.dropFirst() {
+                    path.addLine(to: CGPoint(x: pair[0] * size.width, y: pair[1] * size.height))
+                }
+                context.stroke(path, with: .color(Color(hex: color ?? "#c9762b")),
+                    style: StrokeStyle(lineWidth: CGFloat(width ?? 3), lineCap: .round, lineJoin: .round))
+            }
+            for stroke in remote {
+                draw(stroke.points, color: stroke.color, width: stroke.width)
+            }
+            for stroke in pending {
+                draw(stroke.points, color: stroke.color, width: stroke.width)
+            }
+            draw(live, color: liveColor, width: liveWidth)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: R103 - Red packet composer (redpacket-sheet.tsx truth)
+
+/// The web composer on the mirror chassis: total (1..10,000 PC) with a
+/// whole-number validation, a 1..50 grab stepper, a 60-char festive
+/// note, the live split preview + wallet balance, and the amber→rose
+/// submit. Sends through the journal-backed createRedPacket (durable
+/// replay identity - a lost-ACK retry recovers the same packet), then
+/// appends the server carrier instantly (web pulse:external-message).
+private struct MirrorRedPacketComposerView: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    let onCreated: (WireChatMessage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var amountRaw = ""
+    @State private var count = 1
+    @State private var note = ""
+    @State private var busy = false
+    @State private var coins: Int?
+    @State private var walletEpoch = UUID()
+
+    // server-side bounds (redpacket-sheet.tsx:50-58)
+    private let totalMin = 1, totalMax = 10_000
+    private let countMin = 1, countMax = 50
+    private let noteMax = 60
+
+    private var total: Int? {
+        let value = Int(amountRaw.trimmingCharacters(in: .whitespaces))
+        guard let value else { return nil }
+        return value
+    }
+    private var totalValid: Bool {
+        guard let total else { return false }
+        return total >= totalMin && total <= totalMax
+    }
+    private var countFitsTotal: Bool { totalValid && total! >= count }
+    private var affordable: Bool { coins == nil || (totalValid && total! <= coins!) }
+    private var valid: Bool { totalValid && countFitsTotal && affordable }
+    private var avg: Int { totalValid && countFitsTotal ? total! / count : 0 }
+
+    /// The three rose hints, priority exactly like the web (amount > fit > balance).
+    private var hint: String? {
+        if !amountRaw.isEmpty && !totalValid { return "Enter a whole number between \(totalMin) and \(totalMax) PC." }
+        if totalValid && !countFitsTotal { return "Total must be at least \(count) PC so every grab wins 1 PC." }
+        if totalValid && countFitsTotal && !affordable { return "Insufficient PC - your balance is \(coins ?? 0)." }
+        return nil
+    }
+
+    var body: some View {
+        MirrorPanel(title: "Red packet") {
+            VStack(alignment: .leading, spacing: 12) {
+                MirrorPanelHint("RANDOM SPLIT · EVERY GRAB WINS AT LEAST 1 PC")
+                // amount (web 178-219)
+                MirrorPanelHint("TOTAL (PC)")
+                HStack(spacing: 8) {
+                    TextField("30", text: $amountRaw)
+                        .keyboardType(.numberPad)
+                        .font(.system(size: 16, weight: .bold)).foregroundColor(MirrorArt.text)
+                    Text("PC").font(.system(size: 12, weight: .bold)).foregroundColor(MirrorArt.dim)
+                }
+                .padding(.horizontal, 14).frame(height: 48)
+                .background(MirrorArt.glass7)
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                if let hint {
+                    Text(hint).font(.system(size: 11.5, weight: .medium)).foregroundColor(MirrorArt.red)
+                }
+                // count stepper (web 222-272)
+                MirrorPanelHint("GRABS")
+                HStack(spacing: 8) {
+                    Button {
+                        PulseHaptics.tap()
+                        if count > countMin { count -= 1 }
+                    } label: {
+                        Image(systemName: "minus").font(.system(size: 14, weight: .bold))
+                            .foregroundColor(MirrorArt.textSoft)
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.05))
+                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(count <= countMin)
+                    .opacity(count <= countMin ? 0.4 : 1)
+                    .accessibilityLabel("Decrease grab count")
+                    Text("\(count)")
+                        .font(.system(size: 15, weight: .bold)).foregroundColor(MirrorArt.text)
+                        .frame(maxWidth: .infinity).frame(height: 44)
+                        .background(MirrorArt.glass7)
+                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .accessibilityLabel("Number of grabs")
+                    Button {
+                        PulseHaptics.tap()
+                        if count < countMax { count += 1 }
+                    } label: {
+                        Image(systemName: "plus").font(.system(size: 14, weight: .bold))
+                            .foregroundColor(MirrorArt.textSoft)
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.05))
+                            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(count >= countMax)
+                    .opacity(count >= countMax ? 0.4 : 1)
+                    .accessibilityLabel("Increase grab count")
+                }
+                // note (web 275-296)
+                MirrorPanelHint("NOTE · \(note.count)/\(noteMax)")
+                MirrorTrayField(placeholder: "Lucky money, on me!", text: $note)
+                    .onChange(of: note) { value in
+                        if value.count > noteMax { note = String(value.prefix(noteMax)) }
+                    }
+                // live preview + balance (web 299-316)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text(totalValid ? "\(total!) PC" : "- PC")
+                            .font(.system(size: 12.5, weight: .semibold)).foregroundColor(MirrorArt.text)
+                        Text("· \(count) grab\(count == 1 ? "" : "s")\(totalValid && countFitsTotal ? " · ≈ \(avg) PC each" : "")")
+                            .font(.system(size: 12.5, weight: .medium)).foregroundColor(MirrorArt.dim)
+                    }
+                    if let coins {
+                        HStack(spacing: 6) {
+                            Image(systemName: "wallet.pass").font(.system(size: 12))
+                            Text("Balance \(coins) PC")
+                                .font(.system(size: 11.5, weight: .medium))
+                        }
+                        .foregroundColor(affordable ? MirrorArt.dim : MirrorArt.red)
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Color.white.opacity(0.05))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                // submit (web 319-331): amber→rose gradient like the web
+                Button {
+                    send()
+                } label: {
+                    HStack(spacing: 8) {
+                        if busy { ProgressView().tint(.white) }
+                        Text(busy ? "Sending…" : (totalValid ? "Send \(total!) PC" : "Send red packet"))
+                            .font(.system(size: 15, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity).frame(height: 48)
+                    .background(
+                        Group {
+                            if valid && !busy {
+                                LinearGradient(colors: [MirrorTrayTone.amber, Color(red: 0xFB/255.0, green: 0x71/255.0, blue: 0x85/255.0)],
+                                    startPoint: .leading, endPoint: .trailing)
+                            } else {
+                                Color(red: 0x3F/255.0, green: 0x3F/255.0, blue: 0x46/255.0)
+                            }
+                        }
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                .disabled(!valid || busy)
+                .opacity(!valid && !busy ? 0.6 : 1)
+                .accessibilityLabel("Send red packet")
+            }
+        }
+        .task(id: walletEpoch) {
+            // web: real balance for the affordability hint (staleTime 10s)
+            let epoch = session.sessionGeneration
+            if let wallet = try? await session.api.wallet(),
+               session.sessionGeneration == epoch {
+                coins = wallet.coins
+            }
+        }
+    }
+
+    private func send() {
+        guard valid, !busy, let total else { return }
+        guard session.viewer != nil else {
+            session.toasts.show("The account store is not ready. Nothing was sent.")
+            return
+        }
+        let epoch = session.sessionGeneration
+        busy = true
+        Task {
+            defer { if session.sessionGeneration == epoch { busy = false } }
+            do {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                let result = try await session.api.createRedPacket(
+                    conversationId: row.id, total: total, count: count,
+                    note: note.isEmpty ? nil : String(note.prefix(noteMax)))
+                guard session.sessionGeneration == epoch else { return }
+                if let message = result.message { onCreated(message) }
+                session.toasts.show(result.replayed == true ? "Recovered the previous red packet" : "Red packet sent")
+                PulseHaptics.success()
+                dismiss()
+            } catch {
+                guard session.sessionGeneration == epoch else { return }
+                session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Could not send the red packet.")
+            }
+        }
+    }
+}
+
+// MARK: R103 - Red packet bubble (redpacket-bubble.tsx truth)
+
+/// The web gradient card, 1:1: amber→rose rounded-3xl, the 48pt face
+/// that flips from envelope to the revealed +N after a grab, the web's
+/// exact status-line semantics (mine > grabbed > state), and the
+/// expanded grabs ledger with the Lucky crown on the max grab.
+/// Self-fetching on the real detail endpoint (20s poll like the web).
+private struct MirrorRedPacketBubble: View {
+    let packet: WireRedPacketPayload
+    let mine: Bool
+    let senderName: String
+    let viewerId: String
+    let api: PulseAPIClient
+    let onToast: (String) -> Void
+
+    @State private var detail: WireRedPacketDetail?
+    @State private var failed = false
+    @State private var grabbing = false
+    @State private var expanded = false
+
+    private var note: String {
+        let trimmed = packet.note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "A little luck for you" : trimmed
+    }
+    private var isMine: Bool { mine || (detail?.isMine ?? false) }
+    private var myGrab: Int? { detail?.myGrab }
+    private var status: String? { detail?.packet?.status }
+
+    /// Status line exactly per the web QA contract (mine > grabbed > state).
+    private var statusLine: String {
+        if isMine, let packet = detail?.packet {
+            return "\(packet.grabbed ?? 0) of \(packet.count ?? 0) grabbed - tap for details"
+        }
+        if let myGrab { return "+\(myGrab) PC" }
+        guard let status else { return "…" }
+        if status == "open" { return "Tap to open" }
+        if status == "exhausted" { return "All grabbed" }
+        return "Expired"
+    }
+
+    private var openable: Bool {
+        detail != nil && status == "open" && !isMine && myGrab == nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if failed {
+                // web 138-148 error card
+                HStack(spacing: 12) {
+                    Image(systemName: "gift").font(.system(size: 22)).foregroundColor(MirrorArt.faint)
+                    Text("Red packet unavailable")
+                        .font(.system(size: 12.5, weight: .medium)).foregroundColor(MirrorArt.dim)
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .frame(width: 224)
+                .background(MirrorArt.glass7)
+                .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+            } else {
+                Button {
+                    if openable { grab() } else { PulseHaptics.tap(); expanded.toggle() }
+                } label: {
+                    HStack(spacing: 12) {
+                        // face (web 168-209): envelope ↔ revealed +N
+                        ZStack {
+                            if let myGrab {
+                                Text("+\(myGrab)")
+                                    .font(.system(size: 15, weight: .heavy)).foregroundColor(.white)
+                                    .transition(.scale(scale: 0.7).combined(with: .opacity))
+                            } else if grabbing || detail == nil {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "gift.fill").font(.system(size: 26)).foregroundColor(.white)
+                            }
+                        }
+                        .frame(width: 48, height: 48)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(note)
+                                .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                                .lineLimit(1)
+                            Text(statusLine)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.9)).lineLimit(1)
+                            Text(isMine ? "From you" : "From \(senderName.isEmpty ? "the room" : senderName)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7)).lineLimit(1)
+                        }
+                    }
+                    .padding(14)
+                    .frame(width: 224, alignment: .leading)
+                    .background(LinearGradient(colors: [MirrorTrayTone.amber, Color(red: 0xF4/255.0, green: 0x3F/255.0, blue: 0x5E/255.0)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                }
+                .buttonStyle(.plain)
+                .disabled(grabbing)
+                .accessibilityLabel(openable ? "Grab red packet" : "Red packet")
+                if expanded, let detail {
+                    // grabs ledger (web 222-259): max-h-40 scroll + totals footer
+                    VStack(spacing: 0) {
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                if (detail.grabs ?? []).isEmpty {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "person.2").font(.system(size: 13)).foregroundColor(MirrorArt.faint)
+                                        Text("No grabs yet").font(.system(size: 12, weight: .medium)).foregroundColor(MirrorArt.faint)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 10).padding(.vertical, 8)
+                                } else {
+                                    let grabs = detail.grabs ?? []
+                                    let maxAmount = grabs.compactMap(\.amount).max() ?? 0
+                                    ForEach(Array(grabs.enumerated()), id: \.element.userId) { _, grab in
+                                        HStack(spacing: 10) {
+                                            Text(String((grab.name ?? "P").prefix(1)).uppercased())
+                                                .font(.system(size: 11, weight: .bold)).foregroundColor(MirrorArt.dim)
+                                                .frame(width: 28, height: 28)
+                                                .background(Color.white.opacity(0.12))
+                                                .clipShape(Circle())
+                                            Text((grab.name ?? "Player") + (grab.userId == viewerId ? " · you" : ""))
+                                                .font(.system(size: 12.5, weight: .semibold)).foregroundColor(MirrorArt.textSoft)
+                                                .lineLimit(1)
+                                            if grabs.count > 1, grab.amount == maxAmount, let amount = grab.amount, amount > 0 {
+                                                HStack(spacing: 2) {
+                                                    Image(systemName: "crown.fill").font(.system(size: 9))
+                                                    Text("Lucky").font(.system(size: 10, weight: .bold))
+                                                }
+                                                .foregroundColor(MirrorTrayTone.amber)
+                                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                                .background(MirrorTrayTone.amber.opacity(0.15))
+                                                .clipShape(Capsule())
+                                            }
+                                            Spacer(minLength: 0)
+                                            Text("+\(grab.amount ?? 0)")
+                                                .font(.system(size: 12.5, weight: .bold))
+                                                .foregroundColor(MirrorTrayTone.amber)
+                                        }
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 160)
+                        Text("Total \(detail.packet?.total ?? 0) PC · \(detail.packet?.grabbed ?? 0)/\(detail.packet?.count ?? 0) grabbed")
+                            .font(.system(size: 11, weight: .medium)).foregroundColor(MirrorArt.dim)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .overlay(Rectangle().fill(MirrorArt.hairline).frame(height: 1), alignment: .top)
+                    }
+                    .frame(width: 224)
+                    .background(MirrorArt.panel)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: expanded)
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: myGrab)
+        .task {
+            // web refetchInterval 20s + staleTime 5s - one loop keeps the
+            // open→exhausted→expired transitions live.
+            while !Task.isCancelled {
+                do {
+                    detail = try await api.redPacketDetail(packet.packetId)
+                    failed = false
+                } catch {
+                    // a stale detail stays rendered; only a cold first read
+                    // shows the web's unavailable card
+                    if detail == nil { failed = true }
+                }
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+            }
+        }
+    }
+
+    private func grab() {
+        guard !grabbing else { return }
+        grabbing = true
+        Task {
+            defer { grabbing = false }
+            do {
+                let result = try await api.grabRedPacket(packet.packetId)
+                // instant local patch (web qc.setQueryData), the next poll re-syncs
+                if let current = detail, let stub = current.packet {
+                    detail = WireRedPacketDetail(
+                        packet: WireRedPacketStub(
+                            id: stub.id, total: stub.total, count: stub.count,
+                            grabbed: result.grabbed ?? stub.grabbed, note: stub.note,
+                            expiresAt: stub.expiresAt, status: stub.status, senderId: stub.senderId),
+                        senderName: current.senderName, grabs: current.grabs,
+                        myGrab: result.amount, isMine: current.isMine)
+                } else {
+                    detail = WireRedPacketDetail(packet: nil, senderName: senderName, grabs: [], myGrab: result.amount, isMine: false)
+                }
+                PulseHaptics.success()
+            } catch {
+                onToast((error as? PulseAPIClient.Failure)?.message ?? "Could not grab the red packet.")
+            }
+        }
     }
 }
