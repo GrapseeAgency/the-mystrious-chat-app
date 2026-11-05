@@ -109,8 +109,15 @@ struct ChatsView: View {
     // (the SAME NewChatSheet the dock's compose button hosts).
     @State private var callsOpen = false
     @State private var newChatOpen = false
+    // R77 - manual join-with-code (web chats-tab.tsx:1383 kebab parity): the
+    // entry sheet asks for the code, then the REAL JoinInviteSheet previews
+    // and joins through /api/invite/[code] exactly like the deep-link path.
+    @State private var joinCodeEntryOpen = false
+    @State private var joinCode: JoinCodePayload?
     // R14 5-b - the spotlight actions block's check-in pending flag.
     @State private var spotlightCheckinPending = false
+    // R77 - PEOPLE row tap: one in-flight DM open at a time.
+    @State private var directMessageBusy = false
 
     var body: some View {
         NavigationStack(path: Binding(get: { path }, set: { next in
@@ -200,6 +207,19 @@ struct ChatsView: View {
             .sheet(isPresented: $newChatOpen) {
                 NewChatSheet(session: session) { conversation in
                     newChatOpen = false
+                    openRoom(conversation)
+                }
+            }
+            // R77 - join-with-code entry (web chats-tab.tsx:1383-1400 copy):
+            // ask for the code, then hand off to the REAL JoinInviteSheet.
+            .sheet(isPresented: $joinCodeEntryOpen) {
+                JoinCodeEntrySheet(onPreview: { code in
+                    joinCodeEntryOpen = false
+                    joinCode = JoinCodePayload(code: code)
+                })
+            }
+            .sheet(item: $joinCode) { payload in
+                JoinInviteSheet(session: session, code: payload.code) { conversation in
                     openRoom(conversation)
                 }
             }
@@ -313,6 +333,36 @@ struct ChatsView: View {
         // (web pushRecent on chat/message activation parity).
         viewModel.noteQueryUsed()
         path.append(RoomRoute(conversation: conv, jumpMessageId: jumpMessageId))
+    }
+
+    /// R77 - PEOPLE row action (web spotlight People parity): start/open the
+    /// DM through the SAME creation path NewChatSheet uses - never a fake row.
+    private func startDirectMessage(_ user: WireUser) {
+        guard !directMessageBusy, let viewer = session.viewer else { return }
+        PulseHaptics.tap()
+        session.noteRoomNavigationIntent()
+        let api = session.api, epoch = session.sessionGeneration
+        let navigation = session.roomNavigationGeneration
+        directMessageBusy = true
+        Task { @MainActor in
+            defer {
+                directMessageBusy = false
+                if session.sessionGeneration == epoch { session.noteInboxChanged() }
+            }
+            do {
+                let conv = try await PulseConversationNavigation.create(viewerId: viewer.id,
+                    memberIds: [user.id], isGroup: false) {
+                    try await api.createConversation(memberIds: [user.id], isGroup: false, name: nil)
+                }
+                guard !Task.isCancelled, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
+                openRoom(conv)
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
+                session.toasts.show(ChatsViewModel.describe(error))
+            }
+        }
     }
 
     // ── fixed top chrome (header · chips · stories · folders) ──
@@ -743,6 +793,42 @@ struct ChatsView: View {
                     }
                 }
 
+                if !viewModel.peopleMatches.isEmpty {
+                    // R77 - web spotlight.tsx People group parity: directory
+                    // roster rows under the live query; tap starts/opens the DM
+                    // through the SAME creation path NewChatSheet uses.
+                    SectionHeader(label: "PEOPLE", count: viewModel.peopleMatches.count)
+                    ForEach(viewModel.peopleMatches) { user in
+                        Button {
+                            startDirectMessage(user)
+                        } label: {
+                            HStack(spacing: 10) {
+                                RowAvatar(name: user.name, colorName: user.color, photoPath: user.avatar, size: 36, groupID: user.id)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(user.name)
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(PulseTheme.titleOnWash)
+                                        .lineLimit(1)
+                                    Text("@\(user.username ?? user.id)")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(PulseTheme.textSecondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Image(systemName: directMessageBusy ? "ellipsis" : "arrow.up.right")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(PulseTheme.textTertiary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(directMessageBusy)
+                        .accessibilityLabel("Message \(user.name)")
+                    }
+                }
+
                 if viewModel.deferredQuery.count >= 2 {
                     if viewModel.serverSearching {
                         HStack(spacing: 8) {
@@ -867,6 +953,12 @@ private struct ChatsHeaderBar: View {
                         onGoContacts()
                     } label: {
                         Label("Contacts", systemImage: "person.2")
+                    }
+                    Button {
+                        PulseHaptics.tap()
+                        joinCodeEntryOpen = true
+                    } label: {
+                        Label("Join with code", systemImage: "link.badge.plus")
                     }
                     Button {
                         PulseHaptics.tap()
@@ -2762,6 +2854,10 @@ final class ChatsViewModel: ObservableObject {
     @Published private(set) var storyGroups: [WireStoryGroup] = []
     @Published private(set) var folders: [WireFolder]?
     @Published private(set) var mentionCount: Int?
+    // R77 - PEOPLE search group (web spotlight.tsx People parity): the roster
+    // rides the side-query leg once per session; nil = unavailable, and the
+    // section simply never renders (no fake rows, no fake errors).
+    @Published private(set) var directoryUsers: [WireUser]?
     private var mentionBadgeRefresh = PulseCoalescedRefresh()
     private var mentionBadgeTicket = UUID()
     private var mentionBadgeExpiryTask: Task<Void, Never>?
@@ -2911,6 +3007,16 @@ final class ChatsViewModel: ObservableObject {
         return rows.filter { $0.matches(query: needle) }
     }
 
+    /// R77 - PEOPLE matches for the live query (name/@handle contains, 8 max).
+    var peopleMatches: [WireUser] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return [] }
+        return (directoryUsers ?? []).filter { user in
+            user.name.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil ||
+                (user.username ?? "").range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }.prefix(8).map { $0 }
+    }
+
     var folderFiltered: [ChatRowModel] {
         let active = activeRows
         switch prefsFilter {
@@ -2950,6 +3056,8 @@ final class ChatsViewModel: ObservableObject {
         let deferred = deferredQuery
         if deferred.count < 2 { return true }
         if serverSearching { return false }
+        // R77 - live PEOPLE hits are real matches too.
+        if !peopleMatches.isEmpty { return false }
         if let hits = serverHits { return hits.isEmpty && !searchHasOlder }
         return false // An unavailable remote search is not proof of no matches.
     }
@@ -3276,6 +3384,17 @@ final class ChatsViewModel: ObservableObject {
         await reloadFolders(session: session)
         guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
         if mentionBadgeRetry <= Date() { invalidateMentionBadge(session: session) }
+        // R77 - the PEOPLE roster for the spotlight search group.
+        guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
+        if directoryUsers == nil {
+            do {
+                let roster = try await api.users()
+                guard !Task.isCancelled, sideQueryGeneration == ticket, epoch == session.sessionGeneration else { return }
+                directoryUsers = roster.filter { $0.id != api.userId }
+            } catch {
+                // Keep nil - an unreachable directory never fakes a people row.
+            }
+        }
     }
 
     /// Wave 6 - refetch JUST the folder rail (folder-manager mutations call
@@ -3775,5 +3894,111 @@ extension AnyTransition {
             insertion: .opacity.combined(with: .offset(y: 10)),
             removal: .opacity,
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// R77 - Join with code (manual entry)
+// ─────────────────────────────────────────────────────────────
+
+/// Identifiable wrapper so `.sheet(item:)` can present the invite preview
+/// for a typed code (same sheet the pulse://invite deep link hosts).
+private struct JoinCodePayload: Identifiable {
+    let code: String
+    var id: String { code }
+}
+
+/// Web chats-tab.tsx:2179-2215 verbatim conversion: title, copy, the
+/// centered uppercase code field (ABCD1234 placeholder, auto-uppercase),
+/// Cancel / Join group with the 4-char minimum gate. Submitting hands the
+/// code to the REAL JoinInviteSheet - never a fake join.
+private struct JoinCodeEntrySheet: View {
+    var onPreview: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var code = ""
+    @FocusState private var fieldFocused: Bool
+
+    private var trimmed: String { code.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("Join with code")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(PulseTheme.titleOnPanel)
+                .padding(.top, 10)
+            Text("Enter the group invite code you were given and jump straight in.")
+                .font(.system(size: 12.5))
+                .foregroundStyle(PulseTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+            TextField("ABCD1234", text: $code)
+                .textFieldStyle(.plain)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .focused($fieldFocused)
+                .font(.system(size: 15, weight: .semibold))
+                .tracking(3)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 14)
+                .frame(height: 46)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)
+                )
+                .onChange(of: code) { _, next in
+                    // Web: e.target.value.toUpperCase() as the user types.
+                    let upper = next.uppercased()
+                    if upper != next { code = upper }
+                }
+                .onSubmit { submit() }
+                .accessibilityLabel("Invite code")
+                .padding(.top, 14)
+            if !trimmed.isEmpty && trimmed.count < 4 {
+                Text("Enter the invite code you were given")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(PulseTheme.textSecondary)
+            }
+            HStack(spacing: 10) {
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(PulseTheme.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12).strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(PulseButtonStyle())
+                Button {
+                    submit()
+                } label: {
+                    Text("Join group")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(PulseTheme.emerald600))
+                }
+                .buttonStyle(PulseButtonStyle())
+                .disabled(trimmed.count < 4)
+            }
+            .padding(.top, 16)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .onAppear {
+            // Web: autoFocus on dialog open.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { fieldFocused = true }
+        }
+    }
+
+    private func submit() {
+        let value = trimmed.uppercased()
+        guard value.count >= 4 else { return }
+        onPreview(value)
     }
 }

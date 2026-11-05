@@ -39,8 +39,17 @@ final class HubViewModel: ObservableObject {
     private var logsRequest = UUID()
     private var appsRequest = UUID()
     @Published var tasks: [WireHubTask] = []
+    // R77 - the tasks sheet gets the market-grade tri-state: loading, honest
+    // first-load error with Retry (toast stays for action failures), loaded.
+    @Published private(set) var tasksLoading = false
+    @Published private(set) var tasksLoaded = false
+    @Published private(set) var tasksError: String?
     @Published var listings: [WireMarketListing] = []
     @Published var logs: [WireHubLog] = []
+    // R77 - same tri-state for the 12s-ticker logs list.
+    @Published private(set) var logsLoading = false
+    @Published private(set) var logsLoaded = false
+    @Published private(set) var logsError: String?
     @Published var swap: WireSwapPage?
     @Published var installs: [String: WireAppInstallState] = [:]
     // R5-A Item 3 - install-state honesty: the fan-out marks which app ids
@@ -189,10 +198,15 @@ final class HubViewModel: ObservableObject {
     private var taskRevision = 0
 
     func loadTasks() {
-        guard !taskBusy, let owner = session.viewer?.id, let client = api else { return }
+        guard !taskBusy, let owner = session.viewer?.id, let client = api else {
+            if api == nil { tasksError = "No gateway configured - set your server in Profile → Connection." }
+            return
+        }
         taskRevision += 1
         let ticket = taskRevision, epoch = session.sessionGeneration, store = session.store
         let key = "hub:tasks:v2:\(owner)"
+        tasksLoading = true
+        if tasks.isEmpty { tasksError = nil }
         Task { @MainActor in
             guard session.sessionGeneration == epoch, taskRevision == ticket, !taskBusy else { return }
             if tasks.isEmpty, let blob = try? store?.loadWave7Cache(key: key), let data = blob.json.data(using: .utf8),
@@ -203,13 +217,19 @@ final class HubViewModel: ObservableObject {
                 try Task.checkCancellation()
                 guard session.sessionGeneration == epoch, taskRevision == ticket, !taskBusy else { return }
                 tasks = page.tasks
+                tasksLoaded = true
+                tasksError = nil
                 if let data = try? JSONEncoder().encode(page), let json = String(data: data, encoding: .utf8) {
                     try? store?.saveWave7Cache(key: key, json: json, updatedAt: Int64(Date().timeIntervalSince1970 * 1000))
                 }
             } catch is CancellationError { }
             catch {
-                if session.sessionGeneration == epoch, taskRevision == ticket { toast(describe(error), isError: true) }
+                if session.sessionGeneration == epoch, taskRevision == ticket {
+                    if tasks.isEmpty { tasksError = describe(error) }
+                    toast(describe(error), isError: true)
+                }
             }
+            if session.sessionGeneration == epoch, taskRevision == ticket { tasksLoading = false }
         }
     }
 
@@ -387,15 +407,24 @@ final class HubViewModel: ObservableObject {
         let epoch = session.sessionGeneration, client = api
         let owner = session.viewer?.id
         logs = owner.map { id in logs.filter { $0.user?.id == id } } ?? []
+        logsLoading = true
+        if logs.isEmpty { logsError = nil }
         Task { @MainActor in
-            guard logsRequest == ticket, session.sessionGeneration == epoch, let api = client else { return }
+            defer { if logsRequest == ticket, session.sessionGeneration == epoch { logsLoading = false } }
+            guard logsRequest == ticket, session.sessionGeneration == epoch, let api = client else {
+                if client == nil, logs.isEmpty { logsError = "No gateway configured - set your server in Profile → Connection." }
+                return
+            }
             do {
                 let fresh = try await api.hubLogs(limit: 80, kind: nil).logs
                 guard !Task.isCancelled, logsRequest == ticket, session.sessionGeneration == epoch else { return }
                 logs = fresh
+                logsLoaded = true
+                logsError = nil
             } catch {
                 guard !Task.isCancelled, logsRequest == ticket, session.sessionGeneration == epoch else { return }
-                toast(describe(error), isError: true) // keep the last real list
+                if logs.isEmpty { logsError = describe(error) } // keep the last real list otherwise
+                toast(describe(error), isError: true)
             }
         }
     }
@@ -715,7 +744,7 @@ struct HubView: View {
     private func surfaceBody(_ s: HubSurface) -> some View {
         switch s {
         case .wallet:
-            HubLedgerList(ledger: vm.wallet.page?.ledger ?? [])
+            HubLedgerList(vm: vm)
                 .task { vm.loadWallet() }
         case .transfer:
             HubTransferSheet(vm: vm)
@@ -726,7 +755,7 @@ struct HubView: View {
         case .market:
             HubMarketSheet(vm: vm)
         case .logs:
-            HubLogsList(logs: vm.logs)
+            HubLogsList(vm: vm)
                 .task { vm.loadLogs() }
                 // R1-W2G D40 - live logs: a 12 s repeating refresh while the
                 // logs surface is open (web hub-tab.tsx:603-611
@@ -768,28 +797,61 @@ private func hubStat(_ label: String, _ value: Int?) -> some View {
 // MARK: - Hub sub-sheets
 
 private struct HubLedgerList: View {
-    let ledger: [WireLedgerEntry]
+    @ObservedObject var vm: HubViewModel
     @Environment(\.dismiss) private var dismiss
+
+    private var ledger: [WireLedgerEntry] { vm.wallet.page?.ledger ?? [] }
 
     var body: some View {
         List {
-            ForEach(Array((ledger).enumerated()), id: \.offset) { _, entry in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.note ?? entry.kind ?? "")
-                            .font(.subheadline)
-                            .lineLimit(1)
-                        Text(String((entry.createdAt ?? "").prefix(10)))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+            // R77 - web wallet-panel parity: skeleton while the first load is in
+            // flight, honest failure with Retry, stale banner, empty copy.
+            if vm.wallet.loading && vm.wallet.page == nil {
+                ForEach(0..<4, id: \.self) { _ in
+                    HStack {
+                        RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.18)).frame(width: 150, height: 14)
+                        Spacer()
+                        RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.18)).frame(width: 54, height: 12)
                     }
-                    Spacer()
-                    Text("\((entry.amount ?? 0) >= 0 ? "+" : "")\(entry.amount ?? 0) \(entry.asset ?? "PC")")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle((entry.amount ?? 0) >= 0 ? PulseTheme.emberGlowBottom : Color.red)
+                }
+                .redacted(reason: .placeholder)
+            } else if let error = vm.wallet.error, vm.wallet.page == nil {
+                VStack(spacing: 8) {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                    Button("Retry") { vm.loadWallet() }
+                }
+            } else {
+                if vm.wallet.stale {
+                    Text("Couldn't refresh - showing your last known balance.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if ledger.isEmpty {
+                    VStack(spacing: 6) {
+                        Text("No transactions yet.").font(.subheadline)
+                        Text("Check-ins, transfers, swaps and market sales land here.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(Array(ledger.enumerated()), id: \.offset) { _, entry in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.note ?? entry.kind ?? "")
+                                    .font(.subheadline)
+                                    .lineLimit(1)
+                                Text(String((entry.createdAt ?? "").prefix(10)))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\((entry.amount ?? 0) >= 0 ? "+" : "")\(entry.amount ?? 0) \(entry.asset ?? "PC")")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle((entry.amount ?? 0) >= 0 ? PulseTheme.emberGlowBottom : Color.red)
+                        }
+                    }
                 }
             }
         }
+        .refreshable { vm.loadWallet() }
         .navigationTitle("Ledger")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
@@ -897,6 +959,19 @@ private struct HubTasksSheet: View {
                     }
                 }
             }
+            // R77 - market-grade first-load states (HubMarketSheet pattern):
+            // spinner → honest error with Retry → real columns.
+            if vm.tasksLoading && vm.tasks.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading tasks…").font(.footnote).foregroundStyle(.secondary)
+                }
+            } else if let error = vm.tasksError, vm.tasks.isEmpty {
+                VStack(spacing: 8) {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                    Button("Retry") { vm.loadTasks() }.disabled(vm.tasksLoading)
+                }
+            }
             ForEach(["doing", "todo", "done"], id: \.self) { col in
                 Section(headerLabel(col) + " · \(vm.tasks.filter { $0.status == col }.count)") {
                     let colTasks = vm.tasks.filter { $0.status == col }
@@ -930,6 +1005,7 @@ private struct HubTasksSheet: View {
             }
         }
         .disabled(vm.taskBusy)
+        .refreshable { vm.loadTasks() }
         .navigationTitle("Tasks")
         .navigationBarTitleDisplayMode(.inline)
         .task { vm.loadTasks() }
@@ -1039,25 +1115,44 @@ private struct HubMarketSheet: View {
 }
 
 private struct HubLogsList: View {
-    let logs: [WireHubLog]
+    @ObservedObject var vm: HubViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
-            if logs.isEmpty {
-                Text("No activity yet.").foregroundStyle(.secondary)
-            }
-            ForEach(Array(logs.enumerated()), id: \.offset) { _, log in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(log.message ?? "")
-                        .font(.subheadline)
-                        .lineLimit(2)
-                    Text("\(log.kind ?? "") · \(String((log.createdAt ?? "").prefix(16)).replacingOccurrences(of: "T", with: " "))")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            // R77 - same tri-state as the market list: skeleton while first
+            // load runs, honest failure with Retry (the 12s ticker keeps the
+            // last real list on later failures).
+            if vm.logsLoading && vm.logs.isEmpty {
+                ForEach(0..<5, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 4) {
+                        RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.18)).frame(height: 13)
+                        RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12)).frame(width: 120, height: 10)
+                    }
+                }
+                .redacted(reason: .placeholder)
+            } else if let error = vm.logsError, vm.logs.isEmpty {
+                VStack(spacing: 8) {
+                    Text(error).font(.footnote).foregroundStyle(.secondary)
+                    Button("Retry") { vm.loadLogs() }.disabled(vm.logsLoading)
+                }
+            } else if vm.logs.isEmpty {
+                Text("No activity yet. Check-ins, transfers and swaps will appear here.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(vm.logs.enumerated()), id: \.offset) { _, log in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(log.message ?? "")
+                            .font(.subheadline)
+                            .lineLimit(2)
+                        Text("\(log.kind ?? "") · \(String((log.createdAt ?? "").prefix(16)).replacingOccurrences(of: "T", with: " "))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
+        .refreshable { vm.loadLogs() }
         .navigationTitle("Logs")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
