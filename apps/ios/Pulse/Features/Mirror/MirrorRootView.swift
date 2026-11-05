@@ -2885,6 +2885,9 @@ struct MirrorRoomSheetView: View {
         // R104 - one chrome per sheet: every case owns its MirrorPanel. The
         // old outer wrapper stacked a second identical panel around each
         // R102 builder (double title bar, double X, double background).
+        // Group carries the switch (ViewBuilder buildEither) so the shared
+        // modifiers chain on one view.
+        Group {
         switch sheet {
         case .info:
             MirrorPanel(title: row.isGroup ? "Group info" : "Chat info") {
@@ -2995,6 +2998,7 @@ struct MirrorRoomSheetView: View {
             MirrorWhiteboardBoardView(session: session, row: row)
         case .redpacket:
             MirrorRedPacketComposerView(session: session, row: row, onCreated: onCreated)
+        }
         }
         .onReceive(session.messageVisibilityClock) { now in
             previewNow = now
