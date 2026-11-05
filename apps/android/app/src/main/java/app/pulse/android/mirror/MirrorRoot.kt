@@ -344,6 +344,10 @@ internal fun MirrorRoot(
     }
 
     // Refresh rhythm: conversations + stories + folders + mentions on mount and every 5s.
+    // R77 - home first-load truth (web chats-skeleton.tsx parity): the chats
+    // list shows skeleton rows until the FIRST refreshConversations() of
+    // this account settles, and only while the inbox still renders empty.
+    var inboxFirstLoad by remember(viewerId) { mutableStateOf(true) }
     LaunchedEffect(viewerId, lifecycleOwner) {
         val account = repository.boundToCurrentAccount()
         val owner = repository.attachmentSessionKey()
@@ -352,6 +356,7 @@ internal fun MirrorRoot(
                 if (viewerId != null && owner != null) {
                     val storyTicket = storyReads.beginRead()
                     account.refreshConversations()
+                    if (inboxFirstLoad && repository.attachmentSessionKey() == owner) inboxFirstLoad = false
                     currentCoroutineContext().ensureActive()
                     if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
                     val feed = account.stories()
@@ -566,6 +571,7 @@ internal fun MirrorRoot(
                     MirrorTab.Chats -> {
                         MirrorHome(
                             conversations = activeConversations.map { it.toRow(presence, viewerId) },
+                            firstLoad = inboxFirstLoad,
                             stories = cards,
                             folders = folders,
                             viewerName = viewerName.orEmpty(),
@@ -907,6 +913,9 @@ internal fun MirrorRoot(
                         onJumpConsumed = {
                             if (pendingJump == roomJump && openRoom?.id == convo.id) pendingJump = null
                         },
+                        // R77 - search-hit jump: re-anchors THIS room through the
+                        // proven open-request pipeline (same path as reminders).
+                        onJumpToMessage = { messageId -> openById(convo.id, messageId) },
                         onOpenReminder = { target ->
                             if (repository.viewerId == viewerId && openRoom?.id == convo.id) {
                                 openById(target.conversationId, target.messageId)
@@ -1196,10 +1205,16 @@ private fun MirrorRoomScaffold(
     /** R76 - web jumpToMessage: open anchored at one message. */
     jumpMessageId: String? = null,
     jumpRequestId: String? = null,
+    /** R77 - search-hit jump (web room-search tap-to-hit): re-anchor this room. */
+    onJumpToMessage: (String) -> Unit = {},
     onOpenReminder: (MirrorReminderTarget) -> Unit,
     onJumpConsumed: () -> Unit = {},
 ) {
     val repository = remember(accountRouter, viewerId, convo.id, accountRouter.attachmentSessionKey()) { accountRouter.boundToCurrentAccount() }
+    // R77 - web chat-room.tsx:1412: the unread-divider anchor is the pre-open
+    // first-unread id, FROZEN for the whole visit - a mid-visit summary refresh
+    // (unread count dropping to 0 as reads land) must not move or drop it.
+    val unreadAnchorAtOpen = remember(convo.id, viewerId) { convo.firstUnreadMessageId }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     val visible by androidx.compose.runtime.rememberUpdatedState(readingEnabled)
@@ -1353,6 +1368,8 @@ private fun MirrorRoomScaffold(
                 // R76 - the jump anchor flows through the scaffold into the room
                 jumpMessageId = jumpMessageId,
                 jumpRequestId = jumpRequestId,
+                onJumpToMessage = onJumpToMessage,
+                unreadAnchorId = unreadAnchorAtOpen,
                 onOpenReminder = onOpenReminder,
                 onJumpConsumed = onJumpConsumed,
                 // R72 - channel truth: broadcast rooms carry the Channel pill and the

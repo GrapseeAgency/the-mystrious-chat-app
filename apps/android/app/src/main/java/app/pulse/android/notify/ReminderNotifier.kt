@@ -106,7 +106,9 @@ object ReminderNotifier {
         }
         val builder = NotificationCompat.Builder(context, channel)
         builder.setOnlyAlertOnce(true)
-        builder.setSmallIcon(android.R.drawable.ic_popup_reminder)
+        // R77 - brand bell status icon (the system placeholder rendered as a
+        // foreign alarm clock in the tray).
+        builder.setSmallIcon(app.pulse.android.R.drawable.ic_stat_pulse_reminder)
         builder.setContentTitle(title.take(64))
         builder.setContentText(body.take(178))
         builder.setAutoCancel(true)

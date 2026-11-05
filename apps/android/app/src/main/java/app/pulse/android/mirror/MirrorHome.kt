@@ -10,11 +10,13 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -209,6 +211,8 @@ internal fun MirrorAvatar(
 @Composable
 internal fun MirrorHome(
     conversations: List<ConversationRow>,
+    /** R77 - true until the first inbox refresh settles (web chats-skeleton). */
+    firstLoad: Boolean = false,
     stories: List<MirrorStoryCard>,
     folders: List<MirrorFolderChip>,
     viewerName: String,
@@ -447,6 +451,53 @@ internal fun MirrorHome(
         }
         if (shown.isEmpty()) {
             item {
+                if (firstLoad && !searching && searchQuery.isBlank()) {
+                    // R77 - web chats-skeleton.tsx parity: avatar + 1/3 + 2/3
+                    // bars with the house alpha pulse (MirrorRoomCards idiom).
+                    val pulse = rememberInfiniteTransition(label = "homeSkel").animateFloat(
+                        initialValue = 0.45f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
+                        label = "homeSkelAlpha",
+                    )
+                    val skel = MirrorArt.White7.copy(alpha = pulse.value)
+                    Column(Modifier.widthIn(max = maxW).padding(horizontal = 12.dp)) {
+                        repeat(5) { index ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(skel),
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth(0.34f)
+                                            .height(13.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(skel),
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth(0.62f)
+                                            .height(11.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(skel),
+                                    )
+                                }
+                            }
+                            if (index != 4) Spacer(Modifier.height(2.dp))
+                        }
+                    }
+                } else {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -466,6 +517,7 @@ internal fun MirrorHome(
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp, start = 32.dp, end = 32.dp),
                     )
+                }
                 }
             }
         }

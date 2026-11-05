@@ -308,47 +308,66 @@ internal fun MirrorCallsPage(
     onOpenConversation: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    var log by remember { mutableStateOf<List<CallLogEntry>>(emptyList()) }
+    // R77 - tri-state truth (mentions-page pattern): null = first load in
+    // flight (skeleton), errorText + null = honest failure card, data +
+    // errorText = inline banner over stale rows. A network failure must
+    // never masquerade as the "No calls yet" empty state.
+    var log by remember { mutableStateOf<List<CallLogEntry>?>(null) }
+    var errorText by remember { mutableStateOf<String?>(null) }
     var tick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        log = repository.refreshCallLog().getOrDefault(emptyList())
+    suspend fun load() {
+        repository.refreshCallLog().fold(
+            onSuccess = { log = it; errorText = null },
+            onFailure = { errorText = it.message ?: "Could not load the call log." },
+        )
     }
-    // web refetchInterval 20s
+    // web parity: immediate load + refetchInterval 20s; a refresh tap
+    // restarts the cycle with an instant reload (the old code waited 20s).
     LaunchedEffect(tick) {
+        load()
         kotlinx.coroutines.delay(20_000)
-        log = repository.refreshCallLog().getOrDefault(emptyList())
+        load()
     }
 
+    val entries = log ?: emptyList()
     val sections = listOf(
-        CallBucket.Today to log.filter { callBucketOf(it.startedAt) == CallBucket.Today },
-        CallBucket.Yesterday to log.filter { callBucketOf(it.startedAt) == CallBucket.Yesterday },
-        CallBucket.Earlier to log.filter { callBucketOf(it.startedAt) == CallBucket.Earlier },
+        CallBucket.Today to entries.filter { callBucketOf(it.startedAt) == CallBucket.Today },
+        CallBucket.Yesterday to entries.filter { callBucketOf(it.startedAt) == CallBucket.Yesterday },
+        CallBucket.Earlier to entries.filter { callBucketOf(it.startedAt) == CallBucket.Earlier },
     ).filter { it.second.isNotEmpty() }
 
     MirrorSubPageScaffold(
         title = "Calls",
         subtitle = "Voice and video history - tap a row to reopen the chat",
-        countChip = log.size,
+        countChip = entries.size,
         onClose = onClose,
-        onRefresh = {
-            tick++
-            CoroutineScope(Dispatchers.IO).launch {
-                log = repository.refreshCallLog().getOrDefault(emptyList())
-            }
-        },
+        onRefresh = { tick++ },
     ) {
-        if (log.isEmpty()) {
-            MirrorSubPageEmpty(
+        when {
+            log == null && errorText == null -> SubPageSkeletonRows(rows = 4)
+            log == null -> MirrorSubPageEmpty(
+                icon = "LPhone",
+                title = "Could not load calls",
+                copy = errorText ?: "Something went wrong. Tap refresh to retry.",
+            )
+            entries.isEmpty() -> MirrorSubPageEmpty(
                 icon = "LPhone",
                 title = "No calls yet",
                 copy = "No calls yet - start one from any chat. Tap the phone or video icon in a DM header and the history lands here.",
             )
-        } else {
-            LazyColumn(
+            else -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
+                if (errorText != null) item(key = "err") {
+                    Text(
+                        errorText.orEmpty(),
+                        color = SubPageInk.Rose400,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
                 for ((bucket, rows) in sections) {
                     item(key = "sec-" + bucket.name) {
                         Column {
@@ -468,27 +487,35 @@ internal fun MirrorChannelsPage(
     onOpenConversation: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
+    // R77 - tri-state truth (mentions-page pattern): null = first load in
+    // flight, failure = honest error card, never a fake "No channels yet".
+    var channels by remember { mutableStateOf<List<Channel>?>(null) }
+    var errorText by remember { mutableStateOf<String?>(null) }
     var busyId by remember { mutableStateOf<String?>(null) }
     var tick by remember { mutableStateOf(0) }
 
     suspend fun load() {
-        channels = repository.channels(mineOnly = false).getOrDefault(emptyList())
+        repository.channels(mineOnly = false).fold(
+            onSuccess = { channels = it; errorText = null },
+            onFailure = { errorText = it.message ?: "Could not load channels." },
+        )
     }
-    LaunchedEffect(Unit) { load() }
+    // web parity: immediate load + 30s poll; a refresh tap reloads now.
     LaunchedEffect(tick) {
+        load()
         kotlinx.coroutines.delay(30_000)
-        channels = repository.channels(mineOnly = false).getOrDefault(emptyList())
+        load()
     }
 
-    val subscribed = channels.filter { it.isSubscribed }
-    val discover = channels.filter { !it.isSubscribed }
+    val list = channels ?: emptyList()
+    val subscribed = list.filter { it.isSubscribed }
+    val discover = list.filter { !it.isSubscribed }
 
     fun subscribe(channel: Channel) {
         busyId = channel.id
         CoroutineScope(Dispatchers.IO).launch {
             runCatching { repository.subscribeChannel(channel.id) }
-            channels = repository.channels(mineOnly = false).getOrDefault(emptyList())
+            load()
             busyId = null
         }
     }
@@ -498,24 +525,32 @@ internal fun MirrorChannelsPage(
         subtitle = "Broadcast spaces - only admins post",
         countChip = subscribed.size,
         onClose = onClose,
-        onRefresh = {
-            tick++
-            CoroutineScope(Dispatchers.IO).launch {
-                channels = repository.channels(mineOnly = false).getOrDefault(emptyList())
-            }
-        },
+        onRefresh = { tick++ },
     ) {
-        if (channels.isEmpty()) {
-            MirrorSubPageEmpty(
+        when {
+            channels == null && errorText == null -> SubPageSkeletonRows(rows = 3)
+            channels == null -> MirrorSubPageEmpty(
+                icon = "LRadio",
+                title = "Could not load channels",
+                copy = errorText ?: "Something went wrong. Tap refresh to retry.",
+            )
+            list.isEmpty() -> MirrorSubPageEmpty(
                 icon = "LRadio",
                 title = "No channels yet",
                 copy = "Start one from the new-chat sheet - pick New channel. Yours shows up here, and in every subscriber's list.",
             )
-        } else {
-            LazyColumn(
+            else -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
+                if (errorText != null) item(key = "err") {
+                    Text(
+                        errorText.orEmpty(),
+                        color = SubPageInk.Rose400,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
                 item(key = "sec-sub") {
                     Column {
                         MirrorSectionLabel("Subscribed" + if (subscribed.isNotEmpty()) " · " + subscribed.size else "")
@@ -659,6 +694,24 @@ private fun MirrorChannelRow(
                     fontWeight = FontWeight.Bold,
                 )
             }
+        }
+    }
+}
+
+/** Two glass rows standing in while a sub-page's first load is in flight. */
+@Composable
+private fun SubPageSkeletonRows(rows: Int = 2) {
+    Column(Modifier.padding(top = 16.dp)) {
+        repeat(rows) { index ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    .height(64.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(SubPageInk.Panel),
+            )
+            if (index != rows - 1) Spacer(Modifier.height(8.dp))
         }
     }
 }

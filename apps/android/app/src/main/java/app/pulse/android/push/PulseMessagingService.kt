@@ -185,13 +185,20 @@ class PulseMessagingService : FirebaseMessagingService() {
         )
         val identity = if (!conversationId.isNullOrBlank() && !messageId.isNullOrBlank() && !recipientUserId.isNullOrBlank())
             app.pulse.domain.sync.MessageNotificationIdentity(recipientUserId, conversationId, messageId) else null
+        // R77 - per-conversation tray coalescing (web sw-push.js:69-70
+        // tag+renotify parity): each message keeps its own identity tag (retract
+        // + read-reconcile still address the exact row) but joins a
+        // pulse-<conversationId> group with a per-conversation summary, so a
+        // busy room stacks under ONE tray entry instead of N.
+        val groupKey = conversationId?.takeIf { it.isNotBlank() }?.let { "pulse-$it" }
         val notification = NotificationCompat.Builder(this, PulsePush.MESSAGES_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setSmallIcon(app.pulse.android.R.drawable.ic_stat_pulse_message)
             .setContentTitle(title)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(contentPi)
             .setAutoCancel(true)
+            .apply { if (groupKey != null) setGroup(groupKey) }
         // R10-a - quick reply (RemoteInput): the action routes through
         // PulseReplyReceiver → SendMessageUseCase - the SAME send path the
         // room composer uses, so offline replies queue in the outbox.
@@ -230,6 +237,23 @@ class PulseMessagingService : FirebaseMessagingService() {
             val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
             if (identity != null) nm.notify(identity.tag, 0, built)
             else nm.notify((conversationId ?: "pulse").hashCode().and(0x3FFFFFFF), built)
+            if (groupKey != null) {
+                // R77 - the per-conversation summary the children collapse
+                // under. Same channel, same deep link, GROUP_ALERT_CHILDREN so
+                // only the newest child dings (web renotify cadence).
+                val summary = NotificationCompat.Builder(this, PulsePush.MESSAGES_CHANNEL_ID)
+                    .setSmallIcon(app.pulse.android.R.drawable.ic_stat_pulse_message)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                    .setContentIntent(contentPi)
+                    .setAutoCancel(true)
+                    .setGroup(groupKey)
+                    .setGroupSummary(true)
+                    .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+                    .build()
+                nm.notify(SUMMARY_TAG_PREFIX + conversationId, 0, summary)
+            }
             if (identity != null) app.pulse.android.OutboxWorker.enqueue(this, identity.ownerId, identity.conversationId)
         }.onFailure { Log.w(TAG, "message notification failed", it) }
     }
@@ -237,5 +261,7 @@ class PulseMessagingService : FirebaseMessagingService() {
     private companion object {
         const val TAG = "PulseMessaging"
         const val CALL_NOTIFICATION_BASE = 700
+        /** R77 - tray group summary tag prefix (cancel-side: PulseMessageNotifications). */
+        const val SUMMARY_TAG_PREFIX = "pulse-group-"
     }
 }

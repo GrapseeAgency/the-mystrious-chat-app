@@ -208,9 +208,11 @@ private sealed interface RoomEntry {
     data class DayLabel(val label: String, val key: String) : RoomEntry
     data class Stamp(val iso: String, val key: String) : RoomEntry
     data class Msg(val message: Message, val head: Boolean) : RoomEntry
+    /** R77 - web chat-room.tsx:1426 'unread' row: the frozen pre-open watermark. */
+    data class UnreadDivider(val key: String) : RoomEntry
 }
 
-private fun buildRoomEntries(messages: List<Message>): List<RoomEntry> {
+private fun buildRoomEntries(messages: List<Message>, unreadAnchorId: String?, viewerId: String): List<RoomEntry> {
     data class Flat(val message: Message, val head: Boolean)
     val built = mutableListOf<Flat>()
     var prev: Message? = null
@@ -225,6 +227,10 @@ private fun buildRoomEntries(messages: List<Message>): List<RoomEntry> {
     }
     val out = mutableListOf<RoomEntry>()
     var dayIso: String? = null
+    // R77 - unread divider truth (web 1413-1438): placed once, above the first
+    // OTHER-sender live row at/after the anchor; own rows never carry it.
+    var dividerPlaced = unreadAnchorId == null
+    var seenAnchor = false
     for ((i, e) in built.withIndex()) {
         if (dayIso == null || !MirrorSameDayIso(dayIso, e.message.createdAt)) {
             val label = MirrorRoomDayLabel(e.message.createdAt)
@@ -236,6 +242,13 @@ private fun buildRoomEntries(messages: List<Message>): List<RoomEntry> {
                 out.add(RoomEntry.DayLabel(label, "day-${e.message.id}-$i"))
             }
             dayIso = e.message.createdAt
+        }
+        if (!dividerPlaced && (seenAnchor || e.message.id == unreadAnchorId)) {
+            seenAnchor = true
+            if (e.message.authorId != viewerId && !e.message.isDeleted) {
+                out.add(RoomEntry.UnreadDivider("unread-divider"))
+                dividerPlaced = true
+            }
         }
         if (e.head) {
             // Same guard for the cluster stamp: a blank HH:mm means the iso
@@ -403,6 +416,10 @@ internal fun MirrorRoom(
     /** R76 - web jumpToMessage (chat-room.tsx:1039): open anchored at one message. */
     jumpMessageId: String? = null,
     jumpRequestId: String? = null,
+    /** R77 - search-hit jump (web #/room/<id>/search tap-to-hit): re-anchor this room at a hit. */
+    onJumpToMessage: (String) -> Unit = {},
+    /** R77 - web chat-room.tsx:1412 unread divider: first-unread anchor frozen at open. */
+    unreadAnchorId: String? = null,
     onOpenReminder: (MirrorReminderTarget) -> Unit,
     onJumpConsumed: () -> Unit = {},
     onBack: () -> Unit,
@@ -672,7 +689,9 @@ internal fun MirrorRoom(
         }
     }
     val visibleMessages = remember(messages, activeTopicId, timelineNow) { visibleRoomMessages(messages, activeTopicId, timelineNow) }
-    val entries = remember(visibleMessages) { buildRoomEntries(visibleMessages) }
+    // R77 - the frozen pre-open unread anchor flows in from the scaffold; the
+    // divider stays put for the whole visit (web unreadAnchorMs freeze).
+    val entries = remember(visibleMessages, unreadAnchorId, viewerId) { buildRoomEntries(visibleMessages, unreadAnchorId, viewerId) }
     val latestEntries = androidx.compose.runtime.rememberUpdatedState(entries)
     val nativeReadMenus = app.pulse.ui.rememberNativeReadMenus()
     val nativeMenuRevision = nativeReadMenus.value.revision
@@ -1791,9 +1810,38 @@ internal fun MirrorRoom(
                         is RoomEntry.DayLabel -> e.key
                         is RoomEntry.Stamp -> e.key
                         is RoomEntry.Msg -> e.message.id
+                        is RoomEntry.UnreadDivider -> e.key
                     }
                 }) { _, entry ->
                     when (entry) {
+                        is RoomEntry.UnreadDivider -> {
+                            // R77 - web 4636-4650 parity: hairline-accent rules
+                            // either side of a small accent pill, my-3, aria separator.
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Box(Modifier.weight(1f).height(1.dp).background(MirrorArt.Accent.copy(alpha = 0.45f)))
+                                Box(
+                                    Modifier
+                                        .clip(CircleShape)
+                                        .background(MirrorArt.Accent.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                                ) {
+                                    Text(
+                                        "UNREAD",
+                                        color = MirrorArt.Accent2,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.6.sp,
+                                    )
+                                }
+                                Box(Modifier.weight(1f).height(1.dp).background(MirrorArt.Accent.copy(alpha = 0.45f)))
+                            }
+                        }
                         is RoomEntry.DayLabel -> {
                             // day chip: my-3 centered, 11px medium tracking-wide faint
                             Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
@@ -2775,7 +2823,16 @@ internal fun MirrorRoom(
     }
 
     if (roomSearchOpen) {
-        MirrorRoomSearchSheet(messages = messages, onDismiss = { roomSearchOpen = false })
+        MirrorRoomSearchSheet(
+            messages = messages,
+            groupId = groupId,
+            repository = repository,
+            onJump = { hitId ->
+                roomSearchOpen = false
+                onJumpToMessage(hitId)
+            },
+            onDismiss = { roomSearchOpen = false },
+        )
     }
     // R64 - pinned messages: live server list with unpin.
     if (pinnedOpen) {
@@ -3278,18 +3335,63 @@ private fun MirrorMenuStrip(label: String, choices: List<String>, onPick: (Strin
     }
 }
 
-/** Search-in-conversation sheet: real filter over the room's cached messages. */
+/**
+ * R77 - search-in-conversation sheet, web room-search-page parity: the
+ * cached window filters instantly, a debounced (300ms) real
+ * GET /api/conversations/{id}/messages?q= reaches BEYOND the loaded window,
+ * and every hit row is tappable - it re-anchors the room at that message
+ * (the R76 jump machinery). Sender, snippet and stamp per row; honest
+ * loading and error rows for the server leg.
+ */
 @Composable
-private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit) {
+private fun MirrorRoomSearchSheet(
+    messages: List<Message>,
+    groupId: String,
+    repository: PulseRepository,
+    onJump: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var query by remember { mutableStateOf("") }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    // Server leg: hits + the query they answered (stale answers never render).
+    var serverHits by remember { mutableStateOf<List<Message>?>(null) }
+    var servedQuery by remember { mutableStateOf<String?>(null) }
+    var serverBusy by remember { mutableStateOf(false) }
+    var serverError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1_000) } }
-    val hits = remember(query, messages, now) {
-        if (query.isBlank()) emptyList()
+    val trimmed = query.trim()
+    val localHits = remember(query, messages, now) {
+        if (trimmed.isBlank()) emptyList()
         else reconcileMessageSelection(messages, messages, now) {
-            !it.viewOnce && it.body.contains(query.trim(), ignoreCase = true)
+            !it.viewOnce && it.body.contains(trimmed, ignoreCase = true)
         }.take(40)
     }
+    LaunchedEffect(trimmed, groupId) {
+        if (trimmed.length < 2) {
+            serverHits = null; servedQuery = null; serverError = null; serverBusy = false
+            return@LaunchedEffect
+        }
+        delay(300) // web room-search-page debounce
+        serverBusy = true
+        try {
+            val hits = repository.searchInConversation(groupId, trimmed)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            serverHits = hits
+            servedQuery = trimmed
+            serverError = null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            serverError = failure.message ?: "Couldn't search the full history."
+        }
+        serverBusy = false
+    }
+    val serverRows = if (servedQuery == trimmed) serverHits.orEmpty() else emptyList()
+    val seen = HashSet<String>()
+    val hits = (serverRows.asSequence() + localHits.asSequence())
+        .filter { seen.add(it.id) }
+        .take(60)
+        .toList()
     Box(
         Modifier
             .fillMaxSize()
@@ -3331,6 +3433,10 @@ private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                if (serverBusy) {
+                    // server leg in flight (web debounced spinner parity)
+                    MirrorLucideIcon("LLoaderCircle", tint = MirrorArt.Faint, modifier = Modifier.size(14.dp))
+                }
             }
             Column(
                 Modifier
@@ -3338,11 +3444,39 @@ private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit
                     .padding(top = 8.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                if (query.isNotBlank() && hits.isEmpty()) {
-                    Text("No matches in this conversation", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                if (trimmed.length >= 2 && serverError != null) {
+                    Text(
+                        serverError.orEmpty() + " Showing matches from the loaded window only.",
+                        color = MirrorArt.Dim,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                if (trimmed.isNotBlank() && hits.isEmpty()) {
+                    Text(
+                        if (serverBusy) "Searching the full conversation…"
+                        else "No matches in this conversation",
+                        color = MirrorArt.Faint,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(8.dp),
+                    )
                 }
                 for (hit in hits) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onJump(hit.id) }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            hit.displayAuthorName,
+                            color = MirrorArt.Dim,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                         Text(
                             hit.body,
                             color = MirrorArt.TextSoft,
