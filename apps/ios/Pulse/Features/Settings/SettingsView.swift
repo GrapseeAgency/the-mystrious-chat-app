@@ -18,6 +18,10 @@ struct SettingsView: View {
     // R14 5-b - the Hub handoff (web settings-screen.tsx "Explore" group:
     // the onOpenHub prop only renders the row when the shell provides it).
     var onOpenHub: (() -> Void)?
+    // R105 - the artboard mirror audit gate: the SAME "ui.mirrorAudit"
+    // UserDefaults key RootView routes on (MirrorRootView's documented
+    // R59 contract, implemented at last). Device-local, never synced.
+    @AppStorage(PulseMirrorAuditGate.key) private var mirrorAudit = PulseMirrorAuditGate.defaultValue
     // 3-d - the honest remote-push registration state (Notifications card).
     @ObservedObject private var pushCenter = PulsePushRegistrationCenter.shared
     // R14 5-b - the Device network row (web navigator.onLine parity).
@@ -356,6 +360,22 @@ struct SettingsView: View {
                         uiThemeSwatch(themeMeta)
                     }
                 }
+            }
+            .padding(.vertical, 4)
+
+            // R105 - the artboard mirror preview gate. ON = the whole shell
+            // becomes the artboard home/room language (the R59-R104 mirror
+            // surfaces: home rails, room trays, one-chrome sheets); OFF = the
+            // native feature shell. Exit also lives inside the preview
+            // (Profile > Settings > Exit artboard preview) so nobody gets
+            // trapped in it. Device-local switch - never syncs, survives restart.
+            toggleRow(
+                icon: "square.grid.2x2",
+                title: "Artboard preview",
+                description: "Preview the redesigned home and chat surfaces. Exit anytime from Profile > Settings inside the preview.",
+                isOn: mirrorAudit
+            ) { newValue in
+                mirrorAudit = newValue
             }
             .padding(.vertical, 4)
 

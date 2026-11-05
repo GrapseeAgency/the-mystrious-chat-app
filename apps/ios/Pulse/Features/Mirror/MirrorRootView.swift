@@ -8,8 +8,9 @@ import CoreLocation
 // room bubble language - redrawn natively with the EXACT palette and geometry
 // the web renders (globals.css R54 ARTBOARD EMBER + reference measurements).
 // Data rides the REAL PulseAPIClient (gateway REST), zero mock rows.
-// Gated by the "ui.mirrorAudit" UserDefaults flag (Settings toggle) so the
-// shipping shell stays untouched.
+// R105 - the gate is REAL: the "ui.mirrorAudit" UserDefaults flag (Settings >
+// Appearance "Artboard preview") now mounts this shell from RootView, and
+// Profile > Settings > "Exit artboard preview" flips it back off.
 
 enum MirrorArt {
     static let bg = Color(red: 0x0D/255.0, green: 0x09/255.0, blue: 0x06/255.0)
@@ -1126,6 +1127,10 @@ private struct MirrorProfileCover: View {
 private struct MirrorProfileIdentity: View {
     @ObservedObject var model: MirrorViewModel
     @ObservedObject var session: PulseSession
+    // R105 - the escape hatch: the SAME "ui.mirrorAudit" key RootView routes
+    // on. Flipping it off here pops the whole mirror instantly (RootView
+    // re-renders into the native shell) - nobody gets trapped in the preview.
+    @AppStorage(PulseMirrorAuditGate.key) private var mirrorAudit = PulseMirrorAuditGate.defaultValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1155,6 +1160,23 @@ private struct MirrorProfileIdentity: View {
             MirrorSectionLabel(text: "SAVED")
             MirrorCard {
                 MirrorAccountRow(icon: "star", iconTint: MirrorArt.starAmber, title: "Saved messages", subtitle: "Long-press any message in a chat, then Save", titleTint: MirrorArt.text)
+            }
+
+            // R105 - the preview's own settings surface. The exit row is
+            // live (flips the gate); the native shell's Settings sheet
+            // carries everything else - this preview owns no durable
+            // settings of its own, and the row subtitle says exactly that.
+            MirrorSectionLabel(text: "SETTINGS")
+            MirrorCard {
+                Button {
+                    PulseHaptics.tap()
+                    mirrorAudit = false
+                } label: {
+                    MirrorAccountRow(icon: "arrow.uturn.backward", iconTint: MirrorArt.accent, title: "Exit artboard preview", subtitle: "Back to the full app - full settings live there", titleTint: MirrorArt.text)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Exit artboard preview")
+                .accessibilityHint("Turns off the preview and returns to the full app shell")
             }
 
             MirrorSectionLabel(text: "ACCOUNT")

@@ -63,6 +63,12 @@ struct RootView: View {
     // in-app sends. Only a durable queue success or explicit Remove consumes.
     @State private var shareInEntry: ShareInInbox.Entry?
     @State private var shareInConversations: [WireConversationSummary] = []
+    // R105 - the artboard mirror audit gate (the contract MirrorRootView
+    // has documented since R59: the "ui.mirrorAudit" UserDefaults flag).
+    // Device-local on purpose (never synced): a per-device preview switch.
+    // Settings > Appearance "Artboard preview" writes it; the mirror's own
+    // Profile > Settings "Exit artboard preview" row flips it back off.
+    @AppStorage(PulseMirrorAuditGate.key) private var mirrorAudit = PulseMirrorAuditGate.defaultValue
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
@@ -367,8 +373,15 @@ struct RootView: View {
 
     @ViewBuilder
     private var authenticatedShell: some View {
-        // Experimental mirror code is deliberately unreachable: it bypasses
-        // durable messaging and navigation. All users get the native feature shell.
+        // R105 - the mirror is now REACHABLE (the R59-documented
+        // "ui.mirrorAudit" Settings toggle implemented at last): when the
+        // flag is on the whole shell renders the artboard home/room
+        // language instead of the native feature shell. Honest scope while
+        // the flag is on (documented, not hidden): native room deep links
+        // (pulse://room/…) and notification room taps route the NATIVE room
+        // (their session state mounts after the preview exits - the mirror
+        // owns no deep-link surface yet); durable messaging, calls overlay,
+        // PiP overlays and the app-lock cover all keep working over it.
         if prefs.viewer != nil, !session.ready {
             VStack(spacing: 16) {
                 if let error = session.startupError {
@@ -378,6 +391,16 @@ struct RootView: View {
                     ProgressView("Opening your account…")
                 }
             }.padding()
+        } else if prefs.viewer != nil, mirrorAudit {
+            // R105 - the artboard mirror shell (audit preview). Toasts keep
+            // their host so connection/prefs feedback stays visible; the
+            // generation id retires the mirror's model/sheets on account
+            // switches exactly like the native branch below.
+            MirrorRootView(session: session)
+                .id(session.sessionGeneration)
+                .overlay {
+                    ToastHostView(center: session.toasts)
+                }
         } else if prefs.viewer != nil {
             ZStack {
                 tabPanels
