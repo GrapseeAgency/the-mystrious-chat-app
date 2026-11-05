@@ -402,6 +402,12 @@ struct ChatsView: View {
                         PulseHaptics.tap()
                         enterSearch()
                     },
+                    // R77 - the kebab's manual join-with-code row opens the
+                    // entry sheet owned by this tab.
+                    onJoinWithCode: {
+                        PulseHaptics.tap()
+                        joinCodeEntryOpen = true
+                    },
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -924,6 +930,8 @@ private struct ChatsHeaderBar: View {
     let onSaved: () -> Void
     let onSettings: () -> Void
     let onStartSearch: () -> Void
+    /// R77 - opens the manual join-with-code entry sheet.
+    var onJoinWithCode: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -956,7 +964,7 @@ private struct ChatsHeaderBar: View {
                     }
                     Button {
                         PulseHaptics.tap()
-                        joinCodeEntryOpen = true
+                        onJoinWithCode()
                     } label: {
                         Label("Join with code", systemImage: "link.badge.plus")
                     }
