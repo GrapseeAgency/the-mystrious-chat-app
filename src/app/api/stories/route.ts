@@ -13,7 +13,7 @@ import { db } from '@/lib/db'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   encodeStoryCursor, parseStoryCursor, parseStoryPageLimit, STORY_FEED_PAGE_MAX,
-  privateStoryResponse, storyAudience, storyUnblocked, storyReceiptDisclosed, storyJson,
+  privateStoryResponse, storyAudience, storyUnblocked, storyViewerInAuthorAudience, storyReceiptDisclosed, storyJson,
 } from '@/lib/story-access'
 import { AVATAR_COLORS, safeJson, strField } from '@/lib/serializers'
 

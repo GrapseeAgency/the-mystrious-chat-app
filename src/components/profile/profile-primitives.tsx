@@ -5,7 +5,7 @@
 'use client'
 
 import { useEffect, type ComponentType } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
+import { motion, useReducedMotion, useMotionValue, useTransform, animate } from 'framer-motion'
 import { PulseCaret } from '@/components/ui/icons'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'

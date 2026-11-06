@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
 import { folderIconId } from '@/lib/icon-ids'
-import { withFolderOwner, folderErrorResponse, folderHeaders, folderInclude, folderWire, folderScope, folderName, folderCreateOnce, folderRequestHash, FOLDER_CLIENT_ID_RE, readFolderListRev, bumpFolderListRev } from '@/lib/folder-operation'
+import { withFolderOwner, FolderError, folderErrorResponse, folderHeaders, folderInclude, folderWire, folderScope, folderName, folderCreateOnce, folderRequestHash, FOLDER_CLIENT_ID_RE, readFolderListRev, bumpFolderListRev } from '@/lib/folder-operation'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
