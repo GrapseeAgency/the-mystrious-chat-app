@@ -1795,8 +1795,25 @@ struct MirrorRoomView: View {
                         Text(row.subtitle).font(.system(size: 11)).foregroundColor(MirrorArt.dim).lineLimit(1)
                     }
                     Spacer(minLength: 6)
-                    Image(systemName: "video").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
-                    Image(systemName: "phone").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
+                    // R106 - the header dials are LIVE (web parity: DMs dial
+                    // the 1:1 engine, groups dial the mesh engine; the engines
+                    // own every gate - idle checks, exclusion, offline,
+                    // permissions - and the call overlays render ABOVE the
+                    // preview per the R105 mount contract).
+                    Button {
+                        dialRoom(kind: .video)
+                    } label: {
+                        Image(systemName: "video").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(row.isGroup ? "Start group video call in \(row.title)" : "Start video call")
+                    Button {
+                        dialRoom(kind: .voice)
+                    } label: {
+                        Image(systemName: "phone").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(row.isGroup ? "Start group voice call in \(row.title)" : "Start voice call")
                     Button {
                         menuOpen = true
                     } label: {
@@ -2318,6 +2335,35 @@ struct MirrorRoomView: View {
         case .space: rooms.joinSpace(conversationId: row.id)
         default: break
         }
+    }
+
+    // R106 - the header dials: DMs ride the 1:1 engine (startOutgoing owns
+    // the signaling/offline/exclusion gates and their toasts), groups ride
+    // the mesh engine (startCall). The engines own every gate - this only
+    // hands them the identity, the same contract the native room header uses.
+    private func dialRoom(kind: CallKind) {
+        PulseHaptics.tap()
+        if row.isGroup {
+            guard let engine = session.groupCallEngine else {
+                session.toasts.show("Calls need the realtime connection - try again in a moment.")
+                return
+            }
+            engine.startCall(kind: kind, conversationId: row.id, title: row.title)
+            return
+        }
+        guard let engine = session.callEngine else {
+            session.toasts.show("Calls need the realtime connection - try again in a moment.")
+            return
+        }
+        guard let partner = memberRows.first(where: { $0.id != session.viewer?.id }) else {
+            session.toasts.show("This chat has no one to call yet.")
+            return
+        }
+        engine.startOutgoing(
+            to: CallPeer(id: partner.id, name: partner.name, color: partner.color ?? "", avatar: partner.avatar),
+            conversationId: row.id,
+            kind: kind
+        )
     }
 
     private func armedPill(icon: String, label: String, tint: Color, wash: Color, onClear: @escaping () -> Void) -> some View {
