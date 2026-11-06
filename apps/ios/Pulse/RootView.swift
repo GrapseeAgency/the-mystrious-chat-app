@@ -396,7 +396,7 @@ struct RootView: View {
             // their host so connection/prefs feedback stays visible; the
             // generation id retires the mirror's model/sheets on account
             // switches exactly like the native branch below.
-            MirrorRootView(session: session)
+            MirrorRootView(session: session, prefs: prefs)
                 .id(session.sessionGeneration)
                 .overlay {
                     ToastHostView(center: session.toasts)

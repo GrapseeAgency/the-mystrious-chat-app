@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Combine
 import PhotosUI
 import UniformTypeIdentifiers
@@ -11,6 +12,10 @@ import CoreLocation
 // R105 - the gate is REAL: the "ui.mirrorAudit" UserDefaults flag (Settings >
 // Appearance "Artboard preview") now mounts this shell from RootView, and
 // Profile > Settings > "Exit artboard preview" flips it back off.
+// R106 - no dead taps: the home FAB opens the real New chat sheet, the header
+// camera answers honestly, and every profile surface that promises an action
+// performs it (Copy account ID, Sign out with confirmation, Edit profile via
+// the real editor, Share via the native share sheet, the cover kebab menu).
 
 enum MirrorArt {
     static let bg = Color(red: 0x0D/255.0, green: 0x09/255.0, blue: 0x06/255.0)
@@ -326,9 +331,13 @@ enum MirrorISO {
 
 struct MirrorRootView: View {
     @ObservedObject var session: PulseSession
+    @ObservedObject var prefs: PulsePrefs
     @StateObject private var model = MirrorViewModel()
     @State private var tab: Int = 0
     @State private var openRow: MirrorViewModel.MirrorRow?
+    // R106 - hoisted so the dock FAB and the home kebab present the SAME
+    // New chat surface (the web FAB contract: one tap = start a chat).
+    @State private var homeSheet: MirrorHomeSheet?
 
     var body: some View {
         ZStack {
@@ -340,17 +349,30 @@ struct MirrorRootView: View {
             } else {
                 VStack(spacing: 0) {
                     switch tab {
-                    case 0: MirrorHomeView(model: model, session: session, onOpen: { openRow = $0 })
-                    case 3: MirrorProfileView(model: model, session: session)
+                    case 0: MirrorHomeView(model: model, session: session, activeSheet: $homeSheet, onOpen: { openRow = $0 })
+                    case 3: MirrorProfileView(model: model, session: session, prefs: prefs)
                     default: MirrorLaterView(title: tab == 1 ? "Calls" : "Updates")
                     }
                     Spacer(minLength: 0)
                 }
                 VStack {
                     Spacer()
-                    MirrorDock(tab: $tab, unread: model.totalUnread, onFab: {})
+                    // R106 - the FAB is live: land on Chats and open the
+                    // real New chat sheet (the same surface as the kebab).
+                    MirrorDock(tab: $tab, unread: model.totalUnread, onFab: {
+                        tab = 0
+                        homeSheet = .newChat
+                    })
                 }
             }
+        }
+        // R106 - the home sheets mount at the root so the hoisted binding
+        // presents from either the kebab or the FAB.
+        .sheet(item: $homeSheet) { sheet in
+            MirrorHomeSheetView(sheet: sheet, model: model, session: session, onOpenRow: { row in
+                homeSheet = nil
+                openRow = row
+            })
         }
         .onAppear { model.start(session: session) }
         .onDisappear { model.stop() }
@@ -362,6 +384,8 @@ struct MirrorRootView: View {
 struct MirrorHomeView: View {
     @ObservedObject var model: MirrorViewModel
     @ObservedObject var session: PulseSession
+    // R106 - owned by MirrorRootView so the FAB presents the same sheets.
+    @Binding var activeSheet: MirrorHomeSheet?
     let onOpen: (MirrorViewModel.MirrorRow) -> Void
 
     // R64 - live filters (web rails), search, kebab menu, row long-press
@@ -370,7 +394,6 @@ struct MirrorHomeView: View {
     @State private var query = ""
     @State private var kebabOpen = false
     @State private var optionsRow: MirrorViewModel.MirrorRow?
-    @State private var activeSheet: MirrorHomeSheet?
 
     private var visibleRows: [MirrorViewModel.MirrorRow] {
         let base: [MirrorViewModel.MirrorRow]
@@ -399,8 +422,18 @@ struct MirrorHomeView: View {
                             Image(systemName: "magnifyingglass").font(.system(size: 20)).foregroundColor(MirrorArt.text)
                                 .frame(width: 44, height: 44)
                         }
-                        Image(systemName: "camera").font(.system(size: 20)).foregroundColor(MirrorArt.text)
-                            .frame(width: 44, height: 44)
+                        Button {
+                            // R106 - honest answer instead of a dead icon:
+                            // the stories composer lives in the full app.
+                            PulseHaptics.tap()
+                            session.toasts.show("Stories record from the full app - exit the preview from Profile to use the composer.")
+                        } label: {
+                            Image(systemName: "camera").font(.system(size: 20)).foregroundColor(MirrorArt.text)
+                                .frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Camera")
+                        .accessibilityHint("The stories composer lives in the full app")
                         Button {
                             kebabOpen = true
                         } label: {
@@ -485,12 +518,8 @@ struct MirrorHomeView: View {
         .sheet(item: $optionsRow) { row in
             MirrorRowOptions(row: row, session: session, onDone: { model.refresh() })
         }
-        .sheet(item: $activeSheet) { sheet in
-            MirrorHomeSheetView(sheet: sheet, model: model, session: session, onOpenRow: { row in
-                activeSheet = nil
-                onOpen(row)
-            })
-        }
+        // R106 - the MirrorHomeSheet sheets moved to MirrorRootView (the
+        // hoisted binding serves both the kebab and the FAB).
     }
 }
 
@@ -1097,28 +1126,98 @@ struct MirrorAvatarTile: View {
 struct MirrorProfileView: View {
     @ObservedObject var model: MirrorViewModel
     @ObservedObject var session: PulseSession
+    @ObservedObject var prefs: PulsePrefs
+    // R106 - the cover kebab is a live menu (web parity: Saved / Share /
+    // Settings stay reachable from the profile corner).
+    @State private var coverKebabOpen = false
+    @State private var sharePresented = false
+    @State private var shareBody = ""
+    @AppStorage(PulseMirrorAuditGate.key) private var mirrorAudit = PulseMirrorAuditGate.defaultValue
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                MirrorProfileCover()
-                MirrorProfileIdentity(model: model, session: session)
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    MirrorProfileCover(onKebab: { coverKebabOpen = true })
+                    MirrorProfileIdentity(model: model, session: session, prefs: prefs)
+                }
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: 560)
-            .frame(maxWidth: .infinity)
+            if coverKebabOpen {
+                MirrorProfileKebab(
+                    onDismiss: { coverKebabOpen = false },
+                    onSaved: {
+                        coverKebabOpen = false
+                        session.toasts.show("The saved library lives in the full app - exit the preview to browse saved messages.")
+                    },
+                    onShare: {
+                        coverKebabOpen = false
+                        shareBody = ProfileView.shareMessage(
+                            handle: MirrorHandleText(model: model, session: session),
+                            userId: session.viewer?.id)
+                        sharePresented = true
+                    },
+                    onSettings: {
+                        coverKebabOpen = false
+                        PulseHaptics.tap()
+                        mirrorAudit = false
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $sharePresented) {
+            ActivityShareSheet(items: [shareBody])
+        }
+    }
+}
+
+/// R106 - the profile corner kebab menu (the web profile keeps Saved /
+/// Settings / Share reachable here; every row is live in the preview:
+/// Saved answers honestly, Share opens the native share sheet, Settings
+/// exits to the full app where real settings live).
+private struct MirrorProfileKebab: View {
+    let onDismiss: () -> Void
+    let onSaved: () -> Void
+    let onShare: () -> Void
+    let onSettings: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.001)
+                .contentShape(Rectangle())
+                .onTapGesture { onDismiss() }
+            VStack(alignment: .leading, spacing: 0) {
+                MirrorKebabRow(icon: "star", label: "Saved messages", action: onSaved)
+                MirrorKebabRow(icon: "square.and.arrow.up", label: "Share profile", action: onShare)
+                MirrorKebabRow(icon: "gearshape", label: "Settings (exit preview)", action: onSettings)
+            }
+            .frame(width: 240)
+            .background(Color(red: 0x1C/255.0, green: 0x16/255.0, blue: 0x10/255.0).opacity(0.95))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.trailing, 12)
+            .padding(.top, 60)
+            .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
         }
     }
 }
 
 /// Cover band with ridges + corner kebab (reference 1 top).
 private struct MirrorProfileCover: View {
+    let onKebab: () -> Void
     var body: some View {
         ZStack(alignment: .topTrailing) {
             MirrorRidges().frame(height: 132).frame(maxWidth: .infinity)
-            Image(systemName: "ellipsis")
-                .font(.system(size: 18)).foregroundColor(MirrorArt.text)
-                .frame(width: 40, height: 40).background(MirrorArt.chip).clipShape(Circle())
-                .padding(12)
+            Button(action: onKebab) {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 18)).foregroundColor(MirrorArt.text)
+                    .frame(width: 40, height: 40).background(MirrorArt.chip).clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Profile menu")
+            .accessibilityHint("Saved messages, share profile and settings")
+            .padding(12)
         }
     }
 }
@@ -1127,10 +1226,14 @@ private struct MirrorProfileCover: View {
 private struct MirrorProfileIdentity: View {
     @ObservedObject var model: MirrorViewModel
     @ObservedObject var session: PulseSession
+    @ObservedObject var prefs: PulsePrefs
     // R105 - the escape hatch: the SAME "ui.mirrorAudit" key RootView routes
     // on. Flipping it off here pops the whole mirror instantly (RootView
     // re-renders into the native shell) - nobody gets trapped in the preview.
     @AppStorage(PulseMirrorAuditGate.key) private var mirrorAudit = PulseMirrorAuditGate.defaultValue
+    // R106 - the real editor sheet + the sign-out confirmation.
+    @State private var editOpen = false
+    @State private var signOutArmed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1153,7 +1256,10 @@ private struct MirrorProfileIdentity: View {
                 Text(about).font(.system(size: 14)).foregroundColor(MirrorArt.textSoft).padding(.top, 10)
             }
 
-            MirrorProfilePills()
+            MirrorProfilePills(
+                handle: MirrorHandleText(model: model, session: session),
+                userId: session.viewer?.id,
+                onEdit: { editOpen = true })
 
             MirrorStatsCardView(model: model)
 
@@ -1181,12 +1287,54 @@ private struct MirrorProfileIdentity: View {
 
             MirrorSectionLabel(text: "ACCOUNT")
             MirrorCard {
-                MirrorAccountRow(icon: "touchid", iconTint: MirrorArt.textSoft, title: "Copy account ID", subtitle: session.viewer?.id ?? "", titleTint: MirrorArt.text)
+                // R106 - Copy account ID is LIVE: real UIPasteboard copy with
+                // an honest toast (web parity: title="Copy account ID").
+                Button {
+                    PulseHaptics.tap()
+                    if let id = session.viewer?.id, !id.isEmpty {
+                        UIPasteboard.general.string = id
+                        session.toasts.show("Account ID copied")
+                    } else {
+                        session.toasts.show("Account ID unavailable - try again in a moment.")
+                    }
+                } label: {
+                    MirrorAccountRow(icon: "touchid", iconTint: MirrorArt.textSoft, title: "Copy account ID", subtitle: session.viewer?.id ?? "", titleTint: MirrorArt.text)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy account ID")
+                .accessibilityHint("Copies your account ID to the clipboard")
                 Rectangle().fill(MirrorArt.hairline).frame(height: 1)
-                MirrorAccountRow(icon: "rectangle.portrait.and.arrow.right", iconTint: MirrorArt.red, title: "Sign out", subtitle: "Return to the welcome screen - nothing is deleted", titleTint: MirrorArt.red)
+                // R106 - Sign out is LIVE: confirmation dialog parity with the
+                // native profile (destructive button + honest message), then
+                // the REAL sign-out sequence - session.stop + prefs.setViewer,
+                // and the preview gate turns off with it (the subtitle's
+                // promise "Return to the welcome screen" is now true).
+                Button {
+                    PulseHaptics.tap()
+                    signOutArmed = true
+                } label: {
+                    MirrorAccountRow(icon: "rectangle.portrait.and.arrow.right", iconTint: MirrorArt.red, title: "Sign out", subtitle: "Return to the welcome screen - nothing is deleted", titleTint: MirrorArt.red)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Sign out")
+                .accessibilityHint("Asks for confirmation, then returns to the welcome screen")
             }
         }
         .padding(.horizontal, 20)
+        .sheet(isPresented: $editOpen) {
+            ProfileEditView(session: session, prefs: prefs)
+        }
+        .confirmationDialog("Sign out of this account?", isPresented: $signOutArmed, titleVisibility: .visible) {
+            Button("Sign out", role: .destructive) {
+                PulseHaptics.tap()
+                mirrorAudit = false
+                session.stop()
+                prefs.setViewer(nil)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll return to onboarding and can pick or create another identity. The artboard preview turns off with it.")
+        }
     }
 }
 
@@ -1225,22 +1373,36 @@ private struct MirrorProfileAvatar: View {
     }
 }
 
-/// Edit profile (ember pill, ink text) + Share (glass pill).
+/// R106 - Edit profile (ember pill, opens the REAL ProfileEditView sheet) +
+/// Share (glass pill, ShareLink with the same message format as the native
+/// profile: "Find me on Pulse - @handle" + the user deep link).
 private struct MirrorProfilePills: View {
+    let handle: String
+    let userId: String?
+    let onEdit: () -> Void
+
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "pencil").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.pillInk)
-                Text("Edit profile").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.pillInk)
+            Button(action: onEdit) {
+                HStack(spacing: 8) {
+                    Image(systemName: "pencil").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.pillInk)
+                    Text("Edit profile").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.pillInk)
+                }
+                .padding(.horizontal, 16).frame(height: 40)
+                .background(MirrorArt.fabGradient).clipShape(Capsule())
             }
-            .padding(.horizontal, 16).frame(height: 40)
-            .background(MirrorArt.fabGradient).clipShape(Capsule())
-            HStack(spacing: 8) {
-                Image(systemName: "dot.radioworld.left.and.right").font(.system(size: 13)).foregroundColor(MirrorArt.text)
-                Text("Share").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.text)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Edit profile")
+            .accessibilityHint("Opens the profile editor")
+            ShareLink(item: ProfileView.shareMessage(handle: handle, userId: userId)) {
+                HStack(spacing: 8) {
+                    Image(systemName: "dot.radioworld.left.and.right").font(.system(size: 13)).foregroundColor(MirrorArt.text)
+                    Text("Share").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.text)
+                }
+                .padding(.horizontal, 16).frame(height: 40)
+                .background(MirrorArt.chip).clipShape(Capsule())
             }
-            .padding(.horizontal, 16).frame(height: 40)
-            .background(MirrorArt.chip).clipShape(Capsule())
+            .accessibilityLabel("Share profile, find me on Pulse at \(handle)")
         }
         .padding(.top, 14)
     }
